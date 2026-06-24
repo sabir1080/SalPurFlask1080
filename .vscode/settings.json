@@ -1,0 +1,6 @@
+{
+    "workbench.colorTheme": "Dark+",
+    "liveServer.settings.port": 5501,
+    "python.terminal.useEnvFile": true,
+    "python.envFile": "${workspaceFolder}/.env"
+}

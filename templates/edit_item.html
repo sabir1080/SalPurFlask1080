@@ -1,0 +1,39 @@
+<!--edit_item.html-->
+
+{% extends 'base.html' %}
+{% block content %}
+    <h2>Edit Item</h2>
+    <form method="POST">
+        <div class="mb-3">
+            <label for="name" class="form-label">Name</label>
+            <input type="text" class="form-control" id="name" name="name" value="{{ item.name }}" required>
+        </div>
+        <div class="mb-3">
+            <label for="category_id" class="form-label">Category</label>
+            <select class="form-control" id="category_id" name="category_id" required>
+                <option value="">Select Category</option>
+                {% for category in categories %}
+                <option value="{{ category.id }}" {% if item.category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="mb-3">
+            <label for="stock" class="form-label">Stock</label>
+            <input type="text" class="form-control" id="stock" name="stock" value="{{ item.stock }}" required>
+        </div>
+        <div class="mb-3">
+            <label for="reorder_level" class="form-label">Reorder Level</label>
+            <input type="text" class="form-control" id="reorder_level" name="reorder_level" value="{{ item.reorder_level }}" required>
+        </div>
+        <div class="mb-3">
+            <label for="purchase_price" class="form-label">Purchase Price (per unit)</label>
+            <input type="number" step="0.01" class="form-control" id="purchase_price" name="purchase_price" value="{{ item.purchase_price if item.purchase_price else '' }}">
+        </div>
+        <div class="mb-3">
+            <label for="sale_price" class="form-label">Sale Price (per unit)</label>
+            <input type="number" step="0.01" class="form-control" id="sale_price" name="sale_price" value="{{ item.sale_price if item.sale_price else '' }}">
+        </div>
+        <button type="submit" class="btn btn-primary">Update Item</button>
+        <a href="{{ url_for('item') }}" class="btn btn-secondary">Cancel</a>
+    </form>
+{% endblock %}

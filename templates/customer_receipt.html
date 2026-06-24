@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+{% block content %}
+{% set form_data = form_data|default({}) %}
+<h2>Customer Receipts</h2>
+
+<form method="GET" class="mb-3">
+    <div class="input-group">
+        <input type="text" class="form-control" name="search" placeholder="Search customer, reference or notes" value="{{ search }}">
+        <button type="submit" class="btn btn-primary">Search</button>
+    </div>
+</form>
+
+<form method="POST" class="mb-4 card card-body border">
+    <h5 class="mb-3">Record Payment from Customer</h5>
+    <div class="row g-3">
+        <div class="col-md-4">
+            <label for="customer_id" class="form-label">Customer</label>
+            <select class="form-control" id="customer_id" name="customer_id" required>
+                <option value="">Select Customer</option>
+                {% for customer in customers %}
+                <option value="{{ customer.id }}" {% if form_data.get('customer_id', '')|string == customer.id|string %}selected{% endif %}>{{ customer.name }}</option>
+                {% endfor %}
+            </select>
+            <small id="customer_balance_hint" class="text-muted">Advance receipt allowed — balance negative ho sakta hai</small>
+        </div>
+        <div class="col-md-4">
+            <label for="sale_id" class="form-label">Against Sale (optional)</label>
+            <select class="form-control" id="sale_id" name="sale_id">
+                <option value="">General / On Account</option>
+                {% for s in sales %}
+                {% set s_total = sale_total(s) %}
+                {% set s_received = get_sale_received(s.id) %}
+                {% set s_due = s_total - s_received %}
+                {% if s_due > 0 %}
+                <option value="{{ s.id }}" data-customer="{{ s.customer_id }}" class="sale-option" {% if form_data.get('sale_id', '')|string == s.id|string %}selected{% endif %}>
+                    #{{ s.id }} — {{ s.id_item.name }} — Due: {{ s_due | fmt_num }}
+                </option>
+                {% endif %}
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label for="amount" class="form-label">Amount</label>
+            <input type="number" step="0.01" class="form-control" id="amount" name="amount" value="{{ form_data.get('amount', '') }}" required>
+        </div>
+        <div class="col-md-3">
+            <label for="payment_date" class="form-label">Receipt Date</label>
+            <input type="date" class="form-control" id="payment_date" name="payment_date" value="{{ form_data.get('payment_date', '') }}" required>
+        </div>
+        <div class="col-md-3">
+            <label for="payment_method" class="form-label">Method</label>
+            <select class="form-control" id="payment_method" name="payment_method" required>
+                {% for method in payment_methods %}
+                <option value="{{ method }}" {% if form_data.get('payment_method', 'Cash') == method %}selected{% endif %}>{{ method }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label for="reference_no" class="form-label">Reference No.</label>
+            <input type="text" class="form-control" id="reference_no" name="reference_no" value="{{ form_data.get('reference_no', '') }}">
+        </div>
+        <div class="col-md-3">
+            <label for="notes" class="form-label">Notes</label>
+            <input type="text" class="form-control" id="notes" name="notes" value="{{ form_data.get('notes', '') }}">
+        </div>
+    </div>
+    <button type="submit" class="btn btn-primary mt-3">Save Receipt</button>
+</form>
+
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Customer</th>
+            <th>Sale</th>
+            <th>Amount</th>
+            <th>Method</th>
+            <th>Reference</th>
+            <th>Date</th>
+            <th>Notes</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in receipts %}
+        <tr>
+            <td>{{ r.id }}</td>
+            <td>{{ r.customer.name }}</td>
+            <td>{% if r.sale_id %}#{{ r.sale_id }}{% else %}General{% endif %}</td>
+            <td>{{ r.amount | fmt_num }}</td>
+            <td>{{ r.payment_method }}</td>
+            <td>{{ r.reference_no or '—' }}</td>
+            <td>{{ r.payment_date.strftime('%Y-%m-%d') }}</td>
+            <td>{{ r.notes or '—' }}</td>
+            <td>
+                <a href="{{ url_for('edit_customer_receipt', id=r.id) }}" class="btn btn-warning btn-sm">Edit</a>
+                <form method="POST" action="{{ url_for('delete_customer_receipt', id=r.id) }}" class="d-inline">
+                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this receipt?')">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9">No receipts recorded</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{{ pagination.links }}
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const customerSelect = document.getElementById('customer_id');
+    const saleSelect = document.getElementById('sale_id');
+    const balanceHint = document.getElementById('customer_balance_hint');
+
+    function filterSales() {
+        const cid = customerSelect.value;
+        saleSelect.querySelectorAll('.sale-option').forEach(function (opt) {
+            opt.hidden = cid && opt.dataset.customer !== cid;
+        });
+        if (saleSelect.selectedOptions[0] && saleSelect.selectedOptions[0].hidden) {
+            saleSelect.value = '';
+        }
+    }
+
+    function updateBalance() {
+        const cid = customerSelect.value;
+        balanceHint.textContent = '';
+        if (!cid) return;
+        fetch('/api/customer/' + cid + '/balance')
+            .then(r => r.json())
+            .then(data => {
+                balanceHint.textContent = 'Balance due: ' + Number(data.balance).toLocaleString(undefined, {minimumFractionDigits: 2});
+            });
+    }
+
+    customerSelect.addEventListener('change', function () {
+        filterSales();
+        updateBalance();
+    });
+    filterSales();
+    updateBalance();
+});
+</script>
+{% endblock %}

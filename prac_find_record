@@ -1,0 +1,12 @@
+# prac_all_records.py
+from app import app, db, User
+
+# Flask app context چاہیے تاکہ database access ہو
+with app.app_context():
+    email = "zeshanlook@gmail.com"  # ← یہاں وہ email لکھیں جسے آپ چیک کرنا چاہتے ہیں
+
+    user = User.query.filter_by(email=email).first()
+    if user is None:
+        print("EOF reached — user not found.")
+    else:
+        print(f"User found: ID={user.id}, Name={user.name}, Email={user.email}")

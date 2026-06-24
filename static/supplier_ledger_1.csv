@@ -1,0 +1,6 @@
+Date,Type,Description,Debit,Credit,Balance
+2025-07-01,Purchase,Purchase #5 — Laptop HP,0.0,30000.0,30000.0
+2026-01-22,Purchase,Purchase #6 — Laptop HP,0.0,168000.0,198000.0
+2026-04-09,Purchase,Purchase #8 — Laptop HP,0.0,625000.0,823000.0
+2026-06-22,Purchase,Purchase #9 — Laptop HP,0.0,80000.0,903000.0
+2026-06-22,Payment,Payment #1 (Bill #9) — Cash,60000.0,0.0,843000.0

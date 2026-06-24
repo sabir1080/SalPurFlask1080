@@ -1,0 +1,8 @@
+ID,Supplier,Item,Quantity,Purchase Price,Total,Date
+1,Supplier B,LED,50,10000.0,500000.0,2025-05-01
+3,Supplier B,LED,50,10000.0,500000.0,2025-10-01
+4,Supplier B,Printer,30,20000.0,600000.0,2025-10-01
+5,Supplier A,Laptop,3,10000.0,30000.0,2025-07-01
+6,Supplier A,Laptop,14,12000.0,168000.0,2026-01-22
+7,Supplier B,LED,15,5000.0,75000.0,2026-01-22
+8,Supplier A,Laptop,25,25000.0,625000.0,2026-04-09

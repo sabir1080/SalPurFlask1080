@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h2 class="mb-1">Customer Ledger — {{ customer.name }}</h2>
+        <p class="text-muted mb-0">
+            Current Balance:
+            <strong class="{% if balance > 0 %}text-danger{% elif balance < 0 %}text-primary{% else %}text-success{% endif %}">
+                {{ balance | fmt_num }} ({{ customer_balance_label(balance) }})
+            </strong>
+        </p>
+    </div>
+    <div>
+        <a href="{{ url_for('export_customer_ledger', id=customer.id) }}" class="btn btn-secondary btn-sm">Export CSV</a>
+        <a href="{{ url_for('customer') }}" class="btn btn-outline-secondary btn-sm">Back to Customers</a>
+    </div>
+</div>
+
+<form method="GET" class="row g-2 mb-3">
+    <div class="col-md-4">
+        <input type="date" class="form-control" name="start_date" value="{{ start_date }}">
+    </div>
+    <div class="col-md-4">
+        <input type="date" class="form-control" name="end_date" value="{{ end_date }}">
+    </div>
+    <div class="col-md-4">
+        <button type="submit" class="btn btn-primary w-100">Filter</button>
+    </div>
+</form>
+
+<div class="card card-body border mb-4">
+    <h5>Manual Adjustment</h5>
+    <form method="POST" class="row g-2">
+        <input type="hidden" name="action" value="adjustment">
+        <div class="col-md-2">
+            <input type="date" class="form-control" name="adj_date" required>
+        </div>
+        <div class="col-md-2">
+            <select class="form-control" name="adj_type" required>
+                <option value="debit">Debit (Sale / Receivable)</option>
+                <option value="credit">Credit (Receipt)</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <input type="number" step="0.01" class="form-control" name="adj_amount" placeholder="Amount" required>
+        </div>
+        <div class="col-md-4">
+            <input type="text" class="form-control" name="adj_description" placeholder="Description">
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-warning w-100">Add Adjustment</button>
+        </div>
+    </form>
+    <small class="text-muted">Debit = receivable badhega | Credit = receipt / advance</small>
+</div>
+
+<table class="table table-bordered table-sm">
+    <thead class="table-light">
+        <tr>
+            <th>Date</th>
+            <th>Type</th>
+            <th>Description</th>
+            <th>Debit</th>
+            <th>Credit</th>
+            <th>Balance</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for e in entries %}
+        <tr>
+            <td>{{ e.entry_date.strftime('%Y-%m-%d') }}</td>
+            <td><span class="badge bg-secondary">{{ e.entry_type }}</span></td>
+            <td>{{ e.description }}</td>
+            <td>{% if e.debit %}{{ e.debit | fmt_num }}{% else %}—{% endif %}</td>
+            <td>{% if e.credit %}{{ e.credit | fmt_num }}{% else %}—{% endif %}</td>
+            <td class="fw-semibold">{{ e.balance_after | fmt_num }}</td>
+            <td>
+                {% if e.source_type == 'adjustment' %}
+                <form method="POST" action="{{ url_for('delete_customer_ledger_adjustment', id=customer.id, entry_id=e.id) }}" class="d-inline">
+                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete adjustment?')">Del</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7">No ledger entries</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

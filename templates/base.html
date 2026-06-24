@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}SalPurFlask{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.5/dist/chart.umd.min.js"></script>
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+    <nav class="navbar navbar-expand-lg {% block navbar_class %}navbar-light bg-light{% endblock %}">
+        <div class="{% block nav_container_class %}container-fluid{% endblock %}">
+            <a class="navbar-brand" href="{{ url_for('index') }}">
+                <i class="bi bi-box-seam-fill brand-icon"></i> SalPurFlask
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    {% if current_user.is_authenticated %}
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('supplier') }}">Suppliers</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('customer') }}">Customers</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('category') }}">Categories</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('item') }}">Items</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('purchase') }}">Purchases</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('supplier_payment') }}">Supplier Payments</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('sale') }}">Sales</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('customer_receipt') }}">Customer Receipts</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('reports') }}">Reports</a></li>
+                    {% endif %}
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('about') }}">About</a></li>
+                </ul>
+                <ul class="navbar-nav">
+                    {% if current_user.is_authenticated %}
+                    <li class="nav-item"><span class="nav-link">Welcome, {{ current_user.name }}</span></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('signout') }}">Sign Out</a></li>
+                    {% else %}
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('signin') }}">Sign In</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('signup') }}">Sign Up</a></li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav>
+    <div class="{% block container_class %}container{% endblock %}">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <div class="flash-messages {% block flash_class %}{% endblock %}">
+            {% for category, message in messages %}
+            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('form[method="POST"]').forEach(function (form) {
+                form.addEventListener('submit', function () {
+                    form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(function (btn) {
+                        btn.disabled = true;
+                        if (btn.tagName === 'BUTTON' && !btn.dataset.originalText) {
+                            btn.dataset.originalText = btn.textContent;
+                            btn.textContent = 'Please wait...';
+                        }
+                    });
+                }, { once: true });
+            });
+        });
+    </script>
+</body>
+</html>
