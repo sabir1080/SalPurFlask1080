@@ -1,0 +1,141 @@
+{% extends 'base.html' %}
+{% block title %}Purchase Invoice #PUR-{{ purchase.id }}{% endblock %}
+{% block extra_head %}
+<style>
+@media print {
+    nav, .btn-print, .btn-back, .flash-messages, footer { display: none !important; }
+    body { background: white !important; }
+    .invoice-box { box-shadow: none !important; border: 1px solid #999 !important; }
+    .container { max-width: 100% !important; padding: 0 !important; }
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <a href="{{ url_for('purchase') }}" class="btn btn-outline-secondary btn-sm btn-back">
+        <i class="bi bi-arrow-left"></i> Back to Purchases
+    </a>
+    <button class="btn btn-primary btn-sm btn-print" onclick="window.print()">
+        <i class="bi bi-printer"></i> Print / Save as PDF
+    </button>
+</div>
+
+<div class="invoice-box card shadow p-4 mx-auto" style="max-width:750px;">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-6">
+            <h4 class="fw-bold mb-0">SalPurFlask</h4>
+            <small class="text-muted">Business Management System</small>
+        </div>
+        <div class="col-6 text-end">
+            <h5 class="fw-bold text-uppercase text-primary">Purchase Invoice</h5>
+            <p class="mb-0"><strong>#PUR-{{ purchase.id }}</strong></p>
+            <p class="mb-0 text-muted">Date: {{ purchase.date.strftime('%d %b %Y') }}</p>
+        </div>
+    </div>
+    <hr>
+
+    <!-- Supplier & Status -->
+    <div class="row mb-4">
+        <div class="col-7">
+            <p class="mb-1 text-muted fw-semibold">BILL FROM (SUPPLIER)</p>
+            <h6 class="mb-0 fw-bold">{{ purchase.id_supplier.name }}</h6>
+            <p class="mb-0">{{ purchase.id_supplier.contact }}</p>
+            <p class="mb-0 text-muted">{{ purchase.id_supplier.address }}</p>
+        </div>
+        <div class="col-5 text-end">
+            <p class="mb-1 text-muted fw-semibold">PAYMENT STATUS</p>
+            {% if status == 'Paid' %}
+                <span class="badge bg-success fs-6">Paid</span>
+            {% elif status == 'Partial' %}
+                <span class="badge bg-warning text-dark fs-6">Partial</span>
+            {% else %}
+                <span class="badge bg-danger fs-6">Unpaid</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Items Table -->
+    <table class="table table-bordered mb-0">
+        <thead class="table-dark">
+            <tr>
+                <th>Item</th>
+                <th>Category</th>
+                <th class="text-end">Qty</th>
+                <th class="text-end">Unit Price</th>
+                <th class="text-end">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>{{ purchase.id_item.name }}</td>
+                <td>{{ purchase.id_item.id_category.name if purchase.id_item.id_category else '—' }}</td>
+                <td class="text-end">{{ purchase.quantity }}</td>
+                <td class="text-end">{{ purchase.purchase_price | fmt_num }}</td>
+                <td class="text-end fw-bold">{{ total | fmt_num }}</td>
+            </tr>
+        </tbody>
+        <tfoot class="table-light">
+            <tr>
+                <td colspan="4" class="text-end fw-bold">Gross Total:</td>
+                <td class="text-end fw-bold">{{ total | fmt_num }}</td>
+            </tr>
+            {% if returned_qty > 0 %}
+            <tr class="table-warning">
+                <td colspan="4" class="text-end">Returned ({{ returned_qty }} units):</td>
+                <td class="text-end">
+                    - {{ (returned_qty * purchase.purchase_price) | fmt_num }}
+                </td>
+            </tr>
+            {% endif %}
+            <tr>
+                <td colspan="4" class="text-end text-success">Amount Paid:</td>
+                <td class="text-end text-success">{{ paid | fmt_num }}</td>
+            </tr>
+            <tr>
+                <td colspan="4" class="text-end fw-bold {% if balance > 0 %}text-danger{% else %}text-success{% endif %}">
+                    Balance Due:
+                </td>
+                <td class="text-end fw-bold {% if balance > 0 %}text-danger{% else %}text-success{% endif %}">
+                    {{ balance | fmt_num }}
+                </td>
+            </tr>
+        </tfoot>
+    </table>
+
+    <!-- Returns Detail -->
+    {% if purchase.returns %}
+    <div class="mt-4">
+        <h6 class="fw-bold text-warning"><i class="bi bi-arrow-return-left"></i> Return Details</h6>
+        <table class="table table-sm table-bordered">
+            <thead class="table-warning">
+                <tr><th>Date</th><th class="text-end">Qty</th><th class="text-end">Price</th><th class="text-end">Total</th><th>Reason</th></tr>
+            </thead>
+            <tbody>
+                {% for r in purchase.returns %}
+                <tr>
+                    <td>{{ r.date.strftime('%d %b %Y') }}</td>
+                    <td class="text-end">{{ r.quantity }}</td>
+                    <td class="text-end">{{ r.return_price | fmt_num }}</td>
+                    <td class="text-end">{{ (r.quantity * r.return_price) | fmt_num }}</td>
+                    <td>{{ r.reason or '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- Footer -->
+    <div class="row mt-4 pt-3 border-top">
+        <div class="col-6">
+            <small class="text-muted">Generated by SalPurFlask</small><br>
+            <small class="text-muted">{{ purchase.date.strftime('%d %b %Y') }}</small>
+        </div>
+        <div class="col-6 text-end">
+            <small class="text-muted">Authorized Signature</small><br>
+            <div style="border-top:1px solid #999; width:180px; display:inline-block; margin-top:30px;"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -205,6 +205,32 @@ class CustomerPayment(db.Model):
     customer            = db.relationship("Customer", backref="receipts", lazy=True)
     sale                = db.relationship("Sale", backref="customer_payments", lazy=True)
 
+class PurchaseReturn(db.Model):
+    id           = db.Column(db.Integer, primary_key=True)
+    purchase_id  = db.Column(db.Integer, db.ForeignKey("purchase.id"), nullable=False)
+    supplier_id  = db.Column(db.Integer, db.ForeignKey("supplier.id"), nullable=False)
+    item_id      = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
+    quantity     = db.Column(db.Integer, nullable=False)
+    return_price = db.Column(db.Float, nullable=False)
+    date         = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+    reason       = db.Column(db.String(300), nullable=True)
+    purchase     = db.relationship("Purchase", backref="returns", lazy=True)
+    supplier     = db.relationship("Supplier", backref="purchase_returns", lazy=True)
+    item         = db.relationship("Item", backref="purchase_returns", lazy=True)
+
+class SaleReturn(db.Model):
+    id           = db.Column(db.Integer, primary_key=True)
+    sale_id      = db.Column(db.Integer, db.ForeignKey("sale.id"), nullable=False)
+    customer_id  = db.Column(db.Integer, db.ForeignKey("customer.id"), nullable=False)
+    item_id      = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
+    quantity     = db.Column(db.Integer, nullable=False)
+    return_price = db.Column(db.Float, nullable=False)
+    date         = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+    reason       = db.Column(db.String(300), nullable=True)
+    sale         = db.relationship("Sale", backref="returns", lazy=True)
+    customer     = db.relationship("Customer", backref="sale_returns", lazy=True)
+    item         = db.relationship("Item", backref="sale_returns", lazy=True)
+
 OPENING_LEDGER_DATE = datetime(1900, 1, 1)
 
 class SupplierLedgerEntry(db.Model):
@@ -512,6 +538,36 @@ def sync_customer_receipt(receipt):
         receipt.amount,
     )
 
+def sync_supplier_purchase_return(pr):
+    item = db.session.get(Item, pr.item_id)
+    item_name = item.name if item else "Item"
+    total = float(pr.quantity * pr.return_price)
+    upsert_supplier_ledger(
+        pr.supplier_id,
+        "purchase_return",
+        pr.id,
+        pr.date,
+        "Purchase Return",
+        f"Return #{pr.id} — {item_name} (Bill #{pr.purchase_id})",
+        total,
+        0.0,
+    )
+
+def sync_customer_sale_return(sr):
+    item = db.session.get(Item, sr.item_id)
+    item_name = item.name if item else "Item"
+    total = float(sr.quantity * sr.return_price)
+    upsert_customer_ledger(
+        sr.customer_id,
+        "sale_return",
+        sr.id,
+        sr.date,
+        "Sale Return",
+        f"Return #{sr.id} — {item_name} (Bill #{sr.sale_id})",
+        0.0,
+        total,
+    )
+
 def backfill_ledgers():
     if SupplierLedgerEntry.query.first() or CustomerLedgerEntry.query.first():
         return
@@ -540,6 +596,22 @@ def get_total_receivable():
 
 def get_total_received_customers():
     return float(db.session.query(func.sum(CustomerPayment.amount)).scalar() or 0.0)
+
+def get_purchase_returned_qty(purchase_id):
+    return int(db.session.query(func.sum(PurchaseReturn.quantity)).filter(
+        PurchaseReturn.purchase_id == purchase_id
+    ).scalar() or 0)
+
+def get_sale_returned_qty(sale_id):
+    return int(db.session.query(func.sum(SaleReturn.quantity)).filter(
+        SaleReturn.sale_id == sale_id
+    ).scalar() or 0)
+
+def purchase_return_total(pr):
+    return float(pr.quantity * pr.return_price)
+
+def sale_return_total(sr):
+    return float(sr.quantity * sr.return_price)
 
 def parse_payment_amount(amount_str):
     amount_str = (amount_str or "").strip()
@@ -626,6 +698,10 @@ def inject_form_defaults():
         "get_customer_balance": get_customer_balance,
         "supplier_balance_label": supplier_balance_label,
         "customer_balance_label": customer_balance_label,
+        "get_purchase_returned_qty": get_purchase_returned_qty,
+        "get_sale_returned_qty": get_sale_returned_qty,
+        "purchase_return_total": purchase_return_total,
+        "sale_return_total": sale_return_total,
     }
     if request.method == "POST":
         data = request.form.to_dict(flat=True)
@@ -2463,6 +2539,202 @@ def export_customer_receipt_history():
     except ValueError:
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
+
+@app.route("/purchase_return", methods=["GET", "POST"])
+@verified_required
+def purchase_return():
+    search = request.args.get("search", "").strip()
+    query = PurchaseReturn.query.order_by(PurchaseReturn.date.desc())
+    if search:
+        query = (
+            query.join(Supplier, PurchaseReturn.supplier_id == Supplier.id)
+            .join(Item, PurchaseReturn.item_id == Item.id)
+            .filter((Supplier.name.ilike(f"%{search}%")) | (Item.name.ilike(f"%{search}%")))
+        )
+    returns, pagination = get_paginated_results(query)
+    all_purchases = Purchase.query.order_by(Purchase.date.desc()).all()
+    purchases_available = [
+        {"p": p, "remaining": p.quantity - get_purchase_returned_qty(p.id)}
+        for p in all_purchases
+        if p.quantity - get_purchase_returned_qty(p.id) > 0
+    ]
+    if request.method == "POST":
+        purchase_id = request.form.get("purchase_id", "").strip()
+        quantity    = request.form.get("quantity", "").strip()
+        return_price = request.form.get("return_price", "").strip()
+        date        = request.form.get("date", "").strip()
+        reason      = request.form.get("reason", "").strip()
+        if not purchase_id or not quantity or not return_price or not date:
+            flash("Purchase, quantity, price and date are required!", "danger")
+        elif not quantity.isdigit() or int(quantity) <= 0:
+            flash("Quantity must be a positive number!", "danger")
+        elif not return_price.replace(".", "", 1).isdigit() or float(return_price) < 0:
+            flash("Return price must be a non-negative number!", "danger")
+        else:
+            purchase = db.session.get(Purchase, int(purchase_id)) or abort(404)
+            remaining = purchase.quantity - get_purchase_returned_qty(purchase.id)
+            if int(quantity) > remaining:
+                flash(f"Cannot return more than remaining quantity ({remaining})!", "danger")
+            else:
+                try:
+                    item = db.session.get(Item, purchase.item_id) or abort(404)
+                    pr = PurchaseReturn(
+                        purchase_id=purchase.id,
+                        supplier_id=purchase.supplier_id,
+                        item_id=purchase.item_id,
+                        quantity=int(quantity),
+                        return_price=float(return_price),
+                        date=datetime.strptime(date, "%Y-%m-%d"),
+                        reason=reason or None,
+                    )
+                    item.stock -= int(quantity)
+                    db.session.add(pr)
+                    db.session.flush()
+                    sync_supplier_purchase_return(pr)
+                    db.session.commit()
+                    flash("Purchase return recorded successfully!", "success")
+                    return redirect(url_for("purchase_return"))
+                except ValueError:
+                    flash("Invalid date format! Use YYYY-MM-DD.", "danger")
+    return render_template(
+        "purchase_return.html",
+        returns=returns,
+        purchases_available=purchases_available,
+        pagination=pagination,
+        search=search,
+    )
+
+@app.route("/purchase_return/delete/<int:id>", methods=["POST"])
+@verified_required
+def delete_purchase_return(id):
+    pr = db.session.get(PurchaseReturn, id) or abort(404)
+    item = db.session.get(Item, pr.item_id)
+    if item:
+        item.stock += pr.quantity
+    supplier_id = remove_supplier_ledger_entry("purchase_return", pr.id)
+    db.session.delete(pr)
+    db.session.commit()
+    if supplier_id:
+        recalculate_supplier_ledger(supplier_id)
+        db.session.commit()
+    flash("Purchase return deleted successfully!", "success")
+    return redirect(url_for("purchase_return"))
+
+@app.route("/sale_return", methods=["GET", "POST"])
+@verified_required
+def sale_return():
+    search = request.args.get("search", "").strip()
+    query = SaleReturn.query.order_by(SaleReturn.date.desc())
+    if search:
+        query = (
+            query.join(Customer, SaleReturn.customer_id == Customer.id)
+            .join(Item, SaleReturn.item_id == Item.id)
+            .filter((Customer.name.ilike(f"%{search}%")) | (Item.name.ilike(f"%{search}%")))
+        )
+    returns, pagination = get_paginated_results(query)
+    all_sales = Sale.query.order_by(Sale.date.desc()).all()
+    sales_available = [
+        {"s": s, "remaining": s.quantity - get_sale_returned_qty(s.id)}
+        for s in all_sales
+        if s.quantity - get_sale_returned_qty(s.id) > 0
+    ]
+    if request.method == "POST":
+        sale_id      = request.form.get("sale_id", "").strip()
+        quantity     = request.form.get("quantity", "").strip()
+        return_price = request.form.get("return_price", "").strip()
+        date         = request.form.get("date", "").strip()
+        reason       = request.form.get("reason", "").strip()
+        if not sale_id or not quantity or not return_price or not date:
+            flash("Sale, quantity, price and date are required!", "danger")
+        elif not quantity.isdigit() or int(quantity) <= 0:
+            flash("Quantity must be a positive number!", "danger")
+        elif not return_price.replace(".", "", 1).isdigit() or float(return_price) < 0:
+            flash("Return price must be a non-negative number!", "danger")
+        else:
+            sale = db.session.get(Sale, int(sale_id)) or abort(404)
+            remaining = sale.quantity - get_sale_returned_qty(sale.id)
+            if int(quantity) > remaining:
+                flash(f"Cannot return more than remaining quantity ({remaining})!", "danger")
+            else:
+                try:
+                    item = db.session.get(Item, sale.item_id) or abort(404)
+                    sr = SaleReturn(
+                        sale_id=sale.id,
+                        customer_id=sale.customer_id,
+                        item_id=sale.item_id,
+                        quantity=int(quantity),
+                        return_price=float(return_price),
+                        date=datetime.strptime(date, "%Y-%m-%d"),
+                        reason=reason or None,
+                    )
+                    item.stock += int(quantity)
+                    db.session.add(sr)
+                    db.session.flush()
+                    sync_customer_sale_return(sr)
+                    db.session.commit()
+                    flash("Sale return recorded successfully!", "success")
+                    return redirect(url_for("sale_return"))
+                except ValueError:
+                    flash("Invalid date format! Use YYYY-MM-DD.", "danger")
+    return render_template(
+        "sale_return.html",
+        returns=returns,
+        sales_available=sales_available,
+        pagination=pagination,
+        search=search,
+    )
+
+@app.route("/sale_return/delete/<int:id>", methods=["POST"])
+@verified_required
+def delete_sale_return(id):
+    sr = db.session.get(SaleReturn, id) or abort(404)
+    item = db.session.get(Item, sr.item_id)
+    if item:
+        item.stock -= sr.quantity
+    customer_id = remove_customer_ledger_entry("sale_return", sr.id)
+    db.session.delete(sr)
+    db.session.commit()
+    if customer_id:
+        recalculate_customer_ledger(customer_id)
+        db.session.commit()
+    flash("Sale return deleted successfully!", "success")
+    return redirect(url_for("sale_return"))
+
+@app.route("/purchase/<int:id>/invoice")
+@verified_required
+def purchase_invoice(id):
+    purchase = db.session.get(Purchase, id) or abort(404)
+    paid     = get_purchase_paid(id)
+    total    = purchase_total(purchase)
+    status   = get_payment_status(total, paid)
+    returned_qty = get_purchase_returned_qty(id)
+    return render_template(
+        "invoice_purchase.html",
+        purchase=purchase,
+        paid=paid,
+        total=total,
+        balance=total - paid,
+        status=status,
+        returned_qty=returned_qty,
+    )
+
+@app.route("/sale/<int:id>/invoice")
+@verified_required
+def sale_invoice(id):
+    sale      = db.session.get(Sale, id) or abort(404)
+    received  = get_sale_received(id)
+    total     = sale_total(sale)
+    status    = get_payment_status(total, received)
+    returned_qty = get_sale_returned_qty(id)
+    return render_template(
+        "invoice_sale.html",
+        sale=sale,
+        received=received,
+        total=total,
+        balance=total - received,
+        status=status,
+        returned_qty=returned_qty,
+    )
 
 @app.cli.command("create-user")
 @click.option("--name", prompt="Name")

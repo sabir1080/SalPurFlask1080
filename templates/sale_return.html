@@ -1,0 +1,124 @@
+{% extends 'base.html' %}
+{% block title %}Sale Returns{% endblock %}
+{% block content %}
+<h2>Sale Returns</h2>
+
+<!-- Search -->
+<form method="GET" class="mb-4">
+    <div class="input-group">
+        <input type="text" class="form-control" name="search" placeholder="Search by customer or item" value="{{ search }}">
+        <button type="submit" class="btn btn-primary">Search</button>
+        {% if search %}<a href="{{ url_for('sale_return') }}" class="btn btn-outline-secondary">Clear</a>{% endif %}
+    </div>
+</form>
+
+<!-- Add Return Form -->
+<div class="card mb-4">
+    <div class="card-header fw-bold"><i class="bi bi-arrow-return-right"></i> Record Sale Return</div>
+    <div class="card-body">
+        {% if sales_available %}
+        <form method="POST">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Select Sale <span class="text-danger">*</span></label>
+                    <select class="form-select" name="sale_id" id="saleSelect" required>
+                        <option value="">— Select Sale —</option>
+                        {% for row in sales_available %}
+                        <option value="{{ row.s.id }}"
+                            data-price="{{ row.s.sale_price }}"
+                            data-remaining="{{ row.remaining }}">
+                            #{{ row.s.id }} — {{ row.s.id_customer.name }} — {{ row.s.id_item.name }}
+                            (Qty: {{ row.s.quantity }}, Remaining: {{ row.remaining }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Quantity <span class="text-danger">*</span></label>
+                    <input type="number" class="form-control" name="quantity" id="returnQty" min="1" required>
+                    <small class="text-muted" id="qtyHint"></small>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Return Price/Unit <span class="text-danger">*</span></label>
+                    <input type="number" step="0.01" class="form-control" name="return_price" id="returnPrice" required>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Date <span class="text-danger">*</span></label>
+                    <input type="date" class="form-control" name="date" required>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Reason</label>
+                    <input type="text" class="form-control" name="reason" placeholder="Optional">
+                </div>
+            </div>
+            <button type="submit" class="btn btn-warning mt-3">
+                <i class="bi bi-arrow-return-right"></i> Record Return
+            </button>
+        </form>
+        <script>
+        document.getElementById('saleSelect').addEventListener('change', function() {
+            var opt = this.options[this.selectedIndex];
+            var price = opt.getAttribute('data-price');
+            var remaining = opt.getAttribute('data-remaining');
+            if (price) {
+                document.getElementById('returnPrice').value = price;
+                document.getElementById('returnQty').max = remaining;
+                document.getElementById('qtyHint').textContent = 'Max returnable: ' + remaining;
+            } else {
+                document.getElementById('returnPrice').value = '';
+                document.getElementById('returnQty').removeAttribute('max');
+                document.getElementById('qtyHint').textContent = '';
+            }
+        });
+        </script>
+        {% else %}
+        <div class="alert alert-info mb-0">
+            No sales available for return (all quantities already returned or no sales exist).
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Returns Table -->
+<table class="table table-bordered">
+    <thead class="table-dark">
+        <tr>
+            <th>ID</th>
+            <th>Sale #</th>
+            <th>Customer</th>
+            <th>Item</th>
+            <th class="text-end">Qty</th>
+            <th class="text-end">Price</th>
+            <th class="text-end">Total</th>
+            <th>Date</th>
+            <th>Reason</th>
+            <th>Action</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in returns %}
+        <tr>
+            <td>{{ r.id }}</td>
+            <td><a href="{{ url_for('sale_invoice', id=r.sale_id) }}" target="_blank">#{{ r.sale_id }}</a></td>
+            <td>{{ r.customer.name }}</td>
+            <td>{{ r.item.name }}</td>
+            <td class="text-end">{{ r.quantity }}</td>
+            <td class="text-end">{{ r.return_price | fmt_num }}</td>
+            <td class="text-end">{{ sale_return_total(r) | fmt_num }}</td>
+            <td>{{ r.date.strftime('%Y-%m-%d') }}</td>
+            <td>{{ r.reason or '—' }}</td>
+            <td>
+                <form method="POST" action="{{ url_for('delete_sale_return', id=r.id) }}" class="d-inline">
+                    <button type="submit" class="btn btn-danger btn-sm"
+                        onclick="return confirm('Delete this return? Stock will be deducted back.')">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="10" class="text-center text-muted">No sale returns found.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<div class="pagination">{{ pagination.links }}</div>
+{% endblock %}

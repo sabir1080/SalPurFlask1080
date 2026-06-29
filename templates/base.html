@@ -35,6 +35,13 @@
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('supplier_payment') }}">Supplier Payments</a></li>
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('sale') }}">Sales</a></li>
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('customer_receipt') }}">Customer Receipts</a></li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">Returns</a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('purchase_return') }}">Purchase Returns</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('sale_return') }}">Sale Returns</a></li>
+                        </ul>
+                    </li>
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('reports') }}">Reports</a></li>
                     {% endif %}
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('about') }}">About</a></li>
