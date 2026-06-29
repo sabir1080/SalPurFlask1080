@@ -3,8 +3,10 @@ from flask import Flask, render_template, request, redirect, url_for, flash, sen
 from flask_sqlalchemy import SQLAlchemy
 from flask_paginate import Pagination, get_page_args
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from flask_wtf.csrf import CSRFProtect
+import click
 from passlib.context import CryptContext
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 import csv
 import os
@@ -38,10 +40,14 @@ app.config["MAIL_PASSWORD"] = os.getenv("MAIL_PASSWORD", "").replace(" ", "")
 
 
 db = SQLAlchemy(app)  # iska matlab sqlite se connect ho raha ha
+csrf = CSRFProtect(app)
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "signin"
+
+def is_signup_allowed():
+    return os.getenv("ALLOW_SIGNUP", "false").lower() in ("1", "true", "yes")
 
 # Utility Functions
 def generate_verification_token(email):
@@ -163,7 +169,7 @@ class Purchase(db.Model):
     item_id             = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
     quantity            = db.Column(db.Integer, nullable=False)
     purchase_price      = db.Column(db.Float, nullable=False)
-    date                = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    date                = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
 
 class Sale(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
@@ -171,7 +177,7 @@ class Sale(db.Model):
     item_id             = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
     quantity            = db.Column(db.Integer, nullable=False)
     sale_price          = db.Column(db.Float, nullable=False)
-    date                = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    date                = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
 
 PAYMENT_METHODS = ("Cash", "Bank", "Cheque", "Online")
 
@@ -180,7 +186,7 @@ class SupplierPayment(db.Model):
     supplier_id         = db.Column(db.Integer, db.ForeignKey("supplier.id"), nullable=False)
     purchase_id         = db.Column(db.Integer, db.ForeignKey("purchase.id"), nullable=True)
     amount              = db.Column(db.Float, nullable=False)
-    payment_date        = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    payment_date        = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     payment_method      = db.Column(db.String(20), nullable=False, default="Cash")
     reference_no        = db.Column(db.String(100), nullable=True)
     notes               = db.Column(db.String(300), nullable=True)
@@ -192,7 +198,7 @@ class CustomerPayment(db.Model):
     customer_id         = db.Column(db.Integer, db.ForeignKey("customer.id"), nullable=False)
     sale_id             = db.Column(db.Integer, db.ForeignKey("sale.id"), nullable=True)
     amount              = db.Column(db.Float, nullable=False)
-    payment_date        = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    payment_date        = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     payment_method      = db.Column(db.String(20), nullable=False, default="Cash")
     reference_no        = db.Column(db.String(100), nullable=True)
     notes               = db.Column(db.String(300), nullable=True)
@@ -639,13 +645,15 @@ def get_paginated_results(query, per_page=10):
 # Authentication Routes
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
+    if not is_signup_allowed():
+        flash("Registration is disabled. Contact the administrator.", "warning")
+        return redirect(url_for("signin"))
     if current_user.is_authenticated:
         return redirect(url_for("index"))
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "").strip()
-        print(f"Signup attempt: name={name}, email={email}, password={password}")
         if not name or not email or not password:
             flash("All fields are required!", "danger")
             return render_template("signup.html")
@@ -656,12 +664,10 @@ def signup():
             flash("Password must be at least 6 characters!", "danger")
             return render_template("signup.html")
         hashed_password = pwd_context.hash(password)
-        print(f"Hashed password: {hashed_password}")
         user = User(name=name, email=email, password=hashed_password, verified=False)
         try:
             db.session.add(user)
             db.session.commit()
-            print(f"User saved: {user.email}, verified={user.verified}")
         except Exception as e:
             db.session.rollback()
             print(f"Database error: {str(e)}")
@@ -671,7 +677,7 @@ def signup():
         verification_url = url_for("verify_email", token=token, _external=True)
         body = f"""
         Hello {name},
-
+ 
         Thank you for registering with SalPurFlask. Please click the link below to verify your email address:
 
         {verification_url}
@@ -697,14 +703,8 @@ def signin():
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "").strip()
-        print(f"Signin attempt: email={email}, password={password}")
         user = User.query.filter_by(email=email).first()
         if user:
-            print(f"Single User Found: {user.id}, {user.email}, {user.name}")
-        else:
-            print("User not found with this email.")
-        if user:
-            print(f"User found: email={user.email}, verified={user.verified}, hash={user.password}")
             try:
                 db.session.refresh(user)
                 if pwd_context.verify(password, user.password):
@@ -714,17 +714,12 @@ def signin():
                     login_user(user)
                     session["user_id"] = user.id
                     session.pop("just_reset_email", None)
-                    print(f"Signin successful: {user.email}")
                     flash("Signed in successfully!", "success")
                     return redirect(url_for("index"))
-                else:
-                    print("Password verification failed")
-                    flash("Invalid email or password!", "danger")
-            except Exception as e:
-                print(f"Password verification error: {str(e)}")
+                flash("Invalid email or password!", "danger")
+            except Exception:
                 flash("Invalid email or password!", "danger")
         else:
-            print("User not found")
             flash("Invalid email or password!", "danger")
     just_reset = session.get("just_reset_email")
     return render_template("signin.html", just_reset=just_reset)
@@ -748,7 +743,7 @@ def forgot_password():
             flash(f"Email {email} not found!", "danger")
         else:
             token = secrets.token_urlsafe(32)
-            expiry = datetime.utcnow() + timedelta(hours=1)
+            expiry = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=1)
             reset_url = url_for("reset_password", token=token, _external=True)
             body = (
                 f"Dear User,\n\n"
@@ -776,7 +771,7 @@ def reset_password(token):
     if current_user.is_authenticated:
         return redirect(url_for("index"))
     user = User.query.filter_by(reset_token=token).first()
-    if not user or user.reset_token_expiry < datetime.utcnow():
+    if not user or user.reset_token_expiry < datetime.now(timezone.utc).replace(tzinfo=None):
         flash("Invalid or expired reset link!", "danger")
         return redirect(url_for("forgot_password"))
     if request.method == "POST":
@@ -805,11 +800,11 @@ def verify_email(token):
     email = verify_token(token)
     if not email:
         flash("Invalid or expired verification link!", "danger")
-        return redirect(url_for("signup"))
+        return redirect(url_for("signin"))
     user = User.query.filter_by(email=email).first()
     if not user:
         flash("User not found!", "danger")
-        return redirect(url_for("signup"))
+        return redirect(url_for("signin"))
     if user.verified:
         flash(f"Email {email} is already verified! Please sign in.", "success")
         return redirect(url_for("signin"))
@@ -868,7 +863,7 @@ def about():
     return render_template("about.html")
 
 @app.route('/dashboard')
-@login_required
+@verified_required
 def dashboard():
     items = Item.query.all()
     purchases = Purchase.query.order_by(Purchase.date.desc()).limit(5).all()
@@ -1393,6 +1388,7 @@ def delete_purchase(id):
     db.session.commit()
     if supplier_id:
         recalculate_supplier_ledger(supplier_id)
+        db.session.commit()
     flash("Purchase deleted successfully!", "success")
     return redirect(url_for("purchase"))
 
@@ -1589,6 +1585,7 @@ def delete_sale(id):
     db.session.commit()
     if customer_id:
         recalculate_customer_ledger(customer_id)
+        db.session.commit()
     flash("Sale deleted successfully!", "success")
     return redirect(url_for("sale"))
 
@@ -1703,6 +1700,7 @@ def delete_supplier_payment(id):
     db.session.commit()
     if supplier_id:
         recalculate_supplier_ledger(supplier_id)
+        db.session.commit()
     flash("Supplier payment deleted successfully!", "success")
     return redirect(url_for("supplier_payment"))
 
@@ -1817,6 +1815,7 @@ def delete_customer_receipt(id):
     db.session.commit()
     if customer_id:
         recalculate_customer_ledger(customer_id)
+        db.session.commit()
     flash("Customer receipt deleted successfully!", "success")
     return redirect(url_for("customer_receipt"))
 
@@ -2029,9 +2028,9 @@ def reports():
                     db.session.query(
                         db.func.date(Sale.date).label("sale_date"),
                         db.func.sum(Sale.quantity * Sale.sale_price).label("sale_amt"),
-                        db.func.sum((Sale.sale_price - Purchase.purchase_price) * Sale.quantity).label("profit_amt"),
+                        db.func.sum((Sale.sale_price - Item.purchase_price) * Sale.quantity).label("profit_amt"),
                     )
-                    .join(Purchase, Sale.item_id == Purchase.item_id)
+                    .join(Item, Sale.item_id == Item.id)
                     .filter(Sale.date.between(start_date, end_date))
                     .group_by(db.func.date(Sale.date))
                     .order_by(db.func.date(Sale.date))
@@ -2042,11 +2041,10 @@ def reports():
                         Item.name.label("name"),
                         Category.name.label("category"),
                         db.func.sum(Sale.quantity * Sale.sale_price).label("sale_amt"),
-                        db.func.sum((Sale.sale_price - Purchase.purchase_price) * Sale.quantity).label("profit_amt"),
+                        db.func.sum((Sale.sale_price - Item.purchase_price) * Sale.quantity).label("profit_amt"),
                     )
                     .join(Sale, Sale.item_id == Item.id)
                     .outerjoin(Category, Item.category_id == Category.id)
-                    .join(Purchase, Purchase.item_id == Item.id)
                     .filter(Sale.date.between(start_date, end_date))
                     .group_by(Item.name, Category.name)
                     .order_by(Item.name)
@@ -2056,10 +2054,10 @@ def reports():
                     db.session.query(
                         Customer.name.label("name"),
                         db.func.sum(Sale.quantity * Sale.sale_price).label("sale_amt"),
-                        db.func.sum((Sale.sale_price - Purchase.purchase_price) * Sale.quantity).label("profit_amt"),
+                        db.func.sum((Sale.sale_price - Item.purchase_price) * Sale.quantity).label("profit_amt"),
                     )
                     .join(Sale, Sale.customer_id == Customer.id)
-                    .join(Purchase, Sale.item_id == Purchase.item_id)
+                    .join(Item, Sale.item_id == Item.id)
                     .filter(Sale.date.between(start_date, end_date))
                     .group_by(Customer.name)
                     .order_by(Customer.name)
@@ -2069,11 +2067,10 @@ def reports():
                     db.session.query(
                         Category.name.label("name"),
                         db.func.sum(Sale.quantity * Sale.sale_price).label("sale_amt"),
-                        db.func.sum((Sale.sale_price - Purchase.purchase_price) * Sale.quantity).label("profit_amt"),
+                        db.func.sum((Sale.sale_price - Item.purchase_price) * Sale.quantity).label("profit_amt"),
                     )
                     .join(Item, Sale.item_id == Item.id)
                     .join(Category, Item.category_id == Category.id)
-                    .join(Purchase, Sale.item_id == Purchase.item_id)
                     .filter(Sale.date.between(start_date, end_date))
                     .group_by(Category.name)
                     .order_by(Category.name)
@@ -2082,9 +2079,9 @@ def reports():
                 totals = (
                     db.session.query(
                         db.func.sum(Sale.quantity * Sale.sale_price).label("total_sale_amt"),
-                        db.func.sum((Sale.sale_price - Purchase.purchase_price) * Sale.quantity).label("total_profit_amt"),
+                        db.func.sum((Sale.sale_price - Item.purchase_price) * Sale.quantity).label("total_profit_amt"),
                     )
-                    .join(Purchase, Sale.item_id == Purchase.item_id)
+                    .join(Item, Sale.item_id == Item.id)
                     .filter(Sale.date.between(start_date, end_date))
                     .first()
                 )
@@ -2248,9 +2245,9 @@ def export_date_sale_report():
             db.session.query(
                 db.func.date(Sale.date).label("sale_date"),
                 db.func.sum(Sale.quantity * Sale.sale_price).label("sale_amt"),
-                db.func.sum((Sale.sale_price - Purchase.purchase_price) * Sale.quantity).label("profit_amt"),
+                db.func.sum((Sale.sale_price - Item.purchase_price) * Sale.quantity).label("profit_amt"),
             )
-            .join(Purchase, Sale.item_id == Purchase.item_id)
+            .join(Item, Sale.item_id == Item.id)
             .filter(Sale.date.between(start_date, end_date))
             .group_by(db.func.date(Sale.date))
             .order_by(db.func.date(Sale.date))
@@ -2282,11 +2279,10 @@ def export_item_sale_report():
                 Item.name.label("name"),
                 Category.name.label("category"),
                 db.func.sum(Sale.quantity * Sale.sale_price).label("sale_amt"),
-                db.func.sum((Sale.sale_price - Purchase.purchase_price) * Sale.quantity).label("profit_amt"),
+                db.func.sum((Sale.sale_price - Item.purchase_price) * Sale.quantity).label("profit_amt"),
             )
             .join(Sale, Sale.item_id == Item.id)
             .outerjoin(Category, Item.category_id == Category.id)
-            .join(Purchase, Purchase.item_id == Item.id)
             .filter(Sale.date.between(start_date, end_date))
             .group_by(Item.name, Category.name)
             .order_by(Item.name)
@@ -2317,10 +2313,10 @@ def export_customer_sale_report():
             db.session.query(
                 Customer.name.label("name"),
                 db.func.sum(Sale.quantity * Sale.sale_price).label("sale_amt"),
-                db.func.sum((Sale.sale_price - Purchase.purchase_price) * Sale.quantity).label("profit_amt"),
+                db.func.sum((Sale.sale_price - Item.purchase_price) * Sale.quantity).label("profit_amt"),
             )
             .join(Sale, Sale.customer_id == Customer.id)
-            .join(Purchase, Sale.item_id == Purchase.item_id)
+            .join(Item, Sale.item_id == Item.id)
             .filter(Sale.date.between(start_date, end_date))
             .group_by(Customer.name)
             .order_by(Customer.name)
@@ -2351,11 +2347,10 @@ def export_category_sale_report():
             db.session.query(
                 Category.name.label("name"),
                 db.func.sum(Sale.quantity * Sale.sale_price).label("sale_amt"),
-                db.func.sum((Sale.sale_price - Purchase.purchase_price) * Sale.quantity).label("profit_amt"),
+                db.func.sum((Sale.sale_price - Item.purchase_price) * Sale.quantity).label("profit_amt"),
             )
             .join(Item, Sale.item_id == Item.id)
             .join(Category, Item.category_id == Category.id)
-            .join(Purchase, Sale.item_id == Purchase.item_id)
             .filter(Sale.date.between(start_date, end_date))
             .group_by(Category.name)
             .order_by(Category.name)
@@ -2468,6 +2463,28 @@ def export_customer_receipt_history():
     except ValueError:
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
+
+@app.cli.command("create-user")
+@click.option("--name", prompt="Name")
+@click.option("--email", prompt="Email")
+@click.option("--password", prompt="Password", hide_input=True, confirmation_prompt="Confirm password")
+def create_user_cmd(name, email, password):
+    """Create a verified user (administrator only)."""
+    email = email.strip().lower()
+    name = name.strip()
+    if not name or not email:
+        click.echo("Name and email are required.")
+        return
+    if len(password) < 6:
+        click.echo("Password must be at least 6 characters.")
+        return
+    if User.query.filter_by(email=email).first():
+        click.echo(f"Email {email} is already registered.")
+        return
+    user = User(name=name, email=email, password=pwd_context.hash(password), verified=True)
+    db.session.add(user)
+    db.session.commit()
+    click.echo(f"User created: {email} (verified)")
 
 if __name__ == "__main__":
     app.run(debug=True, host="127.0.0.1", port=5172)

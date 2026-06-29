@@ -16,6 +16,7 @@
         {% endwith %}
         {% set form_data = form_data|default({}) %}
         <form method="POST" action="{{ url_for('resend_verification') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="mb-3">
                 <label for="email" class="form-label">Email</label>
                 <input type="email" class="form-control" id="email" name="email" value="{{ form_data.get('email', '') }}" required>

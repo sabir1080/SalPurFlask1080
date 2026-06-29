@@ -6,4 +6,6 @@ instance/
 *.bak
 *.sqbpro
 .env
+for_my_information.txt
+static/*.csv
 

@@ -7,4 +7,5 @@ itsdangerous
 gunicorn
 passlib[bcrypt]
 bcrypt>=4.0.0
-passlib[argon2]
+flask-wtf
+anthropic1
