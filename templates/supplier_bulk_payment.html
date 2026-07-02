@@ -1,0 +1,230 @@
+{% extends 'base.html' %}
+{% block title %}Supplier Bulk Payment{% endblock %}
+{% block extra_head %}
+<style>
+.inv-row td { vertical-align: middle; }
+.amt-input { text-align: right; }
+.due-badge { font-size: 0.82rem; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-cash-stack text-primary"></i> Supplier Bulk Payment</h2>
+    <a href="{{ url_for('supplier_payment') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> Back to Payments
+    </a>
+</div>
+
+<!-- Step 1: Supplier Selection + Bulk Amount -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-primary text-white fw-semibold">
+        <i class="bi bi-person-fill"></i> Step 1 — Select Supplier &amp; Enter Total Amount
+    </div>
+    <div class="card-body">
+        <form method="GET" class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label fw-semibold">Supplier <span class="text-danger">*</span></label>
+                <select class="form-select" name="supplier_id" required>
+                    <option value="">— Choose Supplier —</option>
+                    {% for s in suppliers %}
+                    <option value="{{ s.id }}" {% if selected_supplier and s.id == selected_supplier.id %}selected{% endif %}>
+                        {{ s.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Total Payment Amount</label>
+                <input type="number" step="0.01" min="0" class="form-control"
+                       name="bulk_amount"
+                       placeholder="Optional — auto-distribute"
+                       value="{{ bulk_amount_val if bulk_amount_val else '' }}">
+                <div class="form-text">Leave blank to fill each invoice in full.</div>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-magic"></i> Load &amp; Auto-Distribute
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if selected_supplier %}
+
+{% if not outstanding %}
+<div class="alert alert-success">
+    <i class="bi bi-check-circle-fill"></i>
+    <strong>{{ selected_supplier.name }}</strong> has no outstanding invoices — all bills are paid!
+</div>
+
+{% else %}
+
+<!-- Auto-distribution notice -->
+{% if bulk_amount_val %}
+<div class="alert alert-info py-2 mb-3">
+    <i class="bi bi-magic"></i>
+    <strong>Auto-distribution applied</strong> —
+    <strong>{{ bulk_amount_val | fmt_num }}</strong> distributed oldest-invoice-first (FIFO).
+    {% if general_suggested > 0 %}
+    Excess <strong>{{ general_suggested | fmt_num }}</strong> placed in General / On Account.
+    {% endif %}
+    Adjust any amount below before saving.
+</div>
+{% endif %}
+
+<!-- Step 2: Payment Form -->
+<form method="POST">
+    <input type="hidden" name="supplier_id" value="{{ selected_supplier.id }}">
+
+    <!-- Invoice Table -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-light fw-semibold d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-building"></i> {{ selected_supplier.name }}</span>
+            {% if selected_supplier.contact %}
+            <small class="text-muted">{{ selected_supplier.contact }}</small>
+            {% endif %}
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+            <table class="table table-bordered table-sm mb-0 align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th style="width:60px">PUR #</th>
+                        <th>Date</th>
+                        <th>Items</th>
+                        <th class="text-end">Invoice Total</th>
+                        <th class="text-end">Already Paid</th>
+                        <th class="text-end text-danger">Balance Due</th>
+                        <th class="text-end" style="min-width:140px">Pay Now</th>
+                    </tr>
+                </thead>
+                <tbody id="invoiceBody">
+                    {% for row in outstanding %}
+                    {% set p = row.p %}
+                    <tr class="inv-row">
+                        <td><a href="{{ url_for('purchase_invoice', id=p.id) }}" target="_blank" class="fw-semibold">#{{ p.id }}</a></td>
+                        <td class="text-nowrap">{{ p.date.strftime('%d %b %Y') }}</td>
+                        <td>
+                            {% if p.line_items | length == 1 %}
+                                {{ p.line_items[0].item.name }}
+                            {% else %}
+                                <span class="badge bg-info text-dark due-badge">{{ p.line_items | length }} items</span>
+                                <small class="text-muted d-block">{{ p.line_items | map(attribute='item.name') | list | join(', ') | truncate(45) }}</small>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">{{ row.total | fmt_num }}</td>
+                        <td class="text-end text-success">{{ row.paid | fmt_num }}</td>
+                        <td class="text-end fw-bold text-danger">{{ row.due | fmt_num }}</td>
+                        <td class="text-end">
+                            <input type="hidden" name="purchase_id[]" value="{{ p.id }}">
+                            <input type="number" step="0.01" min="0" max="{{ row.due }}"
+                                class="form-control form-control-sm amt-input pay-now-input"
+                                name="amount[]"
+                                value="{{ row.suggested }}"
+                                data-due="{{ row.due }}"
+                                oninput="updateTotal()">
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="table-light">
+                    <tr>
+                        <td colspan="5" class="text-end fw-bold text-muted">General / On Account (optional):</td>
+                        <td></td>
+                        <td class="text-end">
+                            <input type="number" step="0.01" min="0"
+                                class="form-control form-control-sm amt-input"
+                                id="generalAmount" name="general_amount"
+                                value="{{ general_suggested }}" oninput="updateTotal()">
+                        </td>
+                    </tr>
+                    <tr class="table-primary">
+                        <td colspan="5" class="text-end fw-bold fs-6">Total Payment:</td>
+                        <td></td>
+                        <td class="text-end fw-bold fs-5 text-primary" id="grandTotal">0.00</td>
+                    </tr>
+                </tfoot>
+            </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Payment Details -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-light fw-semibold"><i class="bi bi-credit-card"></i> Payment Details</div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold">Payment Date <span class="text-danger">*</span></label>
+                    <input type="date" class="form-control" name="payment_date" required value="{{ today }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold">Payment Method <span class="text-danger">*</span></label>
+                    <select class="form-select" name="payment_method" required>
+                        {% for m in payment_methods %}
+                        <option value="{{ m }}">{{ m }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold">Reference / Cheque #</label>
+                    <input type="text" class="form-control" name="reference_no" placeholder="Optional">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold">Notes</label>
+                    <input type="text" class="form-control" name="notes" placeholder="Optional">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex gap-3 align-items-center">
+        <button type="submit" class="btn btn-primary btn-lg">
+            <i class="bi bi-save-fill"></i> Save Bulk Payment
+        </button>
+        <button type="button" class="btn btn-outline-secondary" onclick="clearAll()">Clear All</button>
+        <button type="button" class="btn btn-outline-success" onclick="payAll()">Pay Full Balance</button>
+        <span class="ms-auto text-muted small">Total: <strong class="text-primary fs-5" id="grandTotal2">0.00</strong></span>
+    </div>
+</form>
+
+{% endif %}
+{% endif %}
+
+<script>
+function updateTotal() {
+    let total = 0;
+    document.querySelectorAll('.pay-now-input').forEach(inp => {
+        const v = parseFloat(inp.value) || 0;
+        const due = parseFloat(inp.dataset.due) || 0;
+        inp.classList.toggle('is-invalid', v < 0 || v > due + 0.001);
+        total += Math.max(0, v);
+    });
+    const gen = parseFloat(document.getElementById('generalAmount')?.value || 0) || 0;
+    total += Math.max(0, gen);
+    const fmt = total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const el1 = document.getElementById('grandTotal');
+    const el2 = document.getElementById('grandTotal2');
+    if (el1) el1.textContent = fmt;
+    if (el2) el2.textContent = fmt;
+}
+
+function clearAll() {
+    document.querySelectorAll('.pay-now-input').forEach(inp => { inp.value = '0'; inp.classList.remove('is-invalid'); });
+    const gen = document.getElementById('generalAmount');
+    if (gen) gen.value = '0';
+    updateTotal();
+}
+
+function payAll() {
+    document.querySelectorAll('.pay-now-input').forEach(inp => {
+        inp.value = inp.dataset.due;
+        inp.classList.remove('is-invalid');
+    });
+    updateTotal();
+}
+
+document.addEventListener('DOMContentLoaded', updateTotal);
+</script>
+{% endblock %}

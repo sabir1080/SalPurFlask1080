@@ -13,86 +13,74 @@
 </form>
 
 <!-- Add Return Form -->
-<div class="card mb-4">
-    <div class="card-header fw-bold"><i class="bi bi-arrow-return-right"></i> Record Sale Return</div>
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-warning bg-opacity-25 fw-semibold"><i class="bi bi-arrow-return-right"></i> Record Sale Return</div>
     <div class="card-body">
-        {% if sales_available %}
+        {% if items_available %}
         <form method="POST">
-            <div class="row g-3">
-                <div class="col-md-4">
-                    <label class="form-label">Select Sale <span class="text-danger">*</span></label>
-                    <select class="form-select" name="sale_id" id="saleSelect" required>
-                        <option value="">— Select Sale —</option>
-                        {% for row in sales_available %}
-                        <option value="{{ row.s.id }}"
-                            data-price="{{ row.s.sale_price }}"
-                            data-remaining="{{ row.remaining }}">
-                            #{{ row.s.id }} — {{ row.s.id_customer.name }} — {{ row.s.id_item.name }}
-                            (Qty: {{ row.s.quantity }}, Remaining: {{ row.remaining }})
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label">Quantity <span class="text-danger">*</span></label>
-                    <input type="number" class="form-control" name="quantity" id="returnQty" min="1" required>
-                    <small class="text-muted" id="qtyHint"></small>
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label">Return Price/Unit <span class="text-danger">*</span></label>
-                    <input type="number" step="0.01" class="form-control" name="return_price" id="returnPrice" required>
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label">Date <span class="text-danger">*</span></label>
-                    <input type="date" class="form-control" name="date" required>
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label">Reason</label>
-                    <input type="text" class="form-control" name="reason" placeholder="Optional">
+            <div class="row g-3 mb-3">
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold">Return Date <span class="text-danger">*</span></label>
+                    <input type="date" class="form-control" name="date" required value="{{ today }}">
                 </div>
             </div>
-            <button type="submit" class="btn btn-warning mt-3">
-                <i class="bi bi-arrow-return-right"></i> Record Return
-            </button>
+
+            <div class="table-responsive mb-2">
+            <table class="table table-bordered table-sm align-middle" id="retTable">
+                <thead class="table-dark">
+                    <tr>
+                        <th style="min-width:320px">Sale / Item <span class="text-danger">*</span></th>
+                        <th style="min-width:100px">Qty <span class="text-danger">*</span></th>
+                        <th style="min-width:130px">Return Price <span class="text-danger">*</span></th>
+                        <th style="min-width:160px">Reason</th>
+                        <th style="width:40px"></th>
+                    </tr>
+                </thead>
+                <tbody id="retBody">
+                    <tr class="ret-row">
+                        <td>
+                            <select class="form-select form-select-sm si-select" name="sale_item_id[]" required onchange="fillRow(this)">
+                                <option value="">— Select Sale / Item —</option>
+                                {% for row in items_available %}
+                                <option value="{{ row.si.id }}"
+                                    data-price="{{ row.si.sale_price }}"
+                                    data-remaining="{{ row.remaining }}">
+                                    #SAL-{{ row.si.sale_header.id }} — {{ row.si.sale_header.id_customer.name }} — {{ row.si.item.name }} (Rem: {{ row.remaining }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </td>
+                        <td>
+                            <input type="number" class="form-control form-control-sm qty-input" name="quantity[]" min="1" required>
+                            <small class="text-muted qty-hint"></small>
+                        </td>
+                        <td><input type="number" step="0.01" class="form-control form-control-sm" name="return_price[]" min="0" required></td>
+                        <td><input type="text" class="form-control form-control-sm" name="reason[]" placeholder="Optional"></td>
+                        <td class="text-center"><button type="button" class="btn btn-danger btn-sm" onclick="removeRow(this)">×</button></td>
+                    </tr>
+                </tbody>
+            </table>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-outline-warning btn-sm" onclick="addRow()"><i class="bi bi-plus-circle"></i> Add Item</button>
+                <button type="submit" class="btn btn-warning"><i class="bi bi-arrow-return-right"></i> Record Returns</button>
+            </div>
         </form>
-        <script>
-        document.getElementById('saleSelect').addEventListener('change', function() {
-            var opt = this.options[this.selectedIndex];
-            var price = opt.getAttribute('data-price');
-            var remaining = opt.getAttribute('data-remaining');
-            if (price) {
-                document.getElementById('returnPrice').value = price;
-                document.getElementById('returnQty').max = remaining;
-                document.getElementById('qtyHint').textContent = 'Max returnable: ' + remaining;
-            } else {
-                document.getElementById('returnPrice').value = '';
-                document.getElementById('returnQty').removeAttribute('max');
-                document.getElementById('qtyHint').textContent = '';
-            }
-        });
-        </script>
         {% else %}
-        <div class="alert alert-info mb-0">
-            No sales available for return (all quantities already returned or no sales exist).
-        </div>
+        <div class="alert alert-info mb-0">No sale items available for return (all quantities already returned or no sales exist).</div>
         {% endif %}
     </div>
 </div>
 
 <!-- Returns Table -->
-<table class="table table-bordered">
+<div class="table-responsive">
+<table class="table table-bordered table-sm table-hover">
     <thead class="table-dark">
         <tr>
-            <th>ID</th>
-            <th>Sale #</th>
-            <th>Customer</th>
-            <th>Item</th>
-            <th class="text-end">Qty</th>
-            <th class="text-end">Price</th>
-            <th class="text-end">Total</th>
-            <th>Date</th>
-            <th>Reason</th>
-            <th>Action</th>
+            <th>ID</th><th>Sale #</th><th>Customer</th><th>Item</th>
+            <th class="text-end">Qty</th><th class="text-end">Price</th><th class="text-end">Total</th>
+            <th>Date</th><th>Reason</th><th>Action</th>
         </tr>
     </thead>
     <tbody>
@@ -108,10 +96,11 @@
             <td>{{ r.date.strftime('%Y-%m-%d') }}</td>
             <td>{{ r.reason or '—' }}</td>
             <td>
+                {% if current_user.is_admin %}
                 <form method="POST" action="{{ url_for('delete_sale_return', id=r.id) }}" class="d-inline">
-                    <button type="submit" class="btn btn-danger btn-sm"
-                        onclick="return confirm('Delete this return? Stock will be deducted back.')">Delete</button>
+                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this return? Stock will be deducted back.')">Delete</button>
                 </form>
+                {% endif %}
             </td>
         </tr>
         {% else %}
@@ -119,6 +108,52 @@
         {% endfor %}
     </tbody>
 </table>
-
+</div>
 <div class="pagination">{{ pagination.links }}</div>
+
+<script>
+const siOptions = `{% for row in items_available %}<option value="{{ row.si.id }}" data-price="{{ row.si.sale_price }}" data-remaining="{{ row.remaining }}">#SAL-{{ row.si.sale_header.id }} — {{ row.si.sale_header.id_customer.name }} — {{ row.si.item.name }} (Rem: {{ row.remaining }})</option>{% endfor %}`;
+
+function fillRow(sel) {
+    const opt = sel.options[sel.selectedIndex];
+    const row = sel.closest('tr');
+    const remaining = opt.getAttribute('data-remaining');
+    const price = opt.getAttribute('data-price');
+    const qtyInput = row.querySelector('.qty-input');
+    const hint = row.querySelector('.qty-hint');
+    if (price) {
+        row.querySelector('[name="return_price[]"]').value = price;
+        qtyInput.max = remaining;
+        hint.textContent = 'Max: ' + remaining;
+    } else {
+        row.querySelector('[name="return_price[]"]').value = '';
+        qtyInput.removeAttribute('max');
+        hint.textContent = '';
+    }
+}
+
+function addRow() {
+    const tbody = document.getElementById('retBody');
+    const tr = document.createElement('tr');
+    tr.className = 'ret-row';
+    tr.innerHTML = `
+        <td><select class="form-select form-select-sm si-select" name="sale_item_id[]" required onchange="fillRow(this)">
+            <option value="">— Select Sale / Item —</option>${siOptions}
+        </select></td>
+        <td>
+            <input type="number" class="form-control form-control-sm qty-input" name="quantity[]" min="1" required>
+            <small class="text-muted qty-hint"></small>
+        </td>
+        <td><input type="number" step="0.01" class="form-control form-control-sm" name="return_price[]" min="0" required></td>
+        <td><input type="text" class="form-control form-control-sm" name="reason[]" placeholder="Optional"></td>
+        <td class="text-center"><button type="button" class="btn btn-danger btn-sm" onclick="removeRow(this)">×</button></td>`;
+    tbody.appendChild(tr);
+}
+
+function removeRow(btn) {
+    const rows = document.querySelectorAll('#retBody .ret-row');
+    if (rows.length === 1) { alert('At least one row is required.'); return; }
+    btn.closest('tr').remove();
+}
+</script>
 {% endblock %}

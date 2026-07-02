@@ -1,70 +1,122 @@
 {% extends 'base.html' %}
 {% block content %}
-{% set form_data = form_data|default({}) %}
-<h2>Purchases</h2>
+<h2><i class="bi bi-cart-plus text-primary"></i> Purchases</h2>
 
-<!-- Search Form -->
+<!-- Search -->
 <form method="GET" class="mb-4">
     <div class="input-group">
-        <input type="text" class="form-control" name="search" placeholder="Search by supplier, item or category" value="{{ search }}">
-        <button type="submit" class="btn btn-primary">Search</button>
+        <input type="text" class="form-control" name="search" placeholder="Search by supplier name" value="{{ search }}">
+        <button type="submit" class="btn btn-primary" title="Search purchases">Search</button>
+        {% if search %}<a href="{{ url_for('purchase') }}" class="btn btn-outline-secondary" title="Clear search">Clear</a>{% endif %}
     </div>
 </form>
 
+{% if current_user.is_manager %}
 <!-- Add Purchase Form -->
-<form method="POST" class="mb-4">
-    <div class="row">
-        <div class="col-md-3">
-            <label for="supplier_id" class="form-label">Supplier</label>
-            <select class="form-control" id="supplier_id" name="supplier_id" required>
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-primary text-white fw-semibold">
+        <i class="bi bi-plus-circle"></i> New Purchase Invoice
+    </div>
+    <div class="card-body">
+<form method="POST" id="purchaseForm">
+    <div class="row g-3 mb-3">
+        <div class="col-md-4">
+            <label class="form-label fw-semibold">Supplier <span class="text-danger">*</span></label>
+            <select class="form-select" name="supplier_id" required>
                 <option value="">Select Supplier</option>
-                {% for supplier in suppliers %}
-                <option value="{{ supplier.id }}" {% if form_data.get('supplier_id', '')|string == supplier.id|string %}selected{% endif %}>{{ supplier.name }}</option>
+                {% for s in suppliers %}
+                <option value="{{ s.id }}">{{ s.name }}</option>
                 {% endfor %}
             </select>
         </div>
         <div class="col-md-3">
-            <label for="item_id" class="form-label">Item</label>
-            <select class="form-control" id="item_id" name="item_id" required>
-                <option value="">Select Item</option>
-                {% for item in items %}
-                <option value="{{ item.id }}" {% if form_data.get('item_id', '')|string == item.id|string %}selected{% endif %}>{{ item.name }}{% if item.id_category %} ({{ item.id_category.name }}){% endif %}</option>
-                {% endfor %}
-            </select>
+            <label class="form-label fw-semibold">Date <span class="text-danger">*</span></label>
+            <input type="date" class="form-control" name="date" required value="{{ today }}">
         </div>
-        <div class="col-md-2">
-            <label for="quantity" class="form-label">Quantity</label>
-            <input type="number" class="form-control" id="quantity" name="quantity" value="{{ form_data.get('quantity', '') }}" required>
-        </div>
-        <div class="col-md-2">
-            <label for="purchase_price" class="form-label">Price</label>
-            <input type="number" step="0.01" class="form-control" id="purchase_price" name="purchase_price" value="{{ form_data.get('purchase_price', '') }}" required>
-        </div>
-        <div class="col-md-2">
-            <label for="date" class="form-label">Date</label>
-            <input type="date" class="form-control" id="date" name="date" value="{{ form_data.get('date', '') }}" required>
+        <div class="col-md-5">
+            <label class="form-label fw-semibold">Notes</label>
+            <input type="text" class="form-control" name="notes" placeholder="Optional invoice notes">
         </div>
     </div>
-    <button type="submit" class="btn btn-primary mt-3">Add Purchase</button>
-</form>
-<a href="{{ url_for('supplier_payment') }}" class="btn btn-outline-primary mb-3">Record Supplier Payment</a>
 
-<!-- Purchase Table -->
-<table class="table table-bordered">
-    <thead>
+    <!-- Line Items Table -->
+    <div class="table-responsive mb-2">
+    <table class="table table-bordered table-sm align-middle" id="itemsTable">
+        <thead class="table-dark">
+            <tr>
+                <th style="min-width:200px">Item <span class="text-danger">*</span></th>
+                <th style="min-width:100px">Qty <span class="text-danger">*</span></th>
+                <th style="min-width:120px">Price / Unit <span class="text-danger">*</span></th>
+                <th style="min-width:120px">Discount</th>
+                <th style="min-width:90px">Tax (%)</th>
+                <th style="min-width:110px" class="text-end">Net Amount</th>
+                <th style="width:40px"></th>
+            </tr>
+        </thead>
+        <tbody id="itemsBody">
+            <tr class="item-row">
+                <td>
+                    <select class="form-select form-select-sm item-select" name="item_id[]" required onchange="fetchPrice(this)">
+                        <option value="">Select Item</option>
+                        {% for it in items %}
+                        <option value="{{ it.id }}" data-price="{{ it.purchase_price or '' }}" data-unit="{{ it.unit or 'Pcs' }}">{{ it.name }}{% if it.id_category %} ({{ it.id_category.name }}){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </td>
+                <td><input type="number" class="form-control form-control-sm qty-input" name="quantity[]" min="1" placeholder="0" oninput="calcRow(this)" required></td>
+                <td><input type="number" step="0.01" class="form-control form-control-sm price-input" name="purchase_price[]" min="0" placeholder="0.00" oninput="calcRow(this)"></td>
+                <td>
+                    <div class="input-group input-group-sm">
+                        <select class="form-select form-select-sm disc-type" name="discount_type[]" onchange="calcRow(this)">
+                            <option value="percent">%</option>
+                            <option value="fixed">Fixed</option>
+                        </select>
+                        <input type="number" step="0.01" class="form-control form-control-sm disc-val" name="discount_value[]" value="0" min="0" oninput="calcRow(this)">
+                    </div>
+                </td>
+                <td><input type="number" step="0.01" class="form-control form-control-sm tax-input" name="tax_percent[]" value="0" min="0" oninput="calcRow(this)"></td>
+                <td class="text-end fw-semibold row-total text-success">—</td>
+                <td class="text-center">
+                    <button type="button" class="btn btn-danger btn-sm remove-row" onclick="removeRow(this)" title="Remove this row">×</button>
+                </td>
+            </tr>
+        </tbody>
+        <tfoot>
+            <tr class="table-light">
+                <td colspan="5" class="text-end fw-bold">Grand Total:</td>
+                <td class="text-end fw-bold text-primary fs-5" id="grandTotal">0.00</td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+    </div>
+
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-outline-primary btn-sm" onclick="addRow()" title="Add another item row">
+            <i class="bi bi-plus-circle"></i> Add Item
+        </button>
+        <button type="submit" class="btn btn-primary" title="Save purchase invoice">
+            <i class="bi bi-save"></i> Save Purchase
+        </button>
+    </div>
+</form>
+    </div>
+</div>
+{% endif %}
+
+<a href="{{ url_for('supplier_payment') }}" class="btn btn-outline-primary btn-sm mb-3" title="Go to supplier payments">
+    <i class="bi bi-cash-coin"></i> Record Supplier Payment
+</a>
+
+<!-- Purchase List -->
+<div class="table-responsive">
+<table class="table table-bordered table-sm table-hover">
+    <thead class="table-dark">
         <tr>
-            <th>ID</th>
-            <th>Supplier</th>
-            <th>Item</th>
-            <th>Category</th>
-            <th>Qty</th>
-            <th>Price</th>
-            <th>Total</th>
-            <th>Paid</th>
-            <th>Due</th>
-            <th>Status</th>
-            <th>Date</th>
-            <th>Actions</th>
+            <th>#</th><th>Supplier</th><th>Items</th>
+            <th class="text-end">Total Qty</th>
+            <th class="text-end">Net Total</th><th class="text-end">Paid</th>
+            <th class="text-end">Due</th><th>Status</th><th>Date</th><th>Notes</th><th>Actions</th>
         </tr>
     </thead>
     <tbody>
@@ -76,35 +128,103 @@
         <tr>
             <td>{{ p.id }}</td>
             <td>{{ p.id_supplier.name }}</td>
-            <td>{{ p.id_item.name }}</td>
-            <td>{{ p.id_item.id_category.name if p.id_item.id_category else 'N/A' }}</td>
-            <td>{{ p.quantity | fmt_num }}</td>
-            <td>{{ p.purchase_price | fmt_num }}</td>
-            <td>{{ p_total | fmt_num }}</td>
-            <td>{{ p_paid | fmt_num }}</td>
-            <td>{{ p_due | fmt_num }}</td>
             <td>
-                <span class="badge pay-status-{{ p_status|lower }}">{{ p_status }}</span>
+                {% if p.line_items | length == 1 %}
+                    {{ p.line_items[0].item.name }}
+                {% else %}
+                    <span class="badge bg-info text-dark">{{ p.line_items | length }} items</span>
+                    <small class="text-muted d-block">{{ p.line_items | map(attribute='item.name') | list | join(', ') | truncate(40) }}</small>
+                {% endif %}
             </td>
-            <td>{{ p.date.strftime('%Y-%m-%d') }}</td>
-            <td>
-                <a href="{{ url_for('purchase_invoice', id=p.id) }}" class="btn btn-info btn-sm" target="_blank">Invoice</a>
-                <a href="{{ url_for('edit_purchase', id=p.id) }}" class="btn btn-warning btn-sm">Edit</a>
+            <td class="text-end">{{ p.line_items | sum(attribute='quantity') | fmt_num }}</td>
+            <td class="text-end fw-semibold">{{ p_total | fmt_num }}</td>
+            <td class="text-end">{{ p_paid | fmt_num }}</td>
+            <td class="text-end {% if p_due > 0 %}text-danger{% endif %}">{{ p_due | fmt_num }}</td>
+            <td><span class="badge pay-status-{{ p_status|lower }}">{{ p_status }}</span></td>
+            <td class="text-nowrap">{{ p.date.strftime('%Y-%m-%d') }}</td>
+            <td class="text-muted small">{{ p.notes or '—' }}</td>
+            <td class="text-nowrap">
+                <a href="{{ url_for('purchase_invoice', id=p.id) }}" class="btn btn-info btn-sm" target="_blank" title="View purchase invoice"><i class="bi bi-receipt"></i></a>
+                {% if current_user.is_manager %}
+                <a href="{{ url_for('edit_purchase', id=p.id) }}" class="btn btn-warning btn-sm" title="Edit this purchase"><i class="bi bi-pencil"></i></a>
+                {% endif %}
+                {% if current_user.is_admin %}
                 <form method="POST" action="{{ url_for('delete_purchase', id=p.id) }}" class="d-inline">
-                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure?')">Delete</button>
+                    <button type="submit" class="btn btn-danger btn-sm" title="Delete this purchase" onclick="return confirm('Delete this purchase? Stock will be reversed.')"><i class="bi bi-trash"></i></button>
                 </form>
+                {% endif %}
             </td>
         </tr>
         {% else %}
-        <tr>
-            <td colspan="12">No purchases found</td>
-        </tr>
+        <tr><td colspan="11" class="text-center text-muted py-3">No purchases found</td></tr>
         {% endfor %}
     </tbody>
 </table>
-
-<!-- Pagination -->
-<div class="pagination">
-    {{ pagination.links }}
 </div>
+<div class="pagination">{{ pagination.links }}</div>
+
+<script>
+const itemOptions = `{% for it in items %}<option value="{{ it.id }}" data-price="{{ it.purchase_price or '' }}" data-unit="{{ it.unit or 'Pcs' }}">{{ it.name }}{% if it.id_category %} ({{ it.id_category.name }}){% endif %}</option>{% endfor %}`;
+
+function fetchPrice(sel) {
+    const opt = sel.options[sel.selectedIndex];
+    const row = sel.closest('tr');
+    const priceInput = row.querySelector('.price-input');
+    if (opt && opt.dataset.price) priceInput.value = opt.dataset.price;
+    calcRow(sel);
+}
+
+function calcRow(el) {
+    const row = el.closest('tr');
+    const qty   = parseFloat(row.querySelector('.qty-input').value) || 0;
+    const price = parseFloat(row.querySelector('.price-input').value) || 0;
+    const dType = row.querySelector('.disc-type').value;
+    const dVal  = parseFloat(row.querySelector('.disc-val').value) || 0;
+    const tax   = parseFloat(row.querySelector('.tax-input').value) || 0;
+    const gross = qty * price;
+    const disc  = dType === 'percent' ? gross * dVal / 100 : Math.min(dVal, gross);
+    const taxAmt = (gross - disc) * tax / 100;
+    const net = gross - disc + taxAmt;
+    row.querySelector('.row-total').textContent = net > 0 ? net.toFixed(2) : '—';
+    calcGrand();
+}
+
+function calcGrand() {
+    let total = 0;
+    document.querySelectorAll('.row-total').forEach(td => {
+        const v = parseFloat(td.textContent);
+        if (!isNaN(v)) total += v;
+    });
+    document.getElementById('grandTotal').textContent = total.toFixed(2);
+}
+
+function addRow() {
+    const tbody = document.getElementById('itemsBody');
+    const newRow = document.createElement('tr');
+    newRow.className = 'item-row';
+    newRow.innerHTML = `
+        <td><select class="form-select form-select-sm item-select" name="item_id[]" required onchange="fetchPrice(this)">
+            <option value="">Select Item</option>${itemOptions}
+        </select></td>
+        <td><input type="number" class="form-control form-control-sm qty-input" name="quantity[]" min="1" placeholder="0" oninput="calcRow(this)" required></td>
+        <td><input type="number" step="0.01" class="form-control form-control-sm price-input" name="purchase_price[]" min="0" placeholder="0.00" oninput="calcRow(this)"></td>
+        <td><div class="input-group input-group-sm">
+            <select class="form-select form-select-sm disc-type" name="discount_type[]" onchange="calcRow(this)">
+                <option value="percent">%</option><option value="fixed">Fixed</option>
+            </select>
+            <input type="number" step="0.01" class="form-control form-control-sm disc-val" name="discount_value[]" value="0" min="0" oninput="calcRow(this)">
+        </div></td>
+        <td><input type="number" step="0.01" class="form-control form-control-sm tax-input" name="tax_percent[]" value="0" min="0" oninput="calcRow(this)"></td>
+        <td class="text-end fw-semibold row-total text-success">—</td>
+        <td class="text-center"><button type="button" class="btn btn-danger btn-sm remove-row" onclick="removeRow(this)" title="Remove row">×</button></td>`;
+    tbody.appendChild(newRow);
+}
+
+function removeRow(btn) {
+    const rows = document.querySelectorAll('#itemsBody .item-row');
+    if (rows.length === 1) { alert('At least one item row is required.'); return; }
+    btn.closest('tr').remove();
+    calcGrand();
+}
+</script>
 {% endblock %}

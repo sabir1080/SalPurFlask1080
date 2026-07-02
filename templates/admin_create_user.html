@@ -1,0 +1,104 @@
+{% extends 'base.html' %}
+{% block title %}Create User{% endblock %}
+{% block content %}
+
+<div class="d-flex align-items-center mb-4 gap-3">
+    <a href="{{ url_for('admin_users') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+    <h2 class="mb-0"><i class="bi bi-person-plus-fill"></i> Create New User</h2>
+</div>
+
+<div class="card border-0 shadow-sm" style="max-width:560px">
+    <div class="card-body p-4">
+    <form method="POST">
+        <div class="mb-3">
+            <label class="form-label fw-semibold">Full Name</label>
+            <input type="text" class="form-control" name="name" placeholder="e.g. Ahmed Khan" required>
+        </div>
+        <div class="mb-3">
+            <label class="form-label fw-semibold">Email Address</label>
+            <input type="email" class="form-control" name="email" placeholder="user@example.com" required>
+        </div>
+        <div class="mb-3">
+            <label class="form-label fw-semibold">Password</label>
+            <div class="input-group">
+                <input type="password" class="form-control" name="password" id="pw1"
+                       placeholder="Min 6 characters" autocomplete="new-password" required>
+                <button type="button" class="btn btn-outline-secondary" onclick="togglePw('pw1',this)" tabindex="-1">
+                    <i class="bi bi-eye"></i>
+                </button>
+            </div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label fw-semibold">Confirm Password</label>
+            <div class="input-group">
+                <input type="password" class="form-control" name="confirm_password" id="pw2"
+                       placeholder="Retype password" autocomplete="new-password" required>
+                <button type="button" class="btn btn-outline-secondary" onclick="togglePw('pw2',this)" tabindex="-1">
+                    <i class="bi bi-eye"></i>
+                </button>
+            </div>
+            <div id="pwMatch" class="form-text"></div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label fw-semibold">Role</label>
+            <select class="form-select" name="role" required>
+                <option value="staff" selected>Staff — Add/view transactions only</option>
+                <option value="manager">Manager — Add/edit all data + reports (no delete)</option>
+                <option value="admin">Admin — Full access + user management</option>
+            </select>
+        </div>
+        <div class="mb-4">
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="verified" value="1" id="verified" checked>
+                <label class="form-check-label" for="verified">
+                    Mark as Verified (user can log in immediately)
+                </label>
+            </div>
+        </div>
+
+        <!-- Role guide -->
+        <div class="bg-light rounded p-3 small mb-4">
+            <div class="fw-semibold mb-2">Role Permissions:</div>
+            <table class="table table-sm table-borderless mb-0">
+                <thead><tr><th>Action</th><th class="text-center">Staff</th><th class="text-center">Manager</th><th class="text-center">Admin</th></tr></thead>
+                <tbody>
+                    <tr><td>Add Transactions</td><td class="text-center text-success">✓</td><td class="text-center text-success">✓</td><td class="text-center text-success">✓</td></tr>
+                    <tr><td>Edit Records</td><td class="text-center text-danger">✗</td><td class="text-center text-success">✓</td><td class="text-center text-success">✓</td></tr>
+                    <tr><td>Delete Records</td><td class="text-center text-danger">✗</td><td class="text-center text-danger">✗</td><td class="text-center text-success">✓</td></tr>
+                    <tr><td>View Reports</td><td class="text-center text-danger">✗</td><td class="text-center text-success">✓</td><td class="text-center text-success">✓</td></tr>
+                    <tr><td>Manage Users</td><td class="text-center text-danger">✗</td><td class="text-center text-danger">✗</td><td class="text-center text-success">✓</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-person-plus-fill"></i> Create User
+        </button>
+    </form>
+    </div>
+</div>
+
+<script>
+function togglePw(id, btn) {
+    var inp = document.getElementById(id);
+    var show = inp.type === 'password';
+    inp.type = show ? 'text' : 'password';
+    btn.querySelector('i').className = show ? 'bi bi-eye-slash' : 'bi bi-eye';
+}
+document.getElementById('pw2').addEventListener('input', function () {
+    var p1 = document.getElementById('pw1').value;
+    var el = document.getElementById('pwMatch');
+    if (!this.value) { el.textContent = ''; return; }
+    if (p1 === this.value) {
+        el.innerHTML = '<span class="text-success">&#10003; Passwords match</span>';
+    } else {
+        el.innerHTML = '<span class="text-danger">&#10007; Passwords do not match</span>';
+    }
+});
+document.getElementById('pw1').addEventListener('input', function () {
+    document.getElementById('pw2').dispatchEvent(new Event('input'));
+});
+</script>
+{% endblock %}

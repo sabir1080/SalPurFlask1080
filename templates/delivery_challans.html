@@ -1,0 +1,158 @@
+{% extends 'base.html' %}
+{% block title %}Delivery Challans{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-truck text-info"></i> Delivery Challans</h2>
+</div>
+
+<!-- Filter Bar -->
+<form method="GET" class="row g-2 mb-3">
+    <div class="col-md-4">
+        <input type="text" class="form-control" name="search" placeholder="Search customer" value="{{ search }}">
+    </div>
+    <div class="col-md-3">
+        <select class="form-select" name="status">
+            <option value="">All Statuses</option>
+            {% for s in challan_statuses %}
+            <option value="{{ s }}" {% if s == status_filter %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-primary">Filter</button>
+        <a href="{{ url_for('delivery_challans') }}" class="btn btn-outline-secondary">Clear</a>
+    </div>
+</form>
+
+<!-- Create New Challan -->
+{% if pending_sales %}
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-info text-white fw-semibold"><i class="bi bi-plus-circle"></i> Create Delivery Challan</div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('create_delivery_challan') }}" class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label fw-semibold">Sale Invoice <span class="text-danger">*</span></label>
+                <select class="form-select" name="sale_id" required>
+                    <option value="">— Select Sale —</option>
+                    {% for s in pending_sales %}
+                    <option value="{{ s.id }}">
+                        #{{ s.id }} — {{ s.id_customer.name }} ({{ s.date.strftime('%d %b %Y') }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-semibold">Challan Date <span class="text-danger">*</span></label>
+                <input type="date" class="form-control" name="challan_date" value="{{ today }}" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Transport / Carrier</label>
+                <input type="text" class="form-control" name="transport" placeholder="e.g. TCS Courier">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Notes</label>
+                <input type="text" class="form-control" name="notes" placeholder="Optional">
+            </div>
+            <div class="col-12">
+                <button type="submit" class="btn btn-info text-white"><i class="bi bi-truck"></i> Create Challan</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<!-- Challans List -->
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+        <table class="table table-bordered table-hover mb-0">
+            <thead class="table-dark">
+                <tr>
+                    <th>DC #</th><th>Sale #</th><th>Customer</th>
+                    <th>Challan Date</th><th>Dispatch</th><th>Delivery</th>
+                    <th>Transport</th>
+                    <th class="text-center">Status</th>
+                    <th>Update</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for dc in challans %}
+                <tr>
+                    <td><strong>#{{ dc.id }}</strong></td>
+                    <td><a href="{{ url_for('sale_invoice', id=dc.sale_id) }}" target="_blank">#{{ dc.sale_id }}</a></td>
+                    <td>{{ dc.sale.id_customer.name }}</td>
+                    <td class="text-nowrap">{{ dc.challan_date.strftime('%d %b %Y') }}</td>
+                    <td class="text-nowrap">{{ dc.dispatch_date.strftime('%d %b %Y') if dc.dispatch_date else '—' }}</td>
+                    <td class="text-nowrap">{{ dc.delivery_date.strftime('%d %b %Y') if dc.delivery_date else '—' }}</td>
+                    <td>{{ dc.transport or '—' }}</td>
+                    <td class="text-center">
+                        <span class="badge
+                            {% if dc.status == 'Delivered' %}bg-success
+                            {% elif dc.status == 'Dispatched' %}bg-primary
+                            {% elif dc.status == 'Cancelled' %}bg-danger
+                            {% else %}bg-warning text-dark{% endif %}">
+                            {{ dc.status }}
+                        </span>
+                    </td>
+                    <td>
+                        <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal"
+                                data-bs-target="#updateModal{{ dc.id }}">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <!-- Update Modal -->
+                        <div class="modal fade" id="updateModal{{ dc.id }}" tabindex="-1">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">Update DC #{{ dc.id }}</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <form method="POST" action="{{ url_for('update_challan_status', id=dc.id) }}">
+                                        <div class="modal-body row g-3">
+                                            <div class="col-6">
+                                                <label class="form-label">Status</label>
+                                                <select class="form-select" name="status">
+                                                    {% for s in challan_statuses %}
+                                                    <option value="{{ s }}" {% if s == dc.status %}selected{% endif %}>{{ s }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                            </div>
+                                            <div class="col-6">
+                                                <label class="form-label">Transport</label>
+                                                <input type="text" class="form-control" name="transport" value="{{ dc.transport or '' }}">
+                                            </div>
+                                            <div class="col-6">
+                                                <label class="form-label">Dispatch Date</label>
+                                                <input type="date" class="form-control" name="dispatch_date"
+                                                       value="{{ dc.dispatch_date.strftime('%Y-%m-%d') if dc.dispatch_date else '' }}">
+                                            </div>
+                                            <div class="col-6">
+                                                <label class="form-label">Delivery Date</label>
+                                                <input type="date" class="form-control" name="delivery_date"
+                                                       value="{{ dc.delivery_date.strftime('%Y-%m-%d') if dc.delivery_date else '' }}">
+                                            </div>
+                                            <div class="col-12">
+                                                <label class="form-label">Notes</label>
+                                                <input type="text" class="form-control" name="notes" value="{{ dc.notes or '' }}">
+                                            </div>
+                                        </div>
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                            <button type="submit" class="btn btn-primary">Save</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="9" class="text-center text-muted py-3">No delivery challans yet</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+</div>
+{{ pagination.links }}
+{% endblock %}

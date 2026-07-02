@@ -1,5 +1,5 @@
 #app.py
-from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory, session, abort
+from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory, send_file, session, abort
 from flask_sqlalchemy import SQLAlchemy
 from flask_paginate import Pagination, get_page_args
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
@@ -9,6 +9,9 @@ from passlib.context import CryptContext
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 import csv
+from io import BytesIO
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment
 import os
 import secrets
 from sqlalchemy.exc import IntegrityError
@@ -34,6 +37,8 @@ app.config["MAIL_PORT"] = 587
 app.config["MAIL_USE_TLS"] = True
 app.config["MAIL_USERNAME"] = os.getenv("MAIL_USERNAME", "").strip()
 app.config["MAIL_PASSWORD"] = os.getenv("MAIL_PASSWORD", "").replace(" ", "")
+app.config["COMPANY_NAME"] = os.getenv("COMPANY_NAME", "TradeFlow")
+app.config["COMPANY_TAGLINE"] = os.getenv("COMPANY_TAGLINE", "Inventory & Accounts Management")
 
 # Gmail App Password: https://myaccount.google.com/apppasswords
 # .env file (project root) mein MAIL_USERNAME aur MAIL_PASSWORD set karein
@@ -118,15 +123,48 @@ def verified_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+def role_required(*roles):
+    """Decorator: user must be verified AND have one of the given roles."""
+    def decorator(f):
+        @wraps(f)
+        @login_required
+        def decorated(*args, **kwargs):
+            if not current_user.verified:
+                flash(f"Please verify {current_user.email} to access this page.", "danger")
+                return redirect(url_for("signin"))
+            if current_user.role not in roles:
+                flash("You do not have permission to access this page.", "danger")
+                return redirect(url_for("purchase"))
+            return f(*args, **kwargs)
+        return decorated
+    return decorator
+
+def admin_required(f):
+    return role_required("admin")(f)
+
+def manager_required(f):
+    return role_required("admin", "manager")(f)
+
 # Models
+ROLES = ("admin", "manager", "staff")
+
 class User(db.Model, UserMixin):
     id                  = db.Column(db.Integer, primary_key=True)
     name                = db.Column(db.String(100), nullable=False)
     email               = db.Column(db.String(120), unique=True, nullable=False)
     password            = db.Column(db.String(255), nullable=False)
     verified            = db.Column(db.Boolean, default=False, nullable=False)
+    role                = db.Column(db.String(20), nullable=False, default="staff")
     reset_token         = db.Column(db.String(120), nullable=True)
     reset_token_expiry  = db.Column(db.DateTime, nullable=True)
+
+    @property
+    def is_admin(self):
+        return self.role == "admin"
+
+    @property
+    def is_manager(self):
+        return self.role in ("admin", "manager")
 
     def __repr__(self):
         return f"User('{self.name}', '{self.email}')"
@@ -156,6 +194,8 @@ class Item(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
     name                = db.Column(db.String(100), nullable=False)
     category_id         = db.Column(db.Integer, db.ForeignKey("category.id"), nullable=True)
+    unit                = db.Column(db.String(20), nullable=False, default="Pcs")
+    opening_stock       = db.Column(db.Integer, nullable=False, default=0)
     stock               = db.Column(db.Integer, nullable=False, default=0)
     reorder_level       = db.Column(db.Integer, nullable=False, default=50)
     purchase_price      = db.Column(db.Float, nullable=True)
@@ -169,7 +209,14 @@ class Purchase(db.Model):
     item_id             = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
     quantity            = db.Column(db.Integer, nullable=False)
     purchase_price      = db.Column(db.Float, nullable=False)
+    discount_type       = db.Column(db.String(10), nullable=False, default="percent")
+    discount_value      = db.Column(db.Float, nullable=False, default=0.0)
+    tax_percent         = db.Column(db.Float, nullable=False, default=0.0)
+    discount_amount     = db.Column(db.Float, nullable=False, default=0.0)
+    tax_amount          = db.Column(db.Float, nullable=False, default=0.0)
     date                = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+    notes               = db.Column(db.String(300), nullable=True)
+    line_items          = db.relationship("PurchaseItem", backref="purchase_header", lazy=True, cascade="all,delete-orphan")
 
 class Sale(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
@@ -177,9 +224,49 @@ class Sale(db.Model):
     item_id             = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
     quantity            = db.Column(db.Integer, nullable=False)
     sale_price          = db.Column(db.Float, nullable=False)
+    cost_price          = db.Column(db.Float, nullable=False, default=0.0)
+    discount_type       = db.Column(db.String(10), nullable=False, default="percent")
+    discount_value      = db.Column(db.Float, nullable=False, default=0.0)
+    tax_percent         = db.Column(db.Float, nullable=False, default=0.0)
+    discount_amount     = db.Column(db.Float, nullable=False, default=0.0)
+    tax_amount          = db.Column(db.Float, nullable=False, default=0.0)
     date                = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+    notes               = db.Column(db.String(300), nullable=True)
+    line_items          = db.relationship("SaleItem", backref="sale_header", lazy=True, cascade="all,delete-orphan")
+
+class PurchaseItem(db.Model):
+    __tablename__   = "purchase_item"
+    id              = db.Column(db.Integer, primary_key=True)
+    purchase_id     = db.Column(db.Integer, db.ForeignKey("purchase.id"), nullable=False)
+    item_id         = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
+    quantity        = db.Column(db.Integer, nullable=False)
+    purchase_price  = db.Column(db.Float, nullable=False)
+    discount_type   = db.Column(db.String(10), nullable=False, default="percent")
+    discount_value  = db.Column(db.Float, nullable=False, default=0.0)
+    discount_amount = db.Column(db.Float, nullable=False, default=0.0)
+    tax_percent     = db.Column(db.Float, nullable=False, default=0.0)
+    tax_amount      = db.Column(db.Float, nullable=False, default=0.0)
+    amount          = db.Column(db.Float, nullable=False, default=0.0)
+    item            = db.relationship("Item", foreign_keys=[item_id])
+
+class SaleItem(db.Model):
+    __tablename__   = "sale_item"
+    id              = db.Column(db.Integer, primary_key=True)
+    sale_id         = db.Column(db.Integer, db.ForeignKey("sale.id"), nullable=False)
+    item_id         = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
+    quantity        = db.Column(db.Integer, nullable=False)
+    sale_price      = db.Column(db.Float, nullable=False)
+    cost_price      = db.Column(db.Float, nullable=False, default=0.0)
+    discount_type   = db.Column(db.String(10), nullable=False, default="percent")
+    discount_value  = db.Column(db.Float, nullable=False, default=0.0)
+    discount_amount = db.Column(db.Float, nullable=False, default=0.0)
+    tax_percent     = db.Column(db.Float, nullable=False, default=0.0)
+    tax_amount      = db.Column(db.Float, nullable=False, default=0.0)
+    amount          = db.Column(db.Float, nullable=False, default=0.0)
+    item            = db.relationship("Item", foreign_keys=[item_id])
 
 PAYMENT_METHODS = ("Cash", "Bank", "Cheque", "Online")
+ITEM_UNITS = ("Pcs", "Dozen", "Meter", "Kg", "Gram", "Liter", "Box", "Carton", "Bag", "Yard", "Foot", "Set", "Pair", "Roll", "Sheet", "Pack")
 
 class SupplierPayment(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
@@ -231,6 +318,110 @@ class SaleReturn(db.Model):
     customer     = db.relationship("Customer", backref="sale_returns", lazy=True)
     item         = db.relationship("Item", backref="sale_returns", lazy=True)
 
+# ── Stock Adjustment ──────────────────────────────────────────────────────────
+ADJUSTMENT_TYPES = ("Stock In", "Stock Out", "Damage Write-off", "Count Correction", "Sample / Free Issue")
+
+class StockAdjustment(db.Model):
+    __tablename__ = "stock_adjustment"
+    id              = db.Column(db.Integer, primary_key=True)
+    item_id         = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
+    adj_type        = db.Column(db.String(30), nullable=False)
+    quantity        = db.Column(db.Integer, nullable=False)
+    direction       = db.Column(db.String(4), nullable=False, default="in")   # "in" or "out"
+    date            = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+    reason          = db.Column(db.String(300), nullable=True)
+    item            = db.relationship("Item", backref="adjustments", lazy=True)
+
+# ── Expense Tracking ──────────────────────────────────────────────────────────
+class ExpenseCategory(db.Model):
+    __tablename__ = "expense_category"
+    id      = db.Column(db.Integer, primary_key=True)
+    name    = db.Column(db.String(100), unique=True, nullable=False)
+    expenses = db.relationship("Expense", backref="category", lazy=True)
+
+class Expense(db.Model):
+    __tablename__ = "expense"
+    id              = db.Column(db.Integer, primary_key=True)
+    category_id     = db.Column(db.Integer, db.ForeignKey("expense_category.id"), nullable=True)
+    description     = db.Column(db.String(300), nullable=False)
+    amount          = db.Column(db.Float, nullable=False)
+    date            = db.Column(db.DateTime, nullable=False,
+                                default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    payment_method  = db.Column(db.String(20), nullable=False, default="Cash")
+    reference_no    = db.Column(db.String(100), nullable=True)
+    notes           = db.Column(db.String(300), nullable=True)
+
+# ── Purchase Order ────────────────────────────────────────────────────────────
+PO_STATUSES = ("Draft", "Confirmed", "Received", "Cancelled")
+
+class PurchaseOrder(db.Model):
+    __tablename__ = "purchase_order"
+    id              = db.Column(db.Integer, primary_key=True)
+    supplier_id     = db.Column(db.Integer, db.ForeignKey("supplier.id"), nullable=False)
+    order_date      = db.Column(db.DateTime, nullable=False,
+                                default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    expected_date   = db.Column(db.DateTime, nullable=True)
+    status          = db.Column(db.String(20), nullable=False, default="Draft")
+    notes           = db.Column(db.String(300), nullable=True)
+    converted_purchase_id = db.Column(db.Integer, db.ForeignKey("purchase.id"), nullable=True)
+    supplier        = db.relationship("Supplier", backref="purchase_orders", lazy=True)
+    line_items      = db.relationship("PurchaseOrderItem", backref="order", lazy=True,
+                                      cascade="all,delete-orphan")
+
+class PurchaseOrderItem(db.Model):
+    __tablename__ = "purchase_order_item"
+    id              = db.Column(db.Integer, primary_key=True)
+    po_id           = db.Column(db.Integer, db.ForeignKey("purchase_order.id"), nullable=False)
+    item_id         = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
+    quantity        = db.Column(db.Integer, nullable=False)
+    purchase_price  = db.Column(db.Float, nullable=False)
+    item            = db.relationship("Item", foreign_keys=[item_id])
+
+# ── Quotation ─────────────────────────────────────────────────────────────────
+QUOTATION_STATUSES = ("Draft", "Sent", "Accepted", "Rejected", "Converted")
+
+class Quotation(db.Model):
+    __tablename__ = "quotation"
+    id              = db.Column(db.Integer, primary_key=True)
+    customer_id     = db.Column(db.Integer, db.ForeignKey("customer.id"), nullable=False)
+    quote_date      = db.Column(db.DateTime, nullable=False,
+                                default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    valid_until     = db.Column(db.DateTime, nullable=True)
+    status          = db.Column(db.String(20), nullable=False, default="Draft")
+    notes           = db.Column(db.String(300), nullable=True)
+    converted_sale_id = db.Column(db.Integer, db.ForeignKey("sale.id"), nullable=True)
+    customer        = db.relationship("Customer", backref="quotations", lazy=True)
+    line_items      = db.relationship("QuotationItem", backref="quotation", lazy=True,
+                                      cascade="all,delete-orphan")
+
+class QuotationItem(db.Model):
+    __tablename__ = "quotation_item"
+    id              = db.Column(db.Integer, primary_key=True)
+    quotation_id    = db.Column(db.Integer, db.ForeignKey("quotation.id"), nullable=False)
+    item_id         = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
+    quantity        = db.Column(db.Integer, nullable=False)
+    sale_price      = db.Column(db.Float, nullable=False)
+    discount_type   = db.Column(db.String(10), nullable=False, default="percent")
+    discount_value  = db.Column(db.Float, nullable=False, default=0.0)
+    tax_percent     = db.Column(db.Float, nullable=False, default=0.0)
+    item            = db.relationship("Item", foreign_keys=[item_id])
+
+# ── Delivery Challan ──────────────────────────────────────────────────────────
+CHALLAN_STATUSES = ("Pending", "Dispatched", "Delivered", "Cancelled")
+
+class DeliveryChallan(db.Model):
+    __tablename__ = "delivery_challan"
+    id              = db.Column(db.Integer, primary_key=True)
+    sale_id         = db.Column(db.Integer, db.ForeignKey("sale.id"), nullable=False, unique=True)
+    challan_date    = db.Column(db.DateTime, nullable=False,
+                                default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    dispatch_date   = db.Column(db.DateTime, nullable=True)
+    delivery_date   = db.Column(db.DateTime, nullable=True)
+    status          = db.Column(db.String(20), nullable=False, default="Pending")
+    transport       = db.Column(db.String(100), nullable=True)
+    notes           = db.Column(db.String(300), nullable=True)
+    sale            = db.relationship("Sale", backref=db.backref("delivery_challan", uselist=False), lazy=True)
+
 OPENING_LEDGER_DATE = datetime(1900, 1, 1)
 
 class SupplierLedgerEntry(db.Model):
@@ -259,11 +450,45 @@ class CustomerLedgerEntry(db.Model):
     balance_after       = db.Column(db.Float, nullable=False, default=0.0)
     customer            = db.relationship("Customer", backref="ledger_entries", lazy=True)
 
+def calc_discount_tax(gross, discount_type, discount_value, tax_percent):
+    """Returns (discount_amt, tax_amt, net_total). discount_type: 'percent' or 'fixed'."""
+    dv = float(discount_value or 0)
+    tp = float(tax_percent or 0)
+    if discount_type == "fixed":
+        disc = min(dv, gross)
+    else:
+        disc = gross * dv / 100
+    taxable = gross - disc
+    tax = taxable * tp / 100
+    return round(disc, 4), round(tax, 4), round(taxable + tax, 4)
+
+def purchase_item_total(pi):
+    gross = float(pi.quantity * pi.purchase_price)
+    _, _, net = calc_discount_tax(gross, pi.discount_type or "percent", pi.discount_value or 0, pi.tax_percent or 0)
+    return net
+
 def purchase_total(purchase):
-    return float(purchase.quantity * purchase.purchase_price)
+    if purchase.line_items:
+        return sum(purchase_item_total(pi) for pi in purchase.line_items)
+    if purchase.quantity and purchase.purchase_price:
+        gross = float(purchase.quantity * purchase.purchase_price)
+        _, _, net = calc_discount_tax(gross, purchase.discount_type or "percent", purchase.discount_value or 0, purchase.tax_percent or 0)
+        return net
+    return 0.0
+
+def sale_item_total(si):
+    gross = float(si.quantity * si.sale_price)
+    _, _, net = calc_discount_tax(gross, si.discount_type or "percent", si.discount_value or 0, si.tax_percent or 0)
+    return net
 
 def sale_total(sale):
-    return float(sale.quantity * sale.sale_price)
+    if sale.line_items:
+        return sum(sale_item_total(si) for si in sale.line_items)
+    if sale.quantity and sale.sale_price:
+        gross = float(sale.quantity * sale.sale_price)
+        _, _, net = calc_discount_tax(gross, sale.discount_type or "percent", sale.discount_value or 0, sale.tax_percent or 0)
+        return net
+    return 0.0
 
 def get_purchase_paid(purchase_id, exclude_payment_id=None):
     query = db.session.query(func.sum(SupplierPayment.amount)).filter(SupplierPayment.purchase_id == purchase_id)
@@ -285,12 +510,8 @@ def get_payment_status(total, paid):
     return "Partial"
 
 def get_supplier_payable(supplier_id):
-    return float(
-        db.session.query(func.sum(Purchase.quantity * Purchase.purchase_price))
-        .filter(Purchase.supplier_id == supplier_id)
-        .scalar()
-        or 0.0
-    )
+    purchases = Purchase.query.filter_by(supplier_id=supplier_id).all()
+    return sum(purchase_total(p) for p in purchases)
 
 def get_supplier_paid(supplier_id, exclude_payment_id=None):
     query = db.session.query(func.sum(SupplierPayment.amount)).filter(SupplierPayment.supplier_id == supplier_id)
@@ -299,12 +520,8 @@ def get_supplier_paid(supplier_id, exclude_payment_id=None):
     return float(query.scalar() or 0.0)
 
 def get_customer_receivable(customer_id):
-    return float(
-        db.session.query(func.sum(Sale.quantity * Sale.sale_price))
-        .filter(Sale.customer_id == customer_id)
-        .scalar()
-        or 0.0
-    )
+    sales = Sale.query.filter_by(customer_id=customer_id).all()
+    return sum(sale_total(s) for s in sales)
 
 def get_customer_received(customer_id, exclude_payment_id=None):
     query = db.session.query(func.sum(CustomerPayment.amount)).filter(CustomerPayment.customer_id == customer_id)
@@ -458,6 +675,7 @@ def sync_supplier_opening(supplier):
     ob = float(supplier.opening_balance or 0)
     if abs(ob) < 0.001:
         remove_supplier_ledger_entry("opening", supplier.id)
+        db.session.flush()
         recalculate_supplier_ledger(supplier.id)
         return
     if ob > 0:
@@ -472,6 +690,7 @@ def sync_customer_opening(customer):
     ob = float(customer.opening_balance or 0)
     if abs(ob) < 0.001:
         remove_customer_ledger_entry("opening", customer.id)
+        db.session.flush()
         recalculate_customer_ledger(customer.id)
         return
     if ob > 0:
@@ -483,8 +702,12 @@ def sync_customer_opening(customer):
     )
 
 def sync_supplier_purchase(purchase):
-    item = db.session.get(Item, purchase.item_id)
-    item_name = item.name if item else "Item"
+    if purchase.line_items:
+        names = [pi.item.name for pi in purchase.line_items if pi.item]
+        item_desc = names[0] if len(names) == 1 else f"{len(names)} items"
+    else:
+        item = db.session.get(Item, purchase.item_id)
+        item_desc = item.name if item else "Item"
     total = purchase_total(purchase)
     upsert_supplier_ledger(
         purchase.supplier_id,
@@ -492,7 +715,7 @@ def sync_supplier_purchase(purchase):
         purchase.id,
         purchase.date,
         "Purchase",
-        f"Purchase #{purchase.id} — {item_name}",
+        f"Purchase #{purchase.id} — {item_desc}",
         0.0,
         total,
     )
@@ -511,8 +734,12 @@ def sync_supplier_payment(payment):
     )
 
 def sync_customer_sale(sale):
-    item = db.session.get(Item, sale.item_id)
-    item_name = item.name if item else "Item"
+    if sale.line_items:
+        names = [si.item.name for si in sale.line_items if si.item]
+        item_desc = names[0] if len(names) == 1 else f"{len(names)} items"
+    else:
+        item = db.session.get(Item, sale.item_id)
+        item_desc = item.name if item else "Item"
     total = sale_total(sale)
     upsert_customer_ledger(
         sale.customer_id,
@@ -520,7 +747,7 @@ def sync_customer_sale(sale):
         sale.id,
         sale.date,
         "Sale",
-        f"Sale #{sale.id} — {item_name}",
+        f"Sale #{sale.id} — {item_desc}",
         total,
         0.0,
     )
@@ -583,6 +810,10 @@ def backfill_ledgers():
         sync_customer_sale(sale)
     for receipt in CustomerPayment.query.all():
         sync_customer_receipt(receipt)
+    for pr in PurchaseReturn.query.all():
+        sync_supplier_purchase_return(pr)
+    for sr in SaleReturn.query.all():
+        sync_customer_sale_return(sr)
     db.session.commit()
 
 def get_total_payable():
@@ -602,9 +833,21 @@ def get_purchase_returned_qty(purchase_id):
         PurchaseReturn.purchase_id == purchase_id
     ).scalar() or 0)
 
+def get_purchase_item_returned_qty(purchase_id, item_id):
+    return int(db.session.query(func.sum(PurchaseReturn.quantity)).filter(
+        PurchaseReturn.purchase_id == purchase_id,
+        PurchaseReturn.item_id == item_id,
+    ).scalar() or 0)
+
 def get_sale_returned_qty(sale_id):
     return int(db.session.query(func.sum(SaleReturn.quantity)).filter(
         SaleReturn.sale_id == sale_id
+    ).scalar() or 0)
+
+def get_sale_item_returned_qty(sale_id, item_id):
+    return int(db.session.query(func.sum(SaleReturn.quantity)).filter(
+        SaleReturn.sale_id == sale_id,
+        SaleReturn.item_id == item_id,
     ).scalar() or 0)
 
 def purchase_return_total(pr):
@@ -654,13 +897,215 @@ def migrate_database():
         if "category_id" not in item_columns:
             with db.engine.begin() as conn:
                 conn.execute(text("ALTER TABLE item ADD COLUMN category_id INTEGER REFERENCES category(id)"))
+        if "unit" not in item_columns:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE item ADD COLUMN unit VARCHAR(20) DEFAULT 'Pcs'"))
+        if "opening_stock" not in item_columns:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE item ADD COLUMN opening_stock INTEGER DEFAULT 0"))
+                # compute opening_stock = current_stock minus all transactions
+                conn.execute(text("""
+                    UPDATE item SET opening_stock = item.stock
+                      - COALESCE((SELECT SUM(p.quantity) FROM purchase p WHERE p.item_id = item.id), 0)
+                      + COALESCE((SELECT SUM(s.quantity) FROM sale s WHERE s.item_id = item.id), 0)
+                      + COALESCE((SELECT SUM(pr.quantity) FROM purchase_return pr WHERE pr.item_id = item.id), 0)
+                      - COALESCE((SELECT SUM(sr.quantity) FROM sale_return sr WHERE sr.item_id = item.id), 0)
+                """))
     for table, column in (("supplier", "opening_balance"), ("customer", "opening_balance")):
         if table in inspector.get_table_names():
             cols = {col["name"] for col in inspector.get_columns(table)}
             if column not in cols:
                 with db.engine.begin() as conn:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} FLOAT DEFAULT 0"))
+    if "user" in inspector.get_table_names():
+        user_cols = {col["name"] for col in inspector.get_columns("user")}
+        if "role" not in user_cols:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE user ADD COLUMN role VARCHAR(20) DEFAULT 'admin'"))
+                conn.execute(text("UPDATE user SET role = 'admin'"))
+    if "sale" in inspector.get_table_names():
+        sale_cols = {col["name"] for col in inspector.get_columns("sale")}
+        if "cost_price" not in sale_cols:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE sale ADD COLUMN cost_price FLOAT DEFAULT 0.0"))
+                conn.execute(text(
+                    "UPDATE sale SET cost_price = "
+                    "(SELECT COALESCE(purchase_price, 0) FROM item WHERE item.id = sale.item_id)"
+                ))
+        with db.engine.begin() as conn:
+            for col, default in [("discount_type", "'percent'"), ("discount_value", "0.0"),
+                                 ("tax_percent", "0.0"), ("discount_amount", "0.0"), ("tax_amount", "0.0")]:
+                if col not in sale_cols:
+                    conn.execute(text(f"ALTER TABLE sale ADD COLUMN {col} {'VARCHAR(10)' if col == 'discount_type' else 'FLOAT'} DEFAULT {default}"))
+    if "purchase" in inspector.get_table_names():
+        pur_cols = {col["name"] for col in inspector.get_columns("purchase")}
+        with db.engine.begin() as conn:
+            for col, default in [("discount_type", "'percent'"), ("discount_value", "0.0"),
+                                 ("tax_percent", "0.0"), ("discount_amount", "0.0"), ("tax_amount", "0.0")]:
+                if col not in pur_cols:
+                    conn.execute(text(f"ALTER TABLE purchase ADD COLUMN {col} {'VARCHAR(10)' if col == 'discount_type' else 'FLOAT'} DEFAULT {default}"))
+    # Add notes column to purchase and sale
+    for tbl in ("purchase", "sale"):
+        if tbl in inspector.get_table_names():
+            cols = {col["name"] for col in inspector.get_columns(tbl)}
+            if "notes" not in cols:
+                with db.engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN notes VARCHAR(300)"))
+
+    # Create purchase_item table and migrate existing single-item purchases
+    with db.engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS purchase_item (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                purchase_id INTEGER NOT NULL REFERENCES purchase(id),
+                item_id INTEGER NOT NULL REFERENCES item(id),
+                quantity INTEGER NOT NULL,
+                purchase_price FLOAT NOT NULL,
+                discount_type VARCHAR(10) NOT NULL DEFAULT 'percent',
+                discount_value FLOAT NOT NULL DEFAULT 0.0,
+                discount_amount FLOAT NOT NULL DEFAULT 0.0,
+                tax_percent FLOAT NOT NULL DEFAULT 0.0,
+                tax_amount FLOAT NOT NULL DEFAULT 0.0,
+                amount FLOAT NOT NULL DEFAULT 0.0
+            )
+        """))
+        conn.execute(text("""
+            INSERT INTO purchase_item
+                (purchase_id, item_id, quantity, purchase_price,
+                 discount_type, discount_value, discount_amount,
+                 tax_percent, tax_amount, amount)
+            SELECT p.id, p.item_id, p.quantity, p.purchase_price,
+                COALESCE(p.discount_type,'percent'), COALESCE(p.discount_value,0),
+                COALESCE(p.discount_amount,0), COALESCE(p.tax_percent,0),
+                COALESCE(p.tax_amount,0),
+                COALESCE(p.quantity,0) * COALESCE(p.purchase_price,0)
+            FROM purchase p
+            WHERE p.item_id IS NOT NULL AND p.quantity IS NOT NULL
+              AND p.id NOT IN (SELECT DISTINCT purchase_id FROM purchase_item)
+        """))
+
+    # Create sale_item table and migrate existing single-item sales
+    with db.engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS sale_item (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sale_id INTEGER NOT NULL REFERENCES sale(id),
+                item_id INTEGER NOT NULL REFERENCES item(id),
+                quantity INTEGER NOT NULL,
+                sale_price FLOAT NOT NULL,
+                cost_price FLOAT NOT NULL DEFAULT 0.0,
+                discount_type VARCHAR(10) NOT NULL DEFAULT 'percent',
+                discount_value FLOAT NOT NULL DEFAULT 0.0,
+                discount_amount FLOAT NOT NULL DEFAULT 0.0,
+                tax_percent FLOAT NOT NULL DEFAULT 0.0,
+                tax_amount FLOAT NOT NULL DEFAULT 0.0,
+                amount FLOAT NOT NULL DEFAULT 0.0
+            )
+        """))
+        conn.execute(text("""
+            INSERT INTO sale_item
+                (sale_id, item_id, quantity, sale_price, cost_price,
+                 discount_type, discount_value, discount_amount,
+                 tax_percent, tax_amount, amount)
+            SELECT s.id, s.item_id, s.quantity, s.sale_price,
+                COALESCE(s.cost_price,0),
+                COALESCE(s.discount_type,'percent'), COALESCE(s.discount_value,0),
+                COALESCE(s.discount_amount,0), COALESCE(s.tax_percent,0),
+                COALESCE(s.tax_amount,0),
+                COALESCE(s.quantity,0) * COALESCE(s.sale_price,0)
+            FROM sale s
+            WHERE s.item_id IS NOT NULL AND s.quantity IS NOT NULL
+              AND s.id NOT IN (SELECT DISTINCT sale_id FROM sale_item)
+        """))
+
     backfill_ledgers()
+
+    # New tables for Tier-1/2 features
+    with db.engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS stock_adjustment (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_id INTEGER NOT NULL REFERENCES item(id),
+                adj_type VARCHAR(30) NOT NULL,
+                quantity INTEGER NOT NULL,
+                direction VARCHAR(4) NOT NULL DEFAULT 'in',
+                date DATETIME NOT NULL,
+                reason VARCHAR(300)
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS expense_category (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR(100) NOT NULL UNIQUE
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS expense (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                category_id INTEGER REFERENCES expense_category(id),
+                description VARCHAR(300) NOT NULL,
+                amount FLOAT NOT NULL,
+                date DATETIME NOT NULL,
+                payment_method VARCHAR(20) NOT NULL DEFAULT 'Cash',
+                reference_no VARCHAR(100),
+                notes VARCHAR(300)
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS purchase_order (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                supplier_id INTEGER NOT NULL REFERENCES supplier(id),
+                order_date DATETIME NOT NULL,
+                expected_date DATETIME,
+                status VARCHAR(20) NOT NULL DEFAULT 'Draft',
+                notes VARCHAR(300),
+                converted_purchase_id INTEGER REFERENCES purchase(id)
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS purchase_order_item (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                po_id INTEGER NOT NULL REFERENCES purchase_order(id),
+                item_id INTEGER NOT NULL REFERENCES item(id),
+                quantity INTEGER NOT NULL,
+                purchase_price FLOAT NOT NULL
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS quotation (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                customer_id INTEGER NOT NULL REFERENCES customer(id),
+                quote_date DATETIME NOT NULL,
+                valid_until DATETIME,
+                status VARCHAR(20) NOT NULL DEFAULT 'Draft',
+                notes VARCHAR(300),
+                converted_sale_id INTEGER REFERENCES sale(id)
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS quotation_item (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                quotation_id INTEGER NOT NULL REFERENCES quotation(id),
+                item_id INTEGER NOT NULL REFERENCES item(id),
+                quantity INTEGER NOT NULL,
+                sale_price FLOAT NOT NULL,
+                discount_type VARCHAR(10) NOT NULL DEFAULT 'percent',
+                discount_value FLOAT NOT NULL DEFAULT 0.0,
+                tax_percent FLOAT NOT NULL DEFAULT 0.0
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS delivery_challan (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sale_id INTEGER NOT NULL UNIQUE REFERENCES sale(id),
+                challan_date DATETIME NOT NULL,
+                dispatch_date DATETIME,
+                delivery_date DATETIME,
+                status VARCHAR(20) NOT NULL DEFAULT 'Pending',
+                transport VARCHAR(100),
+                notes VARCHAR(300)
+            )
+        """))
 
 # Create Database
 with app.app_context():
@@ -680,11 +1125,94 @@ def fmt_num(value):
     except (TypeError, ValueError):
         return value
 
+def write_csv_header(writer, report_title, start_date_str=None, end_date_str=None, extra_info=None):
+    company = app.config.get("COMPANY_NAME", "TradeFlow")
+    tagline = app.config.get("COMPANY_TAGLINE", "Inventory & Accounts Management")
+    writer.writerow([company, tagline])
+    writer.writerow(["Report:", report_title])
+    if start_date_str and end_date_str:
+        writer.writerow(["Period:", f"{start_date_str}  to  {end_date_str}"])
+    if extra_info:
+        writer.writerow(["Info:", extra_info])
+    writer.writerow(["Generated On:", datetime.now().strftime("%Y-%m-%d %H:%M")])
+    writer.writerow([])
+
+
+def excel_response(filename, title, col_headers, rows, start_date_str=None, end_date_str=None, extra_info=None):
+    """Create a styled .xlsx file and return as a Flask file download response."""
+    company = app.config.get("COMPANY_NAME", "TradeFlow")
+    tagline = app.config.get("COMPANY_TAGLINE", "Inventory & Accounts Management")
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = title[:31]
+
+    # --- Metadata rows (row counter tracks real rows so blank row is guaranteed) ---
+    r = 1
+    ws.cell(row=r, column=1, value=company)
+    ws.cell(row=r, column=2, value=tagline)
+    ws["A1"].font = Font(bold=True, size=13, color="1E3A5F")
+    r += 1
+
+    ws.cell(row=r, column=1, value="Report:")
+    ws.cell(row=r, column=2, value=title)
+    r += 1
+
+    if start_date_str and end_date_str:
+        ws.cell(row=r, column=1, value="Period:")
+        ws.cell(row=r, column=2, value=f"{start_date_str}  to  {end_date_str}")
+        r += 1
+
+    if extra_info:
+        ws.cell(row=r, column=1, value="Info:")
+        ws.cell(row=r, column=2, value=extra_info)
+        r += 1
+
+    ws.cell(row=r, column=1, value="Generated On:")
+    ws.cell(row=r, column=2, value=datetime.now().strftime("%Y-%m-%d %H:%M"))
+    r += 1
+
+    r += 1  # genuine blank row — no cell written here
+
+    # --- Column header row ---
+    header_row_num = r
+    for col_i, h in enumerate(col_headers, 1):
+        cell = ws.cell(row=header_row_num, column=col_i, value=h)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="1E3A5F")
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+    r += 1
+
+    # --- Data rows ---
+    for row_data in rows:
+        for col_i, val in enumerate(row_data, 1):
+            ws.cell(row=r, column=col_i, value=val)
+        r += 1
+
+    # --- Auto-fit column widths ---
+    for col in ws.columns:
+        max_len = max((len(str(cell.value)) if cell.value is not None else 0) for cell in col)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 3, 45)
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return send_file(
+        output,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=filename,
+    )
+
 @app.context_processor
 def inject_form_defaults():
     ctx = {
         "form_data": {},
         "payment_methods": PAYMENT_METHODS,
+        "item_units": ITEM_UNITS,
+        "roles": ROLES,
+        "company_name": app.config.get("COMPANY_NAME", "TradeFlow"),
+        "company_tagline": app.config.get("COMPANY_TAGLINE", "Inventory & Accounts Management"),
         "purchase_total": purchase_total,
         "sale_total": sale_total,
         "get_purchase_paid": get_purchase_paid,
@@ -936,22 +1464,47 @@ def index():
 
 @app.route("/about")
 def about():
-    return render_template("about.html")
+    return render_template("about2.html")
 
 @app.route('/dashboard')
-@verified_required
+@manager_required
 def dashboard():
     items = Item.query.all()
     purchases = Purchase.query.order_by(Purchase.date.desc()).limit(5).all()
     sales = Sale.query.order_by(Sale.date.desc()).limit(5).all()
     total_purchase_cost = db.session.query(func.sum(Purchase.quantity * Purchase.purchase_price)).scalar() or 0.0
     total_sale_revenue = db.session.query(func.sum(Sale.quantity * Sale.sale_price)).scalar() or 0.0
+    total_gross_profit = db.session.query(func.sum((Sale.sale_price - Sale.cost_price) * Sale.quantity)).scalar() or 0.0
+    total_purchase_returns = db.session.query(func.sum(PurchaseReturn.quantity * PurchaseReturn.return_price)).scalar() or 0.0
+    total_sale_returns = db.session.query(func.sum(SaleReturn.quantity * SaleReturn.return_price)).scalar() or 0.0
+    low_stock_count = Item.query.filter(Item.stock <= Item.reorder_level).count()
     total_payable = get_total_payable()
     total_paid_suppliers = get_total_paid_suppliers()
     total_receivable = get_total_receivable()
     total_received_customers = get_total_received_customers()
     total_payable_balance = sum(get_supplier_balance(s.id) for s in Supplier.query.all())
     total_receivable_balance = sum(get_customer_balance(c.id) for c in Customer.query.all())
+    monthly_sales = (
+        db.session.query(
+            db.func.strftime("%Y-%m", Sale.date).label("month"),
+            db.func.sum(Sale.quantity * Sale.sale_price).label("sale_amt"),
+            db.func.sum((Sale.sale_price - Sale.cost_price) * Sale.quantity).label("profit_amt"),
+        )
+        .group_by(db.func.strftime("%Y-%m", Sale.date))
+        .order_by(db.func.strftime("%Y-%m", Sale.date))
+        .limit(12)
+        .all()
+    )
+    monthly_purchases = (
+        db.session.query(
+            db.func.strftime("%Y-%m", Purchase.date).label("month"),
+            db.func.sum(Purchase.quantity * Purchase.purchase_price).label("purchase_amt"),
+        )
+        .group_by(db.func.strftime("%Y-%m", Purchase.date))
+        .order_by(db.func.strftime("%Y-%m", Purchase.date))
+        .limit(12)
+        .all()
+    )
     return render_template(
         'dashboard.html',
         items=items,
@@ -959,12 +1512,18 @@ def dashboard():
         sales=sales,
         total_purchase_cost=total_purchase_cost,
         total_sale_revenue=total_sale_revenue,
+        total_gross_profit=total_gross_profit,
+        total_purchase_returns=total_purchase_returns,
+        total_sale_returns=total_sale_returns,
+        low_stock_count=low_stock_count,
         total_payable=total_payable,
         total_paid_suppliers=total_paid_suppliers,
         total_payable_balance=total_payable_balance,
         total_receivable=total_receivable,
         total_received_customers=total_received_customers,
         total_receivable_balance=total_receivable_balance,
+        monthly_sales=monthly_sales,
+        monthly_purchases=monthly_purchases,
     )
 
 @app.route("/supplier", methods=["GET", "POST"])
@@ -974,6 +1533,9 @@ def supplier():
     query = Supplier.query.filter(Supplier.name.ilike(f"%{search}%")) if search else Supplier.query
     suppliers, pagination = get_paginated_results(query)
     if request.method == "POST":
+        if current_user.role not in ("admin", "manager"):
+            flash("You do not have permission to add suppliers.", "danger")
+            return redirect(url_for("supplier"))
         name = request.form.get("name", "").strip()
         contact = request.form.get("contact", "").strip()
         address = request.form.get("address", "").strip()
@@ -1002,7 +1564,7 @@ def supplier():
     return render_template("supplier.html", suppliers=suppliers, pagination=pagination, search=search)
 
 @app.route("/supplier/edit/<int:id>", methods=["GET", "POST"])
-@verified_required
+@manager_required
 def edit_supplier(id):
     supplier = db.session.get(Supplier, id) or abort(404)
     if request.method == "POST":
@@ -1025,7 +1587,7 @@ def edit_supplier(id):
     return render_template("edit_supplier.html", supplier=supplier)
 
 @app.route("/supplier/delete/<int:id>", methods=["POST"])
-@verified_required
+@admin_required
 def delete_supplier(id):
     supplier = db.session.get(Supplier, id) or abort(404)
     if supplier.purchases:
@@ -1040,15 +1602,37 @@ def delete_supplier(id):
     return redirect(url_for("supplier"))
 
 @app.route("/export_suppliers")
-@verified_required
+@manager_required
 def export_suppliers():
-    suppliers = Supplier.query.all()
+    suppliers = Supplier.query.order_by(Supplier.name).all()
     with open("static/suppliers.csv", "w", newline="") as file:
         writer = csv.writer(file)
-        writer.writerow(["ID", "Name", "Contact", "Address"])
+        write_csv_header(writer, "Suppliers List")
+        writer.writerow(["ID", "Name", "Contact", "Address", "Opening Balance", "Current Balance"])
         for s in suppliers:
-            writer.writerow([s.id, s.name, s.contact, s.address])
+            writer.writerow([s.id, s.name, s.contact, s.address,
+                             round(float(s.opening_balance or 0), 2),
+                             round(get_supplier_balance(s.id), 2)])
     return send_from_directory("static", "suppliers.csv")
+
+@app.route("/export_suppliers_excel")
+@manager_required
+def export_suppliers_excel():
+    suppliers = Supplier.query.order_by(Supplier.name).all()
+    rows = [
+        [s.id, s.name, s.contact, s.address,
+         round(float(s.opening_balance or 0), 2),
+         round(get_supplier_payable(s.id), 2),
+         round(get_supplier_paid(s.id), 2),
+         round(get_supplier_balance(s.id), 2)]
+        for s in suppliers
+    ]
+    return excel_response(
+        filename="suppliers.xlsx",
+        title="Suppliers List",
+        col_headers=["ID", "Name", "Contact", "Address", "Opening Balance", "Bills", "Paid", "Ledger Balance"],
+        rows=rows,
+    )
 
 @app.route("/customer", methods=["GET", "POST"])
 @verified_required
@@ -1057,6 +1641,9 @@ def customer():
     query = Customer.query.filter(Customer.name.ilike(f"%{search}%")) if search else Customer.query
     customers, pagination = get_paginated_results(query)
     if request.method == "POST":
+        if current_user.role not in ("admin", "manager"):
+            flash("You do not have permission to add customers.", "danger")
+            return redirect(url_for("customer"))
         name = request.form.get("name", "").strip()
         contact = request.form.get("contact", "").strip()
         address = request.form.get("address", "").strip()
@@ -1085,7 +1672,7 @@ def customer():
     return render_template("customer.html", customers=customers, pagination=pagination, search=search)
 
 @app.route("/customer/edit/<int:id>", methods=["GET", "POST"])
-@verified_required
+@manager_required
 def edit_customer(id):
     customer = db.session.get(Customer, id) or abort(404)
     if request.method == "POST":
@@ -1108,7 +1695,7 @@ def edit_customer(id):
     return render_template("edit_customer.html", customer=customer)
 
 @app.route("/customer/delete/<int:id>", methods=["POST"])
-@verified_required
+@admin_required
 def delete_customer(id):
     customer = db.session.get(Customer, id) or abort(404)
     if customer.sales:
@@ -1123,15 +1710,37 @@ def delete_customer(id):
     return redirect(url_for("customer"))
 
 @app.route("/export_customers")
-@verified_required
+@manager_required
 def export_customers():
-    customers = Customer.query.all()
+    customers = Customer.query.order_by(Customer.name).all()
     with open("static/customers.csv", "w", newline="") as file:
         writer = csv.writer(file)
-        writer.writerow(["ID", "Name", "Contact", "Address"])
+        write_csv_header(writer, "Customers List")
+        writer.writerow(["ID", "Name", "Contact", "Address", "Opening Balance", "Current Balance"])
         for c in customers:
-            writer.writerow([c.id, c.name, c.contact, c.address])
+            writer.writerow([c.id, c.name, c.contact, c.address,
+                             round(float(c.opening_balance or 0), 2),
+                             round(get_customer_balance(c.id), 2)])
     return send_from_directory("static", "customers.csv")
+
+@app.route("/export_customers_excel")
+@manager_required
+def export_customers_excel():
+    customers = Customer.query.order_by(Customer.name).all()
+    rows = [
+        [c.id, c.name, c.contact, c.address,
+         round(float(c.opening_balance or 0), 2),
+         round(get_customer_receivable(c.id), 2),
+         round(get_customer_received(c.id), 2),
+         round(get_customer_balance(c.id), 2)]
+        for c in customers
+    ]
+    return excel_response(
+        filename="customers.xlsx",
+        title="Customers List",
+        col_headers=["ID", "Name", "Contact", "Address", "Opening Balance", "Sales", "Received", "Ledger Balance"],
+        rows=rows,
+    )
 
 @app.route("/category", methods=["GET", "POST"])
 @verified_required
@@ -1140,6 +1749,9 @@ def category():
     query = Category.query.filter(Category.name.ilike(f"%{search}%")) if search else Category.query
     categories, pagination = get_paginated_results(query)
     if request.method == "POST":
+        if current_user.role not in ("admin", "manager"):
+            flash("You do not have permission to add categories.", "danger")
+            return redirect(url_for("category"))
         name = request.form.get("name", "").strip()
         if not name:
             flash("Category name is required!", "danger")
@@ -1154,7 +1766,7 @@ def category():
     return render_template("category.html", categories=categories, pagination=pagination, search=search)
 
 @app.route("/category/edit/<int:id>", methods=["GET", "POST"])
-@verified_required
+@manager_required
 def edit_category(id):
     category = db.session.get(Category, id) or abort(404)
     if request.method == "POST":
@@ -1171,7 +1783,7 @@ def edit_category(id):
     return render_template("edit_category.html", category=category)
 
 @app.route("/category/delete/<int:id>", methods=["POST"])
-@verified_required
+@admin_required
 def delete_category(id):
     category = db.session.get(Category, id) or abort(404)
     if category.items:
@@ -1195,29 +1807,38 @@ def item():
     items, pagination = get_paginated_results(query)
     categories = Category.query.order_by(Category.name).all()
     if request.method == "POST":
+        if current_user.role not in ("admin", "manager"):
+            flash("You do not have permission to add items.", "danger")
+            return redirect(url_for("item"))
         name = request.form.get("name", "").strip()
         category_id = request.form.get("category_id", "").strip()
-        stock = request.form.get("stock", "").strip()
+        unit = request.form.get("unit", "Pcs").strip()
+        opening_stock = request.form.get("opening_stock", "0").strip() or "0"
         reorder_level = request.form.get("reorder_level", "").strip()
         purchase_price = request.form.get("purchase_price", "").strip()
         sale_price = request.form.get("sale_price", "").strip()
+        if unit not in ITEM_UNITS:
+            unit = "Pcs"
         if not categories:
             flash("Please add a category first before adding items!", "danger")
-        elif not name or not stock or not reorder_level or not category_id:
-            flash("Name, Category, Stock, and Reorder Level are required!", "danger")
+        elif not name or not reorder_level or not category_id:
+            flash("Name, Category, and Reorder Level are required!", "danger")
         elif not category_id.isdigit() or not db.session.get(Category, int(category_id)):
             flash("Please select a valid category!", "danger")
-        elif not stock.isdigit() or not reorder_level.isdigit():
-            flash("Stock and Reorder Level must be numbers!", "danger")
+        elif not opening_stock.lstrip("-").isdigit() or not reorder_level.isdigit():
+            flash("Opening Stock and Reorder Level must be numbers!", "danger")
         elif purchase_price and (not purchase_price.replace(".", "", 1).isdigit() or float(purchase_price) < 0):
             flash("Purchase price must be a non-negative number!", "danger")
         elif sale_price and (not sale_price.replace(".", "", 1).isdigit() or float(sale_price) < 0):
             flash("Sale price must be a non-negative number!", "danger")
         else:
+            os_val = int(opening_stock)
             item = Item(
                 name=name,
                 category_id=int(category_id),
-                stock=int(stock),
+                unit=unit,
+                opening_stock=os_val,
+                stock=os_val,
                 reorder_level=int(reorder_level),
                 purchase_price=float(purchase_price) if purchase_price else None,
                 sale_price=float(sale_price) if sale_price else None,
@@ -1236,33 +1857,40 @@ def item():
     )
 
 @app.route("/item/edit/<int:id>", methods=["GET", "POST"])
-@verified_required
+@manager_required
 def edit_item(id):
     item = db.session.get(Item, id) or abort(404)
     categories = Category.query.order_by(Category.name).all()
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         category_id = request.form.get("category_id", "").strip()
-        stock = request.form.get("stock", "").strip()
+        unit = request.form.get("unit", "Pcs").strip()
+        opening_stock = request.form.get("opening_stock", str(item.opening_stock)).strip()
         reorder_level = request.form.get("reorder_level", "").strip()
         purchase_price = request.form.get("purchase_price", "").strip()
         sale_price = request.form.get("sale_price", "").strip()
+        if unit not in ITEM_UNITS:
+            unit = "Pcs"
         if not categories:
             flash("Please add a category first before editing items!", "danger")
-        elif not name or not stock or not reorder_level or not category_id:
-            flash("Name, Category, Stock, and Reorder Level are required!", "danger")
+        elif not name or not reorder_level or not category_id:
+            flash("Name, Category, and Reorder Level are required!", "danger")
         elif not category_id.isdigit() or not db.session.get(Category, int(category_id)):
             flash("Please select a valid category!", "danger")
-        elif not stock.isdigit() or not reorder_level.isdigit():
-            flash("Stock and Reorder Level must be numbers!", "danger")
+        elif not opening_stock.lstrip("-").isdigit() or not reorder_level.isdigit():
+            flash("Opening Stock and Reorder Level must be numbers!", "danger")
         elif purchase_price and (not purchase_price.replace(".", "", 1).isdigit() or float(purchase_price) < 0):
             flash("Purchase price must be a non-negative number!", "danger")
         elif sale_price and (not sale_price.replace(".", "", 1).isdigit() or float(sale_price) < 0):
             flash("Sale price must be a non-negative number!", "danger")
         else:
+            new_os = int(opening_stock)
+            stock_adjustment = new_os - item.opening_stock
             item.name = name
             item.category_id = int(category_id)
-            item.stock = int(stock)
+            item.unit = unit
+            item.opening_stock = new_os
+            item.stock = item.stock + stock_adjustment
             item.reorder_level = int(reorder_level)
             item.purchase_price = float(purchase_price) if purchase_price else None
             item.sale_price = float(sale_price) if sale_price else None
@@ -1272,7 +1900,7 @@ def edit_item(id):
     return render_template("edit_item.html", item=item, categories=categories)
 
 @app.route("/item/delete/<int:id>", methods=["POST"])
-@verified_required
+@admin_required
 def delete_item(id):
     item = db.session.get(Item, id) or abort(404)
     if item.purchases or item.sales:
@@ -1283,6 +1911,161 @@ def delete_item(id):
         flash("Item deleted successfully!", "success")
     return redirect(url_for("item"))
 
+@app.route("/item/<int:id>/ledger")
+@verified_required
+def item_ledger(id):
+    item = db.session.get(Item, id) or abort(404)
+    start_date_str = request.args.get("start_date", "")
+    end_date_str   = request.args.get("end_date", "")
+
+    purchase_items   = PurchaseItem.query.filter_by(item_id=id).all()
+    sale_items       = SaleItem.query.filter_by(item_id=id).all()
+    purchase_returns = PurchaseReturn.query.filter_by(item_id=id).all()
+    sale_returns     = SaleReturn.query.filter_by(item_id=id).all()
+
+    entries = []
+    for pi in purchase_items:
+        entries.append({
+            "date": pi.purchase_header.date, "type": "Purchase", "badge": "success",
+            "ref": f"PO #{pi.purchase_header.id}", "party": pi.purchase_header.id_supplier.name,
+            "stock_in": pi.quantity, "stock_out": 0,
+            "rate": pi.purchase_price, "value": purchase_item_total(pi),
+        })
+    for si in sale_items:
+        entries.append({
+            "date": si.sale_header.date, "type": "Sale", "badge": "primary",
+            "ref": f"SO #{si.sale_header.id}", "party": si.sale_header.id_customer.name,
+            "stock_in": 0, "stock_out": si.quantity,
+            "rate": si.sale_price, "value": sale_item_total(si),
+        })
+    for pr in purchase_returns:
+        entries.append({
+            "date": pr.date, "type": "Purchase Return", "badge": "warning",
+            "ref": f"PR #{pr.id}", "party": pr.supplier.name,
+            "stock_in": 0, "stock_out": pr.quantity,
+            "rate": pr.return_price, "value": round(pr.quantity * pr.return_price, 2),
+        })
+    for sr in sale_returns:
+        entries.append({
+            "date": sr.date, "type": "Sale Return", "badge": "secondary",
+            "ref": f"SR #{sr.id}", "party": sr.customer.name,
+            "stock_in": sr.quantity, "stock_out": 0,
+            "rate": sr.return_price, "value": round(sr.quantity * sr.return_price, 2),
+        })
+
+    entries.sort(key=lambda x: (x["date"], x["ref"]))
+
+    date_filtered = False
+    if start_date_str and end_date_str:
+        try:
+            sd = datetime.strptime(start_date_str, "%Y-%m-%d")
+            ed = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59, microsecond=999999)
+            entries = [e for e in entries if sd <= e["date"] <= ed]
+            date_filtered = True
+        except ValueError:
+            flash("Invalid date format!", "danger")
+
+    # Opening stock entry — prepend when not date-filtered (or always as starting balance)
+    opening = item.opening_stock or 0
+    if not date_filtered:
+        opening_entry = {
+            "date": None, "type": "Opening Stock", "badge": "dark",
+            "ref": "—", "party": "—",
+            "stock_in": opening, "stock_out": 0,
+            "rate": 0, "value": 0,
+            "balance": opening, "is_opening": True,
+        }
+        entries = [opening_entry] + entries
+        balance = opening
+    else:
+        balance = 0
+
+    for e in entries:
+        if e.get("is_opening"):
+            continue
+        balance += e["stock_in"] - e["stock_out"]
+        e["balance"] = balance
+
+    total_in  = sum(e["stock_in"]  for e in entries if not e.get("is_opening"))
+    total_out = sum(e["stock_out"] for e in entries if not e.get("is_opening"))
+
+    return render_template(
+        "item_ledger.html",
+        item=item,
+        entries=entries,
+        total_in=total_in,
+        total_out=total_out,
+        opening_stock=opening,
+        current_stock=item.stock,
+        start_date=start_date_str,
+        end_date=end_date_str,
+    )
+
+@app.route("/item/<int:id>/ledger/export")
+@verified_required
+def export_item_ledger(id):
+    item = db.session.get(Item, id) or abort(404)
+    purchase_items   = PurchaseItem.query.filter_by(item_id=id).all()
+    sale_items       = SaleItem.query.filter_by(item_id=id).all()
+    purchase_returns = PurchaseReturn.query.filter_by(item_id=id).all()
+    sale_returns     = SaleReturn.query.filter_by(item_id=id).all()
+
+    rows = []
+    for pi in purchase_items:
+        rows.append((pi.purchase_header.date, "Purchase", f"PO #{pi.purchase_header.id}", pi.purchase_header.id_supplier.name, pi.quantity, 0, pi.purchase_price, purchase_item_total(pi)))
+    for si in sale_items:
+        rows.append((si.sale_header.date, "Sale", f"SO #{si.sale_header.id}", si.sale_header.id_customer.name, 0, si.quantity, si.sale_price, sale_item_total(si)))
+    for pr in purchase_returns:
+        rows.append((pr.date, "Purchase Return", f"PR #{pr.id}", pr.supplier.name, 0, pr.quantity, pr.return_price, round(pr.quantity * pr.return_price, 2)))
+    for sr in sale_returns:
+        rows.append((sr.date, "Sale Return", f"SR #{sr.id}", sr.customer.name, sr.quantity, 0, sr.return_price, round(sr.quantity * sr.return_price, 2)))
+
+    rows.sort(key=lambda x: x[0])
+    balance = 0
+    filename = f"item_ledger_{id}.csv"
+    with open(f"static/{filename}", "w", newline="") as f:
+        writer = csv.writer(f)
+        write_csv_header(writer, "Item Stock Ledger", extra_info=f"Item: {item.name}")
+        writer.writerow(["Date", "Type", "Reference", "Party", "Stock In", "Stock Out", "Rate", "Value", "Balance"])
+        for date, typ, ref, party, sin, sout, rate, value in rows:
+            balance += sin - sout
+            writer.writerow([date.strftime("%Y-%m-%d"), typ, ref, party, sin, sout, round(rate, 2), round(value, 2), balance])
+    return send_from_directory("static", filename, as_attachment=True, download_name=f"{item.name}_ledger.csv")
+
+@app.route("/item/<int:id>/ledger/export/excel")
+@verified_required
+def export_item_ledger_excel(id):
+    item = db.session.get(Item, id) or abort(404)
+    purchase_items   = PurchaseItem.query.filter_by(item_id=id).all()
+    sale_items       = SaleItem.query.filter_by(item_id=id).all()
+    purchase_returns = PurchaseReturn.query.filter_by(item_id=id).all()
+    sale_returns     = SaleReturn.query.filter_by(item_id=id).all()
+
+    raw = []
+    for pi in purchase_items:
+        raw.append((pi.purchase_header.date, "Purchase", f"PO #{pi.purchase_header.id}", pi.purchase_header.id_supplier.name, pi.quantity, 0, pi.purchase_price, purchase_item_total(pi)))
+    for si in sale_items:
+        raw.append((si.sale_header.date, "Sale", f"SO #{si.sale_header.id}", si.sale_header.id_customer.name, 0, si.quantity, si.sale_price, sale_item_total(si)))
+    for pr in purchase_returns:
+        raw.append((pr.date, "Purchase Return", f"PR #{pr.id}", pr.supplier.name, 0, pr.quantity, pr.return_price, round(pr.quantity * pr.return_price, 2)))
+    for sr in sale_returns:
+        raw.append((sr.date, "Sale Return", f"SR #{sr.id}", sr.customer.name, sr.quantity, 0, sr.return_price, round(sr.quantity * sr.return_price, 2)))
+
+    raw.sort(key=lambda x: x[0])
+    balance = item.opening_stock
+    excel_rows = [["Opening", "Opening Stock", "", "", item.opening_stock, 0, 0, 0, balance]]
+    for date, typ, ref, party, sin, sout, rate, value in raw:
+        balance += sin - sout
+        excel_rows.append([date.strftime("%Y-%m-%d"), typ, ref, party, sin, sout, round(rate, 2), round(value, 2), balance])
+
+    return excel_response(
+        filename=f"{item.name}_ledger.xlsx",
+        title="Item Stock Ledger",
+        col_headers=["Date", "Type", "Reference", "Party", "Stock In", "Stock Out", "Rate", "Value", "Balance"],
+        rows=excel_rows,
+        extra_info=f"Item: {item.name} | Unit: {item.unit or 'Pcs'}",
+    )
+
 @app.route("/api/item/<int:id>")
 @verified_required
 def get_item(id):
@@ -1290,6 +2073,7 @@ def get_item(id):
     return {
         "purchase_price": item.purchase_price,
         "sale_price": item.sale_price,
+        "unit": item.unit or "Pcs",
         "category": item.id_category.name if item.id_category else None,
     }
 
@@ -1299,92 +2083,78 @@ def purchase():
     search = request.args.get("search", "").strip()
     query = Purchase.query
     if search:
-        query = (
-            query.join(Supplier)
-            .join(Item)
-            .outerjoin(Category, Item.category_id == Category.id)
-            .filter(
-                (Supplier.name.ilike(f"%{search}%"))
-                | (Item.name.ilike(f"%{search}%"))
-                | (Category.name.ilike(f"%{search}%"))
-            )
-        )
-    purchases, pagination = get_paginated_results(query)
-    suppliers = Supplier.query.all()
-    items = Item.query.all()
+        query = query.join(Supplier).filter(Supplier.name.ilike(f"%{search}%"))
+    purchases, pagination = get_paginated_results(query.order_by(Purchase.date.desc(), Purchase.id.desc()))
+    suppliers = Supplier.query.order_by(Supplier.name).all()
+    items = Item.query.order_by(Item.name).all()
     if request.method == "POST":
-        supplier_id = request.form.get("supplier_id", "").strip()
-        item_id = request.form.get("item_id", "").strip()
-        quantity = request.form.get("quantity", "").strip()
-        purchase_price = request.form.get("purchase_price", "").strip()
-        date = request.form.get("date", "").strip()
-        form_data = {
-            "supplier_id": supplier_id,
-            "item_id": item_id,
-            "quantity": quantity,
-            "purchase_price": purchase_price,
-            "date": date,
-        }
-        if not supplier_id or not item_id or not quantity or not purchase_price or not date:
-            flash("All fields are required!", "danger")
-            return render_template(
-                "purchase.html",
-                suppliers=suppliers,
-                items=items,
-                purchases=purchases,
-                pagination=pagination,
-                search=search,
-                form_data=form_data,
-            )
-        if not quantity.isdigit() or int(quantity) <= 0:
-            flash("Quantity must be a positive number!", "danger")
-            return render_template(
-                "purchase.html",
-                suppliers=suppliers,
-                items=items,
-                purchases=purchases,
-                pagination=pagination,
-                search=search,
-                form_data=form_data,
-            )
-        if not purchase_price.replace(".", "", 1).isdigit() or float(purchase_price) < 0:
-            flash("Purchase price must be a non-negative number!", "danger")
-            return render_template(
-                "purchase.html",
-                suppliers=suppliers,
-                items=items,
-                purchases=purchases,
-                pagination=pagination,
-                search=search,
-                form_data=form_data,
-            )
-        try:
-            item = db.session.get(Item, item_id) or abort(404)
-            item.stock += int(quantity)
-            purchase = Purchase(
-                supplier_id=supplier_id,
-                item_id=item_id,
-                quantity=int(quantity),
-                purchase_price=float(purchase_price),
-                date=datetime.strptime(date, "%Y-%m-%d"),
-            )
-            db.session.add(purchase)
-            db.session.flush()
-            sync_supplier_purchase(purchase)
-            db.session.commit()
-            flash("Purchase added successfully!", "success")
+        if current_user.role not in ("admin", "manager"):
+            flash("Access denied. Only managers and admins can add purchases.", "danger")
             return redirect(url_for("purchase"))
-        except ValueError:
-            flash("Invalid date format! Use YYYY-MM-DD.", "danger")
-            return render_template(
-                "purchase.html",
-                suppliers=suppliers,
-                items=items,
-                purchases=purchases,
-                pagination=pagination,
-                search=search,
-                form_data=form_data,
-            )
+        supplier_id  = request.form.get("supplier_id", "").strip()
+        date_str     = request.form.get("date", "").strip()
+        notes        = request.form.get("notes", "").strip()
+        item_ids     = request.form.getlist("item_id[]")
+        quantities   = request.form.getlist("quantity[]")
+        prices       = request.form.getlist("purchase_price[]")
+        disc_types   = request.form.getlist("discount_type[]")
+        disc_values  = request.form.getlist("discount_value[]")
+        tax_pcts     = request.form.getlist("tax_percent[]")
+
+        rows = []
+        for i, (iid, qty, price) in enumerate(zip(item_ids, quantities, prices)):
+            if iid.strip() and qty.strip() and price.strip():
+                rows.append((
+                    iid.strip(), qty.strip(), price.strip(),
+                    disc_types[i] if i < len(disc_types) else "percent",
+                    disc_values[i] if i < len(disc_values) else "0",
+                    tax_pcts[i] if i < len(tax_pcts) else "0",
+                ))
+
+        if not supplier_id or not date_str:
+            flash("Supplier and date are required!", "danger")
+        elif not rows:
+            flash("At least one item is required!", "danger")
+        else:
+            try:
+                purchase_date = datetime.strptime(date_str, "%Y-%m-%d")
+                first_iid, first_qty, first_price = rows[0][0], rows[0][1], rows[0][2]
+                pur = Purchase(
+                    supplier_id=int(supplier_id),
+                    item_id=int(first_iid),
+                    quantity=int(first_qty),
+                    purchase_price=float(first_price),
+                    discount_type="percent", discount_value=0, discount_amount=0,
+                    tax_percent=0, tax_amount=0,
+                    date=purchase_date, notes=notes or None,
+                )
+                db.session.add(pur)
+                db.session.flush()
+                for iid, qty, price, d_type, d_val, tax in rows:
+                    item_obj = db.session.get(Item, int(iid)) or abort(404)
+                    qty_i  = int(qty)
+                    price_f = float(price)
+                    d_val_f = float(d_val or 0)
+                    tax_f   = float(tax or 0)
+                    gross   = qty_i * price_f
+                    disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
+                    pi = PurchaseItem(
+                        purchase_id=pur.id, item_id=int(iid),
+                        quantity=qty_i, purchase_price=price_f,
+                        discount_type=d_type or "percent", discount_value=d_val_f,
+                        discount_amount=disc_amt, tax_percent=tax_f,
+                        tax_amount=tax_amt, amount=net,
+                    )
+                    db.session.add(pi)
+                    item_obj.stock += qty_i
+                db.session.flush()
+                db.session.refresh(pur)
+                sync_supplier_purchase(pur)
+                db.session.commit()
+                flash("Purchase added successfully!", "success")
+                return redirect(url_for("purchase"))
+            except ValueError as e:
+                flash(f"Invalid data: {e}", "danger")
     return render_template(
         "purchase.html",
         suppliers=suppliers,
@@ -1392,75 +2162,105 @@ def purchase():
         purchases=purchases,
         pagination=pagination,
         search=search,
-        form_data={},
+        today=datetime.now().strftime("%Y-%m-%d"),
     )
 
 @app.route("/purchase/edit/<int:id>", methods=["GET", "POST"])
-@verified_required
+@manager_required
 def edit_purchase(id):
-    purchase = db.session.get(Purchase, id) or abort(404)
+    pur = db.session.get(Purchase, id) or abort(404)
+    suppliers = Supplier.query.order_by(Supplier.name).all()
+    items_all = Item.query.order_by(Item.name).all()
     if request.method == "POST":
-        supplier_id = request.form.get("supplier_id", "")
-        item_id = request.form.get("item_id", "")
-        quantity = request.form.get("quantity", "").strip()
-        purchase_price = request.form.get("purchase_price", "").strip()
-        date = request.form.get("date", "")
-        form_data = {
-            "supplier_id": supplier_id,
-            "item_id": item_id,
-            "quantity": quantity,
-            "purchase_price": purchase_price,
-            "date": date,
-        }
-        if not supplier_id or not item_id or not quantity or not purchase_price or not date:
-            flash("All fields are required!", "danger")
-        elif not quantity.isdigit() or int(quantity) <= 0:
-            flash("Quantity must be a positive number!", "danger")
-        elif not purchase_price.replace(".", "", 1).isdigit() or float(purchase_price) < 0:
-            flash("Purchase price must be a non-negative number!", "danger")
+        supplier_id = request.form.get("supplier_id", "").strip()
+        date_str    = request.form.get("date", "").strip()
+        notes       = request.form.get("notes", "").strip()
+        item_ids    = request.form.getlist("item_id[]")
+        quantities  = request.form.getlist("quantity[]")
+        prices      = request.form.getlist("purchase_price[]")
+        disc_types  = request.form.getlist("discount_type[]")
+        disc_values = request.form.getlist("discount_value[]")
+        tax_pcts    = request.form.getlist("tax_percent[]")
+
+        rows = []
+        for i, (iid, qty, price) in enumerate(zip(item_ids, quantities, prices)):
+            if iid.strip() and qty.strip() and price.strip():
+                rows.append((
+                    iid.strip(), qty.strip(), price.strip(),
+                    disc_types[i] if i < len(disc_types) else "percent",
+                    disc_values[i] if i < len(disc_values) else "0",
+                    tax_pcts[i] if i < len(tax_pcts) else "0",
+                ))
+
+        if not supplier_id or not date_str:
+            flash("Supplier and date are required!", "danger")
+        elif not rows:
+            flash("At least one item is required!", "danger")
         else:
             try:
-                item = db.session.get(Item, item_id) or abort(404)
-                old_quantity = purchase.quantity
-                old_supplier_id = purchase.supplier_id
-                if purchase.item_id == int(item_id):
-                    item.stock = item.stock - old_quantity + int(quantity)
-                else:
-                    old_item = db.session.get(Item, purchase.item_id) or abort(404)
-                    old_item.stock -= old_quantity
-                    item.stock += int(quantity)
-                purchase.supplier_id = supplier_id
-                purchase.item_id = item_id
-                purchase.quantity = int(quantity)
-                purchase.purchase_price = float(purchase_price)
-                purchase.date = datetime.strptime(date, "%Y-%m-%d")
+                old_supplier_id = pur.supplier_id
+                # Reverse old stock
+                for pi in pur.line_items:
+                    old_item = db.session.get(Item, pi.item_id)
+                    if old_item:
+                        old_item.stock -= pi.quantity
+                # Delete old line items
+                PurchaseItem.query.filter_by(purchase_id=pur.id).delete()
+                # Update header
+                first_iid, first_qty, first_price = rows[0][0], rows[0][1], rows[0][2]
+                pur.supplier_id    = int(supplier_id)
+                pur.item_id        = int(first_iid)
+                pur.quantity       = int(first_qty)
+                pur.purchase_price = float(first_price)
+                pur.discount_type  = "percent"; pur.discount_value = 0
+                pur.discount_amount= 0; pur.tax_percent = 0; pur.tax_amount = 0
+                pur.date           = datetime.strptime(date_str, "%Y-%m-%d")
+                pur.notes          = notes or None
+                # Create new line items
+                for iid, qty, price, d_type, d_val, tax in rows:
+                    item_obj = db.session.get(Item, int(iid)) or abort(404)
+                    qty_i = int(qty); price_f = float(price)
+                    d_val_f = float(d_val or 0); tax_f = float(tax or 0)
+                    gross = qty_i * price_f
+                    disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
+                    pi = PurchaseItem(
+                        purchase_id=pur.id, item_id=int(iid),
+                        quantity=qty_i, purchase_price=price_f,
+                        discount_type=d_type or "percent", discount_value=d_val_f,
+                        discount_amount=disc_amt, tax_percent=tax_f,
+                        tax_amount=tax_amt, amount=net,
+                    )
+                    db.session.add(pi)
+                    item_obj.stock += qty_i
+                db.session.flush()
+                db.session.refresh(pur)
                 if old_supplier_id != int(supplier_id):
-                    remove_supplier_ledger_entry("purchase", purchase.id)
+                    remove_supplier_ledger_entry("purchase", pur.id)
                     recalculate_supplier_ledger(old_supplier_id)
-                sync_supplier_purchase(purchase)
+                sync_supplier_purchase(pur)
                 db.session.commit()
                 flash("Purchase updated successfully!", "success")
                 return redirect(url_for("purchase"))
-            except ValueError:
-                flash("Invalid date format! Use YYYY-MM-DD.", "danger")
-        suppliers = Supplier.query.all()
-        items = Item.query.all()
-        return render_template("edit_purchase.html", purchase=purchase, suppliers=suppliers, items=items, form_data=form_data)
-    suppliers = Supplier.query.all()
-    items = Item.query.all()
-    return render_template("edit_purchase.html", purchase=purchase, suppliers=suppliers, items=items, form_data={})
+            except ValueError as e:
+                flash(f"Invalid data: {e}", "danger")
+    return render_template("edit_purchase.html", purchase=pur, suppliers=suppliers, items=items_all)
 
 @app.route("/purchase/delete/<int:id>", methods=["POST"])
-@verified_required
+@admin_required
 def delete_purchase(id):
-    purchase = db.session.get(Purchase, id) or abort(404)
-    if purchase.supplier_payments:
+    pur = db.session.get(Purchase, id) or abort(404)
+    if pur.supplier_payments:
         flash("Cannot delete purchase with associated payments! Delete payments first.", "danger")
         return redirect(url_for("purchase"))
-    item = db.session.get(Item, purchase.item_id) or abort(404)
-    item.stock -= purchase.quantity
-    supplier_id = remove_supplier_ledger_entry("purchase", purchase.id)
-    db.session.delete(purchase)
+    if pur.returns:
+        flash("Cannot delete purchase with associated returns! Delete returns first.", "danger")
+        return redirect(url_for("purchase"))
+    for pi in pur.line_items:
+        item_obj = db.session.get(Item, pi.item_id)
+        if item_obj:
+            item_obj.stock -= pi.quantity
+    supplier_id = remove_supplier_ledger_entry("purchase", pur.id)
+    db.session.delete(pur)
     db.session.commit()
     if supplier_id:
         recalculate_supplier_ledger(supplier_id)
@@ -1474,103 +2274,87 @@ def sale():
     search = request.args.get("search", "").strip()
     query = Sale.query
     if search:
-        query = (
-            query.join(Customer)
-            .join(Item)
-            .outerjoin(Category, Item.category_id == Category.id)
-            .filter(
-                (Customer.name.ilike(f"%{search}%"))
-                | (Item.name.ilike(f"%{search}%"))
-                | (Category.name.ilike(f"%{search}%"))
-            )
-        )
-    sales, pagination = get_paginated_results(query)
-    customers = Customer.query.all()
-    items = Item.query.all()
+        query = query.join(Customer).filter(Customer.name.ilike(f"%{search}%"))
+    sales, pagination = get_paginated_results(query.order_by(Sale.date.desc(), Sale.id.desc()))
+    customers = Customer.query.order_by(Customer.name).all()
+    items = Item.query.order_by(Item.name).all()
     if request.method == "POST":
-        customer_id = request.form.get("customer_id", "").strip()
-        item_id = request.form.get("item_id", "").strip()
-        quantity = request.form.get("quantity", "").strip()
-        sale_price = request.form.get("sale_price", "").strip()
-        date = request.form.get("date", "").strip()
-        form_data = {
-            "customer_id": customer_id,
-            "item_id": item_id,
-            "quantity": quantity,
-            "sale_price": sale_price,
-            "date": date,
-        }
-        if not customer_id or not item_id or not quantity or not sale_price or not date:
-            flash("All fields are required!", "danger")
-            return render_template(
-                "sale.html",
-                customers=customers,
-                items=items,
-                sales=sales,
-                pagination=pagination,
-                search=search,
-                form_data=form_data,
-            )
-        if not quantity.isdigit() or int(quantity) <= 0:
-            flash("Quantity must be a positive number!", "danger")
-            return render_template(
-                "sale.html",
-                customers=customers,
-                items=items,
-                sales=sales,
-                pagination=pagination,
-                search=search,
-                form_data=form_data,
-            )
-        if not sale_price.replace(".", "", 1).isdigit() or float(sale_price) < 0:
-            flash("Sale price must be a non-negative number!", "danger")
-            return render_template(
-                "sale.html",
-                customers=customers,
-                items=items,
-                sales=sales,
-                pagination=pagination,
-                search=search,
-                form_data=form_data,
-            )
-        try:
-            item = db.session.get(Item, item_id) or abort(404)
-            if item.stock < int(quantity):
-                flash(f"Insufficient stock! Available balance: {item.stock}", "danger")
-                return render_template(
-                    "sale.html",
-                    customers=customers,
-                    items=items,
-                    sales=sales,
-                    pagination=pagination,
-                    search=search,
-                    form_data=form_data,
-                )
-            item.stock -= int(quantity)
-            sale = Sale(
-                customer_id=customer_id,
-                item_id=item_id,
-                quantity=int(quantity),
-                sale_price=float(sale_price),
-                date=datetime.strptime(date, "%Y-%m-%d"),
-            )
-            db.session.add(sale)
-            db.session.flush()
-            sync_customer_sale(sale)
-            db.session.commit()
-            flash("Sale recorded successfully!", "success")
+        if current_user.role not in ("admin", "manager"):
+            flash("Access denied. Only managers and admins can add sales.", "danger")
             return redirect(url_for("sale"))
-        except ValueError:
-            flash("Invalid date format! Use YYYY-MM-DD.", "danger")
-            return render_template(
-                "sale.html",
-                customers=customers,
-                items=items,
-                sales=sales,
-                pagination=pagination,
-                search=search,
-                form_data=form_data,
-            )
+        customer_id = request.form.get("customer_id", "").strip()
+        date_str    = request.form.get("date", "").strip()
+        notes       = request.form.get("notes", "").strip()
+        item_ids    = request.form.getlist("item_id[]")
+        quantities  = request.form.getlist("quantity[]")
+        prices      = request.form.getlist("sale_price[]")
+        disc_types  = request.form.getlist("discount_type[]")
+        disc_values = request.form.getlist("discount_value[]")
+        tax_pcts    = request.form.getlist("tax_percent[]")
+
+        rows = []
+        for i, (iid, qty, price) in enumerate(zip(item_ids, quantities, prices)):
+            if iid.strip() and qty.strip() and price.strip():
+                rows.append((
+                    iid.strip(), qty.strip(), price.strip(),
+                    disc_types[i] if i < len(disc_types) else "percent",
+                    disc_values[i] if i < len(disc_values) else "0",
+                    tax_pcts[i] if i < len(tax_pcts) else "0",
+                ))
+
+        if not customer_id or not date_str:
+            flash("Customer and date are required!", "danger")
+        elif not rows:
+            flash("At least one item is required!", "danger")
+        else:
+            try:
+                sale_date = datetime.strptime(date_str, "%Y-%m-%d")
+                # Check stock for all items first
+                stock_errors = []
+                for iid, qty, price, *_ in rows:
+                    item_obj = db.session.get(Item, int(iid))
+                    if item_obj and item_obj.stock < int(qty):
+                        stock_errors.append(f"{item_obj.name}: only {item_obj.stock} available")
+                if stock_errors:
+                    flash("Insufficient stock — " + "; ".join(stock_errors), "danger")
+                else:
+                    first_iid, first_qty, first_price = rows[0][0], rows[0][1], rows[0][2]
+                    sal = Sale(
+                        customer_id=int(customer_id),
+                        item_id=int(first_iid),
+                        quantity=int(first_qty),
+                        sale_price=float(first_price),
+                        cost_price=0.0,
+                        discount_type="percent", discount_value=0, discount_amount=0,
+                        tax_percent=0, tax_amount=0,
+                        date=sale_date, notes=notes or None,
+                    )
+                    db.session.add(sal)
+                    db.session.flush()
+                    for iid, qty, price, d_type, d_val, tax in rows:
+                        item_obj = db.session.get(Item, int(iid)) or abort(404)
+                        qty_i = int(qty); price_f = float(price)
+                        d_val_f = float(d_val or 0); tax_f = float(tax or 0)
+                        gross = qty_i * price_f
+                        disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
+                        si = SaleItem(
+                            sale_id=sal.id, item_id=int(iid),
+                            quantity=qty_i, sale_price=price_f,
+                            cost_price=float(item_obj.purchase_price or 0),
+                            discount_type=d_type or "percent", discount_value=d_val_f,
+                            discount_amount=disc_amt, tax_percent=tax_f,
+                            tax_amount=tax_amt, amount=net,
+                        )
+                        db.session.add(si)
+                        item_obj.stock -= qty_i
+                    db.session.flush()
+                    db.session.refresh(sal)
+                    sync_customer_sale(sal)
+                    db.session.commit()
+                    flash("Sale recorded successfully!", "success")
+                    return redirect(url_for("sale"))
+            except ValueError as e:
+                flash(f"Invalid data: {e}", "danger")
     return render_template(
         "sale.html",
         customers=customers,
@@ -1578,86 +2362,114 @@ def sale():
         sales=sales,
         pagination=pagination,
         search=search,
-        form_data={},
+        today=datetime.now().strftime("%Y-%m-%d"),
     )
 
 @app.route("/sale/edit/<int:id>", methods=["GET", "POST"])
-@verified_required
+@manager_required
 def edit_sale(id):
-    sale = db.session.get(Sale, id) or abort(404)
+    sal = db.session.get(Sale, id) or abort(404)
+    customers = Customer.query.order_by(Customer.name).all()
+    items_all = Item.query.order_by(Item.name).all()
     if request.method == "POST":
-        customer_id = request.form.get("customer_id", "")
-        item_id = request.form.get("item_id", "")
-        quantity = request.form.get("quantity", "").strip()
-        sale_price = request.form.get("sale_price", "").strip()
-        date = request.form.get("date", "")
-        form_data = {
-            "customer_id": customer_id,
-            "item_id": item_id,
-            "quantity": quantity,
-            "sale_price": sale_price,
-            "date": date,
-        }
-        if not customer_id or not item_id or not quantity or not sale_price or not date:
-            flash("All fields are required!", "danger")
-        elif not quantity.isdigit() or int(quantity) <= 0:
-            flash("Quantity must be a positive number!", "danger")
-        elif not sale_price.replace(".", "", 1).isdigit() or float(sale_price) < 0:
-            flash("Sale price must be a non-negative number!", "danger")
+        customer_id = request.form.get("customer_id", "").strip()
+        date_str    = request.form.get("date", "").strip()
+        notes       = request.form.get("notes", "").strip()
+        item_ids    = request.form.getlist("item_id[]")
+        quantities  = request.form.getlist("quantity[]")
+        prices      = request.form.getlist("sale_price[]")
+        disc_types  = request.form.getlist("discount_type[]")
+        disc_values = request.form.getlist("discount_value[]")
+        tax_pcts    = request.form.getlist("tax_percent[]")
+
+        rows = []
+        for i, (iid, qty, price) in enumerate(zip(item_ids, quantities, prices)):
+            if iid.strip() and qty.strip() and price.strip():
+                rows.append((
+                    iid.strip(), qty.strip(), price.strip(),
+                    disc_types[i] if i < len(disc_types) else "percent",
+                    disc_values[i] if i < len(disc_values) else "0",
+                    tax_pcts[i] if i < len(tax_pcts) else "0",
+                ))
+
+        if not customer_id or not date_str:
+            flash("Customer and date are required!", "danger")
+        elif not rows:
+            flash("At least one item is required!", "danger")
         else:
             try:
-                item = db.session.get(Item, item_id) or abort(404)
-                old_quantity = sale.quantity
-                stock_valid = True
-                if sale.item_id == int(item_id):
-                    available = item.stock + old_quantity
-                    if available < int(quantity):
-                        flash(f"Insufficient stock! Available balance: {available}", "danger")
-                        stock_valid = False
-                    else:
-                        item.stock = item.stock + old_quantity - int(quantity)
+                old_customer_id = sal.customer_id
+                # Restore old stock
+                for si in sal.line_items:
+                    old_item = db.session.get(Item, si.item_id)
+                    if old_item:
+                        old_item.stock += si.quantity
+                # Check new stock
+                stock_errors = []
+                for iid, qty, price, *_ in rows:
+                    item_obj = db.session.get(Item, int(iid))
+                    if item_obj and item_obj.stock < int(qty):
+                        stock_errors.append(f"{item_obj.name}: only {item_obj.stock} available")
+                if stock_errors:
+                    # Undo stock restoration
+                    for si in sal.line_items:
+                        old_item = db.session.get(Item, si.item_id)
+                        if old_item:
+                            old_item.stock -= si.quantity
+                    flash("Insufficient stock — " + "; ".join(stock_errors), "danger")
                 else:
-                    old_item = db.session.get(Item, sale.item_id) or abort(404)
-                    if item.stock < int(quantity):
-                        flash(f"Insufficient stock! Available balance: {item.stock}", "danger")
-                        stock_valid = False
-                    else:
-                        old_item.stock += old_quantity
-                        item.stock -= int(quantity)
-                if stock_valid:
-                    old_customer_id = sale.customer_id
-                    sale.customer_id = customer_id
-                    sale.item_id = item_id
-                    sale.quantity = int(quantity)
-                    sale.sale_price = float(sale_price)
-                    sale.date = datetime.strptime(date, "%Y-%m-%d")
+                    # Delete old line items, update header
+                    SaleItem.query.filter_by(sale_id=sal.id).delete()
+                    first_iid, first_qty, first_price = rows[0][0], rows[0][1], rows[0][2]
+                    sal.customer_id = int(customer_id)
+                    sal.item_id = int(first_iid); sal.quantity = int(first_qty)
+                    sal.sale_price = float(first_price); sal.cost_price = 0.0
+                    sal.discount_type = "percent"; sal.discount_value = 0
+                    sal.discount_amount = 0; sal.tax_percent = 0; sal.tax_amount = 0
+                    sal.date = datetime.strptime(date_str, "%Y-%m-%d")
+                    sal.notes = notes or None
+                    for iid, qty, price, d_type, d_val, tax in rows:
+                        item_obj = db.session.get(Item, int(iid)) or abort(404)
+                        qty_i = int(qty); price_f = float(price)
+                        d_val_f = float(d_val or 0); tax_f = float(tax or 0)
+                        gross = qty_i * price_f
+                        disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
+                        si = SaleItem(
+                            sale_id=sal.id, item_id=int(iid),
+                            quantity=qty_i, sale_price=price_f,
+                            cost_price=float(item_obj.purchase_price or 0),
+                            discount_type=d_type or "percent", discount_value=d_val_f,
+                            discount_amount=disc_amt, tax_percent=tax_f,
+                            tax_amount=tax_amt, amount=net,
+                        )
+                        db.session.add(si)
+                        item_obj.stock -= qty_i
+                    db.session.flush()
+                    db.session.refresh(sal)
                     if old_customer_id != int(customer_id):
-                        remove_customer_ledger_entry("sale", sale.id)
+                        remove_customer_ledger_entry("sale", sal.id)
                         recalculate_customer_ledger(old_customer_id)
-                    sync_customer_sale(sale)
+                    sync_customer_sale(sal)
                     db.session.commit()
                     flash("Sale updated successfully!", "success")
                     return redirect(url_for("sale"))
-            except ValueError:
-                flash("Invalid date format! Use YYYY-MM-DD.", "danger")
-        customers = Customer.query.all()
-        items = Item.query.all()
-        return render_template("edit_sale.html", sale=sale, customers=customers, items=items, form_data=form_data)
-    customers = Customer.query.all()
-    items = Item.query.all()
-    return render_template("edit_sale.html", sale=sale, customers=customers, items=items, form_data={})
+            except ValueError as e:
+                flash(f"Invalid data: {e}", "danger")
+    return render_template("edit_sale.html", sale=sal, customers=customers, items=items_all)
 
 @app.route("/sale/delete/<int:id>", methods=["POST"])
-@verified_required
+@admin_required
 def delete_sale(id):
-    sale = db.session.get(Sale, id) or abort(404)
-    if sale.customer_payments:
+    sal = db.session.get(Sale, id) or abort(404)
+    if sal.customer_payments:
         flash("Cannot delete sale with associated receipts! Delete receipts first.", "danger")
         return redirect(url_for("sale"))
-    item = db.session.get(Item, sale.item_id) or abort(404)
-    item.stock += sale.quantity
-    customer_id = remove_customer_ledger_entry("sale", sale.id)
-    db.session.delete(sale)
+    for si in sal.line_items:
+        item_obj = db.session.get(Item, si.item_id)
+        if item_obj:
+            item_obj.stock += si.quantity
+    customer_id = remove_customer_ledger_entry("sale", sal.id)
+    db.session.delete(sal)
     db.session.commit()
     if customer_id:
         recalculate_customer_ledger(customer_id)
@@ -1722,7 +2534,7 @@ def supplier_payment():
     )
 
 @app.route("/supplier_payment/edit/<int:id>", methods=["GET", "POST"])
-@verified_required
+@manager_required
 def edit_supplier_payment(id):
     payment = db.session.get(SupplierPayment, id) or abort(404)
     suppliers = Supplier.query.order_by(Supplier.name).all()
@@ -1768,7 +2580,7 @@ def edit_supplier_payment(id):
     )
 
 @app.route("/supplier_payment/delete/<int:id>", methods=["POST"])
-@verified_required
+@admin_required
 def delete_supplier_payment(id):
     payment = db.session.get(SupplierPayment, id) or abort(404)
     supplier_id = remove_supplier_ledger_entry("payment", payment.id)
@@ -1779,6 +2591,284 @@ def delete_supplier_payment(id):
         db.session.commit()
     flash("Supplier payment deleted successfully!", "success")
     return redirect(url_for("supplier_payment"))
+
+@app.route("/supplier_bulk_payment", methods=["GET", "POST"])
+@verified_required
+def supplier_bulk_payment():
+    suppliers = Supplier.query.order_by(Supplier.name).all()
+    supplier_id = request.args.get("supplier_id", "").strip()
+    selected_supplier = None
+    outstanding = []
+
+    bulk_amount_str = request.args.get("bulk_amount", "").strip()
+    bulk_amount_val = ""
+    general_suggested = 0.0
+
+    if supplier_id:
+        selected_supplier = db.session.get(Supplier, int(supplier_id))
+        if selected_supplier:
+            all_purchases = Purchase.query.filter_by(
+                supplier_id=selected_supplier.id
+            ).order_by(Purchase.date).all()
+            for p in all_purchases:
+                p_total = purchase_total(p)
+                p_paid  = get_purchase_paid(p.id)
+                p_due   = round(p_total - p_paid, 2)
+                if p_due > 0:
+                    outstanding.append({"p": p, "total": p_total, "paid": p_paid, "due": p_due})
+
+            if bulk_amount_str:
+                try:
+                    bulk_amount_val = float(bulk_amount_str)
+                    remaining = bulk_amount_val
+                    for row in outstanding:
+                        if remaining <= 0:
+                            row["suggested"] = 0.0
+                        elif remaining >= row["due"]:
+                            row["suggested"] = row["due"]
+                            remaining -= row["due"]
+                        else:
+                            row["suggested"] = round(remaining, 2)
+                            remaining = 0.0
+                    general_suggested = round(max(0.0, remaining), 2)
+                except ValueError:
+                    bulk_amount_val = ""
+            if not bulk_amount_val:
+                for row in outstanding:
+                    row["suggested"] = row["due"]
+
+    if request.method == "POST":
+        sup_id       = request.form.get("supplier_id", "").strip()
+        date_str     = request.form.get("payment_date", "").strip()
+        method       = request.form.get("payment_method", "Cash").strip()
+        reference_no = request.form.get("reference_no", "").strip()
+        notes        = request.form.get("notes", "").strip()
+        purch_ids    = request.form.getlist("purchase_id[]")
+        amounts      = request.form.getlist("amount[]")
+        gen_amt_str  = request.form.get("general_amount", "").strip()
+
+        if not sup_id or not date_str:
+            flash("Supplier and payment date are required!", "danger")
+        elif method not in PAYMENT_METHODS:
+            flash("Invalid payment method!", "danger")
+        else:
+            try:
+                pay_date = datetime.strptime(date_str, "%Y-%m-%d")
+                rows = []
+                errors = []
+                for pid, amt_s in zip(purch_ids, amounts):
+                    amt_s = amt_s.strip()
+                    if not amt_s or float(amt_s) <= 0:
+                        continue
+                    try:
+                        amt = float(amt_s)
+                    except ValueError:
+                        errors.append(f"Invalid amount for purchase #{pid}.")
+                        continue
+                    rows.append((int(pid), amt))
+
+                gen_amt = 0.0
+                if gen_amt_str:
+                    try:
+                        gen_amt = float(gen_amt_str)
+                    except ValueError:
+                        errors.append("Invalid general payment amount.")
+
+                if errors:
+                    for e in errors:
+                        flash(e, "danger")
+                elif not rows and gen_amt <= 0:
+                    flash("Please enter at least one payment amount.", "danger")
+                else:
+                    count = 0
+                    total_paid_sum = 0.0
+                    for pid, amt in rows:
+                        pmt = SupplierPayment(
+                            supplier_id=int(sup_id),
+                            purchase_id=pid,
+                            amount=amt,
+                            payment_date=pay_date,
+                            payment_method=method,
+                            reference_no=reference_no or None,
+                            notes=notes or None,
+                        )
+                        db.session.add(pmt)
+                        db.session.flush()
+                        sync_supplier_payment(pmt)
+                        count += 1
+                        total_paid_sum += amt
+                    if gen_amt > 0:
+                        pmt = SupplierPayment(
+                            supplier_id=int(sup_id),
+                            purchase_id=None,
+                            amount=gen_amt,
+                            payment_date=pay_date,
+                            payment_method=method,
+                            reference_no=reference_no or None,
+                            notes=notes or None,
+                        )
+                        db.session.add(pmt)
+                        db.session.flush()
+                        sync_supplier_payment(pmt)
+                        count += 1
+                        total_paid_sum += gen_amt
+                    db.session.commit()
+                    flash(
+                        f"Bulk payment saved: {count} payment(s) totalling {total_paid_sum:,.2f}.",
+                        "success",
+                    )
+                    return redirect(url_for("supplier_payment"))
+            except ValueError as e:
+                flash(f"Invalid data: {e}", "danger")
+
+    return render_template(
+        "supplier_bulk_payment.html",
+        suppliers=suppliers,
+        selected_supplier=selected_supplier,
+        outstanding=outstanding,
+        bulk_amount_val=bulk_amount_val,
+        general_suggested=general_suggested,
+        today=datetime.now().strftime("%Y-%m-%d"),
+    )
+
+@app.route("/customer_bulk_receipt", methods=["GET", "POST"])
+@verified_required
+def customer_bulk_receipt():
+    customers = Customer.query.order_by(Customer.name).all()
+    customer_id = request.args.get("customer_id", "").strip()
+    selected_customer = None
+    outstanding = []
+
+    bulk_amount_str = request.args.get("bulk_amount", "").strip()
+    bulk_amount_val = ""
+    general_suggested = 0.0
+
+    if customer_id:
+        selected_customer = db.session.get(Customer, int(customer_id))
+        if selected_customer:
+            all_sales = Sale.query.filter_by(
+                customer_id=selected_customer.id
+            ).order_by(Sale.date).all()
+            for s in all_sales:
+                s_total    = sale_total(s)
+                s_received = get_sale_received(s.id)
+                s_due      = round(s_total - s_received, 2)
+                if s_due > 0:
+                    outstanding.append({"s": s, "total": s_total, "received": s_received, "due": s_due})
+
+            if bulk_amount_str:
+                try:
+                    bulk_amount_val = float(bulk_amount_str)
+                    remaining = bulk_amount_val
+                    for row in outstanding:
+                        if remaining <= 0:
+                            row["suggested"] = 0.0
+                        elif remaining >= row["due"]:
+                            row["suggested"] = row["due"]
+                            remaining -= row["due"]
+                        else:
+                            row["suggested"] = round(remaining, 2)
+                            remaining = 0.0
+                    general_suggested = round(max(0.0, remaining), 2)
+                except ValueError:
+                    bulk_amount_val = ""
+            if not bulk_amount_val:
+                for row in outstanding:
+                    row["suggested"] = row["due"]
+
+    if request.method == "POST":
+        cust_id      = request.form.get("customer_id", "").strip()
+        date_str     = request.form.get("payment_date", "").strip()
+        method       = request.form.get("payment_method", "Cash").strip()
+        reference_no = request.form.get("reference_no", "").strip()
+        notes        = request.form.get("notes", "").strip()
+        sale_ids     = request.form.getlist("sale_id[]")
+        amounts      = request.form.getlist("amount[]")
+        gen_amt_str  = request.form.get("general_amount", "").strip()
+
+        if not cust_id or not date_str:
+            flash("Customer and receipt date are required!", "danger")
+        elif method not in PAYMENT_METHODS:
+            flash("Invalid payment method!", "danger")
+        else:
+            try:
+                pay_date = datetime.strptime(date_str, "%Y-%m-%d")
+                rows = []
+                errors = []
+                for sid, amt_s in zip(sale_ids, amounts):
+                    amt_s = amt_s.strip()
+                    if not amt_s or float(amt_s) <= 0:
+                        continue
+                    try:
+                        amt = float(amt_s)
+                    except ValueError:
+                        errors.append(f"Invalid amount for sale #{sid}.")
+                        continue
+                    rows.append((int(sid), amt))
+
+                gen_amt = 0.0
+                if gen_amt_str:
+                    try:
+                        gen_amt = float(gen_amt_str)
+                    except ValueError:
+                        errors.append("Invalid general receipt amount.")
+
+                if errors:
+                    for e in errors:
+                        flash(e, "danger")
+                elif not rows and gen_amt <= 0:
+                    flash("Please enter at least one receipt amount.", "danger")
+                else:
+                    count = 0
+                    total_recv_sum = 0.0
+                    for sid, amt in rows:
+                        rcpt = CustomerPayment(
+                            customer_id=int(cust_id),
+                            sale_id=sid,
+                            amount=amt,
+                            payment_date=pay_date,
+                            payment_method=method,
+                            reference_no=reference_no or None,
+                            notes=notes or None,
+                        )
+                        db.session.add(rcpt)
+                        db.session.flush()
+                        sync_customer_receipt(rcpt)
+                        count += 1
+                        total_recv_sum += amt
+                    if gen_amt > 0:
+                        rcpt = CustomerPayment(
+                            customer_id=int(cust_id),
+                            sale_id=None,
+                            amount=gen_amt,
+                            payment_date=pay_date,
+                            payment_method=method,
+                            reference_no=reference_no or None,
+                            notes=notes or None,
+                        )
+                        db.session.add(rcpt)
+                        db.session.flush()
+                        sync_customer_receipt(rcpt)
+                        count += 1
+                        total_recv_sum += gen_amt
+                    db.session.commit()
+                    flash(
+                        f"Bulk receipt saved: {count} receipt(s) totalling {total_recv_sum:,.2f}.",
+                        "success",
+                    )
+                    return redirect(url_for("customer_receipt"))
+            except ValueError as e:
+                flash(f"Invalid data: {e}", "danger")
+
+    return render_template(
+        "customer_bulk_receipt.html",
+        customers=customers,
+        selected_customer=selected_customer,
+        outstanding=outstanding,
+        bulk_amount_val=bulk_amount_val,
+        general_suggested=general_suggested,
+        today=datetime.now().strftime("%Y-%m-%d"),
+    )
 
 @app.route("/customer_receipt", methods=["GET", "POST"])
 @verified_required
@@ -1837,7 +2927,7 @@ def customer_receipt():
     )
 
 @app.route("/customer_receipt/edit/<int:id>", methods=["GET", "POST"])
-@verified_required
+@manager_required
 def edit_customer_receipt(id):
     receipt = db.session.get(CustomerPayment, id) or abort(404)
     customers = Customer.query.order_by(Customer.name).all()
@@ -1883,7 +2973,7 @@ def edit_customer_receipt(id):
     )
 
 @app.route("/customer_receipt/delete/<int:id>", methods=["POST"])
-@verified_required
+@admin_required
 def delete_customer_receipt(id):
     receipt = db.session.get(CustomerPayment, id) or abort(404)
     customer_id = remove_customer_ledger_entry("receipt", receipt.id)
@@ -1902,6 +2992,9 @@ def supplier_ledger(id):
     start_date_str = request.args.get("start_date", "")
     end_date_str = request.args.get("end_date", "")
     if request.method == "POST" and request.form.get("action") == "adjustment":
+        if current_user.role not in ("admin", "manager"):
+            flash("Access denied. Only managers and admins can add ledger adjustments.", "danger")
+            return redirect(url_for("supplier_ledger", id=id))
         adj_date = request.form.get("adj_date", "").strip()
         adj_type = request.form.get("adj_type", "").strip()
         amount_str = request.form.get("adj_amount", "").strip()
@@ -1948,7 +3041,7 @@ def supplier_ledger(id):
     )
 
 @app.route("/supplier/<int:id>/ledger/adjustment/delete/<int:entry_id>", methods=["POST"])
-@verified_required
+@admin_required
 def delete_supplier_ledger_adjustment(id, entry_id):
     entry = SupplierLedgerEntry.query.filter_by(id=entry_id, supplier_id=id, source_type="adjustment").first() or abort(404)
     db.session.delete(entry)
@@ -1958,7 +3051,7 @@ def delete_supplier_ledger_adjustment(id, entry_id):
     return redirect(url_for("supplier_ledger", id=id))
 
 @app.route("/supplier/<int:id>/ledger/export")
-@verified_required
+@manager_required
 def export_supplier_ledger(id):
     supplier = db.session.get(Supplier, id) or abort(404)
     entries = (
@@ -1969,6 +3062,7 @@ def export_supplier_ledger(id):
     filename = f"supplier_ledger_{id}.csv"
     with open(f"static/{filename}", "w", newline="") as file:
         writer = csv.writer(file)
+        write_csv_header(writer, "Supplier Ledger", extra_info=f"Supplier: {supplier.name}")
         writer.writerow(["Date", "Type", "Description", "Debit", "Credit", "Balance"])
         for e in entries:
             writer.writerow([
@@ -1977,6 +3071,27 @@ def export_supplier_ledger(id):
             ])
     return send_from_directory("static", filename, as_attachment=True, download_name=f"{supplier.name}_ledger.csv")
 
+@app.route("/supplier/<int:id>/ledger/export/excel")
+@manager_required
+def export_supplier_ledger_excel(id):
+    supplier = db.session.get(Supplier, id) or abort(404)
+    entries = (
+        SupplierLedgerEntry.query.filter_by(supplier_id=id)
+        .order_by(SupplierLedgerEntry.entry_date.asc(), SupplierLedgerEntry.id.asc())
+        .all()
+    )
+    rows = [
+        [e.entry_date.strftime("%Y-%m-%d"), e.entry_type, e.description, round(e.debit, 2), round(e.credit, 2), round(e.balance_after, 2)]
+        for e in entries
+    ]
+    return excel_response(
+        filename=f"{supplier.name}_ledger.xlsx",
+        title="Supplier Ledger",
+        col_headers=["Date", "Type", "Description", "Debit", "Credit", "Balance"],
+        rows=rows,
+        extra_info=f"Supplier: {supplier.name}",
+    )
+
 @app.route("/customer/<int:id>/ledger", methods=["GET", "POST"])
 @verified_required
 def customer_ledger(id):
@@ -1984,6 +3099,9 @@ def customer_ledger(id):
     start_date_str = request.args.get("start_date", "")
     end_date_str = request.args.get("end_date", "")
     if request.method == "POST" and request.form.get("action") == "adjustment":
+        if current_user.role not in ("admin", "manager"):
+            flash("Access denied. Only managers and admins can add ledger adjustments.", "danger")
+            return redirect(url_for("customer_ledger", id=id))
         adj_date = request.form.get("adj_date", "").strip()
         adj_type = request.form.get("adj_type", "").strip()
         amount_str = request.form.get("adj_amount", "").strip()
@@ -2030,7 +3148,7 @@ def customer_ledger(id):
     )
 
 @app.route("/customer/<int:id>/ledger/adjustment/delete/<int:entry_id>", methods=["POST"])
-@verified_required
+@admin_required
 def delete_customer_ledger_adjustment(id, entry_id):
     entry = CustomerLedgerEntry.query.filter_by(id=entry_id, customer_id=id, source_type="adjustment").first() or abort(404)
     db.session.delete(entry)
@@ -2040,7 +3158,7 @@ def delete_customer_ledger_adjustment(id, entry_id):
     return redirect(url_for("customer_ledger", id=id))
 
 @app.route("/customer/<int:id>/ledger/export")
-@verified_required
+@manager_required
 def export_customer_ledger(id):
     customer = db.session.get(Customer, id) or abort(404)
     entries = (
@@ -2051,6 +3169,7 @@ def export_customer_ledger(id):
     filename = f"customer_ledger_{id}.csv"
     with open(f"static/{filename}", "w", newline="") as file:
         writer = csv.writer(file)
+        write_csv_header(writer, "Customer Ledger", extra_info=f"Customer: {customer.name}")
         writer.writerow(["Date", "Type", "Description", "Debit", "Credit", "Balance"])
         for e in entries:
             writer.writerow([
@@ -2058,6 +3177,49 @@ def export_customer_ledger(id):
                 round(e.debit, 2), round(e.credit, 2), round(e.balance_after, 2),
             ])
     return send_from_directory("static", filename, as_attachment=True, download_name=f"{customer.name}_ledger.csv")
+
+@app.route("/customer/<int:id>/ledger/export/excel")
+@manager_required
+def export_customer_ledger_excel(id):
+    customer = db.session.get(Customer, id) or abort(404)
+    entries = (
+        CustomerLedgerEntry.query.filter_by(customer_id=id)
+        .order_by(CustomerLedgerEntry.entry_date.asc(), CustomerLedgerEntry.id.asc())
+        .all()
+    )
+    rows = [
+        [e.entry_date.strftime("%Y-%m-%d"), e.entry_type, e.description, round(e.debit, 2), round(e.credit, 2), round(e.balance_after, 2)]
+        for e in entries
+    ]
+    return excel_response(
+        filename=f"{customer.name}_ledger.xlsx",
+        title="Customer Ledger",
+        col_headers=["Date", "Type", "Description", "Debit", "Credit", "Balance"],
+        rows=rows,
+        extra_info=f"Customer: {customer.name}",
+    )
+
+@app.route("/profile", methods=["GET", "POST"])
+@verified_required
+def profile():
+    if request.method == "POST":
+        current_password = request.form.get("current_password", "").strip()
+        new_password = request.form.get("new_password", "").strip()
+        confirm_password = request.form.get("confirm_password", "").strip()
+        if not current_password or not new_password or not confirm_password:
+            flash("All fields are required!", "danger")
+        elif not pwd_context.verify(current_password, current_user.password):
+            flash("Current password is incorrect!", "danger")
+        elif len(new_password) < 6:
+            flash("New password must be at least 6 characters!", "danger")
+        elif new_password != confirm_password:
+            flash("New passwords do not match!", "danger")
+        else:
+            current_user.password = pwd_context.hash(new_password)
+            db.session.commit()
+            flash("Password changed successfully!", "success")
+            return redirect(url_for("profile"))
+    return render_template("profile.html")
 
 @app.route("/api/supplier/<int:id>/balance")
 @verified_required
@@ -2079,12 +3241,68 @@ def api_customer_balance(id):
         "balance": get_customer_balance(id),
     }
 
-@app.route("/reports", methods=["GET", "POST"])
+@app.route("/api/search")
 @verified_required
+def api_search():
+    q = request.args.get("q", "").strip()
+    if len(q) < 2:
+        return {"results": []}
+    pattern = f"%{q}%"
+    results = []
+
+    for s in Supplier.query.filter(
+        Supplier.name.ilike(pattern) | Supplier.contact.ilike(pattern) | Supplier.address.ilike(pattern)
+    ).limit(5):
+        bal = get_supplier_balance(s.id)
+        results.append({
+            "type": "supplier",
+            "icon": "bi-truck",
+            "color": "primary",
+            "name": s.name,
+            "detail": s.contact,
+            "extra": f"Balance: {bal:,.2f}",
+            "url": url_for("supplier_ledger", id=s.id),
+        })
+
+    for c in Customer.query.filter(
+        Customer.name.ilike(pattern) | Customer.contact.ilike(pattern) | Customer.address.ilike(pattern)
+    ).limit(5):
+        bal = get_customer_balance(c.id)
+        results.append({
+            "type": "customer",
+            "icon": "bi-person-check",
+            "color": "success",
+            "name": c.name,
+            "detail": c.contact,
+            "extra": f"Balance: {bal:,.2f}",
+            "url": url_for("customer_ledger", id=c.id),
+        })
+
+    for i in Item.query.filter(
+        Item.name.ilike(pattern)
+    ).limit(5):
+        cat = i.id_category.name if i.id_category else "—"
+        results.append({
+            "type": "item",
+            "icon": "bi-box-seam",
+            "color": "warning",
+            "name": i.name,
+            "detail": cat,
+            "extra": f"Stock: {i.stock}",
+            "url": url_for("item_ledger", id=i.id),
+        })
+
+    return {"results": results}
+
+@app.route("/reports", methods=["GET", "POST"])
+@manager_required
 def reports():
     purchase_report = sale_report = reorder_report = date_profit_report = item_profit = customer_profit = category_profit = []
     supplier_balances = customer_balances = supplier_payment_history = customer_receipt_history = []
-    total_sale_amt = total_profit_amt = 0
+    purchase_return_report = sale_return_report = supplier_purchase_report = stock_report = []
+    total_sale_amt = total_profit_amt = total_purchase_cost = 0
+    total_purchase_return_amt = total_sale_return_amt = 0
+    gross_profit = net_sale_amt = net_purchase_cost = 0
     purchase_qty_total = purchase_amt_total = sale_qty_total = sale_amt_total = 0
     supplier_payment_total = customer_receipt_total = 0
     start_date_str = end_date_str = ""
@@ -2096,17 +3314,23 @@ def reports():
         else:
             try:
                 start_date         = datetime.strptime(start_date_str, "%Y-%m-%d")
-                end_date           = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
-                purchase_report    = Purchase.query.filter(Purchase.date.between(start_date, end_date)).all()
-                sale_report        = Sale.query.filter(Sale.date.between(start_date, end_date)).all()
+                end_date           = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59, microsecond=999999)
+                purchase_report    = Purchase.query.filter(Purchase.date.between(start_date, end_date)).order_by(Purchase.date.desc()).all()
+                sale_report        = Sale.query.filter(Sale.date.between(start_date, end_date)).order_by(Sale.date.desc()).all()
                 reorder_report     = Item.query.filter(Item.stock <= Item.reorder_level).all()
+                purchase_return_report = PurchaseReturn.query.filter(PurchaseReturn.date.between(start_date, end_date)).order_by(PurchaseReturn.date.desc()).all()
+                sale_return_report = SaleReturn.query.filter(SaleReturn.date.between(start_date, end_date)).order_by(SaleReturn.date.desc()).all()
+                stock_report       = Item.query.outerjoin(Category, Item.category_id == Category.id).order_by(Category.name, Item.name).all()
+                # sale_amt  = gross - discount + tax  (what customer pays = net total)
+                # profit    = gross - discount - cogs (tax excluded from profit)
+                _sale_net  = Sale.quantity * Sale.sale_price - Sale.discount_amount + Sale.tax_amount
+                _sale_prof = Sale.quantity * Sale.sale_price - Sale.discount_amount - Sale.quantity * Sale.cost_price
                 date_profit_report = (
                     db.session.query(
                         db.func.date(Sale.date).label("sale_date"),
-                        db.func.sum(Sale.quantity * Sale.sale_price).label("sale_amt"),
-                        db.func.sum((Sale.sale_price - Item.purchase_price) * Sale.quantity).label("profit_amt"),
+                        db.func.sum(_sale_net).label("sale_amt"),
+                        db.func.sum(_sale_prof).label("profit_amt"),
                     )
-                    .join(Item, Sale.item_id == Item.id)
                     .filter(Sale.date.between(start_date, end_date))
                     .group_by(db.func.date(Sale.date))
                     .order_by(db.func.date(Sale.date))
@@ -2116,8 +3340,8 @@ def reports():
                     db.session.query(
                         Item.name.label("name"),
                         Category.name.label("category"),
-                        db.func.sum(Sale.quantity * Sale.sale_price).label("sale_amt"),
-                        db.func.sum((Sale.sale_price - Item.purchase_price) * Sale.quantity).label("profit_amt"),
+                        db.func.sum(_sale_net).label("sale_amt"),
+                        db.func.sum(_sale_prof).label("profit_amt"),
                     )
                     .join(Sale, Sale.item_id == Item.id)
                     .outerjoin(Category, Item.category_id == Category.id)
@@ -2129,11 +3353,10 @@ def reports():
                 customer_profit = (
                     db.session.query(
                         Customer.name.label("name"),
-                        db.func.sum(Sale.quantity * Sale.sale_price).label("sale_amt"),
-                        db.func.sum((Sale.sale_price - Item.purchase_price) * Sale.quantity).label("profit_amt"),
+                        db.func.sum(_sale_net).label("sale_amt"),
+                        db.func.sum(_sale_prof).label("profit_amt"),
                     )
                     .join(Sale, Sale.customer_id == Customer.id)
-                    .join(Item, Sale.item_id == Item.id)
                     .filter(Sale.date.between(start_date, end_date))
                     .group_by(Customer.name)
                     .order_by(Customer.name)
@@ -2142,9 +3365,10 @@ def reports():
                 category_profit = (
                     db.session.query(
                         Category.name.label("name"),
-                        db.func.sum(Sale.quantity * Sale.sale_price).label("sale_amt"),
-                        db.func.sum((Sale.sale_price - Item.purchase_price) * Sale.quantity).label("profit_amt"),
+                        db.func.sum(_sale_net).label("sale_amt"),
+                        db.func.sum(_sale_prof).label("profit_amt"),
                     )
+                    .select_from(Sale)
                     .join(Item, Sale.item_id == Item.id)
                     .join(Category, Item.category_id == Category.id)
                     .filter(Sale.date.between(start_date, end_date))
@@ -2152,21 +3376,41 @@ def reports():
                     .order_by(Category.name)
                     .all()
                 )
+                _pur_net = Purchase.quantity * Purchase.purchase_price - Purchase.discount_amount + Purchase.tax_amount
+                supplier_purchase_report = (
+                    db.session.query(
+                        Supplier.name.label("name"),
+                        db.func.count(Purchase.id).label("bill_count"),
+                        db.func.sum(Purchase.quantity).label("total_qty"),
+                        db.func.sum(_pur_net).label("total_amt"),
+                    )
+                    .join(Purchase, Purchase.supplier_id == Supplier.id)
+                    .filter(Purchase.date.between(start_date, end_date))
+                    .group_by(Supplier.name)
+                    .order_by(db.func.sum(_pur_net).desc())
+                    .all()
+                )
                 totals = (
                     db.session.query(
-                        db.func.sum(Sale.quantity * Sale.sale_price).label("total_sale_amt"),
-                        db.func.sum((Sale.sale_price - Item.purchase_price) * Sale.quantity).label("total_profit_amt"),
+                        db.func.sum(_sale_net).label("total_sale_amt"),
+                        db.func.sum(_sale_prof).label("total_profit_amt"),
+                        db.func.sum(Sale.quantity * Sale.cost_price).label("total_purchase_cost"),
                     )
-                    .join(Item, Sale.item_id == Item.id)
                     .filter(Sale.date.between(start_date, end_date))
                     .first()
                 )
-                total_sale_amt = totals.total_sale_amt or 0.0
-                total_profit_amt = totals.total_profit_amt or 0.0
-                purchase_qty_total = sum(p.quantity for p in purchase_report)
-                purchase_amt_total = sum(p.quantity * p.purchase_price for p in purchase_report)
-                sale_qty_total = sum(s.quantity for s in sale_report)
-                sale_amt_total = sum(s.quantity * s.sale_price for s in sale_report)
+                total_sale_amt      = totals.total_sale_amt or 0.0
+                total_profit_amt    = totals.total_profit_amt or 0.0
+                total_purchase_cost = totals.total_purchase_cost or 0.0
+                total_purchase_return_amt = sum(r.quantity * r.return_price for r in purchase_return_report)
+                total_sale_return_amt     = sum(r.quantity * r.return_price for r in sale_return_report)
+                net_sale_amt        = total_sale_amt - total_sale_return_amt
+                net_purchase_cost   = total_purchase_cost - total_purchase_return_amt
+                gross_profit        = total_profit_amt
+                purchase_qty_total  = sum(p.quantity for p in purchase_report)
+                purchase_amt_total  = sum(purchase_total(p) for p in purchase_report)
+                sale_qty_total      = sum(s.quantity for s in sale_report)
+                sale_amt_total      = sum(sale_total(s) for s in sale_report)
                 supplier_balances = [
                     {
                         "name": s.name,
@@ -2210,6 +3454,10 @@ def reports():
         purchase_report=purchase_report,
         sale_report=sale_report,
         reorder_report=reorder_report,
+        purchase_return_report=purchase_return_report,
+        sale_return_report=sale_return_report,
+        supplier_purchase_report=supplier_purchase_report,
+        stock_report=stock_report,
         date_profit_report=date_profit_report,
         item_profit=item_profit,
         customer_profit=customer_profit,
@@ -2222,6 +3470,12 @@ def reports():
         customer_receipt_total=customer_receipt_total,
         total_sale_amt=total_sale_amt,
         total_profit_amt=total_profit_amt,
+        total_purchase_cost=total_purchase_cost,
+        total_purchase_return_amt=total_purchase_return_amt,
+        total_sale_return_amt=total_sale_return_amt,
+        net_sale_amt=net_sale_amt,
+        net_purchase_cost=net_purchase_cost,
+        gross_profit=gross_profit,
         purchase_qty_total=purchase_qty_total,
         purchase_amt_total=purchase_amt_total,
         sale_qty_total=sale_qty_total,
@@ -2231,7 +3485,7 @@ def reports():
     )
 
 @app.route("/export_purchase_report", methods=["POST"])
-@verified_required
+@manager_required
 def export_purchase_report():
     start_date_str = request.form.get("start_date", "")
     end_date_str = request.form.get("end_date", "")
@@ -2247,29 +3501,28 @@ def export_purchase_report():
             .filter(Purchase.date.between(start_date, end_date))
             .all()
         )
+        col_headers = ["ID", "Supplier", "Item", "Category", "Quantity", "Purchase Price", "Total", "Date"]
+        rows = [
+            [p.id, p.id_supplier.name, p.id_item.name,
+             p.id_item.id_category.name if p.id_item.id_category else "N/A",
+             p.quantity, round(p.purchase_price, 2),
+             round(p.quantity * p.purchase_price, 2), p.date.strftime("%Y-%m-%d")]
+            for p in purchases
+        ]
+        if request.form.get("format") == "xlsx":
+            return excel_response("purchase_report.xlsx", "Purchase History", col_headers, rows, start_date_str, end_date_str)
         with open("static/purchase_report.csv", "w", newline="") as file:
             writer = csv.writer(file)
-            writer.writerow(["ID", "Supplier", "Item", "Category", "Quantity", "Purchase Price", "Total", "Date"])
-            for purchase in purchases:
-                writer.writerow(
-                    [
-                        purchase.id,
-                        purchase.id_supplier.name,
-                        purchase.id_item.name,
-                        purchase.id_item.id_category.name if purchase.id_item.id_category else "N/A",
-                        purchase.quantity,
-                        round(purchase.purchase_price, 2),
-                        round(purchase.quantity * purchase.purchase_price, 2),
-                        purchase.date.strftime("%Y-%m-%d"),
-                    ]
-                )
+            write_csv_header(writer, "Purchase History", start_date_str, end_date_str)
+            writer.writerow(col_headers)
+            writer.writerows(rows)
         return send_from_directory("static", "purchase_report.csv")
     except ValueError:
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
 
 @app.route("/export_sale_report", methods=["POST"])
-@verified_required
+@manager_required
 def export_sale_report():
     start_date_str = request.form.get("start_date", "")
     end_date_str = request.form.get("end_date", "")
@@ -2285,29 +3538,28 @@ def export_sale_report():
             .filter(Sale.date.between(start_date, end_date))
             .all()
         )
+        col_headers = ["ID", "Customer", "Item", "Category", "Quantity", "Sale Price", "Total", "Date"]
+        rows = [
+            [s.id, s.id_customer.name, s.id_item.name,
+             s.id_item.id_category.name if s.id_item.id_category else "N/A",
+             s.quantity, round(s.sale_price, 2),
+             round(s.quantity * s.sale_price, 2), s.date.strftime("%Y-%m-%d")]
+            for s in sales
+        ]
+        if request.form.get("format") == "xlsx":
+            return excel_response("sale_report.xlsx", "Sale History", col_headers, rows, start_date_str, end_date_str)
         with open("static/sale_report.csv", "w", newline="") as file:
             writer = csv.writer(file)
-            writer.writerow(["ID", "Customer", "Item", "Category", "Quantity", "Sale Price", "Total", "Date"])
-            for sale in sales:
-                writer.writerow(
-                    [
-                        sale.id,
-                        sale.id_customer.name,
-                        sale.id_item.name,
-                        sale.id_item.id_category.name if sale.id_item.id_category else "N/A",
-                        sale.quantity,
-                        round(sale.sale_price, 2),
-                        round(sale.quantity * sale.sale_price, 2),
-                        sale.date.strftime("%Y-%m-%d"),
-                    ]
-                )
+            write_csv_header(writer, "Sale History", start_date_str, end_date_str)
+            writer.writerow(col_headers)
+            writer.writerows(rows)
         return send_from_directory("static", "sale_report.csv")
     except ValueError:
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
 
 @app.route("/export_date_sale_report", methods=["POST"])
-@verified_required
+@manager_required
 def export_date_sale_report():
     start_date_str = request.form.get("start_date", "")
     end_date_str = request.form.get("end_date", "")
@@ -2320,27 +3572,30 @@ def export_date_sale_report():
         date_sale_report = (
             db.session.query(
                 db.func.date(Sale.date).label("sale_date"),
-                db.func.sum(Sale.quantity * Sale.sale_price).label("sale_amt"),
-                db.func.sum((Sale.sale_price - Item.purchase_price) * Sale.quantity).label("profit_amt"),
+                db.func.sum(Sale.quantity * Sale.sale_price - Sale.discount_amount + Sale.tax_amount).label("sale_amt"),
+                db.func.sum(Sale.quantity * Sale.sale_price - Sale.discount_amount - Sale.quantity * Sale.cost_price).label("profit_amt"),
             )
-            .join(Item, Sale.item_id == Item.id)
             .filter(Sale.date.between(start_date, end_date))
             .group_by(db.func.date(Sale.date))
             .order_by(db.func.date(Sale.date))
             .all()
         )
+        col_headers = ["Date", "Sale Amount", "Profit Amount"]
+        rows = [[row.sale_date, round(row.sale_amt, 2), round(row.profit_amt, 2)] for row in date_sale_report]
+        if request.form.get("format") == "xlsx":
+            return excel_response("date_sale_report.xlsx", "Date-wise Profit Report", col_headers, rows, start_date_str, end_date_str)
         with open("static/date_sale_report.csv", "w", newline="") as file:
             writer = csv.writer(file)
-            writer.writerow(["Date", "Sale Amount", "Profit Amount"])
-            for row in date_sale_report:
-                writer.writerow([row.sale_date, round(row.sale_amt, 2), round(row.profit_amt, 2)])
+            write_csv_header(writer, "Date-wise Profit Report", start_date_str, end_date_str)
+            writer.writerow(col_headers)
+            writer.writerows(rows)
         return send_from_directory("static", "date_sale_report.csv")
     except ValueError:
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
 
 @app.route("/export_item_sale_report", methods=["POST"])
-@verified_required
+@manager_required
 def export_item_sale_report():
     start_date_str = request.form.get("start_date", "")
     end_date_str = request.form.get("end_date", "")
@@ -2354,8 +3609,8 @@ def export_item_sale_report():
             db.session.query(
                 Item.name.label("name"),
                 Category.name.label("category"),
-                db.func.sum(Sale.quantity * Sale.sale_price).label("sale_amt"),
-                db.func.sum((Sale.sale_price - Item.purchase_price) * Sale.quantity).label("profit_amt"),
+                db.func.sum(Sale.quantity * Sale.sale_price - Sale.discount_amount + Sale.tax_amount).label("sale_amt"),
+                db.func.sum(Sale.quantity * Sale.sale_price - Sale.discount_amount - Sale.quantity * Sale.cost_price).label("profit_amt"),
             )
             .join(Sale, Sale.item_id == Item.id)
             .outerjoin(Category, Item.category_id == Category.id)
@@ -2364,18 +3619,22 @@ def export_item_sale_report():
             .order_by(Item.name)
             .all()
         )
+        col_headers = ["Item", "Category", "Sale Amount", "Profit Amount"]
+        rows = [[row.name, row.category or "N/A", round(row.sale_amt, 2), round(row.profit_amt, 2)] for row in item_sale]
+        if request.form.get("format") == "xlsx":
+            return excel_response("item_sale_report.xlsx", "Item-wise Profit Report", col_headers, rows, start_date_str, end_date_str)
         with open("static/item_sale_report.csv", "w", newline="") as file:
             writer = csv.writer(file)
-            writer.writerow(["Item", "Category", "Sale Amount", "Profit Amount"])
-            for row in item_sale:
-                writer.writerow([row.name, row.category or "N/A", round(row.sale_amt, 2), round(row.profit_amt, 2)])
+            write_csv_header(writer, "Item-wise Profit Report", start_date_str, end_date_str)
+            writer.writerow(col_headers)
+            writer.writerows(rows)
         return send_from_directory("static", "item_sale_report.csv")
     except ValueError:
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
 
 @app.route("/export_customer_sale_report", methods=["POST"])
-@verified_required
+@manager_required
 def export_customer_sale_report():
     start_date_str = request.form.get("start_date", "")
     end_date_str = request.form.get("end_date", "")
@@ -2388,28 +3647,31 @@ def export_customer_sale_report():
         customer_sale = (
             db.session.query(
                 Customer.name.label("name"),
-                db.func.sum(Sale.quantity * Sale.sale_price).label("sale_amt"),
-                db.func.sum((Sale.sale_price - Item.purchase_price) * Sale.quantity).label("profit_amt"),
+                db.func.sum(Sale.quantity * Sale.sale_price - Sale.discount_amount + Sale.tax_amount).label("sale_amt"),
+                db.func.sum(Sale.quantity * Sale.sale_price - Sale.discount_amount - Sale.quantity * Sale.cost_price).label("profit_amt"),
             )
             .join(Sale, Sale.customer_id == Customer.id)
-            .join(Item, Sale.item_id == Item.id)
             .filter(Sale.date.between(start_date, end_date))
             .group_by(Customer.name)
             .order_by(Customer.name)
             .all()
         )
+        col_headers = ["Customer", "Sale Amount", "Profit Amount"]
+        rows = [[row.name, round(row.sale_amt, 2), round(row.profit_amt, 2)] for row in customer_sale]
+        if request.form.get("format") == "xlsx":
+            return excel_response("customer_sale_report.xlsx", "Customer-wise Profit Report", col_headers, rows, start_date_str, end_date_str)
         with open("static/customer_sale_report.csv", "w", newline="") as file:
             writer = csv.writer(file)
-            writer.writerow(["Customer", "Sale Amount", "Profit Amount"])
-            for row in customer_sale:
-                writer.writerow([row.name, round(row.sale_amt, 2), round(row.profit_amt, 2)])
+            write_csv_header(writer, "Customer-wise Profit Report", start_date_str, end_date_str)
+            writer.writerow(col_headers)
+            writer.writerows(rows)
         return send_from_directory("static", "customer_sale_report.csv")
     except ValueError:
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
 
 @app.route("/export_category_sale_report", methods=["POST"])
-@verified_required
+@manager_required
 def export_category_sale_report():
     start_date_str = request.form.get("start_date", "")
     end_date_str = request.form.get("end_date", "")
@@ -2422,9 +3684,10 @@ def export_category_sale_report():
         category_sale = (
             db.session.query(
                 Category.name.label("name"),
-                db.func.sum(Sale.quantity * Sale.sale_price).label("sale_amt"),
-                db.func.sum((Sale.sale_price - Item.purchase_price) * Sale.quantity).label("profit_amt"),
+                db.func.sum(Sale.quantity * Sale.sale_price - Sale.discount_amount + Sale.tax_amount).label("sale_amt"),
+                db.func.sum(Sale.quantity * Sale.sale_price - Sale.discount_amount - Sale.quantity * Sale.cost_price).label("profit_amt"),
             )
+            .select_from(Sale)
             .join(Item, Sale.item_id == Item.id)
             .join(Category, Item.category_id == Category.id)
             .filter(Sale.date.between(start_date, end_date))
@@ -2432,54 +3695,183 @@ def export_category_sale_report():
             .order_by(Category.name)
             .all()
         )
+        col_headers = ["Category", "Sale Amount", "Profit Amount"]
+        rows = [[row.name, round(row.sale_amt, 2), round(row.profit_amt, 2)] for row in category_sale]
+        if request.form.get("format") == "xlsx":
+            return excel_response("category_sale_report.xlsx", "Category-wise Profit Report", col_headers, rows, start_date_str, end_date_str)
         with open("static/category_sale_report.csv", "w", newline="") as file:
             writer = csv.writer(file)
-            writer.writerow(["Category", "Sale Amount", "Profit Amount"])
-            for row in category_sale:
-                writer.writerow([row.name, round(row.sale_amt, 2), round(row.profit_amt, 2)])
+            write_csv_header(writer, "Category-wise Profit Report", start_date_str, end_date_str)
+            writer.writerow(col_headers)
+            writer.writerows(rows)
         return send_from_directory("static", "category_sale_report.csv")
     except ValueError:
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
 
 @app.route("/export_supplier_payable")
-@verified_required
+@manager_required
 def export_supplier_payable():
+    col_headers = ["Supplier", "Opening", "Bills", "Paid", "Ledger Balance", "Status"]
+    rows = []
+    for s in Supplier.query.order_by(Supplier.name).all():
+        bal = get_supplier_balance(s.id)
+        rows.append([s.name, round(float(s.opening_balance or 0), 2),
+                     round(get_supplier_payable(s.id), 2), round(get_supplier_paid(s.id), 2),
+                     round(bal, 2), supplier_balance_label(bal)])
+    if request.args.get("format") == "xlsx":
+        return excel_response("supplier_payable_report.xlsx", "Supplier Payable Report", col_headers, rows)
     with open("static/supplier_payable_report.csv", "w", newline="") as file:
         writer = csv.writer(file)
-        writer.writerow(["Supplier", "Opening", "Bills", "Paid", "Ledger Balance", "Status"])
-        for s in Supplier.query.order_by(Supplier.name).all():
-            bal = get_supplier_balance(s.id)
-            writer.writerow([
-                s.name,
-                round(float(s.opening_balance or 0), 2),
-                round(get_supplier_payable(s.id), 2),
-                round(get_supplier_paid(s.id), 2),
-                round(bal, 2),
-                supplier_balance_label(bal),
-            ])
+        write_csv_header(writer, "Supplier Payable Report")
+        writer.writerow(col_headers)
+        writer.writerows(rows)
     return send_from_directory("static", "supplier_payable_report.csv")
 
 @app.route("/export_customer_receivable")
-@verified_required
+@manager_required
 def export_customer_receivable():
+    col_headers = ["Customer", "Opening", "Sales", "Received", "Ledger Balance", "Status"]
+    rows = []
+    for c in Customer.query.order_by(Customer.name).all():
+        bal = get_customer_balance(c.id)
+        rows.append([c.name, round(float(c.opening_balance or 0), 2),
+                     round(get_customer_receivable(c.id), 2), round(get_customer_received(c.id), 2),
+                     round(bal, 2), customer_balance_label(bal)])
+    if request.args.get("format") == "xlsx":
+        return excel_response("customer_receivable_report.xlsx", "Customer Receivable Report", col_headers, rows)
     with open("static/customer_receivable_report.csv", "w", newline="") as file:
         writer = csv.writer(file)
-        writer.writerow(["Customer", "Opening", "Sales", "Received", "Ledger Balance", "Status"])
-        for c in Customer.query.order_by(Customer.name).all():
-            bal = get_customer_balance(c.id)
-            writer.writerow([
-                c.name,
-                round(float(c.opening_balance or 0), 2),
-                round(get_customer_receivable(c.id), 2),
-                round(get_customer_received(c.id), 2),
-                round(bal, 2),
-                customer_balance_label(bal),
-            ])
+        write_csv_header(writer, "Customer Receivable Report")
+        writer.writerow(col_headers)
+        writer.writerows(rows)
     return send_from_directory("static", "customer_receivable_report.csv")
 
+@app.route("/export_purchase_return_report", methods=["POST"])
+@manager_required
+def export_purchase_return_report():
+    start_date_str = request.form.get("start_date", "")
+    end_date_str = request.form.get("end_date", "")
+    if not start_date_str or not end_date_str:
+        flash("Both dates are required!", "danger")
+        return redirect(url_for("reports"))
+    try:
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+        returns = PurchaseReturn.query.filter(PurchaseReturn.date.between(start_date, end_date)).order_by(PurchaseReturn.date.desc()).all()
+        col_headers = ["ID", "Purchase #", "Supplier", "Item", "Quantity", "Return Price", "Total", "Date", "Reason"]
+        rows = [
+            [r.id, r.purchase_id, r.supplier.name, r.item.name,
+             r.quantity, round(r.return_price, 2), round(r.quantity * r.return_price, 2),
+             r.date.strftime("%Y-%m-%d"), r.reason or ""]
+            for r in returns
+        ]
+        if request.form.get("format") == "xlsx":
+            return excel_response("purchase_return_report.xlsx", "Purchase Returns Report", col_headers, rows, start_date_str, end_date_str)
+        with open("static/purchase_return_report.csv", "w", newline="") as file:
+            writer = csv.writer(file)
+            write_csv_header(writer, "Purchase Returns Report", start_date_str, end_date_str)
+            writer.writerow(col_headers)
+            writer.writerows(rows)
+        return send_from_directory("static", "purchase_return_report.csv")
+    except ValueError:
+        flash("Invalid date format! Use YYYY-MM-DD.", "danger")
+        return redirect(url_for("reports"))
+
+@app.route("/export_sale_return_report", methods=["POST"])
+@manager_required
+def export_sale_return_report():
+    start_date_str = request.form.get("start_date", "")
+    end_date_str = request.form.get("end_date", "")
+    if not start_date_str or not end_date_str:
+        flash("Both dates are required!", "danger")
+        return redirect(url_for("reports"))
+    try:
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+        returns = SaleReturn.query.filter(SaleReturn.date.between(start_date, end_date)).order_by(SaleReturn.date.desc()).all()
+        col_headers = ["ID", "Sale #", "Customer", "Item", "Quantity", "Return Price", "Total", "Date", "Reason"]
+        rows = [
+            [r.id, r.sale_id, r.customer.name, r.item.name,
+             r.quantity, round(r.return_price, 2), round(r.quantity * r.return_price, 2),
+             r.date.strftime("%Y-%m-%d"), r.reason or ""]
+            for r in returns
+        ]
+        if request.form.get("format") == "xlsx":
+            return excel_response("sale_return_report.xlsx", "Sale Returns Report", col_headers, rows, start_date_str, end_date_str)
+        with open("static/sale_return_report.csv", "w", newline="") as file:
+            writer = csv.writer(file)
+            write_csv_header(writer, "Sale Returns Report", start_date_str, end_date_str)
+            writer.writerow(col_headers)
+            writer.writerows(rows)
+        return send_from_directory("static", "sale_return_report.csv")
+    except ValueError:
+        flash("Invalid date format! Use YYYY-MM-DD.", "danger")
+        return redirect(url_for("reports"))
+
+@app.route("/export_supplier_purchase_report", methods=["POST"])
+@manager_required
+def export_supplier_purchase_report():
+    start_date_str = request.form.get("start_date", "")
+    end_date_str = request.form.get("end_date", "")
+    if not start_date_str or not end_date_str:
+        flash("Both dates are required!", "danger")
+        return redirect(url_for("reports"))
+    try:
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+        data = (
+            db.session.query(
+                Supplier.name.label("name"),
+                db.func.count(Purchase.id).label("bill_count"),
+                db.func.sum(Purchase.quantity).label("total_qty"),
+                db.func.sum(Purchase.quantity * Purchase.purchase_price - Purchase.discount_amount + Purchase.tax_amount).label("total_amt"),
+            )
+            .join(Purchase, Purchase.supplier_id == Supplier.id)
+            .filter(Purchase.date.between(start_date, end_date))
+            .group_by(Supplier.name)
+            .order_by(db.func.sum(Purchase.quantity * Purchase.purchase_price - Purchase.discount_amount + Purchase.tax_amount).desc())
+            .all()
+        )
+        col_headers = ["Supplier", "Bills", "Total Qty", "Total Amount"]
+        rows = [[row.name, row.bill_count, row.total_qty, round(row.total_amt, 2)] for row in data]
+        if request.form.get("format") == "xlsx":
+            return excel_response("supplier_purchase_report.xlsx", "Supplier-wise Purchase Report", col_headers, rows, start_date_str, end_date_str)
+        with open("static/supplier_purchase_report.csv", "w", newline="") as file:
+            writer = csv.writer(file)
+            write_csv_header(writer, "Supplier-wise Purchase Report", start_date_str, end_date_str)
+            writer.writerow(col_headers)
+            writer.writerows(rows)
+        return send_from_directory("static", "supplier_purchase_report.csv")
+    except ValueError:
+        flash("Invalid date format! Use YYYY-MM-DD.", "danger")
+        return redirect(url_for("reports"))
+
+@app.route("/export_stock_report")
+@manager_required
+def export_stock_report():
+    items = Item.query.outerjoin(Category, Item.category_id == Category.id).order_by(Category.name, Item.name).all()
+    col_headers = ["Item", "Category", "Stock", "Reorder Level", "Purchase Price", "Sale Price", "Stock Value", "Status"]
+    rows = []
+    for item in items:
+        rows.append([
+            item.name, item.id_category.name if item.id_category else "N/A",
+            item.stock, item.reorder_level,
+            round(item.purchase_price or 0, 2), round(item.sale_price or 0, 2),
+            round((item.stock or 0) * (item.purchase_price or 0), 2),
+            "Low Stock" if item.stock <= item.reorder_level else "OK",
+        ])
+    if request.args.get("format") == "xlsx":
+        return excel_response("stock_report.xlsx", "Stock / Inventory Report", col_headers, rows)
+    with open("static/stock_report.csv", "w", newline="") as file:
+        writer = csv.writer(file)
+        write_csv_header(writer, "Stock / Inventory Report")
+        writer.writerow(col_headers)
+        writer.writerows(rows)
+    return send_from_directory("static", "stock_report.csv")
+
 @app.route("/export_supplier_payment_history", methods=["POST"])
-@verified_required
+@manager_required
 def export_supplier_payment_history():
     start_date_str = request.form.get("start_date", "")
     end_date_str = request.form.get("end_date", "")
@@ -2495,22 +3887,27 @@ def export_supplier_payment_history():
             .order_by(SupplierPayment.payment_date.desc())
             .all()
         )
+        col_headers = ["ID", "Supplier", "Purchase ID", "Amount", "Method", "Reference", "Date", "Notes"]
+        rows = [
+            [p.id, p.supplier.name, p.purchase_id or "General",
+             round(p.amount, 2), p.payment_method,
+             p.reference_no or "", p.payment_date.strftime("%Y-%m-%d"), p.notes or ""]
+            for p in payments
+        ]
+        if request.form.get("format") == "xlsx":
+            return excel_response("supplier_payment_history.xlsx", "Supplier Payment History", col_headers, rows, start_date_str, end_date_str)
         with open("static/supplier_payment_history.csv", "w", newline="") as file:
             writer = csv.writer(file)
-            writer.writerow(["ID", "Supplier", "Purchase ID", "Amount", "Method", "Reference", "Date", "Notes"])
-            for p in payments:
-                writer.writerow([
-                    p.id, p.supplier.name, p.purchase_id or "General",
-                    round(p.amount, 2), p.payment_method,
-                    p.reference_no or "", p.payment_date.strftime("%Y-%m-%d"), p.notes or "",
-                ])
+            write_csv_header(writer, "Supplier Payment History", start_date_str, end_date_str)
+            writer.writerow(col_headers)
+            writer.writerows(rows)
         return send_from_directory("static", "supplier_payment_history.csv")
     except ValueError:
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
 
 @app.route("/export_customer_receipt_history", methods=["POST"])
-@verified_required
+@manager_required
 def export_customer_receipt_history():
     start_date_str = request.form.get("start_date", "")
     end_date_str = request.form.get("end_date", "")
@@ -2526,15 +3923,20 @@ def export_customer_receipt_history():
             .order_by(CustomerPayment.payment_date.desc())
             .all()
         )
+        col_headers = ["ID", "Customer", "Sale ID", "Amount", "Method", "Reference", "Date", "Notes"]
+        rows = [
+            [r.id, r.customer.name, r.sale_id or "General",
+             round(r.amount, 2), r.payment_method,
+             r.reference_no or "", r.payment_date.strftime("%Y-%m-%d"), r.notes or ""]
+            for r in receipts
+        ]
+        if request.form.get("format") == "xlsx":
+            return excel_response("customer_receipt_history.xlsx", "Customer Receipt History", col_headers, rows, start_date_str, end_date_str)
         with open("static/customer_receipt_history.csv", "w", newline="") as file:
             writer = csv.writer(file)
-            writer.writerow(["ID", "Customer", "Sale ID", "Amount", "Method", "Reference", "Date", "Notes"])
-            for r in receipts:
-                writer.writerow([
-                    r.id, r.customer.name, r.sale_id or "General",
-                    round(r.amount, 2), r.payment_method,
-                    r.reference_no or "", r.payment_date.strftime("%Y-%m-%d"), r.notes or "",
-                ])
+            write_csv_header(writer, "Customer Receipt History", start_date_str, end_date_str)
+            writer.writerow(col_headers)
+            writer.writerows(rows)
         return send_from_directory("static", "customer_receipt_history.csv")
     except ValueError:
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
@@ -2552,60 +3954,88 @@ def purchase_return():
             .filter((Supplier.name.ilike(f"%{search}%")) | (Item.name.ilike(f"%{search}%")))
         )
     returns, pagination = get_paginated_results(query)
-    all_purchases = Purchase.query.order_by(Purchase.date.desc()).all()
-    purchases_available = [
-        {"p": p, "remaining": p.quantity - get_purchase_returned_qty(p.id)}
-        for p in all_purchases
-        if p.quantity - get_purchase_returned_qty(p.id) > 0
+    all_pis = PurchaseItem.query.join(Purchase).order_by(Purchase.date.desc(), PurchaseItem.id).all()
+    items_available = [
+        {"pi": pi, "remaining": pi.quantity - get_purchase_item_returned_qty(pi.purchase_id, pi.item_id)}
+        for pi in all_pis
+        if pi.quantity - get_purchase_item_returned_qty(pi.purchase_id, pi.item_id) > 0
     ]
     if request.method == "POST":
-        purchase_id = request.form.get("purchase_id", "").strip()
-        quantity    = request.form.get("quantity", "").strip()
-        return_price = request.form.get("return_price", "").strip()
-        date        = request.form.get("date", "").strip()
-        reason      = request.form.get("reason", "").strip()
-        if not purchase_id or not quantity or not return_price or not date:
-            flash("Purchase, quantity, price and date are required!", "danger")
-        elif not quantity.isdigit() or int(quantity) <= 0:
-            flash("Quantity must be a positive number!", "danger")
-        elif not return_price.replace(".", "", 1).isdigit() or float(return_price) < 0:
-            flash("Return price must be a non-negative number!", "danger")
+        pi_ids        = request.form.getlist("purchase_item_id[]")
+        quantities    = request.form.getlist("quantity[]")
+        return_prices = request.form.getlist("return_price[]")
+        reasons       = request.form.getlist("reason[]")
+        date_str      = request.form.get("date", "").strip()
+        if not date_str:
+            flash("Date is required!", "danger")
+        elif not pi_ids:
+            flash("At least one item row is required!", "danger")
         else:
-            purchase = db.session.get(Purchase, int(purchase_id)) or abort(404)
-            remaining = purchase.quantity - get_purchase_returned_qty(purchase.id)
-            if int(quantity) > remaining:
-                flash(f"Cannot return more than remaining quantity ({remaining})!", "danger")
-            else:
-                try:
-                    item = db.session.get(Item, purchase.item_id) or abort(404)
-                    pr = PurchaseReturn(
-                        purchase_id=purchase.id,
-                        supplier_id=purchase.supplier_id,
-                        item_id=purchase.item_id,
-                        quantity=int(quantity),
-                        return_price=float(return_price),
-                        date=datetime.strptime(date, "%Y-%m-%d"),
-                        reason=reason or None,
-                    )
-                    item.stock -= int(quantity)
-                    db.session.add(pr)
-                    db.session.flush()
-                    sync_supplier_purchase_return(pr)
+            try:
+                ret_date = datetime.strptime(date_str, "%Y-%m-%d")
+                errors = []
+                rows = []
+                for idx, (pi_id, qty_s, price_s, reason_s) in enumerate(zip(pi_ids, quantities, return_prices, reasons), 1):
+                    if not pi_id or not qty_s or not price_s:
+                        errors.append(f"Row {idx}: item, quantity and price are required.")
+                        continue
+                    if not qty_s.isdigit() or int(qty_s) <= 0:
+                        errors.append(f"Row {idx}: quantity must be a positive integer.")
+                        continue
+                    try:
+                        price_f = float(price_s)
+                        if price_f < 0:
+                            errors.append(f"Row {idx}: return price cannot be negative.")
+                            continue
+                    except ValueError:
+                        errors.append(f"Row {idx}: invalid return price.")
+                        continue
+                    pi = db.session.get(PurchaseItem, int(pi_id))
+                    if not pi:
+                        errors.append(f"Row {idx}: purchase item not found.")
+                        continue
+                    remaining = pi.quantity - get_purchase_item_returned_qty(pi.purchase_id, pi.item_id)
+                    if int(qty_s) > remaining:
+                        errors.append(f"Row {idx} ({pi.item.name}): cannot return {qty_s}, only {remaining} remaining.")
+                        continue
+                    rows.append((pi, int(qty_s), price_f, reason_s.strip() or None))
+                if errors:
+                    for e in errors:
+                        flash(e, "danger")
+                else:
+                    for pi, qty, price, reason_val in rows:
+                        purchase = pi.purchase_header
+                        item = db.session.get(Item, pi.item_id)
+                        pr = PurchaseReturn(
+                            purchase_id=purchase.id,
+                            supplier_id=purchase.supplier_id,
+                            item_id=pi.item_id,
+                            quantity=qty,
+                            return_price=price,
+                            date=ret_date,
+                            reason=reason_val,
+                        )
+                        if item:
+                            item.stock -= qty
+                        db.session.add(pr)
+                        db.session.flush()
+                        sync_supplier_purchase_return(pr)
                     db.session.commit()
-                    flash("Purchase return recorded successfully!", "success")
+                    flash(f"{len(rows)} purchase return(s) recorded successfully!", "success")
                     return redirect(url_for("purchase_return"))
-                except ValueError:
-                    flash("Invalid date format! Use YYYY-MM-DD.", "danger")
+            except ValueError:
+                flash("Invalid date format! Use YYYY-MM-DD.", "danger")
     return render_template(
         "purchase_return.html",
         returns=returns,
-        purchases_available=purchases_available,
+        items_available=items_available,
         pagination=pagination,
         search=search,
+        today=datetime.now().strftime("%Y-%m-%d"),
     )
 
 @app.route("/purchase_return/delete/<int:id>", methods=["POST"])
-@verified_required
+@admin_required
 def delete_purchase_return(id):
     pr = db.session.get(PurchaseReturn, id) or abort(404)
     item = db.session.get(Item, pr.item_id)
@@ -2632,60 +4062,88 @@ def sale_return():
             .filter((Customer.name.ilike(f"%{search}%")) | (Item.name.ilike(f"%{search}%")))
         )
     returns, pagination = get_paginated_results(query)
-    all_sales = Sale.query.order_by(Sale.date.desc()).all()
-    sales_available = [
-        {"s": s, "remaining": s.quantity - get_sale_returned_qty(s.id)}
-        for s in all_sales
-        if s.quantity - get_sale_returned_qty(s.id) > 0
+    all_sis = SaleItem.query.join(Sale).order_by(Sale.date.desc(), SaleItem.id).all()
+    items_available = [
+        {"si": si, "remaining": si.quantity - get_sale_item_returned_qty(si.sale_id, si.item_id)}
+        for si in all_sis
+        if si.quantity - get_sale_item_returned_qty(si.sale_id, si.item_id) > 0
     ]
     if request.method == "POST":
-        sale_id      = request.form.get("sale_id", "").strip()
-        quantity     = request.form.get("quantity", "").strip()
-        return_price = request.form.get("return_price", "").strip()
-        date         = request.form.get("date", "").strip()
-        reason       = request.form.get("reason", "").strip()
-        if not sale_id or not quantity or not return_price or not date:
-            flash("Sale, quantity, price and date are required!", "danger")
-        elif not quantity.isdigit() or int(quantity) <= 0:
-            flash("Quantity must be a positive number!", "danger")
-        elif not return_price.replace(".", "", 1).isdigit() or float(return_price) < 0:
-            flash("Return price must be a non-negative number!", "danger")
+        si_ids        = request.form.getlist("sale_item_id[]")
+        quantities    = request.form.getlist("quantity[]")
+        return_prices = request.form.getlist("return_price[]")
+        reasons       = request.form.getlist("reason[]")
+        date_str      = request.form.get("date", "").strip()
+        if not date_str:
+            flash("Date is required!", "danger")
+        elif not si_ids:
+            flash("At least one item row is required!", "danger")
         else:
-            sale = db.session.get(Sale, int(sale_id)) or abort(404)
-            remaining = sale.quantity - get_sale_returned_qty(sale.id)
-            if int(quantity) > remaining:
-                flash(f"Cannot return more than remaining quantity ({remaining})!", "danger")
-            else:
-                try:
-                    item = db.session.get(Item, sale.item_id) or abort(404)
-                    sr = SaleReturn(
-                        sale_id=sale.id,
-                        customer_id=sale.customer_id,
-                        item_id=sale.item_id,
-                        quantity=int(quantity),
-                        return_price=float(return_price),
-                        date=datetime.strptime(date, "%Y-%m-%d"),
-                        reason=reason or None,
-                    )
-                    item.stock += int(quantity)
-                    db.session.add(sr)
-                    db.session.flush()
-                    sync_customer_sale_return(sr)
+            try:
+                ret_date = datetime.strptime(date_str, "%Y-%m-%d")
+                errors = []
+                rows = []
+                for idx, (si_id, qty_s, price_s, reason_s) in enumerate(zip(si_ids, quantities, return_prices, reasons), 1):
+                    if not si_id or not qty_s or not price_s:
+                        errors.append(f"Row {idx}: item, quantity and price are required.")
+                        continue
+                    if not qty_s.isdigit() or int(qty_s) <= 0:
+                        errors.append(f"Row {idx}: quantity must be a positive integer.")
+                        continue
+                    try:
+                        price_f = float(price_s)
+                        if price_f < 0:
+                            errors.append(f"Row {idx}: return price cannot be negative.")
+                            continue
+                    except ValueError:
+                        errors.append(f"Row {idx}: invalid return price.")
+                        continue
+                    si = db.session.get(SaleItem, int(si_id))
+                    if not si:
+                        errors.append(f"Row {idx}: sale item not found.")
+                        continue
+                    remaining = si.quantity - get_sale_item_returned_qty(si.sale_id, si.item_id)
+                    if int(qty_s) > remaining:
+                        errors.append(f"Row {idx} ({si.item.name}): cannot return {qty_s}, only {remaining} remaining.")
+                        continue
+                    rows.append((si, int(qty_s), price_f, reason_s.strip() or None))
+                if errors:
+                    for e in errors:
+                        flash(e, "danger")
+                else:
+                    for si, qty, price, reason_val in rows:
+                        sale = si.sale_header
+                        item = db.session.get(Item, si.item_id)
+                        sr = SaleReturn(
+                            sale_id=sale.id,
+                            customer_id=sale.customer_id,
+                            item_id=si.item_id,
+                            quantity=qty,
+                            return_price=price,
+                            date=ret_date,
+                            reason=reason_val,
+                        )
+                        if item:
+                            item.stock += qty
+                        db.session.add(sr)
+                        db.session.flush()
+                        sync_customer_sale_return(sr)
                     db.session.commit()
-                    flash("Sale return recorded successfully!", "success")
+                    flash(f"{len(rows)} sale return(s) recorded successfully!", "success")
                     return redirect(url_for("sale_return"))
-                except ValueError:
-                    flash("Invalid date format! Use YYYY-MM-DD.", "danger")
+            except ValueError:
+                flash("Invalid date format! Use YYYY-MM-DD.", "danger")
     return render_template(
         "sale_return.html",
         returns=returns,
-        sales_available=sales_available,
+        items_available=items_available,
         pagination=pagination,
         search=search,
+        today=datetime.now().strftime("%Y-%m-%d"),
     )
 
 @app.route("/sale_return/delete/<int:id>", methods=["POST"])
-@verified_required
+@admin_required
 def delete_sale_return(id):
     sr = db.session.get(SaleReturn, id) or abort(404)
     item = db.session.get(Item, sr.item_id)
@@ -2736,6 +4194,731 @@ def sale_invoice(id):
         returned_qty=returned_qty,
     )
 
+# ─── Stock Adjustment ──────────────────────────────────────────────────────────
+
+@app.route("/stock_adjustment", methods=["GET", "POST"])
+@manager_required
+def stock_adjustment():
+    search = request.args.get("search", "").strip()
+    query = StockAdjustment.query.join(Item)
+    if search:
+        query = query.filter(Item.name.ilike(f"%{search}%"))
+    adjustments, pagination = get_paginated_results(
+        query.order_by(StockAdjustment.date.desc(), StockAdjustment.id.desc())
+    )
+    items = Item.query.order_by(Item.name).all()
+    if request.method == "POST":
+        item_id  = request.form.get("item_id", "").strip()
+        adj_type = request.form.get("adj_type", "").strip()
+        qty_str  = request.form.get("quantity", "").strip()
+        reason   = request.form.get("reason", "").strip()
+        date_str = request.form.get("date", "").strip()
+        if not item_id or not adj_type or not qty_str or not date_str:
+            flash("Item, type, quantity and date are required.", "danger")
+        elif not qty_str.isdigit() or int(qty_str) <= 0:
+            flash("Quantity must be a positive integer.", "danger")
+        else:
+            item_obj = db.session.get(Item, int(item_id))
+            qty = int(qty_str)
+            direction = "out" if adj_type in ("Stock Out", "Damage Write-off", "Sample / Free Issue") else "in"
+            if direction == "out" and item_obj.stock < qty:
+                flash(f"Insufficient stock. Available: {item_obj.stock}", "danger")
+            else:
+                adj = StockAdjustment(
+                    item_id=int(item_id), adj_type=adj_type, quantity=qty,
+                    direction=direction,
+                    date=datetime.strptime(date_str, "%Y-%m-%d"),
+                    reason=reason or None,
+                )
+                db.session.add(adj)
+                if direction == "out":
+                    item_obj.stock -= qty
+                else:
+                    item_obj.stock += qty
+                db.session.commit()
+                flash(f"Stock {'reduced' if direction=='out' else 'increased'} by {qty} for {item_obj.name}.", "success")
+                return redirect(url_for("stock_adjustment"))
+    return render_template("stock_adjustment.html",
+        adjustments=adjustments, items=items, pagination=pagination,
+        search=search, adj_types=ADJUSTMENT_TYPES,
+        today=datetime.now().strftime("%Y-%m-%d"))
+
+@app.route("/stock_adjustment/delete/<int:id>", methods=["POST"])
+@admin_required
+def delete_stock_adjustment(id):
+    adj = db.session.get(StockAdjustment, id) or abort(404)
+    item_obj = db.session.get(Item, adj.item_id)
+    if item_obj:
+        if adj.direction == "out":
+            item_obj.stock += adj.quantity
+        else:
+            item_obj.stock -= adj.quantity
+    db.session.delete(adj)
+    db.session.commit()
+    flash("Adjustment deleted and stock reversed.", "success")
+    return redirect(url_for("stock_adjustment"))
+
+# ─── Expense Tracking ──────────────────────────────────────────────────────────
+
+@app.route("/expenses", methods=["GET", "POST"])
+@manager_required
+def expenses():
+    search = request.args.get("search", "").strip()
+    query = Expense.query
+    if search:
+        query = query.filter(
+            (Expense.description.ilike(f"%{search}%")) |
+            (Expense.notes.ilike(f"%{search}%"))
+        )
+    expense_list, pagination = get_paginated_results(
+        query.order_by(Expense.date.desc(), Expense.id.desc())
+    )
+    categories = ExpenseCategory.query.order_by(ExpenseCategory.name).all()
+    if request.method == "POST":
+        action = request.form.get("_action", "expense")
+        if action == "add_category":
+            cat_name = request.form.get("cat_name", "").strip()
+            if not cat_name:
+                flash("Category name is required.", "danger")
+            elif ExpenseCategory.query.filter_by(name=cat_name).first():
+                flash("Category already exists.", "warning")
+            else:
+                db.session.add(ExpenseCategory(name=cat_name))
+                db.session.commit()
+                flash(f"Category '{cat_name}' added.", "success")
+            return redirect(url_for("expenses"))
+        # add expense
+        desc       = request.form.get("description", "").strip()
+        amount_str = request.form.get("amount", "").strip()
+        date_str   = request.form.get("date", "").strip()
+        method     = request.form.get("payment_method", "Cash").strip()
+        cat_id     = request.form.get("category_id", "").strip() or None
+        ref        = request.form.get("reference_no", "").strip() or None
+        notes      = request.form.get("notes", "").strip() or None
+        if not desc or not amount_str or not date_str:
+            flash("Description, amount and date are required.", "danger")
+        else:
+            try:
+                amount = float(amount_str)
+                if amount <= 0:
+                    flash("Amount must be positive.", "danger")
+                else:
+                    db.session.add(Expense(
+                        category_id=int(cat_id) if cat_id else None,
+                        description=desc, amount=amount,
+                        date=datetime.strptime(date_str, "%Y-%m-%d"),
+                        payment_method=method, reference_no=ref, notes=notes,
+                    ))
+                    db.session.commit()
+                    flash("Expense recorded.", "success")
+                    return redirect(url_for("expenses"))
+            except ValueError:
+                flash("Invalid amount or date.", "danger")
+    total_expenses = float(db.session.query(func.sum(Expense.amount)).scalar() or 0)
+    return render_template("expenses.html",
+        expense_list=expense_list, categories=categories,
+        pagination=pagination, search=search,
+        payment_methods=PAYMENT_METHODS,
+        total_expenses=total_expenses,
+        today=datetime.now().strftime("%Y-%m-%d"))
+
+@app.route("/expenses/delete/<int:id>", methods=["POST"])
+@admin_required
+def delete_expense(id):
+    exp = db.session.get(Expense, id) or abort(404)
+    db.session.delete(exp)
+    db.session.commit()
+    flash("Expense deleted.", "success")
+    return redirect(url_for("expenses"))
+
+# ─── Purchase Orders ───────────────────────────────────────────────────────────
+
+@app.route("/purchase_orders", methods=["GET", "POST"])
+@manager_required
+def purchase_orders():
+    search = request.args.get("search", "").strip()
+    query = PurchaseOrder.query.join(Supplier)
+    if search:
+        query = query.filter(Supplier.name.ilike(f"%{search}%"))
+    orders, pagination = get_paginated_results(
+        query.order_by(PurchaseOrder.order_date.desc(), PurchaseOrder.id.desc())
+    )
+    suppliers = Supplier.query.order_by(Supplier.name).all()
+    items     = Item.query.order_by(Item.name).all()
+    if request.method == "POST":
+        supplier_id   = request.form.get("supplier_id", "").strip()
+        order_date    = request.form.get("order_date", "").strip()
+        expected_date = request.form.get("expected_date", "").strip()
+        notes         = request.form.get("notes", "").strip()
+        item_ids      = request.form.getlist("item_id[]")
+        quantities    = request.form.getlist("quantity[]")
+        prices        = request.form.getlist("purchase_price[]")
+        rows = [(iid.strip(), qty.strip(), pr.strip())
+                for iid, qty, pr in zip(item_ids, quantities, prices)
+                if iid.strip() and qty.strip() and pr.strip()]
+        if not supplier_id or not order_date:
+            flash("Supplier and order date are required.", "danger")
+        elif not rows:
+            flash("At least one item is required.", "danger")
+        else:
+            po = PurchaseOrder(
+                supplier_id=int(supplier_id),
+                order_date=datetime.strptime(order_date, "%Y-%m-%d"),
+                expected_date=datetime.strptime(expected_date, "%Y-%m-%d") if expected_date else None,
+                notes=notes or None,
+            )
+            db.session.add(po)
+            db.session.flush()
+            for iid, qty, price in rows:
+                db.session.add(PurchaseOrderItem(
+                    po_id=po.id, item_id=int(iid),
+                    quantity=int(qty), purchase_price=float(price),
+                ))
+            db.session.commit()
+            flash(f"Purchase Order #{po.id} created.", "success")
+            return redirect(url_for("purchase_orders"))
+    return render_template("purchase_orders.html",
+        orders=orders, suppliers=suppliers, items=items,
+        pagination=pagination, search=search,
+        po_statuses=PO_STATUSES,
+        today=datetime.now().strftime("%Y-%m-%d"))
+
+@app.route("/purchase_orders/<int:id>")
+@manager_required
+def purchase_order_detail(id):
+    po = db.session.get(PurchaseOrder, id) or abort(404)
+    return render_template("purchase_order_detail.html", po=po, po_statuses=PO_STATUSES)
+
+@app.route("/purchase_orders/<int:id>/status", methods=["POST"])
+@manager_required
+def update_po_status(id):
+    po = db.session.get(PurchaseOrder, id) or abort(404)
+    new_status = request.form.get("status", "").strip()
+    if new_status not in PO_STATUSES:
+        flash("Invalid status.", "danger")
+    elif po.status in ("Received", "Cancelled"):
+        flash("Cannot change status of a Received or Cancelled order.", "warning")
+    else:
+        po.status = new_status
+        db.session.commit()
+        flash(f"PO #{po.id} status updated to {new_status}.", "success")
+    return redirect(url_for("purchase_order_detail", id=id))
+
+@app.route("/purchase_orders/<int:id>/convert", methods=["POST"])
+@manager_required
+def convert_po_to_purchase(id):
+    po = db.session.get(PurchaseOrder, id) or abort(404)
+    if po.status == "Cancelled":
+        flash("Cancelled orders cannot be converted.", "danger")
+        return redirect(url_for("purchase_order_detail", id=id))
+    if po.converted_purchase_id:
+        flash(f"Already converted to Purchase #{po.converted_purchase_id}.", "warning")
+        return redirect(url_for("purchase_order_detail", id=id))
+    date_str = request.form.get("purchase_date", "").strip()
+    notes    = request.form.get("notes", "").strip()
+    try:
+        pur_date = datetime.strptime(date_str, "%Y-%m-%d") if date_str else datetime.now()
+    except ValueError:
+        pur_date = datetime.now()
+    first = po.line_items[0] if po.line_items else None
+    if not first:
+        flash("PO has no line items.", "danger")
+        return redirect(url_for("purchase_order_detail", id=id))
+    pur = Purchase(
+        supplier_id=po.supplier_id,
+        item_id=first.item_id, quantity=first.quantity, purchase_price=first.purchase_price,
+        discount_type="percent", discount_value=0, discount_amount=0,
+        tax_percent=0, tax_amount=0,
+        date=pur_date, notes=notes or po.notes,
+    )
+    db.session.add(pur)
+    db.session.flush()
+    for poi in po.line_items:
+        gross = poi.quantity * poi.purchase_price
+        db.session.add(PurchaseItem(
+            purchase_id=pur.id, item_id=poi.item_id,
+            quantity=poi.quantity, purchase_price=poi.purchase_price,
+            discount_type="percent", discount_value=0,
+            discount_amount=0, tax_percent=0, tax_amount=0, amount=gross,
+        ))
+        item_obj = db.session.get(Item, poi.item_id)
+        if item_obj:
+            item_obj.stock += poi.quantity
+    db.session.flush()
+    db.session.refresh(pur)
+    sync_supplier_purchase(pur)
+    po.status = "Received"
+    po.converted_purchase_id = pur.id
+    db.session.commit()
+    flash(f"PO #{po.id} converted to Purchase #{pur.id} successfully.", "success")
+    return redirect(url_for("purchase_order_detail", id=id))
+
+@app.route("/purchase_orders/<int:id>/delete", methods=["POST"])
+@admin_required
+def delete_purchase_order(id):
+    po = db.session.get(PurchaseOrder, id) or abort(404)
+    if po.status == "Received":
+        flash("Cannot delete a received order.", "danger")
+        return redirect(url_for("purchase_orders"))
+    db.session.delete(po)
+    db.session.commit()
+    flash(f"Purchase Order #{id} deleted.", "success")
+    return redirect(url_for("purchase_orders"))
+
+# ─── Quotations ────────────────────────────────────────────────────────────────
+
+@app.route("/quotations", methods=["GET", "POST"])
+@manager_required
+def quotations():
+    search = request.args.get("search", "").strip()
+    query = Quotation.query.join(Customer)
+    if search:
+        query = query.filter(Customer.name.ilike(f"%{search}%"))
+    quotes, pagination = get_paginated_results(
+        query.order_by(Quotation.quote_date.desc(), Quotation.id.desc())
+    )
+    customers = Customer.query.order_by(Customer.name).all()
+    items     = Item.query.order_by(Item.name).all()
+    if request.method == "POST":
+        customer_id  = request.form.get("customer_id", "").strip()
+        quote_date   = request.form.get("quote_date", "").strip()
+        valid_until  = request.form.get("valid_until", "").strip()
+        notes        = request.form.get("notes", "").strip()
+        item_ids     = request.form.getlist("item_id[]")
+        quantities   = request.form.getlist("quantity[]")
+        prices       = request.form.getlist("sale_price[]")
+        disc_types   = request.form.getlist("discount_type[]")
+        disc_values  = request.form.getlist("discount_value[]")
+        tax_pcts     = request.form.getlist("tax_percent[]")
+        rows = []
+        for i, (iid, qty, price) in enumerate(zip(item_ids, quantities, prices)):
+            if iid.strip() and qty.strip() and price.strip():
+                rows.append((iid.strip(), qty.strip(), price.strip(),
+                    disc_types[i] if i < len(disc_types) else "percent",
+                    disc_values[i] if i < len(disc_values) else "0",
+                    tax_pcts[i] if i < len(tax_pcts) else "0"))
+        if not customer_id or not quote_date:
+            flash("Customer and date are required.", "danger")
+        elif not rows:
+            flash("At least one item is required.", "danger")
+        else:
+            q = Quotation(
+                customer_id=int(customer_id),
+                quote_date=datetime.strptime(quote_date, "%Y-%m-%d"),
+                valid_until=datetime.strptime(valid_until, "%Y-%m-%d") if valid_until else None,
+                notes=notes or None,
+            )
+            db.session.add(q)
+            db.session.flush()
+            for iid, qty, price, d_type, d_val, tax in rows:
+                db.session.add(QuotationItem(
+                    quotation_id=q.id, item_id=int(iid),
+                    quantity=int(qty), sale_price=float(price),
+                    discount_type=d_type or "percent",
+                    discount_value=float(d_val or 0),
+                    tax_percent=float(tax or 0),
+                ))
+            db.session.commit()
+            flash(f"Quotation #{q.id} created.", "success")
+            return redirect(url_for("quotations"))
+    return render_template("quotations.html",
+        quotes=quotes, customers=customers, items=items,
+        pagination=pagination, search=search,
+        quote_statuses=QUOTATION_STATUSES,
+        today=datetime.now().strftime("%Y-%m-%d"))
+
+@app.route("/quotations/<int:id>")
+@manager_required
+def quotation_detail(id):
+    q = db.session.get(Quotation, id) or abort(404)
+    def q_item_net(qi):
+        gross = qi.quantity * qi.sale_price
+        _, _, net = calc_discount_tax(gross, qi.discount_type, qi.discount_value, qi.tax_percent)
+        return net
+    total = sum(q_item_net(qi) for qi in q.line_items)
+    return render_template("quotation_detail.html", q=q, total=total,
+                           q_item_net=q_item_net, quote_statuses=QUOTATION_STATUSES)
+
+@app.route("/quotations/<int:id>/status", methods=["POST"])
+@manager_required
+def update_quotation_status(id):
+    q = db.session.get(Quotation, id) or abort(404)
+    new_status = request.form.get("status", "").strip()
+    if new_status not in QUOTATION_STATUSES or new_status == "Converted":
+        flash("Invalid status.", "danger")
+    elif q.status == "Converted":
+        flash("Converted quotations cannot be changed.", "warning")
+    else:
+        q.status = new_status
+        db.session.commit()
+        flash(f"Quotation #{q.id} marked as {new_status}.", "success")
+    return redirect(url_for("quotation_detail", id=id))
+
+@app.route("/quotations/<int:id>/convert", methods=["POST"])
+@manager_required
+def convert_quotation_to_sale(id):
+    q = db.session.get(Quotation, id) or abort(404)
+    if q.converted_sale_id:
+        flash(f"Already converted to Sale #{q.converted_sale_id}.", "warning")
+        return redirect(url_for("quotation_detail", id=id))
+    if q.status in ("Rejected", "Converted"):
+        flash("Cannot convert a rejected or already-converted quotation.", "danger")
+        return redirect(url_for("quotation_detail", id=id))
+    date_str = request.form.get("sale_date", "").strip()
+    try:
+        sal_date = datetime.strptime(date_str, "%Y-%m-%d") if date_str else datetime.now()
+    except ValueError:
+        sal_date = datetime.now()
+    # stock check
+    stock_errors = []
+    for qi in q.line_items:
+        item_obj = db.session.get(Item, qi.item_id)
+        if item_obj and item_obj.stock < qi.quantity:
+            stock_errors.append(f"{item_obj.name}: only {item_obj.stock} in stock")
+    if stock_errors:
+        flash("Insufficient stock — " + "; ".join(stock_errors), "danger")
+        return redirect(url_for("quotation_detail", id=id))
+    first = q.line_items[0]
+    sal = Sale(
+        customer_id=q.customer_id,
+        item_id=first.item_id, quantity=first.quantity, sale_price=first.sale_price,
+        cost_price=0.0,
+        discount_type="percent", discount_value=0, discount_amount=0,
+        tax_percent=0, tax_amount=0,
+        date=sal_date, notes=q.notes,
+    )
+    db.session.add(sal)
+    db.session.flush()
+    for qi in q.line_items:
+        gross = qi.quantity * qi.sale_price
+        disc_amt, tax_amt, net = calc_discount_tax(gross, qi.discount_type, qi.discount_value, qi.tax_percent)
+        item_obj = db.session.get(Item, qi.item_id)
+        db.session.add(SaleItem(
+            sale_id=sal.id, item_id=qi.item_id,
+            quantity=qi.quantity, sale_price=qi.sale_price,
+            cost_price=float(item_obj.purchase_price or 0) if item_obj else 0,
+            discount_type=qi.discount_type, discount_value=qi.discount_value,
+            discount_amount=disc_amt, tax_percent=qi.tax_percent,
+            tax_amount=tax_amt, amount=net,
+        ))
+        if item_obj:
+            item_obj.stock -= qi.quantity
+    db.session.flush()
+    db.session.refresh(sal)
+    sync_customer_sale(sal)
+    q.status = "Converted"
+    q.converted_sale_id = sal.id
+    db.session.commit()
+    flash(f"Quotation #{q.id} converted to Sale #{sal.id}.", "success")
+    return redirect(url_for("quotation_detail", id=id))
+
+@app.route("/quotations/<int:id>/delete", methods=["POST"])
+@admin_required
+def delete_quotation(id):
+    q = db.session.get(Quotation, id) or abort(404)
+    if q.status == "Converted":
+        flash("Cannot delete a converted quotation.", "danger")
+        return redirect(url_for("quotations"))
+    db.session.delete(q)
+    db.session.commit()
+    flash(f"Quotation #{id} deleted.", "success")
+    return redirect(url_for("quotations"))
+
+# ─── Delivery Challan ──────────────────────────────────────────────────────────
+
+@app.route("/delivery_challans", methods=["GET"])
+@verified_required
+def delivery_challans():
+    search = request.args.get("search", "").strip()
+    status_filter = request.args.get("status", "").strip()
+    query = DeliveryChallan.query.join(Sale).join(Customer, Sale.customer_id == Customer.id)
+    if search:
+        query = query.filter(Customer.name.ilike(f"%{search}%"))
+    if status_filter:
+        query = query.filter(DeliveryChallan.status == status_filter)
+    challans, pagination = get_paginated_results(
+        query.order_by(DeliveryChallan.challan_date.desc(), DeliveryChallan.id.desc())
+    )
+    # pending sales (no challan yet)
+    pending_sales = Sale.query.filter(
+        ~Sale.id.in_(db.session.query(DeliveryChallan.sale_id))
+    ).order_by(Sale.date.desc()).all()
+    return render_template("delivery_challans.html",
+        challans=challans, pending_sales=pending_sales,
+        pagination=pagination, search=search,
+        status_filter=status_filter, challan_statuses=CHALLAN_STATUSES,
+        today=datetime.now().strftime("%Y-%m-%d"))
+
+@app.route("/delivery_challans/create", methods=["POST"])
+@manager_required
+def create_delivery_challan():
+    sale_id      = request.form.get("sale_id", "").strip()
+    challan_date = request.form.get("challan_date", "").strip()
+    transport    = request.form.get("transport", "").strip() or None
+    notes        = request.form.get("notes", "").strip() or None
+    if not sale_id or not challan_date:
+        flash("Sale and challan date are required.", "danger")
+        return redirect(url_for("delivery_challans"))
+    if DeliveryChallan.query.filter_by(sale_id=int(sale_id)).first():
+        flash("A challan already exists for this sale.", "warning")
+        return redirect(url_for("delivery_challans"))
+    dc = DeliveryChallan(
+        sale_id=int(sale_id),
+        challan_date=datetime.strptime(challan_date, "%Y-%m-%d"),
+        transport=transport, notes=notes,
+    )
+    db.session.add(dc)
+    db.session.commit()
+    flash(f"Delivery Challan #{dc.id} created.", "success")
+    return redirect(url_for("delivery_challans"))
+
+@app.route("/delivery_challans/<int:id>/update", methods=["POST"])
+@manager_required
+def update_challan_status(id):
+    dc = db.session.get(DeliveryChallan, id) or abort(404)
+    new_status    = request.form.get("status", "").strip()
+    dispatch_date = request.form.get("dispatch_date", "").strip()
+    delivery_date = request.form.get("delivery_date", "").strip()
+    transport     = request.form.get("transport", "").strip() or None
+    notes         = request.form.get("notes", "").strip() or None
+    if new_status in CHALLAN_STATUSES:
+        dc.status = new_status
+    if dispatch_date:
+        dc.dispatch_date = datetime.strptime(dispatch_date, "%Y-%m-%d")
+    if delivery_date:
+        dc.delivery_date = datetime.strptime(delivery_date, "%Y-%m-%d")
+    dc.transport = transport
+    dc.notes = notes
+    db.session.commit()
+    flash(f"Challan #{dc.id} updated.", "success")
+    return redirect(url_for("delivery_challans"))
+
+# ─── Reports: AP/AR Aging, P&L, Cash Book, GST ────────────────────────────────
+
+@app.route("/reports/aging")
+@manager_required
+def report_aging():
+    today = datetime.now().date()
+
+    def age_bucket(date_val):
+        days = (today - date_val.date()).days
+        if days <= 30:   return "0-30"
+        elif days <= 60: return "31-60"
+        elif days <= 90: return "61-90"
+        else:            return "90+"
+
+    # AP Aging (Suppliers)
+    ap_rows = []
+    for sup in Supplier.query.order_by(Supplier.name).all():
+        buckets = {"0-30": 0, "31-60": 0, "61-90": 0, "90+": 0}
+        for pur in Purchase.query.filter_by(supplier_id=sup.id).all():
+            due = purchase_total(pur) - get_purchase_paid(pur.id)
+            if due > 0.01:
+                buckets[age_bucket(pur.date)] += due
+        total_due = sum(buckets.values())
+        if total_due > 0.01:
+            ap_rows.append({"name": sup.name, "buckets": buckets, "total": total_due})
+
+    # AR Aging (Customers)
+    ar_rows = []
+    for cust in Customer.query.order_by(Customer.name).all():
+        buckets = {"0-30": 0, "31-60": 0, "61-90": 0, "90+": 0}
+        for sal in Sale.query.filter_by(customer_id=cust.id).all():
+            due = sale_total(sal) - get_sale_received(sal.id)
+            if due > 0.01:
+                buckets[age_bucket(sal.date)] += due
+        total_due = sum(buckets.values())
+        if total_due > 0.01:
+            ar_rows.append({"name": cust.name, "buckets": buckets, "total": total_due})
+
+    return render_template("report_aging.html",
+        ap_rows=ap_rows, ar_rows=ar_rows, today=today)
+
+@app.route("/reports/profit_loss")
+@manager_required
+def report_profit_loss():
+    start_str = request.args.get("start", "")
+    end_str   = request.args.get("end", "")
+    today     = datetime.now()
+    try:
+        start = datetime.strptime(start_str, "%Y-%m-%d") if start_str else datetime(today.year, 1, 1)
+        end   = datetime.strptime(end_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59) if end_str else today
+    except ValueError:
+        start = datetime(today.year, 1, 1)
+        end   = today
+
+    # Sales revenue & COGS from SaleItem
+    sales_q = Sale.query.filter(Sale.date >= start, Sale.date <= end).all()
+    revenue  = sum(sale_total(s) for s in sales_q)
+    cogs     = sum(
+        float(si.cost_price * si.quantity)
+        for s in sales_q for si in s.line_items
+    )
+    gross_profit = revenue - cogs
+
+    # Purchase returns reduce COGS
+    pr_total = float(db.session.query(func.sum(PurchaseReturn.quantity * PurchaseReturn.return_price))
+        .filter(PurchaseReturn.date >= start, PurchaseReturn.date <= end).scalar() or 0)
+    # Sale returns reduce revenue
+    sr_total = float(db.session.query(func.sum(SaleReturn.quantity * SaleReturn.return_price))
+        .filter(SaleReturn.date >= start, SaleReturn.date <= end).scalar() or 0)
+
+    net_revenue     = revenue - sr_total
+    adj_gross       = net_revenue - (cogs - pr_total)
+
+    # Expenses
+    expense_rows = (
+        db.session.query(
+            ExpenseCategory.name,
+            func.sum(Expense.amount).label("total")
+        )
+        .outerjoin(ExpenseCategory, Expense.category_id == ExpenseCategory.id)
+        .filter(Expense.date >= start, Expense.date <= end)
+        .group_by(ExpenseCategory.name)
+        .all()
+    )
+    total_expenses = float(db.session.query(func.sum(Expense.amount))
+        .filter(Expense.date >= start, Expense.date <= end).scalar() or 0)
+    net_profit = adj_gross - total_expenses
+
+    return render_template("report_pl.html",
+        start=start, end=end,
+        revenue=revenue, sr_total=sr_total, net_revenue=net_revenue,
+        cogs=cogs, pr_total=pr_total, adj_gross=adj_gross,
+        expense_rows=expense_rows, total_expenses=total_expenses,
+        net_profit=net_profit)
+
+@app.route("/reports/cash_book")
+@manager_required
+def report_cash_book():
+    start_str = request.args.get("start", "")
+    end_str   = request.args.get("end", "")
+    method_filter = request.args.get("method", "")
+    today = datetime.now()
+    try:
+        start = datetime.strptime(start_str, "%Y-%m-%d") if start_str else datetime(today.year, today.month, 1)
+        end   = datetime.strptime(end_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59) if end_str else today
+    except ValueError:
+        start = datetime(today.year, today.month, 1)
+        end   = today
+
+    entries = []
+
+    # Supplier payments (cash out)
+    sp_q = SupplierPayment.query.filter(
+        SupplierPayment.payment_date >= start,
+        SupplierPayment.payment_date <= end,
+    )
+    if method_filter:
+        sp_q = sp_q.filter(SupplierPayment.payment_method == method_filter)
+    for p in sp_q.all():
+        entries.append({
+            "date": p.payment_date, "type": "Supplier Payment",
+            "description": f"{p.supplier.name}" + (f" — Bill #{p.purchase_id}" if p.purchase_id else ""),
+            "method": p.payment_method, "out": p.amount, "in": 0,
+        })
+
+    # Customer receipts (cash in)
+    cr_q = CustomerPayment.query.filter(
+        CustomerPayment.payment_date >= start,
+        CustomerPayment.payment_date <= end,
+    )
+    if method_filter:
+        cr_q = cr_q.filter(CustomerPayment.payment_method == method_filter)
+    for r in cr_q.all():
+        entries.append({
+            "date": r.payment_date, "type": "Customer Receipt",
+            "description": f"{r.customer.name}" + (f" — Sale #{r.sale_id}" if r.sale_id else ""),
+            "method": r.payment_method, "in": r.amount, "out": 0,
+        })
+
+    # Expenses (cash out)
+    exp_q = Expense.query.filter(Expense.date >= start, Expense.date <= end)
+    if method_filter:
+        exp_q = exp_q.filter(Expense.payment_method == method_filter)
+    for e in exp_q.all():
+        entries.append({
+            "date": e.date, "type": "Expense",
+            "description": e.description,
+            "method": e.payment_method, "out": e.amount, "in": 0,
+        })
+
+    entries.sort(key=lambda x: x["date"])
+    total_in  = sum(e["in"]  for e in entries)
+    total_out = sum(e["out"] for e in entries)
+    net       = total_in - total_out
+
+    return render_template("report_cash_book.html",
+        entries=entries, start=start, end=end,
+        total_in=total_in, total_out=total_out, net=net,
+        method_filter=method_filter, payment_methods=PAYMENT_METHODS)
+
+@app.route("/reports/gst")
+@manager_required
+def report_gst():
+    start_str = request.args.get("start", "")
+    end_str   = request.args.get("end", "")
+    today = datetime.now()
+    try:
+        start = datetime.strptime(start_str, "%Y-%m-%d") if start_str else datetime(today.year, today.month, 1)
+        end   = datetime.strptime(end_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59) if end_str else today
+    except ValueError:
+        start = datetime(today.year, today.month, 1)
+        end   = today
+
+    # Input tax (purchases)
+    input_rows = []
+    input_total = 0.0
+    for pur in Purchase.query.filter(Purchase.date >= start, Purchase.date <= end).order_by(Purchase.date).all():
+        tax = sum(float(pi.tax_amount or 0) for pi in pur.line_items)
+        if tax > 0:
+            input_rows.append({"id": pur.id, "date": pur.date,
+                "party": pur.id_supplier.name, "tax": tax})
+            input_total += tax
+
+    # Output tax (sales)
+    output_rows = []
+    output_total = 0.0
+    for sal in Sale.query.filter(Sale.date >= start, Sale.date <= end).order_by(Sale.date).all():
+        tax = sum(float(si.tax_amount or 0) for si in sal.line_items)
+        if tax > 0:
+            output_rows.append({"id": sal.id, "date": sal.date,
+                "party": sal.id_customer.name, "tax": tax})
+            output_total += tax
+
+    net_gst = output_total - input_total  # positive = payable to govt
+
+    return render_template("report_gst.html",
+        start=start, end=end,
+        input_rows=input_rows, input_total=input_total,
+        output_rows=output_rows, output_total=output_total,
+        net_gst=net_gst)
+
+# ─── Low Stock Alert ───────────────────────────────────────────────────────────
+
+@app.route("/low_stock_alert", methods=["POST"])
+@manager_required
+def send_low_stock_alert():
+    low_items = Item.query.filter(Item.stock <= Item.reorder_level).order_by(Item.stock).all()
+    if not low_items:
+        flash("No items are below reorder level — no alert sent.", "info")
+        return redirect(url_for("item"))
+    lines = [f"LOW STOCK ALERT — {app.config.get('COMPANY_NAME', 'TradeFlow')}\n"]
+    lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
+    lines.append(f"{'Item':<30} {'Stock':>8} {'Reorder':>8}")
+    lines.append("-" * 50)
+    for it in low_items:
+        lines.append(f"{it.name:<30} {it.stock:>8} {it.reorder_level:>8}")
+    body = "\n".join(lines)
+    mail_user = app.config.get("MAIL_USERNAME", "").strip()
+    if not mail_user:
+        flash("Email not configured — cannot send alert.", "danger")
+        return redirect(url_for("item"))
+    ok = send_email(mail_user, f"Low Stock Alert — {len(low_items)} items", body)
+    if ok:
+        flash(f"Low stock alert sent for {len(low_items)} item(s).", "success")
+    return redirect(url_for("item"))
+
 @app.cli.command("create-user")
 @click.option("--name", prompt="Name")
 @click.option("--email", prompt="Email")
@@ -2753,10 +4936,542 @@ def create_user_cmd(name, email, password):
     if User.query.filter_by(email=email).first():
         click.echo(f"Email {email} is already registered.")
         return
-    user = User(name=name, email=email, password=pwd_context.hash(password), verified=True)
+    user = User(name=name, email=email, password=pwd_context.hash(password), verified=True, role="admin")
     db.session.add(user)
     db.session.commit()
-    click.echo(f"User created: {email} (verified)")
+    click.echo(f"User created: {email} (verified, role=admin)")
+
+# ─── Admin: User Management ────────────────────────────────────────────────
+
+@app.route("/admin/users")
+@admin_required
+def admin_users():
+    users = User.query.order_by(User.name).all()
+    return render_template("admin_users.html", users=users)
+
+@app.route("/admin/users/create", methods=["GET", "POST"])
+@admin_required
+def admin_create_user():
+    if request.method == "POST":
+        name             = request.form.get("name", "").strip()
+        email            = request.form.get("email", "").strip().lower()
+        password         = request.form.get("password", "").strip()
+        confirm_password = request.form.get("confirm_password", "").strip()
+        role             = request.form.get("role", "staff").strip()
+        verified         = request.form.get("verified") == "1"
+
+        if not name or not email or not password:
+            flash("Name, email, and password are required.", "danger")
+        elif len(password) < 6:
+            flash("Password must be at least 6 characters.", "danger")
+        elif password != confirm_password:
+            flash("Passwords do not match. Please retype carefully.", "danger")
+        elif role not in ROLES:
+            flash("Invalid role selected.", "danger")
+        elif User.query.filter_by(email=email).first():
+            flash(f"Email {email} is already registered.", "warning")
+        else:
+            user = User(name=name, email=email,
+                        password=pwd_context.hash(password),
+                        role=role, verified=verified)
+            db.session.add(user)
+            db.session.commit()
+            flash(f"User '{name}' created successfully.", "success")
+            return redirect(url_for("admin_users"))
+
+    return render_template("admin_create_user.html")
+
+@app.route("/admin/users/edit/<int:id>", methods=["GET", "POST"])
+@admin_required
+def admin_edit_user(id):
+    user = db.session.get(User, id) or abort(404)
+    if request.method == "POST":
+        name     = request.form.get("name", "").strip()
+        email    = request.form.get("email", "").strip().lower()
+        role     = request.form.get("role", "staff").strip()
+        verified = request.form.get("verified") == "1"
+        new_pw   = request.form.get("password", "").strip()
+
+        if not name or not email:
+            flash("Name and email are required.", "danger")
+        elif role not in ROLES:
+            flash("Invalid role selected.", "danger")
+        elif email != user.email and User.query.filter_by(email=email).first():
+            flash(f"Email {email} is already in use.", "warning")
+        else:
+            user.name     = name
+            user.email    = email
+            user.role     = role
+            user.verified = verified
+            if new_pw:
+                if len(new_pw) < 6:
+                    flash("Password must be at least 6 characters.", "danger")
+                    return render_template("admin_edit_user.html", user=user)
+                user.password = pwd_context.hash(new_pw)
+            db.session.commit()
+            flash(f"User '{name}' updated successfully.", "success")
+            return redirect(url_for("admin_users"))
+
+    return render_template("admin_edit_user.html", user=user)
+
+@app.route("/admin/users/change-role/<int:id>", methods=["POST"])
+@admin_required
+def admin_change_role(id):
+    user = db.session.get(User, id) or abort(404)
+    if user.id == current_user.id:
+        flash("You cannot change your own role.", "danger")
+        return redirect(url_for("admin_users"))
+    role = request.form.get("role", "").strip()
+    if role not in ROLES:
+        flash("Invalid role.", "danger")
+        return redirect(url_for("admin_users"))
+    old_role = user.role
+    user.role = role
+    db.session.commit()
+    flash(f"{user.name}'s role changed from '{old_role}' to '{role}'.", "success")
+    return redirect(url_for("admin_users"))
+
+@app.route("/admin/users/delete/<int:id>", methods=["POST"])
+@admin_required
+def admin_delete_user(id):
+    user = db.session.get(User, id) or abort(404)
+    if user.id == current_user.id:
+        flash("You cannot delete your own account.", "danger")
+        return redirect(url_for("admin_users"))
+    db.session.delete(user)
+    db.session.commit()
+    flash(f"User '{user.name}' deleted.", "success")
+    return redirect(url_for("admin_users"))
+
+@app.route("/admin/users/toggle-verify/<int:id>", methods=["POST"])
+@admin_required
+def admin_toggle_verify(id):
+    user = db.session.get(User, id) or abort(404)
+    user.verified = not user.verified
+    db.session.commit()
+    state = "verified" if user.verified else "unverified"
+    flash(f"User '{user.name}' is now {state}.", "success")
+    return redirect(url_for("admin_users"))
+
+# ─── Backup & Restore ──────────────────────────────────────────────────────────
+
+@app.route("/admin/system")
+@admin_required
+def admin_system():
+    db_path = os.path.join(BASE_DIR, "instance", "database.db")
+    db_size_kb = round(os.path.getsize(db_path) / 1024, 1) if os.path.exists(db_path) else 0
+    from sqlalchemy import inspect as sa_inspect
+    with app.app_context():
+        tables = sa_inspect(db.engine).get_table_names()
+    table_counts = {}
+    for t in sorted(tables):
+        try:
+            count = db.session.execute(text(f"SELECT COUNT(*) FROM \"{t}\"")).scalar()
+            table_counts[t] = count
+        except Exception:
+            table_counts[t] = "?"
+    return render_template("admin_system.html",
+        db_size_kb=db_size_kb,
+        table_counts=table_counts,
+        backup_name=f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db",
+    )
+
+@app.route("/admin/backup")
+@admin_required
+def admin_backup():
+    db_path = os.path.join(BASE_DIR, "instance", "database.db")
+    if not os.path.exists(db_path):
+        flash("Database file not found.", "danger")
+        return redirect(url_for("admin_system"))
+    filename = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+    # Use SQLite online backup API via a temp file to get a consistent snapshot
+    import sqlite3, tempfile, shutil
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp.close()
+    try:
+        src = sqlite3.connect(db_path)
+        dst = sqlite3.connect(tmp.name)
+        src.backup(dst)
+        dst.close()
+        src.close()
+    except Exception as e:
+        flash(f"Backup failed: {e}", "danger")
+        return redirect(url_for("admin_system"))
+    return send_file(tmp.name, as_attachment=True, download_name=filename,
+                     mimetype="application/octet-stream")
+
+@app.route("/admin/restore", methods=["POST"])
+@admin_required
+def admin_restore():
+    uploaded = request.files.get("db_file")
+    if not uploaded or not uploaded.filename:
+        flash("No file selected.", "danger")
+        return redirect(url_for("admin_system"))
+    header = uploaded.read(16)
+    if not header.startswith(b"SQLite format 3"):
+        flash("Invalid file — not a SQLite database.", "danger")
+        return redirect(url_for("admin_system"))
+    uploaded.seek(0)
+    db_path = os.path.join(BASE_DIR, "instance", "database.db")
+    bak_path = db_path + ".bak"
+    try:
+        import shutil
+        if os.path.exists(db_path):
+            shutil.copy2(db_path, bak_path)
+        db.session.remove()
+        db.engine.dispose()
+        uploaded.save(db_path)
+        # Re-run migrations to ensure schema is current
+        with app.app_context():
+            migrate_database()
+        flash("Database restored successfully. Previous backup saved as database.db.bak", "success")
+    except Exception as e:
+        flash(f"Restore failed: {e}", "danger")
+    return redirect(url_for("admin_system"))
+
+@app.cli.command("seed-data")
+@click.option("--yes", is_flag=True, help="Skip confirmation prompt")
+def seed_data_cmd(yes):
+    """Wipe all non-user data and populate with demo master data + all transaction types."""
+    if not yes:
+        click.echo("WARNING: This will DELETE ALL existing data (except User accounts) and insert demo data.")
+        if not click.confirm("Continue?"):
+            click.echo("Aborted.")
+            return
+
+    # ── 1. Clear data in FK-safe order ───────────────────────────────────────
+    click.echo("Step 1/3: Clearing all data...")
+    db.session.query(SupplierLedgerEntry).delete()
+    db.session.query(CustomerLedgerEntry).delete()
+    db.session.query(SaleReturn).delete()
+    db.session.query(PurchaseReturn).delete()
+    db.session.query(CustomerPayment).delete()
+    db.session.query(SupplierPayment).delete()
+    db.session.query(SaleItem).delete()
+    db.session.query(PurchaseItem).delete()
+    db.session.query(Sale).delete()
+    db.session.query(Purchase).delete()
+    db.session.query(Item).delete()
+    db.session.query(Category).delete()
+    db.session.query(Customer).delete()
+    db.session.query(Supplier).delete()
+    db.session.commit()
+    click.echo("  Done.")
+
+    # ── 2. Master Data ────────────────────────────────────────────────────────
+    click.echo("Step 2/3: Creating master data...")
+
+    cat_elec   = Category(name="Electronics")
+    cat_fabric = Category(name="Fabric & Textile")
+    db.session.add_all([cat_elec, cat_fabric])
+    db.session.flush()
+
+    item_mobile = Item(name="Samsung Mobile",  category_id=cat_elec.id,   unit="Pcs",
+                       opening_stock=10,  stock=10,  reorder_level=5,
+                       purchase_price=25000.0, sale_price=30000.0)
+    item_laptop = Item(name="Laptop HP",        category_id=cat_elec.id,   unit="Pcs",
+                       opening_stock=5,   stock=5,   reorder_level=2,
+                       purchase_price=55000.0, sale_price=65000.0)
+    item_cable  = Item(name="USB Cable",        category_id=cat_elec.id,   unit="Pcs",
+                       opening_stock=100, stock=100, reorder_level=20,
+                       purchase_price=300.0,   sale_price=500.0)
+    item_cotton = Item(name="Cotton Fabric",    category_id=cat_fabric.id, unit="Meter",
+                       opening_stock=500, stock=500, reorder_level=100,
+                       purchase_price=200.0,   sale_price=280.0)
+    item_poly   = Item(name="Polyester Fabric", category_id=cat_fabric.id, unit="Meter",
+                       opening_stock=300, stock=300, reorder_level=50,
+                       purchase_price=150.0,   sale_price=200.0)
+    db.session.add_all([item_mobile, item_laptop, item_cable, item_cotton, item_poly])
+    db.session.flush()
+
+    sup1 = Supplier(name="Shaheen Electronics", contact="0321-1234567",
+                    address="Hall Road, Lahore",       opening_balance=15000.0)
+    sup2 = Supplier(name="Karimi Cloth House",  contact="0333-7654321",
+                    address="Bolton Market, Karachi",  opening_balance=8000.0)
+    sup3 = Supplier(name="National Traders",    contact="0345-9876543",
+                    address="Blue Area, Islamabad",    opening_balance=0.0)
+    db.session.add_all([sup1, sup2, sup3])
+    db.session.flush()
+
+    cust1 = Customer(name="Ahmed Brothers",     contact="0312-1111111",
+                     address="Karkhana Bazaar, Faisalabad", opening_balance=5000.0)
+    cust2 = Customer(name="Zafar Retail Store", contact="0322-2222222",
+                     address="Hussain Agahi, Multan",       opening_balance=0.0)
+    cust3 = Customer(name="City Electronics",   contact="0300-3333333",
+                     address="Saddar, Rawalpindi",           opening_balance=12000.0)
+    db.session.add_all([cust1, cust2, cust3])
+    db.session.flush()
+
+    for s in [sup1, sup2, sup3]:
+        sync_supplier_opening(s)
+    for c in [cust1, cust2, cust3]:
+        sync_customer_opening(c)
+    db.session.commit()
+    click.echo("  2 categories, 5 items, 3 suppliers, 3 customers created.")
+
+    # ── 3. Transactions ───────────────────────────────────────────────────────
+    click.echo("Step 3/3: Creating all transaction types...")
+
+    def dt(s):
+        return datetime.strptime(s, "%Y-%m-%d")
+
+    # Shorthand tuple: no discount, no tax
+    _N = ("percent", 0.0, 0.0)
+
+    def make_purchase(supplier, date, rows, notes=None):
+        first = rows[0]
+        pur = Purchase(
+            supplier_id=supplier.id,
+            item_id=first[0].id, quantity=first[1], purchase_price=first[2],
+            discount_type="percent", discount_value=0, discount_amount=0,
+            tax_percent=0, tax_amount=0,
+            date=date, notes=notes,
+        )
+        db.session.add(pur)
+        db.session.flush()
+        for item, qty, price, d_type, d_val, tax in rows:
+            gross = qty * price
+            disc_amt, tax_amt, net = calc_discount_tax(gross, d_type, d_val, tax)
+            db.session.add(PurchaseItem(
+                purchase_id=pur.id, item_id=item.id,
+                quantity=qty, purchase_price=price,
+                discount_type=d_type, discount_value=d_val,
+                discount_amount=disc_amt, tax_percent=tax,
+                tax_amount=tax_amt, amount=net,
+            ))
+            item.stock += qty
+        db.session.flush()
+        db.session.refresh(pur)
+        sync_supplier_purchase(pur)
+        db.session.commit()
+        return pur
+
+    def make_sale(customer, date, rows, notes=None):
+        first = rows[0]
+        sal = Sale(
+            customer_id=customer.id,
+            item_id=first[0].id, quantity=first[1], sale_price=first[2],
+            cost_price=0.0,
+            discount_type="percent", discount_value=0, discount_amount=0,
+            tax_percent=0, tax_amount=0,
+            date=date, notes=notes,
+        )
+        db.session.add(sal)
+        db.session.flush()
+        for item, qty, price, d_type, d_val, tax in rows:
+            gross = qty * price
+            disc_amt, tax_amt, net = calc_discount_tax(gross, d_type, d_val, tax)
+            db.session.add(SaleItem(
+                sale_id=sal.id, item_id=item.id,
+                quantity=qty, sale_price=price,
+                cost_price=float(item.purchase_price or 0),
+                discount_type=d_type, discount_value=d_val,
+                discount_amount=disc_amt, tax_percent=tax,
+                tax_amount=tax_amt, amount=net,
+            ))
+            item.stock -= qty
+        db.session.flush()
+        db.session.refresh(sal)
+        sync_customer_sale(sal)
+        db.session.commit()
+        return sal
+
+    # Purchases  ──────────────────────────────────────────────────────────────
+    pur1 = make_purchase(sup1, dt("2026-05-01"), [
+        (item_mobile,  5, 25000.0) + _N,   # 125,000
+        (item_cable,  20,   300.0) + _N,   #   6,000  → total 131,000
+    ], notes="Stock replenishment")
+    pur2 = make_purchase(sup2, dt("2026-05-05"), [
+        (item_cotton, 100, 200.0) + _N,    #  20,000
+        (item_poly,    50, 150.0) + _N,    #   7,500  → total 27,500
+    ])
+    pur3 = make_purchase(sup3, dt("2026-05-10"), [
+        (item_laptop, 2, 55000.0) + _N,    # 110,000
+    ])
+    click.echo("  Purchases:  3 invoices (2 multi-item, 1 single)")
+
+    # Sales  ──────────────────────────────────────────────────────────────────
+    sal1 = make_sale(cust1, dt("2026-05-15"), [
+        (item_mobile, 2, 30000.0) + _N,    #  60,000
+        (item_cable,  10,   500.0) + _N,   #   5,000  → total 65,000
+    ])
+    sal2 = make_sale(cust2, dt("2026-05-20"), [
+        (item_cotton, 50, 280.0) + _N,     #  14,000
+        (item_poly,   30, 200.0) + _N,     #   6,000  → total 20,000
+    ])
+    sal3 = make_sale(cust3, dt("2026-05-25"), [
+        (item_laptop, 1, 65000.0) + _N,    #  65,000
+    ])
+    click.echo("  Sales:      3 invoices (2 multi-item, 1 single)")
+
+    # Supplier Payments  ───────────────────────────────────────────────────────
+    def sup_pay(supplier, purchase, amount, date, method, ref=None, notes=None):
+        p = SupplierPayment(
+            supplier_id=supplier.id,
+            purchase_id=purchase.id if purchase else None,
+            amount=amount, payment_date=date,
+            payment_method=method, reference_no=ref, notes=notes,
+        )
+        db.session.add(p)
+        db.session.flush()
+        sync_supplier_payment(p)
+        db.session.commit()
+
+    sup_pay(sup1, pur1, 80000.0, dt("2026-05-16"), "Bank",   "TXN-001", "Partial against Bill #1")
+    sup_pay(sup1, None, 20000.0, dt("2026-05-22"), "Cash",   notes="On account")
+    sup_pay(sup2, pur2, 27500.0, dt("2026-05-25"), "Cheque", "CHQ-4521", "Full payment - fabric")
+    click.echo("  Supplier Payments: 3 recorded")
+
+    # Customer Receipts  ───────────────────────────────────────────────────────
+    def cust_recv(customer, sale, amount, date, method, ref=None, notes=None):
+        r = CustomerPayment(
+            customer_id=customer.id,
+            sale_id=sale.id if sale else None,
+            amount=amount, payment_date=date,
+            payment_method=method, reference_no=ref, notes=notes,
+        )
+        db.session.add(r)
+        db.session.flush()
+        sync_customer_receipt(r)
+        db.session.commit()
+
+    cust_recv(cust1, sal1, 40000.0, dt("2026-05-17"), "Cash",   notes="Partial against Sale #1")
+    cust_recv(cust1, None, 15000.0, dt("2026-05-23"), "Bank",   "TXN-502", "On account")
+    cust_recv(cust3, sal3, 65000.0, dt("2026-05-28"), "Online", "ONL-789",  "Full payment - laptop")
+    click.echo("  Customer Receipts: 3 recorded")
+
+    # Purchase Returns  ────────────────────────────────────────────────────────
+    def pur_ret(purchase, supplier, item, qty, price, date, reason=None):
+        item.stock -= qty
+        pr = PurchaseReturn(
+            purchase_id=purchase.id, supplier_id=supplier.id, item_id=item.id,
+            quantity=qty, return_price=price, date=date, reason=reason,
+        )
+        db.session.add(pr)
+        db.session.flush()
+        sync_supplier_purchase_return(pr)
+        db.session.commit()
+
+    pur_ret(pur2, sup2, item_cotton,  10, 200.0, dt("2026-06-01"), "Defective material")
+    pur_ret(pur1, sup1, item_cable,    5, 300.0, dt("2026-06-03"), "Wrong specification")
+    click.echo("  Purchase Returns: 2 recorded")
+
+    # Sale Returns  ────────────────────────────────────────────────────────────
+    def sal_ret(sale, customer, item, qty, price, date, reason=None):
+        item.stock += qty
+        sr = SaleReturn(
+            sale_id=sale.id, customer_id=customer.id, item_id=item.id,
+            quantity=qty, return_price=price, date=date, reason=reason,
+        )
+        db.session.add(sr)
+        db.session.flush()
+        sync_customer_sale_return(sr)
+        db.session.commit()
+
+    sal_ret(sal1, cust1, item_cable, 2, 500.0, dt("2026-06-05"), "Customer not satisfied")
+    sal_ret(sal2, cust2, item_poly,  5, 200.0, dt("2026-06-07"), "Wrong color")
+    click.echo("  Sale Returns:     2 recorded")
+
+    # ── Verification Report ───────────────────────────────────────────────────
+    db.session.expire_all()
+    click.echo("")
+    W = 66
+    click.echo("=" * W)
+    click.echo("  VERIFICATION REPORT")
+    click.echo("=" * W)
+    all_ok = True
+
+    def chk(label, expected, actual):
+        nonlocal all_ok
+        ok = abs(float(actual) - float(expected)) < 0.01
+        if not ok:
+            all_ok = False
+        tick = "OK" if ok else "FAIL"
+        click.echo(
+            f"  {label:<28} {float(expected):>12,.2f} {float(actual):>12,.2f}"
+            f"  {'OK' if ok else '!! FAIL'}"
+        )
+
+    click.echo("")
+    click.echo("ITEM STOCKS  (expected = opening + purchases - sales - pur.returns + sal.returns):")
+    click.echo(f"  {'Item':<28} {'Expected':>12} {'Actual':>12}  Verdict")
+    click.echo(f"  {'-'*28} {'-'*12} {'-'*12}  {'-'*7}")
+    exp_stock = {
+        item_mobile.id: 10 + 5  - 2,             # 13
+        item_cable.id:  100 + 20 - 10 - 5 + 2,   # 107
+        item_cotton.id: 500 + 100 - 50 - 10,      # 540
+        item_poly.id:   300 + 50 - 30 + 5,        # 325
+        item_laptop.id: 5 + 2   - 1,              # 6
+    }
+    for item in Item.query.order_by(Item.name).all():
+        chk(item.name, exp_stock.get(item.id, 0), item.stock)
+
+    click.echo("")
+    click.echo("SUPPLIER BALANCES  (opening + purchases - payments - pur.returns):")
+    click.echo(f"  {'Supplier':<28} {'Expected':>12} {'Actual':>12}  Verdict")
+    click.echo(f"  {'-'*28} {'-'*12} {'-'*12}  {'-'*7}")
+    exp_sup = {
+        # 15,000 opening + 131,000 pur1 - 80,000 pay1 - 20,000 pay2 - 1,500 pr2 = 44,500
+        sup1.id: 15000 + (5*25000 + 20*300) - 80000 - 20000 - (5*300),
+        # 8,000 opening + 27,500 pur2 - 27,500 pay3 - 2,000 pr1 = 6,000
+        sup2.id: 8000  + (100*200 + 50*150) - 27500 - (10*200),
+        # 0 opening + 110,000 pur3 = 110,000
+        sup3.id: 0     + (2*55000),
+    }
+    for sup in Supplier.query.order_by(Supplier.name).all():
+        chk(sup.name, exp_sup.get(sup.id, 0), get_supplier_balance(sup.id))
+
+    click.echo("")
+    click.echo("CUSTOMER BALANCES  (opening + sales - receipts - sal.returns):")
+    click.echo(f"  {'Customer':<28} {'Expected':>12} {'Actual':>12}  Verdict")
+    click.echo(f"  {'-'*28} {'-'*12} {'-'*12}  {'-'*7}")
+    exp_cust = {
+        # 5,000 opening + 65,000 sal1 - 40,000 rec1 - 15,000 rec2 - 1,000 sr1 = 14,000
+        cust1.id: 5000  + (2*30000 + 10*500) - 40000 - 15000 - (2*500),
+        # 0 opening + 20,000 sal2 - 1,000 sr2 = 19,000
+        cust2.id: 0     + (50*280 + 30*200)  - 0     - 0     - (5*200),
+        # 12,000 opening + 65,000 sal3 - 65,000 rec3 = 12,000
+        cust3.id: 12000 + (1*65000)          - 65000,
+    }
+    for cust in Customer.query.order_by(Customer.name).all():
+        chk(cust.name, exp_cust.get(cust.id, 0), get_customer_balance(cust.id))
+
+    click.echo("")
+    click.echo("PURCHASE INVOICE STATUS:")
+    click.echo(f"  {'#':<4} {'Supplier':<22} {'Total':>10} {'Paid':>9} {'Due':>9}  Status")
+    click.echo(f"  {'-'*4} {'-'*22} {'-'*10} {'-'*9} {'-'*9}  {'-'*8}")
+    for pur in Purchase.query.order_by(Purchase.id).all():
+        total = purchase_total(pur)
+        paid  = get_purchase_paid(pur.id)
+        due   = total - paid
+        click.echo(
+            f"  #{pur.id:<3} {pur.id_supplier.name:<22} {total:>10,.2f}"
+            f" {paid:>9,.2f} {due:>9,.2f}  {get_payment_status(total, paid)}"
+        )
+
+    click.echo("")
+    click.echo("SALE INVOICE STATUS:")
+    click.echo(f"  {'#':<4} {'Customer':<22} {'Total':>10} {'Rcvd':>9} {'Due':>9}  Status")
+    click.echo(f"  {'-'*4} {'-'*22} {'-'*10} {'-'*9} {'-'*9}  {'-'*8}")
+    for sal in Sale.query.order_by(Sale.id).all():
+        total    = sale_total(sal)
+        received = get_sale_received(sal.id)
+        due      = total - received
+        click.echo(
+            f"  #{sal.id:<3} {sal.id_customer.name:<22} {total:>10,.2f}"
+            f" {received:>9,.2f} {due:>9,.2f}  {get_payment_status(total, received)}"
+        )
+
+    click.echo("")
+    click.echo("=" * W)
+    if all_ok:
+        click.echo("  RESULT: ALL CHECKS PASSED  OK")
+    else:
+        click.echo("  RESULT: SOME CHECKS FAILED — see !! FAIL lines above")
+    click.echo("=" * W)
+    click.echo("")
+    click.echo("Seed complete. Log in and explore all features.")
+
 
 if __name__ == "__main__":
     app.run(debug=True, host="127.0.0.1", port=5172)

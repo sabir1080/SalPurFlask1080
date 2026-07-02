@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+{% block title %}System — Backup & Restore{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-shield-lock text-dark"></i> System — Backup &amp; Restore</h2>
+    <a href="{{ url_for('admin_users') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> Back to Users
+    </a>
+</div>
+
+<div class="row g-4">
+
+    <!-- Backup Card -->
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-primary text-white fw-semibold">
+                <i class="bi bi-download"></i> Backup Database
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">
+                    Downloads a consistent snapshot of the SQLite database file.
+                    Store this file in a safe location.
+                </p>
+                <dl class="row mb-4">
+                    <dt class="col-sm-5">Database size</dt>
+                    <dd class="col-sm-7"><strong>{{ db_size_kb }} KB</strong></dd>
+                    <dt class="col-sm-5">Suggested filename</dt>
+                    <dd class="col-sm-7 text-muted small">{{ backup_name }}</dd>
+                </dl>
+                <a href="{{ url_for('admin_backup') }}" class="btn btn-primary">
+                    <i class="bi bi-cloud-download"></i> Download Backup (.db)
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Restore Card -->
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100 border-danger">
+            <div class="card-header bg-danger text-white fw-semibold">
+                <i class="bi bi-upload"></i> Restore Database
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning py-2 mb-3">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    <strong>Warning:</strong> Restoring will <strong>replace all current data</strong>
+                    with the uploaded backup. The current database is saved as
+                    <code>database.db.bak</code> before overwriting.
+                </div>
+                <form method="POST" action="{{ url_for('admin_restore') }}"
+                      enctype="multipart/form-data"
+                      onsubmit="return confirm('Replace ALL current data with the uploaded backup? This cannot be undone (a .bak copy will be kept).')">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">
+                            Select backup file <span class="text-danger">*</span>
+                        </label>
+                        <input type="file" class="form-control" name="db_file"
+                               accept=".db" required>
+                        <div class="form-text">Only <code>.db</code> SQLite files accepted.</div>
+                    </div>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-arrow-clockwise"></i> Restore Now
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Table Stats -->
+    <div class="col-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-light fw-semibold">
+                <i class="bi bi-table"></i> Database Tables
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Table</th>
+                            <th class="text-end">Rows</th>
+                            <th>Table</th>
+                            <th class="text-end">Rows</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% set items = table_counts.items() | list %}
+                        {% for i in range(0, items | length, 2) %}
+                        <tr>
+                            <td><code>{{ items[i][0] }}</code></td>
+                            <td class="text-end">{{ items[i][1] }}</td>
+                            {% if i + 1 < items | length %}
+                            <td><code>{{ items[i+1][0] }}</code></td>
+                            <td class="text-end">{{ items[i+1][1] }}</td>
+                            {% else %}
+                            <td colspan="2"></td>
+                            {% endif %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

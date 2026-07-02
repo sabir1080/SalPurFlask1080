@@ -1,0 +1,814 @@
+{% extends 'base.html' %}
+{% block title %}About — {{ company_name }}{% endblock %}
+{% block content %}
+<style>
+/* ════════════════════════════════════════════════
+   ABOUT2 — Dark Glassmorphism Edition
+   ════════════════════════════════════════════════ */
+:root {
+  --neon-blue:   #00d4ff;
+  --neon-purple: #a855f7;
+  --neon-green:  #10b981;
+  --neon-gold:   #f59e0b;
+  --dark-bg:     #080c14;
+  --card-bg:     rgba(255,255,255,0.05);
+  --card-border: rgba(255,255,255,0.1);
+  --text-muted:  rgba(255,255,255,0.55);
+}
+
+/* ─── Page wrapper ─── */
+.a2-page {
+  background: linear-gradient(160deg, #080c14 0%, #0f172a 50%, #1a0533 100%);
+  min-height: 100vh;
+  color: #e2e8f0;
+  margin: -24px -12px 0;
+  padding: 0 0 80px;
+  overflow-x: hidden;
+}
+/* ─── Lang Toggle ─── */
+.a2-lang-wrap {
+  display: flex; justify-content: center; gap: 12px;
+  padding: 28px 0 20px;
+}
+.a2-lang-btn {
+  padding: 9px 30px; border-radius: 40px;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.06);
+  color: #a0aec0; font-weight: 600; font-size: 0.9rem;
+  cursor: pointer; transition: all 0.25s;
+  backdrop-filter: blur(6px);
+}
+.a2-lang-btn.active {
+  background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
+  color: #fff; border-color: transparent;
+  box-shadow: 0 0 20px rgba(0,212,255,0.35);
+}
+.a2-lang-btn:not(.active):hover {
+  background: rgba(255,255,255,0.1); color: #fff;
+}
+
+/* ─── Hero ─── */
+.a2-hero {
+  position: relative;
+  padding: 80px 20px 90px;
+  text-align: center;
+  overflow: hidden;
+}
+.a2-hero-bg {
+  position: absolute; inset: 0; z-index: 0;
+  background:
+    radial-gradient(ellipse 60% 50% at 20% 40%, rgba(0,212,255,0.12) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 60% at 80% 60%, rgba(168,85,247,0.12) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 40% at 50% 10%, rgba(16,185,129,0.08) 0%, transparent 60%);
+}
+/* floating orbs */
+.orb {
+  position: absolute; border-radius: 50%;
+  filter: blur(60px); opacity: 0.18; z-index: 0;
+  animation: floatOrb 8s ease-in-out infinite;
+}
+.orb1 { width:320px; height:320px; top:-80px; left:-60px; background: var(--neon-blue);   animation-delay: 0s; }
+.orb2 { width:260px; height:260px; bottom:-60px; right:-40px; background: var(--neon-purple); animation-delay: -3s; }
+.orb3 { width:200px; height:200px; top:40%; left:55%; background: var(--neon-green);  animation-delay: -5s; }
+@keyframes floatOrb {
+  0%,100% { transform: translate(0,0) scale(1); }
+  50%      { transform: translate(20px,-20px) scale(1.05); }
+}
+.a2-hero-content { position: relative; z-index: 1; }
+.a2-version-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, rgba(0,212,255,0.15), rgba(168,85,247,0.15));
+  border: 1px solid rgba(0,212,255,0.3);
+  color: var(--neon-blue); border-radius: 40px;
+  padding: 5px 18px; font-size: 0.78rem; font-weight: 600;
+  letter-spacing: 1px; text-transform: uppercase; margin-bottom: 20px;
+}
+.a2-hero-logo {
+  font-size: 4.5rem; line-height: 1; margin-bottom: 14px;
+}
+.a2-hero h1 {
+  font-size: 3.2rem; font-weight: 900; margin-bottom: 12px; line-height: 1.1;
+  background: linear-gradient(135deg, #fff 30%, var(--neon-blue) 70%, var(--neon-purple) 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+.a2-hero .tagline {
+  font-size: 1.1rem; color: rgba(255,255,255,0.6); margin-bottom: 48px; max-width: 560px; margin-left: auto; margin-right: auto;
+}
+
+/* ─── Stat Counters ─── */
+.a2-stats {
+  display: flex; justify-content: center; flex-wrap: wrap; gap: 14px;
+}
+.a2-stat {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px; padding: 18px 28px; text-align: center;
+  backdrop-filter: blur(8px); min-width: 110px;
+  transition: transform 0.25s, box-shadow 0.25s;
+}
+.a2-stat:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(0,212,255,0.18);
+  border-color: rgba(0,212,255,0.3);
+}
+.a2-stat .num {
+  font-size: 2rem; font-weight: 900; display: block; line-height: 1;
+  background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+.a2-stat .lbl { font-size: 0.75rem; color: rgba(255,255,255,0.5); margin-top: 4px; display: block; }
+
+/* ─── Section wrapper ─── */
+.a2-section { padding: 60px 20px; max-width: 1100px; margin: 0 auto; }
+.a2-section-title {
+  font-size: 1.7rem; font-weight: 800; margin-bottom: 8px;
+  background: linear-gradient(90deg, #fff 0%, var(--neon-blue) 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  display: inline-block;
+}
+.a2-section-sub { color: rgba(255,255,255,0.45); font-size: 0.92rem; margin-bottom: 36px; }
+.a2-divider {
+  height: 2px; width: 60px; margin-bottom: 36px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--neon-blue), var(--neon-purple));
+}
+
+/* ─── Feature Cards (glass) ─── */
+.a2-feat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px,1fr)); gap: 18px; }
+.a2-feat-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 16px; padding: 26px 22px;
+  backdrop-filter: blur(10px);
+  transition: transform 0.25s, border-color 0.25s, box-shadow 0.25s;
+  position: relative; overflow: hidden;
+}
+.a2-feat-card::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:2px;
+  background: var(--card-accent, linear-gradient(90deg, var(--neon-blue), var(--neon-purple)));
+  opacity: 0.7;
+}
+.a2-feat-card:hover {
+  transform: translateY(-6px);
+  border-color: rgba(0,212,255,0.25);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.35), 0 0 30px rgba(0,212,255,0.08);
+}
+.a2-feat-icon { font-size: 2.2rem; margin-bottom: 14px; display: block; }
+.a2-feat-card h5 { font-size: 1rem; font-weight: 700; color: #f1f5f9; margin-bottom: 8px; }
+.a2-feat-card p  { font-size: 0.85rem; color: rgba(255,255,255,0.5); line-height: 1.65; margin: 0; }
+
+/* accent gradient per card */
+.ca-blue   { --card-accent: linear-gradient(90deg,#00d4ff,#0ea5e9); }
+.ca-purple { --card-accent: linear-gradient(90deg,#a855f7,#7c3aed); }
+.ca-green  { --card-accent: linear-gradient(90deg,#10b981,#059669); }
+.ca-orange { --card-accent: linear-gradient(90deg,#f59e0b,#d97706); }
+.ca-pink   { --card-accent: linear-gradient(90deg,#ec4899,#be185d); }
+.ca-teal   { --card-accent: linear-gradient(90deg,#14b8a6,#0d9488); }
+.ca-red    { --card-accent: linear-gradient(90deg,#ef4444,#dc2626); }
+.ca-indigo { --card-accent: linear-gradient(90deg,#6366f1,#4f46e5); }
+.ca-cyan   { --card-accent: linear-gradient(90deg,#22d3ee,#06b6d4); }
+.ca-lime   { --card-accent: linear-gradient(90deg,#84cc16,#65a30d); }
+.ca-rose   { --card-accent: linear-gradient(90deg,#f43f5e,#e11d48); }
+.ca-amber  { --card-accent: linear-gradient(90deg,#fbbf24,#f59e0b); }
+
+/* ─── Role Cards ─── */
+.a2-role-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; }
+@media(max-width:768px){ .a2-role-grid { grid-template-columns: 1fr; } }
+.a2-role-card {
+  border-radius: 20px; padding: 30px 24px;
+  position: relative; overflow: hidden;
+  backdrop-filter: blur(12px);
+  transition: transform 0.25s;
+}
+.a2-role-card:hover { transform: translateY(-6px); }
+.a2-role-card::after {
+  content:''; position:absolute; bottom:-40px; right:-40px;
+  width:130px; height:130px; border-radius:50%;
+  background: rgba(255,255,255,0.04);
+}
+.a2-role-staff   { background: linear-gradient(145deg,rgba(107,114,128,0.15),rgba(107,114,128,0.05)); border:1px solid rgba(107,114,128,0.3); }
+.a2-role-manager { background: linear-gradient(145deg,rgba(59,130,246,0.15),rgba(59,130,246,0.05)); border:1px solid rgba(59,130,246,0.3); }
+.a2-role-admin   { background: linear-gradient(145deg,rgba(239,68,68,0.15),rgba(239,68,68,0.05));   border:1px solid rgba(239,68,68,0.3); }
+.a2-role-header { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
+.a2-role-badge  { font-size:0.75rem; font-weight:700; border-radius:20px; padding:3px 12px; letter-spacing:0.5px; }
+.rb-staff   { background:rgba(107,114,128,0.3); color:#d1d5db; }
+.rb-manager { background:rgba(59,130,246,0.3);  color:#93c5fd; }
+.rb-admin   { background:rgba(239,68,68,0.3);   color:#fca5a5; }
+.a2-role-icon { font-size: 1.8rem; }
+.a2-role-name { font-size:1.15rem; font-weight:800; color:#f1f5f9; }
+.a2-perm-list { list-style: none; padding: 0; margin: 0; }
+.a2-perm-list li {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 0.83rem; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.65);
+}
+.a2-perm-list li:last-child { border-bottom: none; }
+.a2-perm-list .tick { color: #10b981; font-size: 1rem; font-weight: 700; flex-shrink:0; }
+.a2-perm-list .cross { color: rgba(255,255,255,0.2); font-size: 1rem; flex-shrink:0; }
+.a2-perm-list li.has { color: rgba(255,255,255,0.85); }
+
+/* ─── Timeline Steps ─── */
+.a2-timeline { position: relative; padding-left: 36px; }
+.a2-timeline::before {
+  content:''; position:absolute; left:14px; top:0; bottom:0; width:2px;
+  background: linear-gradient(180deg, var(--neon-blue), var(--neon-purple), transparent);
+}
+.a2-step { position: relative; margin-bottom: 28px; }
+.a2-step-dot {
+  position: absolute; left: -42px; top: 12px;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 0.8rem; color: #fff;
+  box-shadow: 0 0 12px rgba(0,212,255,0.4);
+  z-index: 1;
+}
+.a2-step-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px; padding: 18px 20px;
+  backdrop-filter: blur(8px);
+  transition: border-color 0.2s, transform 0.2s;
+}
+.a2-step-card:hover {
+  border-color: rgba(0,212,255,0.25);
+  transform: translateX(6px);
+  background: rgba(0,212,255,0.04);
+}
+.a2-step-card h6 { font-weight: 700; color: #f1f5f9; font-size: 0.97rem; margin-bottom: 5px; }
+.a2-step-card p  { font-size: 0.85rem; color: rgba(255,255,255,0.5); margin: 0; line-height: 1.6; }
+
+/* ─── Tech Badges ─── */
+.a2-tech-wrap { display: flex; flex-wrap: wrap; gap: 10px; }
+.a2-tech {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px; padding: 9px 16px;
+  font-size: 0.83rem; font-weight: 600; color: #cbd5e1;
+  transition: all 0.2s; backdrop-filter: blur(6px);
+}
+.a2-tech:hover {
+  background: rgba(0,212,255,0.1);
+  border-color: rgba(0,212,255,0.35);
+  color: var(--neon-blue);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(0,212,255,0.15);
+}
+
+/* ─── Dev Card ─── */
+.a2-dev-card {
+  background: linear-gradient(135deg, rgba(0,212,255,0.08) 0%, rgba(168,85,247,0.08) 100%);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 24px; padding: 50px 40px; text-align: center;
+  backdrop-filter: blur(16px); margin-top: 60px; position: relative; overflow: hidden;
+}
+.a2-dev-card::before {
+  content:''; position:absolute; top:-80px; left:50%; transform:translateX(-50%);
+  width:300px; height:300px; border-radius:50%;
+  background: radial-gradient(circle, rgba(0,212,255,0.08) 0%, transparent 70%);
+  pointer-events: none;
+}
+.a2-avatar {
+  width: 90px; height: 90px; border-radius: 50%;
+  background: linear-gradient(135deg, #f59e0b, #fbbf24);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2.4rem; margin: 0 auto 20px;
+  box-shadow: 0 0 30px rgba(245,158,11,0.45), 0 0 0 4px rgba(245,158,11,0.15);
+  position: relative; z-index: 1;
+}
+.a2-dev-name { font-size: 1.8rem; font-weight: 900; position: relative; z-index:1;
+  background: linear-gradient(135deg, #f59e0b, #fcd34d);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  margin-bottom: 4px;
+}
+.a2-dev-title { color: rgba(255,255,255,0.45); font-size: 0.92rem; margin-bottom: 24px; position:relative;z-index:1; }
+.a2-dev-tagline {
+  display: inline-block; position: relative; z-index:1;
+  background: rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.12);
+  border-radius: 10px; padding: 12px 28px; font-size: 0.95rem; font-weight:600;
+  color: #e2e8f0; margin-bottom: 24px;
+}
+.a2-contacts { display:flex; justify-content:center; flex-wrap:wrap; gap:12px; position:relative;z-index:1; }
+.a2-contact-pill {
+  display:flex; align-items:center; gap:8px;
+  background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12);
+  border-radius:30px; padding:9px 20px; font-size:0.88rem; color:#cbd5e1;
+  transition: all 0.2s;
+}
+.a2-contact-pill:hover {
+  background:rgba(0,212,255,0.1); border-color:rgba(0,212,255,0.3);
+  color: var(--neon-blue);
+}
+.a2-contact-pill .lbl { color: rgba(255,255,255,0.4); font-size:0.78rem; }
+
+/* ─── Fade anim ─── */
+.a2-lang-sec { animation: a2fade 0.4s ease; }
+@keyframes a2fade { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+
+/* ─── Divider line ─── */
+.a2-hr { height:1px; background:linear-gradient(90deg,transparent,rgba(255,255,255,0.08),transparent); margin:0; }
+</style>
+
+<div class="a2-page">
+
+  <!-- ── Language Toggle ── -->
+  <div class="a2-lang-wrap">
+    <button class="a2-lang-btn active" id="a2-btn-en" onclick="a2lang('en')">🇬🇧 English</button>
+    <button class="a2-lang-btn"        id="a2-btn-ur" onclick="a2lang('ur')">🇵🇰 Roman Urdu</button>
+  </div>
+
+
+  <!-- ════════════════  ENGLISH  ════════════════ -->
+  <div id="a2-en" class="a2-lang-sec">
+
+    <!-- Hero -->
+    <div class="a2-hero">
+      <div class="a2-hero-bg"></div>
+      <div class="orb orb1"></div>
+      <div class="orb orb2"></div>
+      <div class="orb orb3"></div>
+      <div class="a2-hero-content">
+        <div class="a2-version-badge">✦ Version 2.0 &nbsp;·&nbsp; Full RBAC Edition</div>
+        <div class="a2-hero-logo">📦</div>
+        <h1>{{ company_name }}</h1>
+        <p class="tagline">{{ company_tagline }}<br>Smart · Secure · Role-Controlled</p>
+        <div class="a2-stats">
+          <div class="a2-stat"><span class="num" data-target="13">0</span><span class="lbl">Modules</span></div>
+          <div class="a2-stat"><span class="num" data-target="3">0</span><span class="lbl">User Roles</span></div>
+          <div class="a2-stat"><span class="num" data-target="100">0</span><span class="lbl">% Real-time</span></div>
+          <div class="a2-stat"><span class="num" data-target="12">0</span><span class="lbl">Tech Stack</span></div>
+          <div class="a2-stat"><span class="num" data-target="2">0</span><span class="lbl">Export Formats</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="a2-hr"></div>
+
+    <!-- Features -->
+    <div class="a2-section">
+      <div class="a2-section-title">🌟 App Features</div>
+      <div class="a2-divider"></div>
+      <div class="a2-feat-grid">
+        <div class="a2-feat-card ca-red">
+          <span class="a2-feat-icon">🛡️</span>
+          <h5>Role-Based Access Control</h5>
+          <p>Three levels — Admin, Manager, Staff. Each role sees only what they're allowed to. No code changes needed — admin controls it all from the UI.</p>
+        </div>
+        <div class="a2-feat-card ca-indigo">
+          <span class="a2-feat-icon">👤</span>
+          <h5>Web-Based User Management</h5>
+          <p>Admin creates, edits and deletes users from a polished UI. Password confirmation prevents typos. Role changes take effect instantly.</p>
+        </div>
+        <div class="a2-feat-card ca-blue">
+          <span class="a2-feat-icon">🔐</span>
+          <h5>Secure Authentication</h5>
+          <p>Argon2 password hashing, email verification, CSRF protection on every form, and token-based password reset. Industry-standard security.</p>
+        </div>
+        <div class="a2-feat-card ca-teal">
+          <span class="a2-feat-icon">🏪</span>
+          <h5>Supplier Ledger</h5>
+          <p>Full supplier records with opening balance. Auto-generated ledger tracks every purchase, payment and return — with running balance.</p>
+        </div>
+        <div class="a2-feat-card ca-purple">
+          <span class="a2-feat-icon">👥</span>
+          <h5>Customer Ledger</h5>
+          <p>Complete customer records with opening balance. Every sale, receipt and return updates the ledger in real time. Know who owes what instantly.</p>
+        </div>
+        <div class="a2-feat-card ca-orange">
+          <span class="a2-feat-icon">📦</span>
+          <h5>Inventory Management</h5>
+          <p>Items organised by category. Purchase price, sale price and reorder level per item. Stock auto-adjusts on every purchase, sale or return.</p>
+        </div>
+        <div class="a2-feat-card ca-green">
+          <span class="a2-feat-icon">🛒</span>
+          <h5>Purchase Management</h5>
+          <p>Record purchases with percentage or fixed discount and tax. Stock increases automatically. Print PDF invoices directly from the browser.</p>
+        </div>
+        <div class="a2-feat-card ca-lime">
+          <span class="a2-feat-icon">💰</span>
+          <h5>Sale Management</h5>
+          <p>Sales with discount and tax support. Insufficient-stock alert before saving. Stock decreases automatically. Printable sale invoices.</p>
+        </div>
+        <div class="a2-feat-card ca-rose">
+          <span class="a2-feat-icon">↩️</span>
+          <h5>Returns System</h5>
+          <p>Record purchase and sale returns against original bills. Stock and ledger are both corrected automatically — no manual adjustment needed.</p>
+        </div>
+        <div class="a2-feat-card ca-cyan">
+          <span class="a2-feat-icon">💳</span>
+          <h5>Payments &amp; Receipts</h5>
+          <p>Supplier payments and customer receipts via Cash, Bank, Cheque or Online. Link to a specific bill or leave unlinked — full flexibility.</p>
+        </div>
+        <div class="a2-feat-card ca-blue">
+          <span class="a2-feat-icon">📊</span>
+          <h5>Dashboard &amp; Analytics</h5>
+          <p>Live KPIs, stock-level charts, purchase and sale trend graphs. Total payable, receivable and profit at a glance. (Manager+ only.)</p>
+        </div>
+        <div class="a2-feat-card ca-amber">
+          <span class="a2-feat-icon">📁</span>
+          <h5>Reports &amp; Exports</h5>
+          <p>Date-range profit reports, item-wise and customer-wise breakdowns. Export to Excel (.xlsx) or CSV with a single click. (Manager+ only.)</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="a2-hr"></div>
+
+    <!-- Roles -->
+    <div class="a2-section">
+      <div class="a2-section-title">🛡️ User Roles</div>
+      <p class="a2-section-sub">Each role has distinct permissions — controlled entirely from the Admin panel.</p>
+      <div class="a2-divider"></div>
+      <div class="a2-role-grid">
+
+        <div class="a2-role-card a2-role-staff">
+          <div class="a2-role-header">
+            <span class="a2-role-icon">👷</span>
+            <div>
+              <div class="a2-role-name">Staff</div>
+              <span class="a2-role-badge rb-staff">Basic Access</span>
+            </div>
+          </div>
+          <ul class="a2-perm-list">
+            <li class="has"><span class="tick">✓</span> Add Purchases &amp; Sales</li>
+            <li class="has"><span class="tick">✓</span> Record Payments &amp; Receipts</li>
+            <li class="has"><span class="tick">✓</span> View Ledgers</li>
+            <li class="has"><span class="tick">✓</span> Print Invoices</li>
+            <li><span class="cross">✗</span> Add Suppliers / Customers</li>
+            <li><span class="cross">✗</span> Edit Records</li>
+            <li><span class="cross">✗</span> Dashboard &amp; Reports</li>
+            <li><span class="cross">✗</span> Delete Records</li>
+            <li><span class="cross">✗</span> Manage Users</li>
+          </ul>
+        </div>
+
+        <div class="a2-role-card a2-role-manager">
+          <div class="a2-role-header">
+            <span class="a2-role-icon">🧑‍💼</span>
+            <div>
+              <div class="a2-role-name">Manager</div>
+              <span class="a2-role-badge rb-manager">Standard Access</span>
+            </div>
+          </div>
+          <ul class="a2-perm-list">
+            <li class="has"><span class="tick">✓</span> Add Purchases &amp; Sales</li>
+            <li class="has"><span class="tick">✓</span> Record Payments &amp; Receipts</li>
+            <li class="has"><span class="tick">✓</span> View Ledgers</li>
+            <li class="has"><span class="tick">✓</span> Print Invoices</li>
+            <li class="has"><span class="tick">✓</span> Add Suppliers / Customers</li>
+            <li class="has"><span class="tick">✓</span> Edit Records</li>
+            <li class="has"><span class="tick">✓</span> Dashboard &amp; Reports</li>
+            <li><span class="cross">✗</span> Delete Records</li>
+            <li><span class="cross">✗</span> Manage Users</li>
+          </ul>
+        </div>
+
+        <div class="a2-role-card a2-role-admin">
+          <div class="a2-role-header">
+            <span class="a2-role-icon">👑</span>
+            <div>
+              <div class="a2-role-name">Admin</div>
+              <span class="a2-role-badge rb-admin">Full Access</span>
+            </div>
+          </div>
+          <ul class="a2-perm-list">
+            <li class="has"><span class="tick">✓</span> Add Purchases &amp; Sales</li>
+            <li class="has"><span class="tick">✓</span> Record Payments &amp; Receipts</li>
+            <li class="has"><span class="tick">✓</span> View Ledgers</li>
+            <li class="has"><span class="tick">✓</span> Print Invoices</li>
+            <li class="has"><span class="tick">✓</span> Add Suppliers / Customers</li>
+            <li class="has"><span class="tick">✓</span> Edit Records</li>
+            <li class="has"><span class="tick">✓</span> Dashboard &amp; Reports</li>
+            <li class="has"><span class="tick">✓</span> Delete Records</li>
+            <li class="has"><span class="tick">✓</span> Manage Users</li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="a2-hr"></div>
+
+    <!-- How to Use — Timeline -->
+    <div class="a2-section">
+      <div class="a2-section-title">📖 How to Use</div>
+      <div class="a2-divider"></div>
+      <div class="a2-timeline">
+        <div class="a2-step"><div class="a2-step-dot">1</div><div class="a2-step-card"><h6>Admin Creates the Team</h6><p>First user is created via CLI (<code>flask create-user</code>) and gets Admin role. Admin then creates Manager and Staff users from <strong>Users → Create User</strong> in the web UI.</p></div></div>
+        <div class="a2-step"><div class="a2-step-dot">2</div><div class="a2-step-card"><h6>Sign In</h6><p>Each team member signs in with their email and password. Their role determines exactly what they can see and do.</p></div></div>
+        <div class="a2-step"><div class="a2-step-dot">3</div><div class="a2-step-card"><h6>Set Up Categories &amp; Items</h6><p>Create product categories first, then add items with stock, purchase price, sale price and reorder level. Stock auto-updates thereafter. (Manager+ required.)</p></div></div>
+        <div class="a2-step"><div class="a2-step-dot">4</div><div class="a2-step-card"><h6>Add Suppliers &amp; Customers</h6><p>Add all parties with contact details and opening balances — the amount already owed before the system starts. (Manager+ required.)</p></div></div>
+        <div class="a2-step"><div class="a2-step-dot">5</div><div class="a2-step-card"><h6>Record Purchases</h6><p>Select supplier, item, quantity and price. Apply discount and/or tax if needed. Stock and supplier ledger update automatically.</p></div></div>
+        <div class="a2-step"><div class="a2-step-dot">6</div><div class="a2-step-card"><h6>Record Sales</h6><p>Select customer, item, quantity and price. Discount and tax can be applied. The app warns if stock is insufficient. Customer ledger updates automatically.</p></div></div>
+        <div class="a2-step"><div class="a2-step-dot">7</div><div class="a2-step-card"><h6>Handle Returns</h6><p>Go to Purchase Returns or Sale Returns. Select the original bill and enter the returned quantity. Stock and ledger are both corrected automatically.</p></div></div>
+        <div class="a2-step"><div class="a2-step-dot">8</div><div class="a2-step-card"><h6>Record Payments &amp; Receipts</h6><p>Record supplier payments and customer receipts with their payment method. Link to a specific bill or leave open. Ledger updates instantly.</p></div></div>
+        <div class="a2-step"><div class="a2-step-dot">9</div><div class="a2-step-card"><h6>Print Invoices</h6><p>Click the 🧾 icon on any purchase or sale row. A print-ready invoice opens in a new tab — press <strong>Ctrl+P</strong> to print or save as PDF.</p></div></div>
+        <div class="a2-step"><div class="a2-step-dot">10</div><div class="a2-step-card"><h6>Dashboard &amp; Reports <span style="background:rgba(59,130,246,0.3);color:#93c5fd;font-size:0.72rem;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">Manager+</span></h6><p>Live KPI dashboard with charts. Reports page lets you filter by date, item or customer and export to Excel or CSV.</p></div></div>
+      </div>
+    </div>
+
+    <div class="a2-hr"></div>
+
+    <!-- Tech Stack -->
+    <div class="a2-section">
+      <div class="a2-section-title">⚙️ Technology Stack</div>
+      <div class="a2-divider"></div>
+      <div class="a2-tech-wrap">
+        <span class="a2-tech">🐍 Python 3</span>
+        <span class="a2-tech">🌶️ Flask</span>
+        <span class="a2-tech">🗄️ SQLite + SQLAlchemy</span>
+        <span class="a2-tech">🔑 Flask-Login</span>
+        <span class="a2-tech">🛡️ Flask-WTF (CSRF)</span>
+        <span class="a2-tech">🎨 Bootstrap 5</span>
+        <span class="a2-tech">📈 Chart.js</span>
+        <span class="a2-tech">📄 Jinja2 Templates</span>
+        <span class="a2-tech">🔒 Passlib (Argon2)</span>
+        <span class="a2-tech">📊 openpyxl (Excel)</span>
+        <span class="a2-tech">✉️ Flask-Mail</span>
+        <span class="a2-tech">🔗 itsdangerous</span>
+      </div>
+    </div>
+
+    <!-- Dev Card -->
+    <div class="a2-section" style="padding-top:0">
+      <div class="a2-dev-card">
+        <div class="a2-avatar">👨‍💻</div>
+        <div class="a2-dev-name">Sabir Shah</div>
+        <p class="a2-dev-title">Full-Stack Developer &amp; System Designer</p>
+        <div class="a2-dev-tagline">🚀 Designed &amp; Developed by Sabir Shah</div>
+        <div class="a2-contacts">
+          <div class="a2-contact-pill"><span class="lbl">📧 Email</span><span>sabir1212@yahoo.com</span></div>
+          <div class="a2-contact-pill"><span class="lbl">💬 WhatsApp</span><span>0092-3453231545</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /a2-en -->
+
+
+  <!-- ════════════════  ROMAN URDU  ════════════════ -->
+  <div id="a2-ur" class="a2-lang-sec" style="display:none">
+
+    <!-- Hero -->
+    <div class="a2-hero">
+      <div class="a2-hero-bg"></div>
+      <div class="orb orb1"></div>
+      <div class="orb orb2"></div>
+      <div class="orb orb3"></div>
+      <div class="a2-hero-content">
+        <div class="a2-version-badge">✦ Version 2.0 &nbsp;·&nbsp; Mukammal RBAC Edition</div>
+        <div class="a2-hero-logo">📦</div>
+        <h1>{{ company_name }}</h1>
+        <p class="tagline">{{ company_tagline }}<br>Tez · Mehfooz · Role-Controlled</p>
+        <div class="a2-stats">
+          <div class="a2-stat"><span class="num" data-target="13">0</span><span class="lbl">Modules</span></div>
+          <div class="a2-stat"><span class="num" data-target="3">0</span><span class="lbl">User Roles</span></div>
+          <div class="a2-stat"><span class="num" data-target="100">0</span><span class="lbl">% Real-time</span></div>
+          <div class="a2-stat"><span class="num" data-target="12">0</span><span class="lbl">Tech Stack</span></div>
+          <div class="a2-stat"><span class="num" data-target="2">0</span><span class="lbl">Export Formats</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="a2-hr"></div>
+
+    <!-- Features -->
+    <div class="a2-section">
+      <div class="a2-section-title">🌟 App Ki Khobian</div>
+      <div class="a2-divider"></div>
+      <div class="a2-feat-grid">
+        <div class="a2-feat-card ca-red">
+          <span class="a2-feat-icon">🛡️</span>
+          <h5>Role-Based Access Control</h5>
+          <p>Teen levels — Admin, Manager, Staff. Har role sirf woh kaam kar sakta hai jo use allow hai. Admin UI se control hota hai, koi code change nahi.</p>
+        </div>
+        <div class="a2-feat-card ca-indigo">
+          <span class="a2-feat-icon">👤</span>
+          <h5>Web-Based User Management</h5>
+          <p>Admin web UI se naye users banata, edit karta aur delete karta hai. Password confirmation typos rokta hai. Role change foran apply hota hai.</p>
+        </div>
+        <div class="a2-feat-card ca-blue">
+          <span class="a2-feat-icon">🔐</span>
+          <h5>Mehfooz Login System</h5>
+          <p>Argon2 password hashing, email verification, CSRF protection, aur token-based password reset. Industry-standard security har jagah.</p>
+        </div>
+        <div class="a2-feat-card ca-teal">
+          <span class="a2-feat-icon">🏪</span>
+          <h5>Supplier Ledger</h5>
+          <p>Suppliers ka mukammal record opening balance ke sath. Har purchase, payment aur return automatically ledger mein running balance ke sath.</p>
+        </div>
+        <div class="a2-feat-card ca-purple">
+          <span class="a2-feat-icon">👥</span>
+          <h5>Customer Ledger</h5>
+          <p>Customers ka mukammal record. Har sale, receipt aur return real-time mein ledger update karta hai. Kaun kitna deta hai — ek nazar mein.</p>
+        </div>
+        <div class="a2-feat-card ca-orange">
+          <span class="a2-feat-icon">📦</span>
+          <h5>Inventory Management</h5>
+          <p>Items categories ke sath. Purchase price, sale price aur reorder level per item. Stock har purchase, sale ya return par auto-update hota hai.</p>
+        </div>
+        <div class="a2-feat-card ca-green">
+          <span class="a2-feat-icon">🛒</span>
+          <h5>Purchase Management</h5>
+          <p>Percent ya fixed discount aur tax ke sath purchases. Stock automatically barhta hai. PDF invoice seedha browser se print karo.</p>
+        </div>
+        <div class="a2-feat-card ca-lime">
+          <span class="a2-feat-icon">💰</span>
+          <h5>Sale Management</h5>
+          <p>Sales discount aur tax ke sath. Kam stock par alert. Stock automatic ghatta hai. Printable sale invoice har sale ke sath.</p>
+        </div>
+        <div class="a2-feat-card ca-rose">
+          <span class="a2-feat-icon">↩️</span>
+          <h5>Returns System</h5>
+          <p>Purchase ya sale ke khilaaf returns. Stock aur ledger dono automatically theek ho jaate hain — koi manual adjustment nahi chahiye.</p>
+        </div>
+        <div class="a2-feat-card ca-cyan">
+          <span class="a2-feat-icon">💳</span>
+          <h5>Payments &amp; Receipts</h5>
+          <p>Supplier payments aur customer receipts — Cash, Bank, Cheque ya Online. Specific bill se link karein ya open rakhein.</p>
+        </div>
+        <div class="a2-feat-card ca-blue">
+          <span class="a2-feat-icon">📊</span>
+          <h5>Dashboard &amp; Analytics</h5>
+          <p>Live KPIs, stock charts, purchase aur sale trends. Total payable, receivable aur profit ek nazar mein. Sirf Manager+ ke liye.</p>
+        </div>
+        <div class="a2-feat-card ca-amber">
+          <span class="a2-feat-icon">📁</span>
+          <h5>Reports &amp; Exports</h5>
+          <p>Date, item ya customer ke hisaab se profit reports. Ek click se Excel ya CSV export. Sirf Manager+ ke liye.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="a2-hr"></div>
+
+    <!-- Roles -->
+    <div class="a2-section">
+      <div class="a2-section-title">🛡️ User Roles</div>
+      <p class="a2-section-sub">Har role ke alag permissions hain — Admin panel se control hote hain.</p>
+      <div class="a2-divider"></div>
+      <div class="a2-role-grid">
+
+        <div class="a2-role-card a2-role-staff">
+          <div class="a2-role-header">
+            <span class="a2-role-icon">👷</span>
+            <div>
+              <div class="a2-role-name">Staff</div>
+              <span class="a2-role-badge rb-staff">Basic Access</span>
+            </div>
+          </div>
+          <ul class="a2-perm-list">
+            <li class="has"><span class="tick">✓</span> Purchases &amp; Sales add karna</li>
+            <li class="has"><span class="tick">✓</span> Payments &amp; Receipts darj karna</li>
+            <li class="has"><span class="tick">✓</span> Ledger dekhna</li>
+            <li class="has"><span class="tick">✓</span> Invoice print karna</li>
+            <li><span class="cross">✗</span> Suppliers / Customers add karna</li>
+            <li><span class="cross">✗</span> Records edit karna</li>
+            <li><span class="cross">✗</span> Dashboard &amp; Reports</li>
+            <li><span class="cross">✗</span> Records delete karna</li>
+            <li><span class="cross">✗</span> Users manage karna</li>
+          </ul>
+        </div>
+
+        <div class="a2-role-card a2-role-manager">
+          <div class="a2-role-header">
+            <span class="a2-role-icon">🧑‍💼</span>
+            <div>
+              <div class="a2-role-name">Manager</div>
+              <span class="a2-role-badge rb-manager">Standard Access</span>
+            </div>
+          </div>
+          <ul class="a2-perm-list">
+            <li class="has"><span class="tick">✓</span> Purchases &amp; Sales add karna</li>
+            <li class="has"><span class="tick">✓</span> Payments &amp; Receipts darj karna</li>
+            <li class="has"><span class="tick">✓</span> Ledger dekhna</li>
+            <li class="has"><span class="tick">✓</span> Invoice print karna</li>
+            <li class="has"><span class="tick">✓</span> Suppliers / Customers add karna</li>
+            <li class="has"><span class="tick">✓</span> Records edit karna</li>
+            <li class="has"><span class="tick">✓</span> Dashboard &amp; Reports</li>
+            <li><span class="cross">✗</span> Records delete karna</li>
+            <li><span class="cross">✗</span> Users manage karna</li>
+          </ul>
+        </div>
+
+        <div class="a2-role-card a2-role-admin">
+          <div class="a2-role-header">
+            <span class="a2-role-icon">👑</span>
+            <div>
+              <div class="a2-role-name">Admin</div>
+              <span class="a2-role-badge rb-admin">Full Access</span>
+            </div>
+          </div>
+          <ul class="a2-perm-list">
+            <li class="has"><span class="tick">✓</span> Purchases &amp; Sales add karna</li>
+            <li class="has"><span class="tick">✓</span> Payments &amp; Receipts darj karna</li>
+            <li class="has"><span class="tick">✓</span> Ledger dekhna</li>
+            <li class="has"><span class="tick">✓</span> Invoice print karna</li>
+            <li class="has"><span class="tick">✓</span> Suppliers / Customers add karna</li>
+            <li class="has"><span class="tick">✓</span> Records edit karna</li>
+            <li class="has"><span class="tick">✓</span> Dashboard &amp; Reports</li>
+            <li class="has"><span class="tick">✓</span> Records delete karna</li>
+            <li class="has"><span class="tick">✓</span> Users manage karna</li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="a2-hr"></div>
+
+    <!-- Timeline -->
+    <div class="a2-section">
+      <div class="a2-section-title">📖 App Chalane Ka Tarika</div>
+      <div class="a2-divider"></div>
+      <div class="a2-timeline">
+        <div class="a2-step"><div class="a2-step-dot">1</div><div class="a2-step-card"><h6>Admin Team Banata Hai</h6><p>Pehla user CLI se (<code>flask create-user</code>) banaya jata hai — Admin role milti hai. Phir web UI se <strong>Users → Create User</strong> se Manager aur Staff users banao.</p></div></div>
+        <div class="a2-step"><div class="a2-step-dot">2</div><div class="a2-step-card"><h6>Sign In Karein</h6><p>Har team member apne email aur password se login karta hai. Role ke mutabiq access milti hai — Staff, Manager ya Admin.</p></div></div>
+        <div class="a2-step"><div class="a2-step-dot">3</div><div class="a2-step-card"><h6>Categories &amp; Items Set Karein</h6><p>Pehle Categories banao, phir Items — stock, purchase/sale price aur reorder level ke sath. Stock baad mein auto-update hota rahega. (Manager+ zarori)</p></div></div>
+        <div class="a2-step"><div class="a2-step-dot">4</div><div class="a2-step-card"><h6>Suppliers &amp; Customers Add Karein</h6><p>Sab parties unki contact details aur opening balance ke sath add karein. Opening balance woh raqam hai jo system shuru hone se pehle ki thi. (Manager+ zarori)</p></div></div>
+        <div class="a2-step"><div class="a2-step-dot">5</div><div class="a2-step-card"><h6>Purchase Record Karein</h6><p>Supplier, item, quantity, price select karein — discount ya tax bhi lagayein agar ho. Stock aur supplier ledger auto-update ho jayega.</p></div></div>
+        <div class="a2-step"><div class="a2-step-dot">6</div><div class="a2-step-card"><h6>Sale Record Karein</h6><p>Customer, item, quantity, price — discount ya tax optional. Kam stock par alert. Stock aur customer ledger foran update.</p></div></div>
+        <div class="a2-step"><div class="a2-step-dot">7</div><div class="a2-step-card"><h6>Returns Handle Karein</h6><p>Purchase Returns ya Sale Returns page par jayein. Original bill select karein, returned quantity darj karein. Stock aur ledger automatically theek.</p></div></div>
+        <div class="a2-step"><div class="a2-step-dot">8</div><div class="a2-step-card"><h6>Payments &amp; Receipts</h6><p>Supplier ko di gayi raqam aur customer se li gayi raqam payment method ke sath darj karein. Ledger foran update hota hai.</p></div></div>
+        <div class="a2-step"><div class="a2-step-dot">9</div><div class="a2-step-card"><h6>Invoice Print Karein</h6><p>Kisi bhi row mein 🧾 button click karein. Print-ready invoice naye tab mein khulega — <strong>Ctrl+P</strong> se print ya PDF mein save karein.</p></div></div>
+        <div class="a2-step"><div class="a2-step-dot">10</div><div class="a2-step-card"><h6>Dashboard &amp; Reports <span style="background:rgba(59,130,246,0.3);color:#93c5fd;font-size:0.72rem;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">Manager+</span></h6><p>Live charts aur KPIs dashboard par. Reports page se date, item ya customer ke hisaab se profit report banao — Excel ya CSV export karo.</p></div></div>
+      </div>
+    </div>
+
+    <div class="a2-hr"></div>
+
+    <!-- Tech Stack -->
+    <div class="a2-section">
+      <div class="a2-section-title">⚙️ Technology Stack</div>
+      <div class="a2-divider"></div>
+      <div class="a2-tech-wrap">
+        <span class="a2-tech">🐍 Python 3</span>
+        <span class="a2-tech">🌶️ Flask</span>
+        <span class="a2-tech">🗄️ SQLite + SQLAlchemy</span>
+        <span class="a2-tech">🔑 Flask-Login</span>
+        <span class="a2-tech">🛡️ Flask-WTF (CSRF)</span>
+        <span class="a2-tech">🎨 Bootstrap 5</span>
+        <span class="a2-tech">📈 Chart.js</span>
+        <span class="a2-tech">📄 Jinja2 Templates</span>
+        <span class="a2-tech">🔒 Passlib (Argon2)</span>
+        <span class="a2-tech">📊 openpyxl (Excel)</span>
+        <span class="a2-tech">✉️ Flask-Mail</span>
+        <span class="a2-tech">🔗 itsdangerous</span>
+      </div>
+    </div>
+
+    <!-- Dev Card -->
+    <div class="a2-section" style="padding-top:0">
+      <div class="a2-dev-card">
+        <div class="a2-avatar">👨‍💻</div>
+        <div class="a2-dev-name">Sabir Shah</div>
+        <p class="a2-dev-title">Full-Stack Developer &amp; System Designer</p>
+        <div class="a2-dev-tagline">🚀 Yeh app Sabir Shah ne Design aur Develop ki hai</div>
+        <div class="a2-contacts">
+          <div class="a2-contact-pill"><span class="lbl">📧 Email</span><span>sabir1212@yahoo.com</span></div>
+          <div class="a2-contact-pill"><span class="lbl">💬 WhatsApp</span><span>0092-3453231545</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /a2-ur -->
+
+</div><!-- /a2-page -->
+
+<script>
+/* ── Language toggle ── */
+function a2lang(lang) {
+  document.getElementById('a2-en').style.display = lang === 'en' ? 'block' : 'none';
+  document.getElementById('a2-ur').style.display = lang === 'ur' ? 'block' : 'none';
+  var el = document.getElementById('a2-' + lang);
+  el.style.animation = 'none'; el.offsetHeight; el.style.animation = '';
+  document.getElementById('a2-btn-en').classList.toggle('active', lang === 'en');
+  document.getElementById('a2-btn-ur').classList.toggle('active', lang === 'ur');
+  localStorage.setItem('about2Lang', lang);
+  startCounters();
+}
+
+/* ── Animated counters ── */
+function startCounters() {
+  document.querySelectorAll('.a2-page .num[data-target]').forEach(function(el) {
+    var target = parseInt(el.dataset.target);
+    var start  = 0;
+    var dur    = 1200;
+    var step   = dur / target;
+    el.textContent = '0';
+    var t = setInterval(function() {
+      start++;
+      el.textContent = start + (el.dataset.target === '100' ? '' : '+');
+      if (start >= target) { el.textContent = target + (target < 10 ? '' : '+'); clearInterval(t); }
+    }, step);
+  });
+}
+
+/* ── Init ── */
+document.addEventListener('DOMContentLoaded', function () {
+  var saved = localStorage.getItem('about2Lang');
+  if (saved && saved !== 'en') { a2lang(saved); } else { startCounters(); }
+});
+</script>
+
+{% endblock %}

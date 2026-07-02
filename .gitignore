@@ -8,4 +8,7 @@ instance/
 .env
 for_my_information.txt
 static/*.csv
+.claude/
+~$*
+*.docx
 

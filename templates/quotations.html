@@ -1,0 +1,163 @@
+{% extends 'base.html' %}
+{% block title %}Quotations{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-file-earmark-ruled text-success"></i> Quotations / Proforma</h2>
+</div>
+
+<form method="GET" class="mb-3">
+    <div class="input-group">
+        <input type="text" class="form-control" name="search" placeholder="Search by customer" value="{{ search }}">
+        <button type="submit" class="btn btn-primary">Search</button>
+    </div>
+</form>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-success text-white fw-semibold"><i class="bi bi-plus-circle"></i> New Quotation</div>
+    <div class="card-body">
+        <form method="POST">
+            <div class="row g-3 mb-3">
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Customer <span class="text-danger">*</span></label>
+                    <select class="form-select" name="customer_id" required>
+                        <option value="">— Select Customer —</option>
+                        {% for c in customers %}
+                        <option value="{{ c.id }}">{{ c.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label fw-semibold">Quote Date <span class="text-danger">*</span></label>
+                    <input type="date" class="form-control" name="quote_date" value="{{ today }}" required>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label fw-semibold">Valid Until</label>
+                    <input type="date" class="form-control" name="valid_until">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Notes</label>
+                    <input type="text" class="form-control" name="notes" placeholder="Optional">
+                </div>
+            </div>
+            <!-- Items -->
+            <div class="card border mb-3">
+                <div class="card-header bg-light fw-semibold d-flex justify-content-between">
+                    <span>Items</span>
+                    <button type="button" class="btn btn-sm btn-outline-success" onclick="addRow()">+ Add Row</button>
+                </div>
+                <div class="card-body p-2">
+                    <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="min-width:200px">Item</th>
+                                <th style="width:80px">Qty</th>
+                                <th style="width:120px">Sale Price</th>
+                                <th style="width:100px">Disc Type</th>
+                                <th style="width:100px">Disc Val</th>
+                                <th style="width:80px">Tax %</th>
+                                <th style="width:40px"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="itemBody">
+                            <tr>
+                                <td>
+                                    <select class="form-select form-select-sm" name="item_id[]" required>
+                                        <option value="">— Item —</option>
+                                        {% for item in items %}
+                                        <option value="{{ item.id }}" data-price="{{ item.sale_price or 0 }}">{{ item.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td><input type="number" min="1" class="form-control form-control-sm" name="quantity[]" value="1" required></td>
+                                <td><input type="number" step="0.01" min="0" class="form-control form-control-sm" name="sale_price[]" required></td>
+                                <td>
+                                    <select class="form-select form-select-sm" name="discount_type[]">
+                                        <option value="percent">%</option>
+                                        <option value="fixed">Fixed</option>
+                                    </select>
+                                </td>
+                                <td><input type="number" step="0.01" min="0" class="form-control form-control-sm" name="discount_value[]" value="0"></td>
+                                <td><input type="number" step="0.01" min="0" class="form-control form-control-sm" name="tax_percent[]" value="0"></td>
+                                <td></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    </div>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-success"><i class="bi bi-save"></i> Create Quotation</button>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+        <table class="table table-bordered table-hover mb-0">
+            <thead class="table-dark">
+                <tr>
+                    <th>Q #</th><th>Customer</th><th>Date</th><th>Valid Until</th>
+                    <th class="text-end">Total</th><th class="text-center">Status</th><th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for q in quotes %}
+                <tr>
+                    <td><strong>#{{ q.id }}</strong></td>
+                    <td>{{ q.customer.name }}</td>
+                    <td class="text-nowrap">{{ q.quote_date.strftime('%d %b %Y') }}</td>
+                    <td class="text-nowrap">{{ q.valid_until.strftime('%d %b %Y') if q.valid_until else '—' }}</td>
+                    <td class="text-end">
+                        {% set ns = namespace(t=0) %}
+                        {% for qi in q.line_items %}{% set ns.t = ns.t + qi.quantity * qi.sale_price %}{% endfor %}
+                        {{ ns.t | fmt_num }}
+                    </td>
+                    <td class="text-center">
+                        <span class="badge
+                            {% if q.status == 'Accepted' or q.status == 'Converted' %}bg-success
+                            {% elif q.status == 'Sent' %}bg-primary
+                            {% elif q.status == 'Rejected' %}bg-danger
+                            {% else %}bg-secondary{% endif %}">
+                            {{ q.status }}
+                        </span>
+                    </td>
+                    <td>
+                        <a href="{{ url_for('quotation_detail', id=q.id) }}" class="btn btn-outline-success btn-sm">View</a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="text-center text-muted py-3">No quotations yet</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+</div>
+{{ pagination.links }}
+
+<script>
+const ITEMS_DATA = [
+    {% for item in items %}{"id":{{ item.id }},"price":{{ item.sale_price or 0 }}},{% endfor %}
+];
+function addRow() {
+    const tbody = document.getElementById('itemBody');
+    const first = tbody.querySelector('tr');
+    const clone = first.cloneNode(true);
+    clone.querySelectorAll('input').forEach(i => { if(i.name!='discount_value[]'&&i.name!='tax_percent[]') i.value=''; else i.value='0'; });
+    if(clone.querySelector('input[name="quantity[]"]')) clone.querySelector('input[name="quantity[]"]').value='1';
+    clone.querySelectorAll('select').forEach(s => s.selectedIndex = 0);
+    const last = clone.querySelector('td:last-child');
+    last.innerHTML = '<button type="button" class="btn btn-danger btn-sm" onclick="this.closest(\'tr\').remove()">×</button>';
+    tbody.appendChild(clone);
+}
+document.getElementById('itemBody').addEventListener('change', function(e) {
+    if (e.target.name === 'item_id[]') {
+        const price = e.target.selectedOptions[0]?.dataset.price || '';
+        const row = e.target.closest('tr');
+        const priceInput = row.querySelector('input[name="sale_price[]"]');
+        if (price && priceInput && !priceInput.value) priceInput.value = price;
+    }
+});
+</script>
+{% endblock %}

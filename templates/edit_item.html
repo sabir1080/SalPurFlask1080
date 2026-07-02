@@ -18,8 +18,20 @@
             </select>
         </div>
         <div class="mb-3">
-            <label for="stock" class="form-label">Stock</label>
-            <input type="text" class="form-control" id="stock" name="stock" value="{{ item.stock }}" required>
+            <label for="unit" class="form-label">Unit of Measure</label>
+            <select class="form-control" id="unit" name="unit">
+                {% for u in item_units %}
+                <option value="{{ u }}" {% if (item.unit or 'Pcs') == u %}selected{% endif %}>{{ u }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="mb-3">
+            <label for="opening_stock" class="form-label">Opening Stock <small class="text-muted">(changing this will adjust Balance Stock accordingly)</small></label>
+            <input type="number" class="form-control" id="opening_stock" name="opening_stock" value="{{ item.opening_stock }}">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Current Balance Stock <small class="text-muted">(auto-calculated)</small></label>
+            <input type="text" class="form-control bg-light" value="{{ item.stock }}" readonly>
         </div>
         <div class="mb-3">
             <label for="reorder_level" class="form-label">Reorder Level</label>

@@ -1,0 +1,132 @@
+{% extends 'base.html' %}
+{% block title %}Expenses{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-wallet2 text-danger"></i> Expense Tracking</h2>
+    <span class="badge bg-danger fs-6">Total: {{ total_expenses | fmt_num }}</span>
+</div>
+
+<form method="GET" class="mb-3">
+    <div class="input-group">
+        <input type="text" class="form-control" name="search" placeholder="Search description or notes" value="{{ search }}">
+        <button type="submit" class="btn btn-primary">Search</button>
+    </div>
+</form>
+
+<div class="row g-3 mb-4">
+    <!-- Add Expense -->
+    <div class="col-md-8">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-danger text-white fw-semibold"><i class="bi bi-plus-circle"></i> Record Expense</div>
+            <div class="card-body">
+                <form method="POST" class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">Description <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="description" required placeholder="e.g. Office Rent">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold">Amount <span class="text-danger">*</span></label>
+                        <input type="number" step="0.01" min="0.01" class="form-control" name="amount" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold">Date <span class="text-danger">*</span></label>
+                        <input type="date" class="form-control" name="date" value="{{ today }}" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold">Category</label>
+                        <select class="form-select" name="category_id">
+                            <option value="">— Uncategorized —</option>
+                            {% for cat in categories %}
+                            <option value="{{ cat.id }}">{{ cat.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold">Payment Method</label>
+                        <select class="form-select" name="payment_method">
+                            {% for m in payment_methods %}
+                            <option value="{{ m }}">{{ m }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold">Reference #</label>
+                        <input type="text" class="form-control" name="reference_no" placeholder="Optional">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold">Notes</label>
+                        <input type="text" class="form-control" name="notes" placeholder="Optional">
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-danger"><i class="bi bi-save"></i> Save Expense</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <!-- Add Category -->
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-secondary text-white fw-semibold"><i class="bi bi-tag"></i> Expense Categories</div>
+            <div class="card-body">
+                <form method="POST" class="row g-2 mb-3">
+                    <input type="hidden" name="_action" value="add_category">
+                    <div class="col-9">
+                        <input type="text" class="form-control" name="cat_name" placeholder="New category name" required>
+                    </div>
+                    <div class="col-3">
+                        <button type="submit" class="btn btn-secondary w-100">Add</button>
+                    </div>
+                </form>
+                <ul class="list-group list-group-flush">
+                    {% for cat in categories %}
+                    <li class="list-group-item py-1 px-0">{{ cat.name }}</li>
+                    {% else %}
+                    <li class="list-group-item text-muted">No categories yet</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+        <table class="table table-bordered table-hover mb-0">
+            <thead class="table-dark">
+                <tr>
+                    <th>#</th><th>Date</th><th>Category</th><th>Description</th>
+                    <th class="text-end">Amount</th><th>Method</th><th>Ref</th><th>Notes</th>
+                    {% if current_user.is_admin %}<th>Del</th>{% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for exp in expense_list %}
+                <tr>
+                    <td>{{ exp.id }}</td>
+                    <td class="text-nowrap">{{ exp.date.strftime('%d %b %Y') }}</td>
+                    <td>{{ exp.category.name if exp.category else '—' }}</td>
+                    <td>{{ exp.description }}</td>
+                    <td class="text-end fw-semibold text-danger">{{ exp.amount | fmt_num }}</td>
+                    <td>{{ exp.payment_method }}</td>
+                    <td>{{ exp.reference_no or '—' }}</td>
+                    <td>{{ exp.notes or '—' }}</td>
+                    {% if current_user.is_admin %}
+                    <td>
+                        <form method="POST" action="{{ url_for('delete_expense', id=exp.id) }}" class="d-inline">
+                            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this expense?')">Del</button>
+                        </form>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% else %}
+                <tr><td colspan="9" class="text-center text-muted py-3">No expenses recorded</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+</div>
+{{ pagination.links }}
+{% endblock %}

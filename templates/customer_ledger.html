@@ -1,4 +1,15 @@
 {% extends 'base.html' %}
+{% block title %}Customer Ledger — {{ customer.name }}{% endblock %}
+{% block extra_head %}
+<style>
+@media print {
+    nav, .navbar, .flash-messages, footer, .no-print { display: none !important; }
+    body { background: white !important; }
+    .container, .container-fluid { max-width: 100% !important; padding: 0 !important; }
+    @page { margin: 1.2cm; }
+}
+</style>
+{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <div>
@@ -10,13 +21,23 @@
             </strong>
         </p>
     </div>
-    <div>
-        <a href="{{ url_for('export_customer_ledger', id=customer.id) }}" class="btn btn-secondary btn-sm">Export CSV</a>
-        <a href="{{ url_for('customer') }}" class="btn btn-outline-secondary btn-sm">Back to Customers</a>
+    <div class="d-flex gap-2 flex-wrap no-print">
+        <a href="{{ url_for('export_customer_ledger', id=customer.id) }}" class="btn btn-secondary btn-sm" title="Download this customer's full ledger as CSV">
+            <i class="bi bi-filetype-csv"></i> Export CSV
+        </a>
+        <a href="{{ url_for('export_customer_ledger_excel', id=customer.id) }}" class="btn btn-success btn-sm" title="Download this customer's full ledger as Excel (.xlsx)">
+            <i class="bi bi-file-earmark-excel"></i> Export Excel
+        </a>
+        <button onclick="window.print()" class="btn btn-info btn-sm text-white" title="Print this customer ledger">
+            <i class="bi bi-printer"></i> Print
+        </button>
+        <a href="{{ url_for('customer') }}" class="btn btn-outline-secondary btn-sm" title="Go back to the customers list">
+            <i class="bi bi-arrow-left"></i> Back to Customers
+        </a>
     </div>
 </div>
 
-<form method="GET" class="row g-2 mb-3">
+<form method="GET" class="row g-2 mb-3 no-print">
     <div class="col-md-4">
         <input type="date" class="form-control" name="start_date" value="{{ start_date }}">
     </div>
@@ -24,11 +45,11 @@
         <input type="date" class="form-control" name="end_date" value="{{ end_date }}">
     </div>
     <div class="col-md-4">
-        <button type="submit" class="btn btn-primary w-100">Filter</button>
+        <button type="submit" class="btn btn-primary w-100" title="Filter ledger entries by date range">Filter</button>
     </div>
 </form>
 
-<div class="card card-body border mb-4">
+<div class="card card-body border mb-4 no-print">
     <h5>Manual Adjustment</h5>
     <form method="POST" class="row g-2">
         <input type="hidden" name="action" value="adjustment">
@@ -48,7 +69,7 @@
             <input type="text" class="form-control" name="adj_description" placeholder="Description">
         </div>
         <div class="col-md-2">
-            <button type="submit" class="btn btn-warning w-100">Add Adjustment</button>
+            <button type="submit" class="btn btn-warning w-100" title="Add a manual debit or credit adjustment entry to this ledger">Add Adjustment</button>
         </div>
     </form>
     <small class="text-muted">Debit = receivable badhega | Credit = receipt / advance</small>
@@ -63,7 +84,7 @@
             <th>Debit</th>
             <th>Credit</th>
             <th>Balance</th>
-            <th></th>
+            <th class="no-print"></th>
         </tr>
     </thead>
     <tbody>
@@ -75,10 +96,10 @@
             <td>{% if e.debit %}{{ e.debit | fmt_num }}{% else %}—{% endif %}</td>
             <td>{% if e.credit %}{{ e.credit | fmt_num }}{% else %}—{% endif %}</td>
             <td class="fw-semibold">{{ e.balance_after | fmt_num }}</td>
-            <td>
+            <td class="no-print">
                 {% if e.source_type == 'adjustment' %}
                 <form method="POST" action="{{ url_for('delete_customer_ledger_adjustment', id=customer.id, entry_id=e.id) }}" class="d-inline">
-                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete adjustment?')">Del</button>
+                    <button type="submit" class="btn btn-danger btn-sm" title="Delete this manual adjustment entry" onclick="return confirm('Delete adjustment?')">Del</button>
                 </form>
                 {% endif %}
             </td>

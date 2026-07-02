@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+{% block title %}Quotation #{{ q.id }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-file-earmark-ruled text-success"></i> Quotation #{{ q.id }}</h2>
+    <div class="d-flex gap-2">
+        <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-printer"></i> Print
+        </button>
+        <a href="{{ url_for('quotations') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-5">Customer</dt>
+                    <dd class="col-sm-7"><strong>{{ q.customer.name }}</strong></dd>
+                    <dt class="col-sm-5">Contact</dt>
+                    <dd class="col-sm-7">{{ q.customer.contact }}</dd>
+                    <dt class="col-sm-5">Quote Date</dt>
+                    <dd class="col-sm-7">{{ q.quote_date.strftime('%d %b %Y') }}</dd>
+                    <dt class="col-sm-5">Valid Until</dt>
+                    <dd class="col-sm-7">{{ q.valid_until.strftime('%d %b %Y') if q.valid_until else '—' }}</dd>
+                    <dt class="col-sm-5">Status</dt>
+                    <dd class="col-sm-7">
+                        <span class="badge
+                            {% if q.status in ('Accepted','Converted') %}bg-success
+                            {% elif q.status == 'Sent' %}bg-primary
+                            {% elif q.status == 'Rejected' %}bg-danger
+                            {% else %}bg-secondary{% endif %}">
+                            {{ q.status }}
+                        </span>
+                    </dd>
+                    {% if q.converted_sale_id %}
+                    <dt class="col-sm-5">Converted Sale</dt>
+                    <dd class="col-sm-7"><a href="{{ url_for('sale_invoice', id=q.converted_sale_id) }}" target="_blank">#{{ q.converted_sale_id }}</a></dd>
+                    {% endif %}
+                    {% if q.notes %}
+                    <dt class="col-sm-5">Notes</dt>
+                    <dd class="col-sm-7">{{ q.notes }}</dd>
+                    {% endif %}
+                </dl>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-light fw-semibold">Actions</div>
+            <div class="card-body d-flex flex-column gap-2">
+                {% if q.status != 'Converted' %}
+                <form method="POST" action="{{ url_for('update_quotation_status', id=q.id) }}" class="d-flex gap-2">
+                    <select class="form-select form-select-sm" name="status">
+                        {% for s in quote_statuses %}
+                        {% if s != 'Converted' %}
+                        <option value="{{ s }}" {% if s == q.status %}selected{% endif %}>{{ s }}</option>
+                        {% endif %}
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-outline-primary btn-sm text-nowrap">Update</button>
+                </form>
+                {% if not q.converted_sale_id and q.status not in ('Rejected',) %}
+                <form method="POST" action="{{ url_for('convert_quotation_to_sale', id=q.id) }}" class="d-flex gap-2 align-items-center">
+                    <input type="date" class="form-control form-control-sm" name="sale_date"
+                           value="{{ q.quote_date.strftime('%Y-%m-%d') }}" style="max-width:160px">
+                    <button type="submit" class="btn btn-success btn-sm text-nowrap"
+                            onclick="return confirm('Convert this quotation to a Sale?')">
+                        <i class="bi bi-arrow-right-circle"></i> Convert to Sale
+                    </button>
+                </form>
+                {% endif %}
+                {% endif %}
+                {% if current_user.is_admin and q.status != 'Converted' %}
+                <form method="POST" action="{{ url_for('delete_quotation', id=q.id) }}">
+                    <button type="submit" class="btn btn-outline-danger btn-sm"
+                            onclick="return confirm('Delete this quotation?')">
+                        <i class="bi bi-trash"></i> Delete
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-success text-white fw-semibold">Quotation Items</div>
+    <div class="card-body p-0">
+        <table class="table table-bordered mb-0">
+            <thead class="table-dark">
+                <tr>
+                    <th>#</th><th>Item</th>
+                    <th class="text-end">Qty</th>
+                    <th class="text-end">Rate</th>
+                    <th class="text-end">Gross</th>
+                    <th class="text-end">Discount</th>
+                    <th class="text-end">Tax</th>
+                    <th class="text-end">Net</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for qi in q.line_items %}
+                {% set gross = qi.quantity * qi.sale_price %}
+                {% set net = q_item_net(qi) %}
+                {% set disc = gross - net + (gross * qi.tax_percent / 100) %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>{{ qi.item.name }}</td>
+                    <td class="text-end">{{ qi.quantity }}</td>
+                    <td class="text-end">{{ qi.sale_price | fmt_num }}</td>
+                    <td class="text-end">{{ gross | fmt_num }}</td>
+                    <td class="text-end text-danger">
+                        {% if qi.discount_value > 0 %}
+                        {{ qi.discount_value }}{{ '%' if qi.discount_type == 'percent' else '' }}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td class="text-end">{{ qi.tax_percent }}%</td>
+                    <td class="text-end fw-semibold">{{ net | fmt_num }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot class="table-light">
+                <tr>
+                    <td colspan="7" class="text-end fw-bold fs-6">Grand Total</td>
+                    <td class="text-end fw-bold fs-5 text-success">{{ total | fmt_num }}</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+{% block title %}Stock Adjustments{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-arrow-left-right text-warning"></i> Stock Adjustments</h2>
+</div>
+
+<form method="GET" class="mb-3">
+    <div class="input-group">
+        <input type="text" class="form-control" name="search" placeholder="Search by item name" value="{{ search }}">
+        <button type="submit" class="btn btn-primary">Search</button>
+    </div>
+</form>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-warning text-dark fw-semibold"><i class="bi bi-plus-circle"></i> New Adjustment</div>
+    <div class="card-body">
+        <form method="POST" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Item <span class="text-danger">*</span></label>
+                <select class="form-select" name="item_id" required>
+                    <option value="">— Select Item —</option>
+                    {% for item in items %}
+                    <option value="{{ item.id }}">{{ item.name }} (Stock: {{ item.stock }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-semibold">Type <span class="text-danger">*</span></label>
+                <select class="form-select" name="adj_type" required>
+                    {% for t in adj_types %}
+                    <option value="{{ t }}">{{ t }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-semibold">Quantity <span class="text-danger">*</span></label>
+                <input type="number" min="1" class="form-control" name="quantity" required placeholder="e.g. 10">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-semibold">Date <span class="text-danger">*</span></label>
+                <input type="date" class="form-control" name="date" value="{{ today }}" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Reason</label>
+                <input type="text" class="form-control" name="reason" placeholder="Optional reason">
+            </div>
+            <div class="col-12">
+                <button type="submit" class="btn btn-warning"><i class="bi bi-check-circle"></i> Save Adjustment</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+        <table class="table table-bordered table-hover mb-0">
+            <thead class="table-dark">
+                <tr>
+                    <th>#</th><th>Date</th><th>Item</th><th>Type</th>
+                    <th class="text-center">Direction</th>
+                    <th class="text-end">Qty</th><th>Reason</th>
+                    {% if current_user.is_admin %}<th>Delete</th>{% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for adj in adjustments %}
+                <tr>
+                    <td>{{ adj.id }}</td>
+                    <td class="text-nowrap">{{ adj.date.strftime('%d %b %Y') }}</td>
+                    <td>{{ adj.item.name }}</td>
+                    <td>{{ adj.adj_type }}</td>
+                    <td class="text-center">
+                        {% if adj.direction == 'in' %}
+                        <span class="badge bg-success">IN</span>
+                        {% else %}
+                        <span class="badge bg-danger">OUT</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end fw-semibold">{{ adj.quantity }}</td>
+                    <td>{{ adj.reason or '—' }}</td>
+                    {% if current_user.is_admin %}
+                    <td>
+                        <form method="POST" action="{{ url_for('delete_stock_adjustment', id=adj.id) }}" class="d-inline">
+                            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete and reverse this adjustment?')">Delete</button>
+                        </form>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="text-center text-muted py-3">No adjustments yet</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+</div>
+{{ pagination.links }}
+{% endblock %}

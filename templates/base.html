@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{% block title %}SalPurFlask{% endblock %}</title>
+    <title>{% block title %}{{ company_name }}{% endblock %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -18,7 +18,7 @@
     <nav class="navbar navbar-expand-lg {% block navbar_class %}navbar-light bg-light{% endblock %}">
         <div class="{% block nav_container_class %}container-fluid{% endblock %}">
             <a class="navbar-brand" href="{{ url_for('index') }}">
-                <i class="bi bi-box-seam-fill brand-icon"></i> SalPurFlask
+                <i class="bi bi-box-seam-fill brand-icon"></i> {{ company_name }}
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
@@ -26,30 +26,107 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     {% if current_user.is_authenticated %}
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a></li>
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('supplier') }}">Suppliers</a></li>
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('customer') }}">Customers</a></li>
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('category') }}">Categories</a></li>
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('item') }}">Items</a></li>
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('purchase') }}">Purchases</a></li>
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('supplier_payment') }}">Supplier Payments</a></li>
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('sale') }}">Sales</a></li>
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('customer_receipt') }}">Customer Receipts</a></li>
+                    {% if current_user.is_manager %}
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
+                    {% endif %}
+
                     <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">Returns</a>
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-people"></i> Parties
+                        </a>
                         <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="{{ url_for('purchase_return') }}">Purchase Returns</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('sale_return') }}">Sale Returns</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('supplier') }}"><i class="bi bi-truck"></i> Suppliers</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('customer') }}"><i class="bi bi-person-check"></i> Customers</a></li>
                         </ul>
                     </li>
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('reports') }}">Reports</a></li>
+
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-boxes"></i> Inventory
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('category') }}"><i class="bi bi-tag"></i> Categories</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('item') }}"><i class="bi bi-box-seam"></i> Items</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('stock_adjustment') }}"><i class="bi bi-arrow-left-right"></i> Stock Adjustments</a></li>
+                        </ul>
+                    </li>
+
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-cart"></i> Transactions
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('purchase_orders') }}"><i class="bi bi-file-earmark-text"></i> Purchase Orders</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('purchase') }}"><i class="bi bi-cart-plus"></i> Purchases</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('supplier_payment') }}"><i class="bi bi-cash-coin"></i> Supplier Payments</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('supplier_bulk_payment') }}"><i class="bi bi-cash-stack"></i> Bulk Payment</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('quotations') }}"><i class="bi bi-file-earmark-ruled"></i> Quotations</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('sale') }}"><i class="bi bi-bag-check"></i> Sales</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('customer_receipt') }}"><i class="bi bi-receipt"></i> Customer Receipts</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('customer_bulk_receipt') }}"><i class="bi bi-cash-stack"></i> Bulk Receipt</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('purchase_return') }}"><i class="bi bi-arrow-return-left"></i> Purchase Returns</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('sale_return') }}"><i class="bi bi-arrow-return-right"></i> Sale Returns</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('delivery_challans') }}"><i class="bi bi-truck"></i> Delivery Challans</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('expenses') }}"><i class="bi bi-wallet2"></i> Expenses</a></li>
+                        </ul>
+                    </li>
+
+                    {% if current_user.is_manager %}
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-bar-chart-line"></i> Reports
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('reports') }}"><i class="bi bi-graph-up"></i> Sales &amp; Inventory</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('report_profit_loss') }}"><i class="bi bi-graph-up-arrow"></i> Profit &amp; Loss</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('report_aging') }}"><i class="bi bi-clock-history"></i> AP/AR Aging</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('report_cash_book') }}"><i class="bi bi-journal-text"></i> Cash Book</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('report_gst') }}"><i class="bi bi-receipt-cutoff"></i> GST Summary</a></li>
+                        </ul>
+                    </li>
                     {% endif %}
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('about') }}">About</a></li>
+                    {% if current_user.is_admin %}
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-shield-person"></i> Admin
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('admin_users') }}"><i class="bi bi-people"></i> Users</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('admin_system') }}"><i class="bi bi-hdd"></i> Backup &amp; Restore</a></li>
+                        </ul>
+                    </li>
+                    {% endif %}
+                    {% endif %}
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('about') }}"><i class="bi bi-info-circle"></i> About</a></li>
                 </ul>
+
+                {% if current_user.is_authenticated %}
+                <div class="nav-search-wrapper position-relative d-none d-lg-block">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-white border-end-0"><i class="bi bi-search"></i></span>
+                        <input type="text" id="globalSearch" class="form-control border-start-0 ps-0"
+                               placeholder="Search supplier, customer, item..." autocomplete="off">
+                    </div>
+                    <div id="searchDropdown" class="search-dropdown"></div>
+                </div>
+                {% endif %}
+
                 <ul class="navbar-nav">
                     {% if current_user.is_authenticated %}
-                    <li class="nav-item"><span class="nav-link">Welcome, {{ current_user.name }}</span></li>
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('signout') }}">Sign Out</a></li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-person-circle"></i> {{ current_user.name }}
+                            <span class="badge ms-1 {% if current_user.role == 'admin' %}bg-danger{% elif current_user.role == 'manager' %}bg-primary{% else %}bg-secondary{% endif %}" style="font-size:0.65rem">{{ current_user.role|capitalize }}</span>
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="bi bi-person-gear"></i> My Profile</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item text-danger" href="{{ url_for('signout') }}"><i class="bi bi-box-arrow-right"></i> Sign Out</a></li>
+                        </ul>
+                    </li>
                     {% else %}
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('signin') }}">Sign In</a></li>
                     {% endif %}
@@ -72,6 +149,15 @@
         {% endwith %}
         {% block content %}{% endblock %}
     </div>
+
+    <footer class="mt-5 py-3 border-top text-center text-muted small">
+        <div class="container">
+            <span><i class="bi bi-box-seam-fill"></i> <strong>{{ company_name }}</strong> &mdash; {{ company_tagline }}</span>
+            <span class="mx-2">&bull;</span>
+            <span>Designed &amp; Developed by <strong>Sabir Shah</strong></span>
+        </div>
+    </footer>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function () {
@@ -95,6 +181,64 @@
                     });
                 }, { once: true });
             });
+
+            /* ── Bootstrap Tooltips: auto-init on any .btn or a.btn with a title ── */
+            document.querySelectorAll('.btn[title], a[title]').forEach(function (el) {
+                new bootstrap.Tooltip(el, { trigger: 'hover', placement: 'top' });
+            });
+
+            /* ── Global Search ── */
+            var searchInput = document.getElementById('globalSearch');
+            var searchDropdown = document.getElementById('searchDropdown');
+            var searchTimer = null;
+
+            if (searchInput && searchDropdown) {
+                searchInput.addEventListener('input', function () {
+                    var q = this.value.trim();
+                    clearTimeout(searchTimer);
+                    if (q.length < 2) {
+                        searchDropdown.classList.remove('show');
+                        searchDropdown.innerHTML = '';
+                        return;
+                    }
+                    searchTimer = setTimeout(function () {
+                        fetch('/api/search?q=' + encodeURIComponent(q), {
+                            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                        })
+                        .then(function (r) { return r.json(); })
+                        .then(function (data) {
+                            if (!data.results || data.results.length === 0) {
+                                searchDropdown.innerHTML = '<div class="search-item text-muted">No results found</div>';
+                                searchDropdown.classList.add('show');
+                                return;
+                            }
+                            var html = '';
+                            data.results.forEach(function (r) {
+                                html += '<a href="' + r.url + '" class="search-item">';
+                                html += '<span class="badge bg-' + r.color + ' me-2"><i class="bi ' + r.icon + '"></i></span>';
+                                html += '<span class="search-name">' + r.name + '</span>';
+                                html += '<span class="search-detail">' + r.detail + '</span>';
+                                html += '<span class="search-extra">' + r.extra + '</span>';
+                                html += '</a>';
+                            });
+                            searchDropdown.innerHTML = html;
+                            searchDropdown.classList.add('show');
+                        });
+                    }, 300);
+                });
+
+                document.addEventListener('click', function (e) {
+                    if (!e.target.closest('.nav-search-wrapper')) {
+                        searchDropdown.classList.remove('show');
+                    }
+                });
+
+                searchInput.addEventListener('focus', function () {
+                    if (searchDropdown.innerHTML.trim()) {
+                        searchDropdown.classList.add('show');
+                    }
+                });
+            }
         });
     </script>
 </body>

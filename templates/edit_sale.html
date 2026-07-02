@@ -1,57 +1,181 @@
 <!--edit_sale.html-->
-
 {% extends 'base.html' %}
 {% block content %}
-{% set form_data = form_data|default({}) %}
-    <h2>Edit Sale</h2>
-    <form method="POST">
-        <div class="mb-3">
-            <label for="customer_id" class="form-label">Customer</label>
-            <select class="form-select" id="customer_id" name="customer_id" required>
+<h2><i class="bi bi-pencil-square text-warning"></i> Edit Sale #{{ sale.id }}</h2>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-warning bg-opacity-25 fw-semibold">Edit Sale Invoice</div>
+    <div class="card-body">
+<form method="POST">
+    <div class="row g-3 mb-3">
+        <div class="col-md-4">
+            <label class="form-label fw-semibold">Customer <span class="text-danger">*</span></label>
+            <select class="form-select" name="customer_id" required>
                 <option value="">Select Customer</option>
-                {% for customer in customers %}
-                    <option value="{{ customer.id }}" {% if (form_data.get('customer_id', sale.customer_id)|string) == (customer.id|string) %}selected{% endif %}>{{ customer.name }}</option>
+                {% for c in customers %}
+                <option value="{{ c.id }}" {% if c.id == sale.customer_id %}selected{% endif %}>{{ c.name }}</option>
                 {% endfor %}
             </select>
         </div>
-        <div class="mb-3">
-            <label for="item_id" class="form-label">Item</label>
-            <select class="form-select" id="item_id" name="item_id" required>
-                <option value="">Select Item</option>
-                {% for item in items %}
-                    <option value="{{ item.id }}" {% if (form_data.get('item_id', sale.item_id)|string) == (item.id|string) %}selected{% endif %}>{{ item.name }}{% if item.id_category %} ({{ item.id_category.name }}){% endif %}</option>
-                {% endfor %}
-            </select>
+        <div class="col-md-3">
+            <label class="form-label fw-semibold">Date <span class="text-danger">*</span></label>
+            <input type="date" class="form-control" name="date" required value="{{ sale.date.strftime('%Y-%m-%d') }}">
         </div>
-        <div class="mb-3">
-            <label for="quantity" class="form-label">Quantity</label>
-            <input type="number" class="form-control" id="quantity" name="quantity" value="{{ form_data.get('quantity', sale.quantity) }}" min="1" required>
+        <div class="col-md-5">
+            <label class="form-label fw-semibold">Notes</label>
+            <input type="text" class="form-control" name="notes" value="{{ sale.notes or '' }}" placeholder="Optional notes">
         </div>
-        <div class="mb-3">
-            <label for="sale_price" class="form-label">Sale Price (per unit)</label>
-            <input type="number" step="0.01" class="form-control" id="sale_price" name="sale_price" value="{{ form_data.get('sale_price', sale.sale_price) }}" required>
-        </div>
-        <div class="mb-3">
-            <label for="date" class="form-label">Date</label>
-            <input type="date" class="form-control" id="date" name="date" value="{{ form_data.get('date', sale.date.strftime('%Y-%m-%d')) }}" required>
-        </div>
-        <button type="submit" class="btn btn-primary">Update Sale</button>
+    </div>
+
+    <div class="table-responsive mb-2">
+    <table class="table table-bordered table-sm align-middle" id="itemsTable">
+        <thead class="table-dark">
+            <tr>
+                <th style="min-width:200px">Item *</th>
+                <th style="min-width:100px">Qty *</th>
+                <th style="min-width:120px">Sale Price *</th>
+                <th style="min-width:80px">Stock</th>
+                <th style="min-width:120px">Discount</th>
+                <th style="min-width:90px">Tax (%)</th>
+                <th style="min-width:110px" class="text-end">Net Amount</th>
+                <th style="width:40px"></th>
+            </tr>
+        </thead>
+        <tbody id="itemsBody">
+            {% for si in sale.line_items %}
+            {% set gross = si.quantity * si.sale_price %}
+            {% set net = gross - (si.discount_amount or 0) + (si.tax_amount or 0) %}
+            <tr class="item-row">
+                <td>
+                    <select class="form-select form-select-sm item-select" name="item_id[]" required onchange="fetchSalePrice(this)">
+                        <option value="">Select Item</option>
+                        {% for it in items %}
+                        <option value="{{ it.id }}" data-sale-price="{{ it.sale_price or '' }}" data-stock="{{ it.stock }}"
+                            {% if it.id == si.item_id %}selected{% endif %}>
+                            {{ it.name }}{% if it.id_category %} ({{ it.id_category.name }}){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </td>
+                <td><input type="number" class="form-control form-control-sm qty-input" name="quantity[]" min="1" value="{{ si.quantity }}" oninput="calcRow(this)" required></td>
+                <td><input type="number" step="0.01" class="form-control form-control-sm price-input" name="sale_price[]" min="0" value="{{ si.sale_price }}" oninput="calcRow(this)"></td>
+                <td class="text-muted small stock-display">Stock: {{ si.item.stock if si.item else '?' }}</td>
+                <td>
+                    <div class="input-group input-group-sm">
+                        <select class="form-select form-select-sm disc-type" name="discount_type[]" onchange="calcRow(this)">
+                            <option value="percent" {% if (si.discount_type or 'percent') == 'percent' %}selected{% endif %}>%</option>
+                            <option value="fixed" {% if si.discount_type == 'fixed' %}selected{% endif %}>Fixed</option>
+                        </select>
+                        <input type="number" step="0.01" class="form-control form-control-sm disc-val" name="discount_value[]" value="{{ si.discount_value or 0 }}" min="0" oninput="calcRow(this)">
+                    </div>
+                </td>
+                <td><input type="number" step="0.01" class="form-control form-control-sm tax-input" name="tax_percent[]" value="{{ si.tax_percent or 0 }}" min="0" oninput="calcRow(this)"></td>
+                <td class="text-end fw-semibold row-total text-success">{{ net | fmt_num }}</td>
+                <td class="text-center"><button type="button" class="btn btn-danger btn-sm" onclick="removeRow(this)">×</button></td>
+            </tr>
+            {% else %}
+            <tr class="item-row">
+                <td><select class="form-select form-select-sm item-select" name="item_id[]" required onchange="fetchSalePrice(this)">
+                    <option value="">Select Item</option>
+                    {% for it in items %}<option value="{{ it.id }}" data-sale-price="{{ it.sale_price or '' }}" data-stock="{{ it.stock }}">{{ it.name }}</option>{% endfor %}
+                </select></td>
+                <td><input type="number" class="form-control form-control-sm qty-input" name="quantity[]" min="1" placeholder="0" oninput="calcRow(this)" required></td>
+                <td><input type="number" step="0.01" class="form-control form-control-sm price-input" name="sale_price[]" min="0" placeholder="0.00" oninput="calcRow(this)"></td>
+                <td class="text-muted small stock-display">—</td>
+                <td><div class="input-group input-group-sm">
+                    <select class="form-select form-select-sm disc-type" name="discount_type[]" onchange="calcRow(this)"><option value="percent">%</option><option value="fixed">Fixed</option></select>
+                    <input type="number" step="0.01" class="form-control form-control-sm disc-val" name="discount_value[]" value="0" min="0" oninput="calcRow(this)">
+                </div></td>
+                <td><input type="number" step="0.01" class="form-control form-control-sm tax-input" name="tax_percent[]" value="0" min="0" oninput="calcRow(this)"></td>
+                <td class="text-end fw-semibold row-total text-success">—</td>
+                <td class="text-center"><button type="button" class="btn btn-danger btn-sm" onclick="removeRow(this)">×</button></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr class="table-light">
+                <td colspan="6" class="text-end fw-bold">Grand Total:</td>
+                <td class="text-end fw-bold text-primary fs-5" id="grandTotal">0.00</td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+    </div>
+
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-outline-success btn-sm" onclick="addRow()"><i class="bi bi-plus-circle"></i> Add Item</button>
+        <button type="submit" class="btn btn-warning"><i class="bi bi-save"></i> Update Sale</button>
         <a href="{{ url_for('sale') }}" class="btn btn-secondary">Cancel</a>
-    </form>
-    <script>
-        document.getElementById('item_id').addEventListener('change', function() {
-            const itemId = this.value;
-            if (itemId) {
-                fetch(`/api/item/${itemId}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.sale_price !== null) {
-                            document.getElementById('sale_price').value = data.sale_price;
-                        } else {
-                            document.getElementById('sale_price').value = '';
-                        }
-                    });
-            }
-        });
-    </script>
+    </div>
+</form>
+    </div>
+</div>
+
+<script>
+const itemOptions = `{% for it in items %}<option value="{{ it.id }}" data-sale-price="{{ it.sale_price or '' }}" data-stock="{{ it.stock }}">{{ it.name }}{% if it.id_category %} ({{ it.id_category.name }}){% endif %}</option>{% endfor %}`;
+
+function fetchSalePrice(sel) {
+    const opt = sel.options[sel.selectedIndex];
+    const row = sel.closest('tr');
+    if (opt && opt.dataset.salePrice) row.querySelector('.price-input').value = opt.dataset.salePrice;
+    if (opt) row.querySelector('.stock-display').textContent = opt.dataset.stock !== undefined ? 'Stock: ' + opt.dataset.stock : '—';
+    calcRow(sel);
+}
+
+function calcRow(el) {
+    const row = el.closest('tr');
+    const qty   = parseFloat(row.querySelector('.qty-input').value) || 0;
+    const price = parseFloat(row.querySelector('.price-input').value) || 0;
+    const dType = row.querySelector('.disc-type').value;
+    const dVal  = parseFloat(row.querySelector('.disc-val').value) || 0;
+    const tax   = parseFloat(row.querySelector('.tax-input').value) || 0;
+    const gross = qty * price;
+    const disc  = dType === 'percent' ? gross * dVal / 100 : Math.min(dVal, gross);
+    const taxAmt = (gross - disc) * tax / 100;
+    const net = gross - disc + taxAmt;
+    row.querySelector('.row-total').textContent = net > 0 ? net.toFixed(2) : '—';
+    calcGrand();
+}
+
+function calcGrand() {
+    let total = 0;
+    document.querySelectorAll('.row-total').forEach(td => {
+        const v = parseFloat(td.textContent.replace(/,/g, ''));
+        if (!isNaN(v)) total += v;
+    });
+    document.getElementById('grandTotal').textContent = total.toFixed(2);
+}
+
+function addRow() {
+    const tbody = document.getElementById('itemsBody');
+    const newRow = document.createElement('tr');
+    newRow.className = 'item-row';
+    newRow.innerHTML = `
+        <td><select class="form-select form-select-sm item-select" name="item_id[]" required onchange="fetchSalePrice(this)">
+            <option value="">Select Item</option>${itemOptions}
+        </select></td>
+        <td><input type="number" class="form-control form-control-sm qty-input" name="quantity[]" min="1" placeholder="0" oninput="calcRow(this)" required></td>
+        <td><input type="number" step="0.01" class="form-control form-control-sm price-input" name="sale_price[]" min="0" placeholder="0.00" oninput="calcRow(this)"></td>
+        <td class="text-muted small stock-display">—</td>
+        <td><div class="input-group input-group-sm">
+            <select class="form-select form-select-sm disc-type" name="discount_type[]" onchange="calcRow(this)">
+                <option value="percent">%</option><option value="fixed">Fixed</option>
+            </select>
+            <input type="number" step="0.01" class="form-control form-control-sm disc-val" name="discount_value[]" value="0" min="0" oninput="calcRow(this)">
+        </div></td>
+        <td><input type="number" step="0.01" class="form-control form-control-sm tax-input" name="tax_percent[]" value="0" min="0" oninput="calcRow(this)"></td>
+        <td class="text-end fw-semibold row-total text-success">—</td>
+        <td class="text-center"><button type="button" class="btn btn-danger btn-sm" onclick="removeRow(this)">×</button></td>`;
+    tbody.appendChild(newRow);
+}
+
+function removeRow(btn) {
+    const rows = document.querySelectorAll('#itemsBody .item-row');
+    if (rows.length === 1) { alert('At least one item row is required.'); return; }
+    btn.closest('tr').remove();
+    calcGrand();
+}
+
+document.addEventListener('DOMContentLoaded', () => calcGrand());
+</script>
 {% endblock %}

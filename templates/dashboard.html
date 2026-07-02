@@ -1,250 +1,259 @@
 {% extends 'base.html' %}
+{% block title %}Dashboard — TradeFlow{% endblock %}
 {% block content %}
-<h2>Dashboard</h2>
-
-<!-- Chart Section -->
-<div class="row mb-4">
-    <div class="col-md-6">
-        <h3>Stock Levels</h3>
-        <canvas id="stockChart" width="400" height="180"></canvas>
-    </div>
-    <div class="col-md-6">
-        <h3>Purchase Trends</h3>
-        <canvas id="purchaseChart" width="400" height="180"></canvas>
-    </div>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="mb-0"><i class="bi bi-speedometer2"></i> Dashboard</h2>
+    <span class="text-muted small">Overview of your business</span>
 </div>
 
-
-<div class="row mb-4">
-    <div class="col-md-6">
-        <h3>Sale Trends</h3>
-        <canvas id="saleChart" width="400" height="180"></canvas>
-    </div>
-    <div class = "col-md-4" style="margin-left: 140px; margin-top: 50px; ">
-        
-        <h6 style="background: white; padding: 20px; border-radius: 10px; 
-            box-shadow: 0 2px 5px rgba(2, 2, 2, 0.54); display: inline-block;">
-            <span style="color:rgb(14, 13, 13);"> Designed & Develpoed By:</span>
-            <span style="font-weight: bold; color:rgb(231, 193, 23); font-size: 32px;"> <b>Sabir Shah</b></span> 
-            
-        </h6>
-        <h6 style="background: white; padding: 10px; border-radius: 5px; 
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: inline-block;">
-            <span style="font-weight: bold; color:rgb(99, 99, 99);">E-Mail:</span> 
-            <span style="color: #d63384;">sabir1212@yahoo.com</span><br>
-            <!--*<span style="font-weight: bold; color:rgb(99, 99, 99);">Contact:</span> -->
-            <!--*<span style="color: #d63384;">+92 345 3231545</span><br>--> 
-            <span style="font-weight: bold; color:rgb(99, 99, 99);">WhatsApp:</span> 
-            <span style="color: #d63384;">+92 345 3231545</span>
-        </h6>
-    </div>
-</div>
-<script>
-
-// yehan se dobara samajhna ha...
-    document.addEventListener('DOMContentLoaded', function () {
-        // Stock Chart
-        const stockCtx = document.getElementById('stockChart').getContext('2d');
-        new Chart(stockCtx, {
-            type: 'bar',
-            data: {
-                labels: [{% for item in items %}'{{ item.name }}'{% if not loop.last %},{% endif %}{% endfor %}],
-                datasets: [{
-                    label: 'Stock Levels',
-                    data: [{% for item in items %}{{ item.stock | default(0) }}{% if not loop.last %},{% endif %}{% endfor %}],
-                    backgroundColor: 'rgba(54, 162, 235, 0.5)',
-                    borderColor: 'rgba(54, 162, 235, 1)',
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                scales: {
-                    y: { beginAtZero: true, title: { display: true, text: 'Stock' } }
-                }
-            }
-        });
-
-        // Purchase Chart
-        const purchaseCtx = document.getElementById('purchaseChart').getContext('2d');
-        new Chart(purchaseCtx, {
-            type: 'line',
-            data: {
-                labels: [{% for purchase in purchases %}'{{ purchase.date.strftime('%Y-%m-%d') }}'{% if not loop.last %},{% endif %}{% endfor %}],
-                datasets: [{
-                    label: 'Purchase Quantity',
-                    data: [{% for purchase in purchases %}{{ purchase.quantity | default(0) }}{% if not loop.last %},{% endif %}{% endfor %}],
-                    borderColor: 'rgba(75, 192, 192, 1)',
-                    fill: false
-                }]
-            },
-            options: {
-                responsive: true,
-                scales: {
-                    y: { beginAtZero: true, title: { display: true, text: 'Quantity' } }
-                }
-            }
-        });
-
-        // Sale Chart
-        const saleCtx = document.getElementById('saleChart').getContext('2d');
-        new Chart(saleCtx, {
-            type: 'line',
-            data: {
-                labels: [{% for sale in sales %}'{{ sale.date.strftime('%Y-%m-%d') }}'{% if not loop.last %},{% endif %}{% endfor %}],
-                datasets: [{
-                    label: 'Sale Quantity',
-                    data: [{% for sale in sales %}{{ sale.quantity | default(0) }}{% if not loop.last %},{% endif %}{% endfor %}],
-                    borderColor: 'rgba(255, 99, 132, 1)',
-                    fill: false
-                }]
-            },
-            options: {
-                responsive: true,
-                scales: {
-                    y: { beginAtZero: true, title: { display: true, text: 'Quantity' } }
-                }
-            }
-        });
-    });
-</script>
-
-<!-- Summary -->
-<div class="row mb-4">
-    <div class="col-md-3">
+<!-- Summary Cards Row 1 -->
+<div class="row g-3 mb-3">
+    <div class="col-6 col-md-3">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
-                <h6 class="card-subtitle text-muted mb-2">Total Purchase Cost</h6>
-                <p class="card-text fs-5 fw-semibold mb-0">{{ total_purchase_cost | fmt_num }}</p>
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <p class="text-muted small mb-1">Total Sale Revenue</p>
+                        <h5 class="fw-bold mb-0 text-success">{{ total_sale_revenue | fmt_num }}</h5>
+                    </div>
+                    <span class="fs-3 text-success opacity-50"><i class="bi bi-graph-up-arrow"></i></span>
+                </div>
+                <small class="text-muted">Returns: {{ total_sale_returns | fmt_num }}</small>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-6 col-md-3">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
-                <h6 class="card-subtitle text-muted mb-2">Total Sale Revenue</h6>
-                <p class="card-text fs-5 fw-semibold mb-0">{{ total_sale_revenue | fmt_num }}</p>
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <p class="text-muted small mb-1">Total Purchase Cost</p>
+                        <h5 class="fw-bold mb-0">{{ total_purchase_cost | fmt_num }}</h5>
+                    </div>
+                    <span class="fs-3 text-primary opacity-50"><i class="bi bi-cart"></i></span>
+                </div>
+                <small class="text-muted">Returns: {{ total_purchase_returns | fmt_num }}</small>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm h-100 border-start border-4 {% if total_gross_profit >= 0 %}border-success{% else %}border-danger{% endif %}">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <p class="text-muted small mb-1">Gross Profit</p>
+                        <h5 class="fw-bold mb-0 {% if total_gross_profit >= 0 %}text-success{% else %}text-danger{% endif %}">{{ total_gross_profit | fmt_num }}</h5>
+                    </div>
+                    <span class="fs-3 {% if total_gross_profit >= 0 %}text-success{% else %}text-danger{% endif %} opacity-50"><i class="bi bi-piggy-bank"></i></span>
+                </div>
+                <small class="text-muted">On all recorded sales</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm h-100 border-start border-warning border-4">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <p class="text-muted small mb-1">Low Stock Items</p>
+                        <h5 class="fw-bold mb-0 text-warning">{{ low_stock_count }}</h5>
+                    </div>
+                    <span class="fs-3 text-warning opacity-50"><i class="bi bi-exclamation-triangle"></i></span>
+                </div>
+                <small><a href="{{ url_for('reports') }}" class="text-muted">View in Reports</a></small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Summary Cards Row 2 -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
         <div class="card border-0 shadow-sm h-100 border-start border-danger border-4">
             <div class="card-body">
-                <h6 class="card-subtitle text-muted mb-2">Payable to Suppliers</h6>
-                <p class="card-text fs-5 fw-semibold text-danger mb-1">{{ total_payable_balance | fmt_num }}</p>
+                <p class="text-muted small mb-1">Payable to Suppliers</p>
+                <h5 class="fw-bold text-danger mb-1">{{ total_payable_balance | fmt_num }}</h5>
                 <small class="text-muted">Paid: {{ total_paid_suppliers | fmt_num }} / {{ total_payable | fmt_num }}</small>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-6 col-md-3">
         <div class="card border-0 shadow-sm h-100 border-start border-success border-4">
             <div class="card-body">
-                <h6 class="card-subtitle text-muted mb-2">Receivable from Customers</h6>
-                <p class="card-text fs-5 fw-semibold text-success mb-1">{{ total_receivable_balance | fmt_num }}</p>
+                <p class="text-muted small mb-1">Receivable from Customers</p>
+                <h5 class="fw-bold text-success mb-1">{{ total_receivable_balance | fmt_num }}</h5>
                 <small class="text-muted">Received: {{ total_received_customers | fmt_num }} / {{ total_receivable | fmt_num }}</small>
             </div>
         </div>
     </div>
+    <div class="col-12 col-md-6 d-flex align-items-center gap-2">
+        <a href="{{ url_for('supplier_payment') }}" class="btn btn-outline-danger btn-sm"><i class="bi bi-cash-coin"></i> Supplier Payments</a>
+        <a href="{{ url_for('customer_receipt') }}" class="btn btn-outline-success btn-sm"><i class="bi bi-receipt"></i> Customer Receipts</a>
+        <a href="{{ url_for('reports') }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-bar-chart-line"></i> Reports</a>
+    </div>
 </div>
-<div class="mb-4">
-    <a href="{{ url_for('supplier_payment') }}" class="btn btn-outline-danger btn-sm me-2">Supplier Payments</a>
-    <a href="{{ url_for('customer_receipt') }}" class="btn btn-outline-success btn-sm">Customer Receipts</a>
+
+<!-- Charts -->
+<div class="row mb-4">
+    <div class="col-md-8">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent fw-semibold">Monthly Sales &amp; Profit</div>
+            <div class="card-body">
+                <canvas id="salesChart" height="100"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent fw-semibold">Stock Levels</div>
+            <div class="card-body">
+                <canvas id="stockChart" height="200"></canvas>
+            </div>
+        </div>
+    </div>
 </div>
 
-<!-- Recent Purchases -->
-<h3>Recent Purchases</h3>
-<table class="table table-bordered mb-4">
-    <thead>
-        <tr>
-            <th>ID</th>
-            <th>Supplier</th>
-            <th>Item</th>
-            <th>Category</th>
-            <th>Quantity</th>
-            <th>Price</th>
-            <th>Total</th>
-            <th>Date</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for purchase in purchases %}
-        <tr>
-            <td>{{ purchase.id }}</td>
-            <td>{{ purchase.id_supplier.name }}</td>
-            <td>{{ purchase.id_item.name }}</td>
-            <td>{{ purchase.id_item.id_category.name if purchase.id_item.id_category else 'N/A' }}</td>
-            <td>{{ purchase.quantity | fmt_num }}</td>
-            <td>{{ purchase.purchase_price | fmt_num }}</td>
-            <td>{{ (purchase.quantity * purchase.purchase_price) | fmt_num }}</td>
-            <td>{{ purchase.date.strftime('%Y-%m-%d') }}</td>
-        </tr>
-        {% else %}
-        <tr>
-            <td colspan="8">No purchases found</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // Monthly Sales & Profit Chart
+    const salesCtx = document.getElementById('salesChart').getContext('2d');
+    new Chart(salesCtx, {
+        type: 'bar',
+        data: {
+            labels: [{% for row in monthly_sales %}'{{ row.month }}'{% if not loop.last %},{% endif %}{% endfor %}],
+            datasets: [
+                {
+                    label: 'Sale Revenue',
+                    data: [{% for row in monthly_sales %}{{ row.sale_amt | round(2) }}{% if not loop.last %},{% endif %}{% endfor %}],
+                    backgroundColor: 'rgba(25, 135, 84, 0.6)',
+                    borderColor: 'rgba(25, 135, 84, 1)',
+                    borderWidth: 1,
+                    order: 2
+                },
+                {
+                    label: 'Gross Profit',
+                    data: [{% for row in monthly_sales %}{{ row.profit_amt | round(2) }}{% if not loop.last %},{% endif %}{% endfor %}],
+                    type: 'line',
+                    borderColor: 'rgba(255, 193, 7, 1)',
+                    backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.3,
+                    order: 1
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { position: 'top' } },
+            scales: { y: { beginAtZero: true } }
+        }
+    });
 
-<!-- Recent Sales -->
-<h3>Recent Sales</h3>
-<table class="table table-bordered mb-4">
-    <thead>
-        <tr>
-            <th>ID</th>
-            <th>Customer</th>
-            <th>Item</th>
-            <th>Category</th>
-            <th>Quantity</th>
-            <th>Price</th>
-            <th>Total</th>
-            <th>Date</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for sale in sales %}
-        <tr>
-                <td>{{ sale.id }}</td>
-                <td>{{ sale.id_customer.name }}</td>
-                <td>{{ sale.id_item.name }}</td>
-                <td>{{ sale.id_item.id_category.name if sale.id_item.id_category else 'N/A' }}</td>
-                <td>{{ sale.quantity | fmt_num }}</td>
-                <td>{{ sale.sale_price | fmt_num }}</td>
-                <td>{{ (sale.quantity * sale.sale_price) | fmt_num }}</td>
-                <td>{{ sale.date.strftime('%Y-%m-%d') }}</td>
-            </tr>
-        {% else %}
-        <tr>
-            <td colspan="8">No sales found</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+    // Stock Chart
+    const stockCtx = document.getElementById('stockChart').getContext('2d');
+    new Chart(stockCtx, {
+        type: 'bar',
+        data: {
+            labels: [{% for item in items[:10] %}'{{ item.name[:12] }}'{% if not loop.last %},{% endif %}{% endfor %}],
+            datasets: [{
+                label: 'Stock',
+                data: [{% for item in items[:10] %}{{ item.stock | default(0) }}{% if not loop.last %},{% endif %}{% endfor %}],
+                backgroundColor: [{% for item in items[:10] %}{% if item.stock <= item.reorder_level %}'rgba(220,53,69,0.7)'{% else %}'rgba(13,110,253,0.6)'{% endif %}{% if not loop.last %},{% endif %}{% endfor %}],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            indexAxis: 'y',
+            plugins: { legend: { display: false } },
+            scales: { x: { beginAtZero: true } }
+        }
+    });
+});
+</script>
 
-<!-- Low Stock Items -->
-<h3>Low Stock Items</h3>
-<table class="table table-bordered">
-    <thead>
-        <tr>
-            <th>Name</th>
-            <th>Category</th>
-            <th>Stock</th>
-            <th>Reorder Level</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for item in items if item.stock <= item.reorder_level %}
-        <tr>
-            <td>{{ item.name }}</td>
-            <td>{{ item.id_category.name if item.id_category else 'N/A' }}</td>
-            <td>{{ item.stock | fmt_num }}</td>
-            <td>{{ item.reorder_level | fmt_num }}</td>
-        </tr>
-        {% else %}
-        <tr>
-            <td colspan="4">No low stock items</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+<!-- Recent Purchases & Sales -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
+                <span class="fw-semibold">Recent Purchases</span>
+                <a href="{{ url_for('purchase') }}" class="btn btn-outline-primary btn-sm">View All</a>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light">
+                        <tr><th>Supplier</th><th>Item</th><th class="text-end">Total</th><th>Date</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for p in purchases %}
+                        <tr>
+                            <td>{{ p.id_supplier.name }}</td>
+                            <td>{{ p.id_item.name }}</td>
+                            <td class="text-end">{{ (p.quantity * p.purchase_price) | fmt_num }}</td>
+                            <td>{{ p.date.strftime('%Y-%m-%d') }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" class="text-center text-muted">No purchases yet</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
+                <span class="fw-semibold">Recent Sales</span>
+                <a href="{{ url_for('sale') }}" class="btn btn-outline-success btn-sm">View All</a>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light">
+                        <tr><th>Customer</th><th>Item</th><th class="text-end">Total</th><th>Date</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for s in sales %}
+                        <tr>
+                            <td>{{ s.id_customer.name }}</td>
+                            <td>{{ s.id_item.name }}</td>
+                            <td class="text-end">{{ (s.quantity * s.sale_price) | fmt_num }}</td>
+                            <td>{{ s.date.strftime('%Y-%m-%d') }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" class="text-center text-muted">No sales yet</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Low Stock Alert -->
+{% if low_stock_count > 0 %}
+<div class="card border-0 shadow-sm border-start border-warning border-4 mb-4">
+    <div class="card-header bg-transparent fw-semibold text-warning">
+        <i class="bi bi-exclamation-triangle"></i> Low Stock Alert ({{ low_stock_count }} items)
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm mb-0">
+            <thead class="table-light">
+                <tr><th>Item</th><th>Category</th><th class="text-end">Stock</th><th class="text-end">Reorder Level</th></tr>
+            </thead>
+            <tbody>
+                {% for item in items if item.stock <= item.reorder_level %}
+                <tr>
+                    <td>{{ item.name }}</td>
+                    <td>{{ item.id_category.name if item.id_category else 'N/A' }}</td>
+                    <td class="text-end text-danger fw-semibold">{{ item.stock | fmt_num }}</td>
+                    <td class="text-end">{{ item.reorder_level | fmt_num }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
 {% endblock %}

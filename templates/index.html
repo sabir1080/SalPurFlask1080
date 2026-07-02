@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Home — SalPurFlask{% endblock %}
+{% block title %}Home — TradeFlow{% endblock %}
 {% block body_class %}page-home{% endblock %}
 {% block navbar_class %}navbar-dark home-navbar{% endblock %}
 {% block nav_container_class %}container{% endblock %}
@@ -7,122 +7,220 @@
 {% block flash_class %}home-flash{% endblock %}
 
 {% block content %}
-<section class="home-hero">
-    <div class="hero-glow hero-glow-1"></div>
-    <div class="hero-glow hero-glow-2"></div>
-    <div class="container">
-        <div class="row align-items-center g-5">
-            <div class="col-lg-7">
-                <span class="hero-badge">
-                    <i class="bi bi-stars"></i> Inventory Management System
-                </span>
-                <h1 class="hero-title">
-                    Welcome{% if current_user.is_authenticated %}, {{ current_user.name }}{% endif %}!
-                </h1>
-                <p class="hero-subtitle">
-                    SalPurFlask se apna stock, purchases, sales aur reports ek hi jagah se manage karein — tez, asaan aur organized.
-                </p>
-                <div class="hero-actions">
-                    <a href="{{ url_for('dashboard') }}" class="btn btn-hero-primary">
-                        <i class="bi bi-speedometer2"></i> Go to Dashboard
-                    </a>
-                    <a href="{{ url_for('reports') }}" class="btn btn-hero-outline">
-                        <i class="bi bi-bar-chart-line"></i> View Reports
-                    </a>
-                </div>
+
+{# ── HERO ── #}
+<section class="nh-hero">
+    <div class="nh-orb nh-orb-1"></div>
+    <div class="nh-orb nh-orb-2"></div>
+    <div class="nh-orb nh-orb-3"></div>
+    <div class="nh-grid"></div>
+
+    <div class="container position-relative">
+        <div class="nh-hero-body">
+            <div class="nh-badge">
+                <span class="nh-badge-pulse"></span>
+                Inventory &amp; Accounts Management System
             </div>
-            <div class="col-lg-5">
-                <div class="hero-card">
-                    <div class="hero-card-header">
-                        <i class="bi bi-graph-up-arrow"></i>
-                        <span>Quick Overview</span>
-                    </div>
-                    <div class="hero-stat-grid">
-                        <div class="hero-stat">
-                            <span class="hero-stat-label">Modules</span>
-                            <strong>8+</strong>
-                        </div>
-                        <div class="hero-stat">
-                            <span class="hero-stat-label">Tracking</span>
-                            <strong>Real-time</strong>
-                        </div>
-                        <div class="hero-stat">
-                            <span class="hero-stat-label">Reports</span>
-                            <strong>CSV Export</strong>
-                        </div>
-                        <div class="hero-stat">
-                            <span class="hero-stat-label">Security</span>
-                            <strong>Verified Login</strong>
-                        </div>
-                    </div>
+
+            <h1 class="nh-title">
+                <span class="nh-title-welcome">Welcome to</span>
+                <span class="nh-title-brand">TradeFlow</span>
+                <span class="nh-title-sub">Your complete business command center</span>
+            </h1>
+
+            <p class="nh-desc">
+                Manage stock, purchases, sales, accounts and ledgers — all from one powerful platform.
+                Built for businesses that demand speed, accuracy and full control.
+            </p>
+
+            <div class="nh-actions">
+                {% if current_user.is_manager %}
+                <a href="{{ url_for('dashboard') }}" class="nh-btn-primary">
+                    <i class="bi bi-speedometer2"></i> Open Dashboard
+                </a>
+                <a href="{{ url_for('reports') }}" class="nh-btn-ghost">
+                    <i class="bi bi-bar-chart-line"></i> View Reports
+                </a>
+                {% else %}
+                <a href="{{ url_for('purchase') }}" class="nh-btn-primary">
+                    <i class="bi bi-cart-plus"></i> Add Purchase
+                </a>
+                <a href="{{ url_for('sale') }}" class="nh-btn-ghost">
+                    <i class="bi bi-bag-plus"></i> Record Sale
+                </a>
+                {% endif %}
+            </div>
+
+            <div class="nh-stats-bar">
+                <div class="nh-stat">
+                    <strong>10+</strong>
+                    <span>Modules</span>
+                </div>
+                <div class="nh-stat-sep"></div>
+                <div class="nh-stat">
+                    <strong>Real-time</strong>
+                    <span>Stock Updates</span>
+                </div>
+                <div class="nh-stat-sep"></div>
+                <div class="nh-stat">
+                    <strong>Auto</strong>
+                    <span>Ledger Sync</span>
+                </div>
+                <div class="nh-stat-sep"></div>
+                <div class="nh-stat">
+                    <strong>3-Tier</strong>
+                    <span>Role Control</span>
+                </div>
+                <div class="nh-stat-sep"></div>
+                <div class="nh-stat">
+                    <strong>PDF</strong>
+                    <span>Invoices</span>
                 </div>
             </div>
         </div>
     </div>
 </section>
 
-<section class="home-features">
+{# ── MODULES ── #}
+<section class="nh-modules">
     <div class="container">
-        <div class="section-heading text-center">
-            <h2>Everything you need</h2>
-            <p>Apne business ko smart tareeqe se manage karne ke liye tamam tools ek platform par.</p>
+        <div class="nh-section-head">
+            <span class="nh-label">What's Inside</span>
+            <h2>Six modules. One platform.</h2>
+            <p>Every module is tightly integrated — a purchase updates stock and the supplier ledger in a single save.</p>
         </div>
+
         <div class="row g-4">
-            <div class="col-md-6 col-lg-3">
-                <div class="feature-card">
-                    <div class="feature-icon feature-icon-blue">
-                        <i class="bi bi-boxes"></i>
-                    </div>
+            <div class="col-sm-6 col-lg-4">
+                <div class="nh-card" style="--ac:#6366f1; --ac-rgb:99,102,241">
+                    <div class="nh-card-icon"><i class="bi bi-boxes"></i></div>
                     <h3>Inventory</h3>
-                    <p>Items, categories aur stock levels ko asaani se track karein.</p>
-                    <a href="{{ url_for('item') }}" class="feature-link">Manage Items <i class="bi bi-arrow-right"></i></a>
+                    <p>Items, categories and stock levels. Auto-updates on every purchase, sale or return — no manual entry needed.</p>
+                    <a href="{{ url_for('item') }}" class="nh-card-link">Manage Items <i class="bi bi-arrow-right"></i></a>
                 </div>
             </div>
-            <div class="col-md-6 col-lg-3">
-                <div class="feature-card">
-                    <div class="feature-icon feature-icon-green">
-                        <i class="bi bi-cart-check"></i>
-                    </div>
+            <div class="col-sm-6 col-lg-4">
+                <div class="nh-card" style="--ac:#10b981; --ac-rgb:16,185,129">
+                    <div class="nh-card-icon"><i class="bi bi-cart-check"></i></div>
                     <h3>Purchases</h3>
-                    <p>Suppliers se purchases record karein aur stock auto-update ho.</p>
-                    <a href="{{ url_for('purchase') }}" class="feature-link">Add Purchase <i class="bi bi-arrow-right"></i></a>
+                    <p>Record supplier purchases with discount and tax. Stock and supplier ledger sync the instant you save.</p>
+                    <a href="{{ url_for('purchase') }}" class="nh-card-link">Add Purchase <i class="bi bi-arrow-right"></i></a>
                 </div>
             </div>
-            <div class="col-md-6 col-lg-3">
-                <div class="feature-card">
-                    <div class="feature-icon feature-icon-purple">
-                        <i class="bi bi-cash-coin"></i>
-                    </div>
+            <div class="col-sm-6 col-lg-4">
+                <div class="nh-card" style="--ac:#f59e0b; --ac-rgb:245,158,11">
+                    <div class="nh-card-icon"><i class="bi bi-bag-check"></i></div>
                     <h3>Sales</h3>
-                    <p>Customer sales manage karein aur revenue track karein.</p>
-                    <a href="{{ url_for('sale') }}" class="feature-link">Record Sale <i class="bi bi-arrow-right"></i></a>
+                    <p>Sell to customers, generate PDF invoices and track revenue. Low-stock alerts built in automatically.</p>
+                    <a href="{{ url_for('sale') }}" class="nh-card-link">Record Sale <i class="bi bi-arrow-right"></i></a>
                 </div>
             </div>
-            <div class="col-md-6 col-lg-3">
-                <div class="feature-card">
-                    <div class="feature-icon feature-icon-orange">
-                        <i class="bi bi-pie-chart"></i>
-                    </div>
+            <div class="col-sm-6 col-lg-4">
+                <div class="nh-card" style="--ac:#22d3ee; --ac-rgb:34,211,238">
+                    <div class="nh-card-icon"><i class="bi bi-journal-text"></i></div>
+                    <h3>Accounts &amp; Ledger</h3>
+                    <p>Full double-entry ledger for every supplier and customer. Balances stay accurate and fully auditable.</p>
+                    <a href="{{ url_for('supplier') }}" class="nh-card-link">View Ledgers <i class="bi bi-arrow-right"></i></a>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-4">
+                <div class="nh-card" style="--ac:#ec4899; --ac-rgb:236,72,153">
+                    <div class="nh-card-icon"><i class="bi bi-cash-stack"></i></div>
+                    <h3>Payments</h3>
+                    <p>Supplier payments and customer receipts via Cash, Bank, Cheque or Online — link to specific bills.</p>
+                    <a href="{{ url_for('supplier_payment') }}" class="nh-card-link">View Payments <i class="bi bi-arrow-right"></i></a>
+                </div>
+            </div>
+            {% if current_user.is_manager %}
+            <div class="col-sm-6 col-lg-4">
+                <div class="nh-card" style="--ac:#f97316; --ac-rgb:249,115,22">
+                    <div class="nh-card-icon"><i class="bi bi-pie-chart"></i></div>
                     <h3>Reports</h3>
-                    <p>Profit, category aur date-wise reports export karein.</p>
-                    <a href="{{ url_for('reports') }}" class="feature-link">Open Reports <i class="bi bi-arrow-right"></i></a>
+                    <p>Profit, category and date-wise analysis. Export any report to CSV in one click for deeper review.</p>
+                    <a href="{{ url_for('reports') }}" class="nh-card-link">Open Reports <i class="bi bi-arrow-right"></i></a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</section>
+
+{# ── WORKFLOW ── #}
+<section class="nh-flow">
+    <div class="container">
+        <div class="nh-section-head">
+            <span class="nh-label">How It Works</span>
+            <h2>Everything connects automatically</h2>
+            <p>One action triggers the right update across stock, ledger and reports — no manual reconciliation ever.</p>
+        </div>
+        <div class="nh-flow-track">
+            <div class="nh-flow-line"></div>
+            <div class="nh-flow-steps">
+                <div class="nh-flow-step">
+                    <div class="nh-flow-num">01</div>
+                    <div class="nh-flow-icon"><i class="bi bi-person-plus"></i></div>
+                    <h4>Add Parties</h4>
+                    <p>Register suppliers &amp; customers with opening balances.</p>
+                </div>
+                <div class="nh-flow-step">
+                    <div class="nh-flow-num">02</div>
+                    <div class="nh-flow-icon"><i class="bi bi-box-seam"></i></div>
+                    <h4>Setup Stock</h4>
+                    <p>Create categories, add items with price and reorder level.</p>
+                </div>
+                <div class="nh-flow-step">
+                    <div class="nh-flow-num">03</div>
+                    <div class="nh-flow-icon"><i class="bi bi-arrow-left-right"></i></div>
+                    <h4>Transact</h4>
+                    <p>Record purchases, sales, payments and returns.</p>
+                </div>
+                <div class="nh-flow-step">
+                    <div class="nh-flow-num">04</div>
+                    <div class="nh-flow-icon"><i class="bi bi-lightning-charge"></i></div>
+                    <h4>Auto-Sync</h4>
+                    <p>Stock and ledger update instantly — zero manual work.</p>
+                </div>
+                <div class="nh-flow-step">
+                    <div class="nh-flow-num">05</div>
+                    <div class="nh-flow-icon"><i class="bi bi-graph-up-arrow"></i></div>
+                    <h4>Analyse</h4>
+                    <p>Review reports, print invoices and export CSV anytime.</p>
                 </div>
             </div>
         </div>
     </div>
 </section>
 
-<section class="home-cta">
+{# ── CTA ── #}
+<section class="nh-cta">
     <div class="container">
-        <div class="cta-panel">
-            <div>
-                <h2>Ready to get started?</h2>
-                <p>Dashboard par jayein aur apna aaj ka kaam shuru karein.</p>
+        <div class="nh-cta-box">
+            <div class="nh-cta-orb-l"></div>
+            <div class="nh-cta-orb-r"></div>
+            <div class="nh-cta-inner">
+                <span class="nh-label">Get Started</span>
+                <h2>Ready to take control of your business?</h2>
+                <p>Start recording transactions now — inventory and accounts stay in sync automatically from day one.</p>
+                <div class="nh-actions">
+                    {% if current_user.is_manager %}
+                    <a href="{{ url_for('dashboard') }}" class="nh-btn-primary">
+                        <i class="bi bi-rocket-takeoff"></i> Launch Dashboard
+                    </a>
+                    <a href="{{ url_for('about') }}" class="nh-btn-ghost">
+                        <i class="bi bi-info-circle"></i> Learn More
+                    </a>
+                    {% else %}
+                    <a href="{{ url_for('purchase') }}" class="nh-btn-primary">
+                        <i class="bi bi-cart-plus"></i> Add First Purchase
+                    </a>
+                    <a href="{{ url_for('about') }}" class="nh-btn-ghost">
+                        <i class="bi bi-info-circle"></i> Learn More
+                    </a>
+                    {% endif %}
+                </div>
             </div>
-            <a href="{{ url_for('dashboard') }}" class="btn btn-cta">
-                <i class="bi bi-rocket-takeoff"></i> Launch Dashboard
-            </a>
         </div>
     </div>
 </section>
+
 {% endblock %}
