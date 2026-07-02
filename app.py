@@ -30,6 +30,21 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+load_dotenv(os.path.join(BASE_DIR, ".env"))
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+if DATABASE_URL:
+    # Render (PostgreSQL)
+    app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
+else:
+    # Local PC (SQLite)
+    app.config["SQLALCHEMY_DATABASE_URI"] = (
+        "sqlite:///" +
+        os.path.join(BASE_DIR, "instance", "database.db").replace("\\", "/")
+    )
+
 if DATABASE_URL:
     # Render (PostgreSQL)
     app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
