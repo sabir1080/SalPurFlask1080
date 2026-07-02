@@ -5,7 +5,8 @@ flask-paginate
 python-dotenv
 itsdangerous
 gunicorn
-passlib[bcrypt]
+passlib[argon2]
+argon2-cffi
 bcrypt>=4.0.0
 flask-wtf
 anthropic
