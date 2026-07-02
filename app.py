@@ -25,10 +25,21 @@ from sqlalchemy import inspect, text
 
 app = Flask(__name__)
 
+
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(BASE_DIR, "instance", "database.db").replace("\\", "/")
+
+if DATABASE_URL:
+    # Render (PostgreSQL)
+    app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
+else:
+    # Local PC (SQLite)
+    app.config["SQLALCHEMY_DATABASE_URI"] = (
+        "sqlite:///" +
+        os.path.join(BASE_DIR, "instance", "database.db").replace("\\", "/")
+    )
+
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "your_secret_key")
 app.config["SECURITY_PASSWORD_SALT"] = os.getenv("SECURITY_PASSWORD_SALT", "your_salt")
