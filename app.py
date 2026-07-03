@@ -1979,6 +1979,17 @@ def item_ledger(id):
             "rate": sr.return_price, "value": round(sr.quantity * sr.return_price, 2),
         })
 
+    adjustments = StockAdjustment.query.filter_by(item_id=id).all()
+    for adj in adjustments:
+        stock_in = adj.quantity if adj.direction == "in" else 0
+        stock_out = adj.quantity if adj.direction == "out" else 0
+        entries.append({
+            "date": adj.date, "type": f"Adjustment ({adj.adj_type})", "badge": "info",
+            "ref": f"ADJ #{adj.id}", "party": adj.reason or "—",
+            "stock_in": stock_in, "stock_out": stock_out,
+            "rate": 0, "value": 0,
+        })
+
     entries.sort(key=lambda x: (x["date"], x["ref"]))
 
     date_filtered = False
