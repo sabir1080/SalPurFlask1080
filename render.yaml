@@ -8,9 +8,7 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.0
       - key: DATABASE_URL
-        fromDatabase:
-          name: salpurflask-db
-          property: connectionString
+        sync: false
       - key: SECRET_KEY
         generateValue: true
       - key: SECURITY_PASSWORD_SALT
@@ -27,8 +25,3 @@ services:
         value: false
       - key: ANTHROPIC_API_KEY
         sync: false
-
-databases:
-  - name: salpurflask-db
-    plan: free
-    databaseName: salpurflask
