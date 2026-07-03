@@ -910,6 +910,9 @@ def validate_customer_receipt(customer_id, amount, sale_id=None, exclude_payment
 def migrate_database():
     db.create_all()
     inspector = inspect(db.engine)
+    is_postgres = db.engine.dialect.name == "postgresql"
+    pk_type = "SERIAL PRIMARY KEY" if is_postgres else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    datetime_type = "TIMESTAMP" if is_postgres else "DATETIME"
     if "item" in inspector.get_table_names():
         item_columns = {col["name"] for col in inspector.get_columns("item")}
         if "category_id" not in item_columns:
@@ -972,9 +975,9 @@ def migrate_database():
 
     # Create purchase_item table and migrate existing single-item purchases
     with db.engine.begin() as conn:
-        conn.execute(text("""
+        conn.execute(text(f"""
             CREATE TABLE IF NOT EXISTS purchase_item (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {pk_type},
                 purchase_id INTEGER NOT NULL REFERENCES purchase(id),
                 item_id INTEGER NOT NULL REFERENCES item(id),
                 quantity INTEGER NOT NULL,
@@ -1004,9 +1007,9 @@ def migrate_database():
 
     # Create sale_item table and migrate existing single-item sales
     with db.engine.begin() as conn:
-        conn.execute(text("""
+        conn.execute(text(f"""
             CREATE TABLE IF NOT EXISTS sale_item (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {pk_type},
                 sale_id INTEGER NOT NULL REFERENCES sale(id),
                 item_id INTEGER NOT NULL REFERENCES item(id),
                 quantity INTEGER NOT NULL,
@@ -1040,69 +1043,69 @@ def migrate_database():
 
     # New tables for Tier-1/2 features
     with db.engine.begin() as conn:
-        conn.execute(text("""
+        conn.execute(text(f"""
             CREATE TABLE IF NOT EXISTS stock_adjustment (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {pk_type},
                 item_id INTEGER NOT NULL REFERENCES item(id),
                 adj_type VARCHAR(30) NOT NULL,
                 quantity INTEGER NOT NULL,
                 direction VARCHAR(4) NOT NULL DEFAULT 'in',
-                date DATETIME NOT NULL,
+                {datetime_type} date NOT NULL,
                 reason VARCHAR(300)
             )
         """))
-        conn.execute(text("""
+        conn.execute(text(f"""
             CREATE TABLE IF NOT EXISTS expense_category (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {pk_type},
                 name VARCHAR(100) NOT NULL UNIQUE
             )
         """))
-        conn.execute(text("""
+        conn.execute(text(f"""
             CREATE TABLE IF NOT EXISTS expense (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {pk_type},
                 category_id INTEGER REFERENCES expense_category(id),
                 description VARCHAR(300) NOT NULL,
                 amount FLOAT NOT NULL,
-                date DATETIME NOT NULL,
+                {datetime_type} date NOT NULL,
                 payment_method VARCHAR(20) NOT NULL DEFAULT 'Cash',
                 reference_no VARCHAR(100),
                 notes VARCHAR(300)
             )
         """))
-        conn.execute(text("""
+        conn.execute(text(f"""
             CREATE TABLE IF NOT EXISTS purchase_order (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {pk_type},
                 supplier_id INTEGER NOT NULL REFERENCES supplier(id),
-                order_date DATETIME NOT NULL,
-                expected_date DATETIME,
+                {datetime_type} order_date NOT NULL,
+                expected_date {datetime_type},
                 status VARCHAR(20) NOT NULL DEFAULT 'Draft',
                 notes VARCHAR(300),
                 converted_purchase_id INTEGER REFERENCES purchase(id)
             )
         """))
-        conn.execute(text("""
+        conn.execute(text(f"""
             CREATE TABLE IF NOT EXISTS purchase_order_item (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {pk_type},
                 po_id INTEGER NOT NULL REFERENCES purchase_order(id),
                 item_id INTEGER NOT NULL REFERENCES item(id),
                 quantity INTEGER NOT NULL,
                 purchase_price FLOAT NOT NULL
             )
         """))
-        conn.execute(text("""
+        conn.execute(text(f"""
             CREATE TABLE IF NOT EXISTS quotation (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {pk_type},
                 customer_id INTEGER NOT NULL REFERENCES customer(id),
-                quote_date DATETIME NOT NULL,
-                valid_until DATETIME,
+                {datetime_type} quote_date NOT NULL,
+                valid_until {datetime_type},
                 status VARCHAR(20) NOT NULL DEFAULT 'Draft',
                 notes VARCHAR(300),
                 converted_sale_id INTEGER REFERENCES sale(id)
             )
         """))
-        conn.execute(text("""
+        conn.execute(text(f"""
             CREATE TABLE IF NOT EXISTS quotation_item (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {pk_type},
                 quotation_id INTEGER NOT NULL REFERENCES quotation(id),
                 item_id INTEGER NOT NULL REFERENCES item(id),
                 quantity INTEGER NOT NULL,
@@ -1112,13 +1115,13 @@ def migrate_database():
                 tax_percent FLOAT NOT NULL DEFAULT 0.0
             )
         """))
-        conn.execute(text("""
+        conn.execute(text(f"""
             CREATE TABLE IF NOT EXISTS delivery_challan (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {pk_type},
                 sale_id INTEGER NOT NULL UNIQUE REFERENCES sale(id),
-                challan_date DATETIME NOT NULL,
-                dispatch_date DATETIME,
-                delivery_date DATETIME,
+                {datetime_type} challan_date NOT NULL,
+                dispatch_date {datetime_type},
+                delivery_date {datetime_type},
                 status VARCHAR(20) NOT NULL DEFAULT 'Pending',
                 transport VARCHAR(100),
                 notes VARCHAR(300)
