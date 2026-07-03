@@ -36,17 +36,9 @@ load_dotenv(os.path.join(BASE_DIR, ".env"))
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 if DATABASE_URL:
-    # Render (PostgreSQL)
-    app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
-else:
-    # Local PC (SQLite)
-    app.config["SQLALCHEMY_DATABASE_URI"] = (
-        "sqlite:///" +
-        os.path.join(BASE_DIR, "instance", "database.db").replace("\\", "/")
-    )
-
-if DATABASE_URL:
-    # Render (PostgreSQL)
+    # Render / PostgreSQL — Render deta hai "postgres://" lekin SQLAlchemy 1.4+ ko "postgresql://" chahiye
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
     app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 else:
     # Local PC (SQLite)
