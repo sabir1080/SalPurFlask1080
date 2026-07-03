@@ -12,3 +12,4 @@ flask-wtf
 anthropic
 openpyxl
 psycopg[binary]
+psycopg2-binary
