@@ -69,6 +69,11 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "signin"
 
+def sql_date_fmt(col, fmt="%Y-%m"):
+    if db.engine.dialect.name == "postgresql":
+        return db.func.to_char(col, fmt.replace("%Y", "YYYY").replace("%m", "MM"))
+    return db.func.strftime(fmt, col)
+
 def is_signup_allowed():
     return os.getenv("ALLOW_SIGNUP", "false").lower() in ("1", "true", "yes")
 
@@ -942,8 +947,8 @@ def migrate_database():
         user_cols = {col["name"] for col in inspector.get_columns("user")}
         if "role" not in user_cols:
             with db.engine.begin() as conn:
-                conn.execute(text("ALTER TABLE user ADD COLUMN role VARCHAR(20) DEFAULT 'admin'"))
-                conn.execute(text("UPDATE user SET role = 'admin'"))
+                conn.execute(text('ALTER TABLE "user" ADD COLUMN role VARCHAR(20) DEFAULT \'admin\''))
+                conn.execute(text('UPDATE "user" SET role = \'admin\''))
     if "sale" in inspector.get_table_names():
         sale_cols = {col["name"] for col in inspector.get_columns("sale")}
         if "cost_price" not in sale_cols:
@@ -1507,22 +1512,22 @@ def dashboard():
     total_receivable_balance = sum(get_customer_balance(c.id) for c in Customer.query.all())
     monthly_sales = (
         db.session.query(
-            db.func.strftime("%Y-%m", Sale.date).label("month"),
+            sql_date_fmt(Sale.date).label("month"),
             db.func.sum(Sale.quantity * Sale.sale_price).label("sale_amt"),
             db.func.sum((Sale.sale_price - Sale.cost_price) * Sale.quantity).label("profit_amt"),
         )
-        .group_by(db.func.strftime("%Y-%m", Sale.date))
-        .order_by(db.func.strftime("%Y-%m", Sale.date))
+        .group_by(sql_date_fmt(Sale.date))
+        .order_by(sql_date_fmt(Sale.date))
         .limit(12)
         .all()
     )
     monthly_purchases = (
         db.session.query(
-            db.func.strftime("%Y-%m", Purchase.date).label("month"),
+            sql_date_fmt(Purchase.date).label("month"),
             db.func.sum(Purchase.quantity * Purchase.purchase_price).label("purchase_amt"),
         )
-        .group_by(db.func.strftime("%Y-%m", Purchase.date))
-        .order_by(db.func.strftime("%Y-%m", Purchase.date))
+        .group_by(sql_date_fmt(Purchase.date))
+        .order_by(sql_date_fmt(Purchase.date))
         .limit(12)
         .all()
     )
