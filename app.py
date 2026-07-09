@@ -92,12 +92,14 @@ app.config["MAIL_PASSWORD"] = os.getenv("MAIL_PASSWORD", "").replace(" ", "")
 # app.config["APP_NAME"] / ["COMPANY_NAME"] / ["COMPANY_TAGLINE"] (or the
 # app_name / company_name / company_tagline template vars) — never hardcode the
 # literal text again, so the value can only ever be changed in .env.
-#   APP_NAME       — the product/app name (e.g. shown on the home hero)
-#   COMPANY_NAME   — the business using the app (navbar, invoices, reports)
-#   COMPANY_TAGLINE— short subtitle under the company name
+#   APP_NAME          — the product/app name (e.g. shown on the home hero)
+#   COMPANY_NAME      — the business using the app (navbar, invoices, reports)
+#   COMPANY_TAGLINE   — short subtitle under the company name
+#   DESIGNED_DEVELOPED— the developer credit ("Designed & Developed by ...")
 app.config["APP_NAME"] = os.getenv("APP_NAME", "TradeFlow").strip()
 app.config["COMPANY_NAME"] = os.getenv("COMPANY_NAME", app.config["APP_NAME"]).strip()
 app.config["COMPANY_TAGLINE"] = os.getenv("COMPANY_TAGLINE", "Inventory & Accounts Management").strip()
+app.config["DESIGNED_DEVELOPED"] = os.getenv("DESIGNED_DEVELOPED", "Sabir Shah").strip()
 
 # Gmail App Password: https://myaccount.google.com/apppasswords
 # .env file (project root) mein MAIL_USERNAME aur MAIL_PASSWORD set karein
@@ -1615,6 +1617,7 @@ def inject_form_defaults():
         "app_name": app.config["APP_NAME"],
         "company_tagline": app.config["COMPANY_TAGLINE"],
         "app_timezone": app.config["APP_TIMEZONE"],
+        "designed_developed": app.config["DESIGNED_DEVELOPED"],
         "purchase_total": purchase_total,
         "sale_total": sale_total,
         "get_purchase_paid": get_purchase_paid,
