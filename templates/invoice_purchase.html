@@ -7,8 +7,16 @@
     body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .invoice-box { box-shadow: none !important; border: 1px solid #ccc !important; max-width: 100% !important; }
     .container, .container-fluid { max-width: 100% !important; padding: 0 !important; }
+    /* Shrink the items table a touch so all 8 columns fit the page width */
+    .items-table { font-size: 0.78rem; }
+    .items-table th, .items-table td { padding: 5px 6px !important; }
     @page { margin: 1.2cm; }
 }
+/* Fixed layout keeps numeric column headers (e.g. "Net Amount") from being
+   squeezed and clipped when item/category names are long. */
+.items-table { table-layout: fixed; }
+.items-table th, .items-table td { overflow-wrap: break-word; word-wrap: break-word; }
+.items-table thead th { white-space: normal; vertical-align: middle; }
 .inv-header { background: linear-gradient(135deg, #1e3a5f 0%, #1a3a6e 100%); color: white; border-radius: 8px 8px 0 0; padding: 22px 28px; }
 .inv-company { font-size: 1.4rem; font-weight: 800; letter-spacing: 0.3px; }
 .inv-company-sub { font-size: 0.78rem; opacity: 0.75; }
@@ -80,10 +88,20 @@
     <!-- Items Table -->
     <div class="px-4 pt-3">
         {% set ns = namespace(gross=0, total_disc=0, total_tax=0) %}
-        <table class="table table-bordered mb-0">
+        <table class="table table-bordered mb-0 items-table">
+            <colgroup>
+                <col style="width:4%">
+                <col style="width:20%">
+                <col style="width:13%">
+                <col style="width:10%">
+                <col style="width:13%">
+                <col style="width:13%">
+                <col style="width:12%">
+                <col style="width:15%">
+            </colgroup>
             <thead class="table-dark">
                 <tr>
-                    <th style="width:30px">#</th>
+                    <th>#</th>
                     <th>Item</th>
                     <th>Category</th>
                     <th class="text-end">Qty</th>
