@@ -717,6 +717,29 @@ def get_customer_balance(customer_id, exclude_payment_id=None):
     customer = db.session.get(Customer, customer_id)
     return float(customer.opening_balance or 0) if customer else 0.0
 
+def _total_ledger_balance(entry_table, party_col, party_table):
+    """Sum of every party's latest ledger balance in ONE query, instead of one
+    query per party (the dashboard used to do N+1). Adds the opening balance of
+    any party that has no ledger rows yet, to stay exactly equal to summing
+    get_*_balance() over all parties."""
+    latest = db.session.execute(text(
+        f"SELECT COALESCE(SUM(balance_after), 0) FROM ("
+        f"  SELECT balance_after, ROW_NUMBER() OVER "
+        f"  (PARTITION BY {party_col} ORDER BY entry_date DESC, id DESC) AS rn "
+        f"  FROM {entry_table}) t WHERE rn = 1"
+    )).scalar() or 0
+    orphan = db.session.execute(text(
+        f"SELECT COALESCE(SUM(opening_balance), 0) FROM \"{party_table}\" p "
+        f"WHERE NOT EXISTS (SELECT 1 FROM {entry_table} e WHERE e.{party_col} = p.id)"
+    )).scalar() or 0
+    return float(latest) + float(orphan)
+
+def total_supplier_ledger_balance():
+    return _total_ledger_balance("supplier_ledger_entry", "supplier_id", "supplier")
+
+def total_customer_ledger_balance():
+    return _total_ledger_balance("customer_ledger_entry", "customer_id", "customer")
+
 def supplier_balance_label(balance):
     if balance > 0.001:
         return "Payable"
@@ -1811,8 +1834,8 @@ def dashboard():
     total_paid_suppliers = get_total_paid_suppliers()
     total_receivable = get_total_receivable()
     total_received_customers = get_total_received_customers()
-    total_payable_balance = sum(get_supplier_balance(s.id) for s in Supplier.query.all())
-    total_receivable_balance = sum(get_customer_balance(c.id) for c in Customer.query.all())
+    total_payable_balance = total_supplier_ledger_balance()
+    total_receivable_balance = total_customer_ledger_balance()
     monthly_sales = (
         db.session.query(
             sql_date_fmt(Sale.date).label("month"),
@@ -5601,6 +5624,24 @@ def admin_restore():
         app.logger.exception("JSON restore failed")
         flash(f"Restore failed (no changes were applied): {e}", "danger")
     return redirect(url_for("admin_system"))
+
+@app.cli.command("backup-db")
+@click.argument("path", required=False)
+def backup_db_cmd(path):
+    """Write a full JSON backup of the database to PATH.
+
+    Schedulable for automated backups, e.g. a daily cron:
+        flask backup-db /backups/salpur_$(date +%F).json
+    Defaults to ./backups/backup_<timestamp>.json when PATH is omitted.
+    """
+    data = export_database_dict()
+    if not path:
+        os.makedirs("backups", exist_ok=True)
+        path = os.path.join("backups", f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, default=_json_default, indent=1)
+    rows = sum(len(v) for v in data["tables"].values())
+    click.echo(f"Backup written to {path} ({rows} rows, {os.path.getsize(path)//1024} KB).")
 
 @app.cli.command("seed-data")
 @click.option("--yes", is_flag=True, help="Skip confirmation prompt")

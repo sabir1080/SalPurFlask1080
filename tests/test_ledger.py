@@ -14,6 +14,7 @@ from app import (
     sync_customer_opening, sync_customer_sale, sync_customer_receipt,
     remove_supplier_ledger_entry, recalculate_supplier_ledger,
     get_supplier_balance, get_customer_balance,
+    total_supplier_ledger_balance, total_customer_ledger_balance,
 )
 
 
@@ -138,3 +139,27 @@ def test_stock_moves_with_transactions(appctx):
     assert it.stock == 10
     add_sale(c, it, qty=4, price=8)
     assert it.stock == 6
+
+
+def test_total_ledger_balance_matches_per_party_sum(appctx):
+    """The O(1) dashboard aggregate must equal summing get_*_balance per party."""
+    it = make_item()
+    s1 = make_supplier(opening=500)                      # opening only
+    s2 = make_supplier(opening=0);  add_purchase(s2, it, 3, 40)   # transactions
+    s3 = make_supplier(opening=0)                        # nothing (no ledger rows)
+    s4 = make_supplier(opening=-200)                     # advance (negative)
+    add_purchase(s1, it, 2, 30)
+    pay = SupplierPayment(supplier_id=s2.id, amount=25, payment_method="Cash")
+    db.session.add(pay); db.session.flush(); sync_supplier_payment(pay); db.session.commit()
+
+    loop = sum(get_supplier_balance(s.id) for s in Supplier.query.all())
+    assert round(total_supplier_ledger_balance(), 2) == round(loop, 2)
+
+    c1 = make_customer(opening=300)
+    c2 = make_customer(opening=0); add_sale(c2, it, 5, 20)
+    c3 = make_customer(opening=0)
+    rc = CustomerPayment(customer_id=c2.id, amount=40, payment_method="Cash")
+    db.session.add(rc); db.session.flush(); sync_customer_receipt(rc); db.session.commit()
+
+    loop_c = sum(get_customer_balance(c.id) for c in Customer.query.all())
+    assert round(total_customer_ledger_balance(), 2) == round(loop_c, 2)
