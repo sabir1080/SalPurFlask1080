@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block title %}Trial Balance — {{ app_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+    <h2><i class="bi bi-list-columns-reverse text-dark"></i> Trial Balance</h2>
+    <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
+</div>
+<p class="text-muted">{{ company_name }} &mdash; as of {{ as_of.strftime('%d %B %Y, %H:%M') }}</p>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+        <table class="table mb-0 align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th>Account</th>
+                    <th class="text-end">Debit</th>
+                    <th class="text-end">Credit</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for label, debit, credit in rows %}
+                <tr>
+                    <td>{{ label }}</td>
+                    <td class="text-end">{{ (debit | fmt_num) if debit else '' }}</td>
+                    <td class="text-end">{{ (credit | fmt_num) if credit else '' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr class="table-light fw-bold">
+                    <td class="text-end">Total</td>
+                    <td class="text-end">{{ total_dr | fmt_num }}</td>
+                    <td class="text-end">{{ total_cr | fmt_num }}</td>
+                </tr>
+                <tr>
+                    <td colspan="3" class="text-center py-2">
+                        {% if (total_dr - total_cr) | abs < 0.01 %}
+                        <span class="badge bg-success"><i class="bi bi-check-circle"></i> Balanced — Debits = Credits</span>
+                        {% else %}
+                        <span class="badge bg-danger">Out of balance by {{ (total_dr - total_cr) | fmt_num }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+            </tfoot>
+        </table>
+        </div>
+    </div>
+</div>
+
+<div class="alert alert-info mt-4">
+    <i class="bi bi-info-circle"></i>
+    <small>A point-in-time summary of your balance-sheet accounts, derived from live
+    data. Owner's Equity balances the two sides.</small>
+</div>
+{% endblock %}

@@ -1,7 +1,8 @@
 """Tests for the accounting features: cash/bank account balances."""
 from app import (
-    db, FinancialAccount, Supplier, Customer, SupplierPayment, CustomerPayment, Expense,
-    get_account_balance, total_cash_bank_balance,
+    db, FinancialAccount, Supplier, Customer, Category, Item,
+    SupplierPayment, CustomerPayment, Expense,
+    get_account_balance, total_cash_bank_balance, accounting_position,
 )
 
 
@@ -34,3 +35,17 @@ def test_total_cash_bank_balance(appctx):
     db.session.add(CustomerPayment(customer_id=c.id, amount=50, payment_method="Bank"))
     db.session.commit()
     assert round(total_cash_bank_balance(), 2) == 1050.0    # 300 + (700+50)
+
+
+def test_accounting_position_figures_and_balances(appctx):
+    db.session.add(FinancialAccount(name="Cash", method="Cash", account_type="Cash", opening_balance=1000))
+    cat = Category(name="C"); db.session.add(cat); db.session.flush()
+    db.session.add(Item(name="I", category_id=cat.id, stock=10, purchase_price=20))   # inventory 200
+    c = _customer()
+    db.session.add(CustomerPayment(customer_id=c.id, amount=500, payment_method="Cash"))  # cash +500
+    db.session.commit()
+    p = accounting_position()
+    assert round(p["cash_bank"], 2) == 1500.0
+    assert round(p["inventory"], 2) == 200.0
+    # the statement must always balance: assets == liabilities + equity
+    assert round(p["total_assets"], 2) == round(p["total_liabilities"] + p["equity"], 2)

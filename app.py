@@ -5407,6 +5407,57 @@ def account_ledger(id):
                            opening=float(acct.opening_balance or 0),
                            closing=get_account_balance(acct))
 
+def accounting_position():
+    """Point-in-time figures for the balance sheet / trial balance, all derived
+    read-only from existing data. Balances by construction (equity is residual)."""
+    cash_bank = total_cash_bank_balance()
+    ar = cust_adv = 0.0
+    for c in Customer.query.all():
+        b = get_customer_balance(c.id)
+        if b > 0: ar += b
+        elif b < 0: cust_adv += -b        # customer paid in advance -> we owe them
+    ap = supp_adv = 0.0
+    for s in Supplier.query.all():
+        b = get_supplier_balance(s.id)
+        if b > 0: ap += b
+        elif b < 0: supp_adv += -b         # we paid supplier in advance -> they owe us
+    inventory = float(db.session.query(
+        func.sum(Item.stock * func.coalesce(Item.purchase_price, 0))).scalar() or 0)
+    total_assets = cash_bank + ar + supp_adv + inventory
+    total_liabilities = ap + cust_adv
+    equity = total_assets - total_liabilities
+    return dict(cash_bank=cash_bank, ar=ar, supp_adv=supp_adv, inventory=inventory,
+                total_assets=total_assets, ap=ap, cust_adv=cust_adv,
+                total_liabilities=total_liabilities, equity=equity)
+
+@app.route("/reports/balance_sheet")
+@manager_required
+def report_balance_sheet():
+    return render_template("report_balance_sheet.html", p=accounting_position(),
+                           as_of=now_local())
+
+@app.route("/reports/trial_balance")
+@manager_required
+def report_trial_balance():
+    p = accounting_position()
+    # (label, debit, credit) — a balance shown on its natural side; the opposite sign
+    # (e.g. negative cash) is placed on the other side so totals still tie out.
+    def dr(x): return (x, 0.0) if x >= 0 else (0.0, -x)
+    def cr(x): return (0.0, x) if x >= 0 else (-x, 0.0)
+    rows = [
+        ("Cash & Bank", *dr(p["cash_bank"])),
+        ("Accounts Receivable", *dr(p["ar"])),
+        ("Advances to Suppliers", *dr(p["supp_adv"])),
+        ("Inventory (at cost)", *dr(p["inventory"])),
+        ("Accounts Payable", *cr(p["ap"])),
+        ("Advances from Customers", *cr(p["cust_adv"])),
+        ("Owner's Equity (net worth)", *cr(p["equity"])),
+    ]
+    total_dr = sum(r[1] for r in rows)
+    total_cr = sum(r[2] for r in rows)
+    return render_template("report_trial_balance.html", rows=rows,
+                           total_dr=total_dr, total_cr=total_cr, as_of=now_local())
+
 @app.route("/reports/gst")
 @manager_required
 def report_gst():

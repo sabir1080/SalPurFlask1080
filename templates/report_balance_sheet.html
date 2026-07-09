@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block title %}Balance Sheet — {{ app_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+    <h2><i class="bi bi-clipboard-data text-dark"></i> Balance Sheet</h2>
+    <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
+</div>
+<p class="text-muted">{{ company_name }} &mdash; as of {{ as_of.strftime('%d %B %Y, %H:%M') }}</p>
+
+<div class="row g-4">
+    <!-- Assets -->
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-primary text-white fw-semibold"><i class="bi bi-arrow-down-circle"></i> Assets</div>
+            <div class="card-body p-0">
+                <table class="table mb-0">
+                    <tbody>
+                        <tr><td>Cash &amp; Bank</td><td class="text-end">{{ p.cash_bank | fmt_num }}</td></tr>
+                        <tr><td>Accounts Receivable</td><td class="text-end">{{ p.ar | fmt_num }}</td></tr>
+                        <tr><td>Advances to Suppliers</td><td class="text-end">{{ p.supp_adv | fmt_num }}</td></tr>
+                        <tr><td>Inventory (at cost)</td><td class="text-end">{{ p.inventory | fmt_num }}</td></tr>
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-light fw-bold"><td>Total Assets</td><td class="text-end">{{ p.total_assets | fmt_num }}</td></tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+    <!-- Liabilities + Equity -->
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-dark text-white fw-semibold"><i class="bi bi-arrow-up-circle"></i> Liabilities &amp; Equity</div>
+            <div class="card-body p-0">
+                <table class="table mb-0">
+                    <tbody>
+                        <tr class="fw-semibold text-muted"><td colspan="2" class="small">Liabilities</td></tr>
+                        <tr><td>Accounts Payable</td><td class="text-end">{{ p.ap | fmt_num }}</td></tr>
+                        <tr><td>Advances from Customers</td><td class="text-end">{{ p.cust_adv | fmt_num }}</td></tr>
+                        <tr class="table-light"><td class="fw-semibold">Total Liabilities</td><td class="text-end fw-semibold">{{ p.total_liabilities | fmt_num }}</td></tr>
+                        <tr class="fw-semibold text-muted"><td colspan="2" class="small pt-3">Equity</td></tr>
+                        <tr><td>Owner's Equity (net worth)</td><td class="text-end">{{ p.equity | fmt_num }}</td></tr>
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-light fw-bold"><td>Total Liabilities &amp; Equity</td><td class="text-end">{{ (p.total_liabilities + p.equity) | fmt_num }}</td></tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="alert alert-info mt-4">
+    <i class="bi bi-info-circle"></i>
+    <small>Derived from your live data: cash/bank account balances, customer &amp; supplier
+    ledgers, and inventory valued at cost. Owner's Equity is the net worth
+    (Total Assets − Total Liabilities), so the statement always balances.</small>
+</div>
+{% endblock %}
