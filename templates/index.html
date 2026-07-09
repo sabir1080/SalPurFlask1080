@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Home — TradeFlow{% endblock %}
+{% block title %}Home — {{ app_name }}{% endblock %}
 {% block body_class %}page-home{% endblock %}
 {% block navbar_class %}navbar-dark home-navbar{% endblock %}
 {% block nav_container_class %}container{% endblock %}
@@ -26,7 +26,7 @@
 
                     <h1 class="nh-title">
                         <span class="nh-title-welcome">Welcome to</span>
-                        <span class="nh-title-brand">TradeFlow</span>
+                        <span class="nh-title-brand">{{ app_name }}</span>
                         <span class="nh-title-sub">Your complete business command center</span>
                     </h1>
 

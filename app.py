@@ -86,9 +86,17 @@ app.config["MAIL_PORT"] = 587
 app.config["MAIL_USE_TLS"] = True
 app.config["MAIL_USERNAME"] = os.getenv("MAIL_USERNAME", "").strip()
 app.config["MAIL_PASSWORD"] = os.getenv("MAIL_PASSWORD", "").replace(" ", "")
-app.config["COMPANY_NAME"] = os.getenv("COMPANY_NAME", "TradeFlow")
-app.config["APP_NAME"] = os.getenv("APP_NAME", "TradeFlow")
-app.config["COMPANY_TAGLINE"] = os.getenv("COMPANY_TAGLINE", "Inventory & Accounts Management")
+# ── Branding — single source of truth ────────────────────────────────────────
+# These three come from .env ONLY. Everywhere else in the code and templates use
+# app.config["APP_NAME"] / ["COMPANY_NAME"] / ["COMPANY_TAGLINE"] (or the
+# app_name / company_name / company_tagline template vars) — never hardcode the
+# literal text again, so the value can only ever be changed in .env.
+#   APP_NAME       — the product/app name (e.g. shown on the home hero)
+#   COMPANY_NAME   — the business using the app (navbar, invoices, reports)
+#   COMPANY_TAGLINE— short subtitle under the company name
+app.config["APP_NAME"] = os.getenv("APP_NAME", "TradeFlow").strip()
+app.config["COMPANY_NAME"] = os.getenv("COMPANY_NAME", app.config["APP_NAME"]).strip()
+app.config["COMPANY_TAGLINE"] = os.getenv("COMPANY_TAGLINE", "Inventory & Accounts Management").strip()
 
 # Gmail App Password: https://myaccount.google.com/apppasswords
 # .env file (project root) mein MAIL_USERNAME aur MAIL_PASSWORD set karein
@@ -171,7 +179,7 @@ def send_email(to_email, subject, body):
         return False
     try:
         msg = MIMEMultipart("alternative")
-        msg["From"] = f"SalPurFlask <{mail_user}>"
+        msg["From"] = f"{app.config['APP_NAME']} <{mail_user}>"
         msg["To"] = to_email
         msg["Subject"] = subject
         text_body = body.strip()
@@ -1452,8 +1460,8 @@ def fmt_num(value):
         return value
 
 def write_csv_header(writer, report_title, start_date_str=None, end_date_str=None, extra_info=None):
-    company = app.config.get("COMPANY_NAME", "TradeFlow")
-    tagline = app.config.get("COMPANY_TAGLINE", "Inventory & Accounts Management")
+    company = app.config["COMPANY_NAME"]
+    tagline = app.config["COMPANY_TAGLINE"]
     writer.writerow([company, tagline])
     writer.writerow(["Report:", report_title])
     if start_date_str and end_date_str:
@@ -1481,8 +1489,8 @@ def csv_response(filename, title, col_headers, rows, start_date_str=None, end_da
 
 def excel_response(filename, title, col_headers, rows, start_date_str=None, end_date_str=None, extra_info=None):
     """Create a styled .xlsx file and return as a Flask file download response."""
-    company = app.config.get("COMPANY_NAME", "TradeFlow")
-    tagline = app.config.get("COMPANY_TAGLINE", "Inventory & Accounts Management")
+    company = app.config["COMPANY_NAME"]
+    tagline = app.config["COMPANY_TAGLINE"]
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -1552,9 +1560,9 @@ def inject_form_defaults():
         "payment_methods": PAYMENT_METHODS,
         "item_units": ITEM_UNITS,
         "roles": ROLES,
-        "company_name": app.config.get("COMPANY_NAME", "TradeFlow"),
-        "app_name": app.config.get("APP_NAME", "TradeFlow"),
-        "company_tagline": app.config.get("COMPANY_TAGLINE", "Inventory & Accounts Management"),
+        "company_name": app.config["COMPANY_NAME"],
+        "app_name": app.config["APP_NAME"],
+        "company_tagline": app.config["COMPANY_TAGLINE"],
         "purchase_total": purchase_total,
         "sale_total": sale_total,
         "get_purchase_paid": get_purchase_paid,
@@ -1624,16 +1632,16 @@ def signup():
         body = f"""
         Hello {name},
  
-        Thank you for registering with SalPurFlask. Please click the link below to verify your email address:
+        Thank you for registering with {app.config['APP_NAME']}. Please click the link below to verify your email address:
 
         {verification_url}
 
         This link will expire in 1 hour.
 
         Regards,
-        SalPurFlask Team
+        {app.config['APP_NAME']} Team
         """
-        if send_email(email, "Verify Your Email - SalPurFlask", body):
+        if send_email(email, f"Verify Your Email - {app.config['APP_NAME']}", body):
             flash(f"A verification email has been sent to {email}. Please check your inbox.", "success")
         else:
             db.session.delete(user)
@@ -1707,9 +1715,9 @@ def forgot_password():
                 f"Dear User,\n\n"
                 f"To reset your password, open this link:\n{reset_url}\n\n"
                 f"This link expires in 1 hour. If you did not request this, ignore this email.\n\n"
-                f"Regards,\nSalPurFlask Team"
+                f"Regards,\n{app.config['APP_NAME']} Team"
             )
-            if send_email(email, "Password Reset Request - SalPurFlask", body):
+            if send_email(email, f"Password Reset Request - {app.config['APP_NAME']}", body):
                 user.reset_token = token
                 user.reset_token_expiry = expiry
                 db.session.commit()
@@ -1799,9 +1807,9 @@ def resend_verification():
         This link will expire in 1 hour.
 
         Regards,
-        SalPurFlask Team
+        {app.config['APP_NAME']} Team
         """
-        if send_email(email, "Verify Your Email - SalPurFlask", body):
+        if send_email(email, f"Verify Your Email - {app.config['APP_NAME']}", body):
             flash(f"A new verification email has been sent to {email}. Please check your inbox.", "success")
         return redirect(url_for("signin"))
     return render_template("resend_verification.html")
@@ -5290,7 +5298,7 @@ def send_low_stock_alert():
     if not low_items:
         flash("No items are below reorder level — no alert sent.", "info")
         return redirect(url_for("item"))
-    lines = [f"LOW STOCK ALERT — {app.config.get('COMPANY_NAME', 'TradeFlow')}\n"]
+    lines = [f"LOW STOCK ALERT — {app.config['COMPANY_NAME']}\n"]
     lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
     lines.append(f"{'Item':<30} {'Stock':>8} {'Reorder':>8}")
     lines.append("-" * 50)
@@ -5494,7 +5502,7 @@ def export_database_dict():
     """Serialize every table to a plain dict suitable for json.dumps."""
     data = {
         "_meta": {
-            "app": "SalPurFlask",
+            "app": app.config["APP_NAME"],
             "format_version": BACKUP_FORMAT_VERSION,
             "created": datetime.now(timezone.utc).isoformat(),
             "dialect": db.engine.dialect.name,
