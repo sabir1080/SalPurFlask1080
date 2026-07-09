@@ -223,7 +223,7 @@ class Supplier(db.Model):
     name                = db.Column(db.String(100), nullable=False)
     contact             = db.Column(db.String(15), nullable=False)
     address             = db.Column(db.String(200), nullable=False)
-    opening_balance     = db.Column(db.Float, nullable=False, default=0.0)
+    opening_balance     = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     purchases           = db.relationship("Purchase", backref="id_supplier", lazy=True)
 
 class Customer(db.Model):
@@ -231,7 +231,7 @@ class Customer(db.Model):
     name                = db.Column(db.String(100), nullable=False)
     contact             = db.Column(db.String(15), nullable=False)
     address             = db.Column(db.String(200), nullable=False)
-    opening_balance     = db.Column(db.Float, nullable=False, default=0.0)
+    opening_balance     = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     sales               = db.relationship("Sale", backref="id_customer", lazy=True)
 
 class Category(db.Model):
@@ -247,8 +247,8 @@ class Item(db.Model):
     opening_stock       = db.Column(db.Integer, nullable=False, default=0)
     stock               = db.Column(db.Integer, nullable=False, default=0)
     reorder_level       = db.Column(db.Integer, nullable=False, default=50)
-    purchase_price      = db.Column(db.Float, nullable=True)
-    sale_price          = db.Column(db.Float, nullable=True)
+    purchase_price      = db.Column(db.Numeric(14, 4), nullable=True)
+    sale_price          = db.Column(db.Numeric(14, 4), nullable=True)
     purchases           = db.relationship("Purchase", backref="id_item", lazy=True)
     sales               = db.relationship("Sale", backref="id_item", lazy=True)
 
@@ -257,12 +257,12 @@ class Purchase(db.Model):
     supplier_id         = db.Column(db.Integer, db.ForeignKey("supplier.id"), nullable=False)
     item_id             = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
     quantity            = db.Column(db.Integer, nullable=False)
-    purchase_price      = db.Column(db.Float, nullable=False)
+    purchase_price      = db.Column(db.Numeric(14, 4), nullable=False)
     discount_type       = db.Column(db.String(10), nullable=False, default="percent")
-    discount_value      = db.Column(db.Float, nullable=False, default=0.0)
-    tax_percent         = db.Column(db.Float, nullable=False, default=0.0)
-    discount_amount     = db.Column(db.Float, nullable=False, default=0.0)
-    tax_amount          = db.Column(db.Float, nullable=False, default=0.0)
+    discount_value      = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    tax_percent         = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    discount_amount     = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    tax_amount          = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     date                = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     notes               = db.Column(db.String(300), nullable=True)
     line_items          = db.relationship("PurchaseItem", backref="purchase_header", lazy=True, cascade="all,delete-orphan")
@@ -272,13 +272,13 @@ class Sale(db.Model):
     customer_id         = db.Column(db.Integer, db.ForeignKey("customer.id"), nullable=False)
     item_id             = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
     quantity            = db.Column(db.Integer, nullable=False)
-    sale_price          = db.Column(db.Float, nullable=False)
-    cost_price          = db.Column(db.Float, nullable=False, default=0.0)
+    sale_price          = db.Column(db.Numeric(14, 4), nullable=False)
+    cost_price          = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     discount_type       = db.Column(db.String(10), nullable=False, default="percent")
-    discount_value      = db.Column(db.Float, nullable=False, default=0.0)
-    tax_percent         = db.Column(db.Float, nullable=False, default=0.0)
-    discount_amount     = db.Column(db.Float, nullable=False, default=0.0)
-    tax_amount          = db.Column(db.Float, nullable=False, default=0.0)
+    discount_value      = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    tax_percent         = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    discount_amount     = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    tax_amount          = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     date                = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     notes               = db.Column(db.String(300), nullable=True)
     line_items          = db.relationship("SaleItem", backref="sale_header", lazy=True, cascade="all,delete-orphan")
@@ -289,13 +289,13 @@ class PurchaseItem(db.Model):
     purchase_id     = db.Column(db.Integer, db.ForeignKey("purchase.id"), nullable=False)
     item_id         = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
     quantity        = db.Column(db.Integer, nullable=False)
-    purchase_price  = db.Column(db.Float, nullable=False)
+    purchase_price  = db.Column(db.Numeric(14, 4), nullable=False)
     discount_type   = db.Column(db.String(10), nullable=False, default="percent")
-    discount_value  = db.Column(db.Float, nullable=False, default=0.0)
-    discount_amount = db.Column(db.Float, nullable=False, default=0.0)
-    tax_percent     = db.Column(db.Float, nullable=False, default=0.0)
-    tax_amount      = db.Column(db.Float, nullable=False, default=0.0)
-    amount          = db.Column(db.Float, nullable=False, default=0.0)
+    discount_value  = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    discount_amount = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    tax_percent     = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    tax_amount      = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    amount          = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     item            = db.relationship("Item", foreign_keys=[item_id])
 
 class SaleItem(db.Model):
@@ -304,14 +304,14 @@ class SaleItem(db.Model):
     sale_id         = db.Column(db.Integer, db.ForeignKey("sale.id"), nullable=False)
     item_id         = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
     quantity        = db.Column(db.Integer, nullable=False)
-    sale_price      = db.Column(db.Float, nullable=False)
-    cost_price      = db.Column(db.Float, nullable=False, default=0.0)
+    sale_price      = db.Column(db.Numeric(14, 4), nullable=False)
+    cost_price      = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     discount_type   = db.Column(db.String(10), nullable=False, default="percent")
-    discount_value  = db.Column(db.Float, nullable=False, default=0.0)
-    discount_amount = db.Column(db.Float, nullable=False, default=0.0)
-    tax_percent     = db.Column(db.Float, nullable=False, default=0.0)
-    tax_amount      = db.Column(db.Float, nullable=False, default=0.0)
-    amount          = db.Column(db.Float, nullable=False, default=0.0)
+    discount_value  = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    discount_amount = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    tax_percent     = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    tax_amount      = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    amount          = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     item            = db.relationship("Item", foreign_keys=[item_id])
 
 PAYMENT_METHODS = ("Cash", "Bank", "Cheque", "Online")
@@ -321,7 +321,7 @@ class SupplierPayment(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
     supplier_id         = db.Column(db.Integer, db.ForeignKey("supplier.id"), nullable=False)
     purchase_id         = db.Column(db.Integer, db.ForeignKey("purchase.id"), nullable=True)
-    amount              = db.Column(db.Float, nullable=False)
+    amount              = db.Column(db.Numeric(14, 4), nullable=False)
     payment_date        = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     payment_method      = db.Column(db.String(20), nullable=False, default="Cash")
     reference_no        = db.Column(db.String(100), nullable=True)
@@ -333,7 +333,7 @@ class CustomerPayment(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
     customer_id         = db.Column(db.Integer, db.ForeignKey("customer.id"), nullable=False)
     sale_id             = db.Column(db.Integer, db.ForeignKey("sale.id"), nullable=True)
-    amount              = db.Column(db.Float, nullable=False)
+    amount              = db.Column(db.Numeric(14, 4), nullable=False)
     payment_date        = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     payment_method      = db.Column(db.String(20), nullable=False, default="Cash")
     reference_no        = db.Column(db.String(100), nullable=True)
@@ -347,7 +347,7 @@ class PurchaseReturn(db.Model):
     supplier_id  = db.Column(db.Integer, db.ForeignKey("supplier.id"), nullable=False)
     item_id      = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
     quantity     = db.Column(db.Integer, nullable=False)
-    return_price = db.Column(db.Float, nullable=False)
+    return_price = db.Column(db.Numeric(14, 4), nullable=False)
     date         = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     reason       = db.Column(db.String(300), nullable=True)
     purchase     = db.relationship("Purchase", backref="returns", lazy=True)
@@ -360,7 +360,7 @@ class SaleReturn(db.Model):
     customer_id  = db.Column(db.Integer, db.ForeignKey("customer.id"), nullable=False)
     item_id      = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
     quantity     = db.Column(db.Integer, nullable=False)
-    return_price = db.Column(db.Float, nullable=False)
+    return_price = db.Column(db.Numeric(14, 4), nullable=False)
     date         = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     reason       = db.Column(db.String(300), nullable=True)
     sale         = db.relationship("Sale", backref="returns", lazy=True)
@@ -393,7 +393,7 @@ class Expense(db.Model):
     id              = db.Column(db.Integer, primary_key=True)
     category_id     = db.Column(db.Integer, db.ForeignKey("expense_category.id"), nullable=True)
     description     = db.Column(db.String(300), nullable=False)
-    amount          = db.Column(db.Float, nullable=False)
+    amount          = db.Column(db.Numeric(14, 4), nullable=False)
     date            = db.Column(db.DateTime, nullable=False,
                                 default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     payment_method  = db.Column(db.String(20), nullable=False, default="Cash")
@@ -423,7 +423,7 @@ class PurchaseOrderItem(db.Model):
     po_id           = db.Column(db.Integer, db.ForeignKey("purchase_order.id"), nullable=False)
     item_id         = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
     quantity        = db.Column(db.Integer, nullable=False)
-    purchase_price  = db.Column(db.Float, nullable=False)
+    purchase_price  = db.Column(db.Numeric(14, 4), nullable=False)
     item            = db.relationship("Item", foreign_keys=[item_id])
 
 # ── Quotation ─────────────────────────────────────────────────────────────────
@@ -449,10 +449,10 @@ class QuotationItem(db.Model):
     quotation_id    = db.Column(db.Integer, db.ForeignKey("quotation.id"), nullable=False)
     item_id         = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
     quantity        = db.Column(db.Integer, nullable=False)
-    sale_price      = db.Column(db.Float, nullable=False)
+    sale_price      = db.Column(db.Numeric(14, 4), nullable=False)
     discount_type   = db.Column(db.String(10), nullable=False, default="percent")
-    discount_value  = db.Column(db.Float, nullable=False, default=0.0)
-    tax_percent     = db.Column(db.Float, nullable=False, default=0.0)
+    discount_value  = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    tax_percent     = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     item            = db.relationship("Item", foreign_keys=[item_id])
 
 # ── Delivery Challan ──────────────────────────────────────────────────────────
@@ -481,9 +481,9 @@ class SupplierLedgerEntry(db.Model):
     source_type         = db.Column(db.String(20), nullable=False)
     source_id           = db.Column(db.Integer, nullable=True)
     description         = db.Column(db.String(300), nullable=False)
-    debit               = db.Column(db.Float, nullable=False, default=0.0)
-    credit              = db.Column(db.Float, nullable=False, default=0.0)
-    balance_after       = db.Column(db.Float, nullable=False, default=0.0)
+    debit               = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    credit              = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    balance_after       = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     supplier            = db.relationship("Supplier", backref="ledger_entries", lazy=True)
 
 class CustomerLedgerEntry(db.Model):
@@ -494,9 +494,9 @@ class CustomerLedgerEntry(db.Model):
     source_type         = db.Column(db.String(20), nullable=False)
     source_id           = db.Column(db.Integer, nullable=True)
     description         = db.Column(db.String(300), nullable=False)
-    debit               = db.Column(db.Float, nullable=False, default=0.0)
-    credit              = db.Column(db.Float, nullable=False, default=0.0)
-    balance_after       = db.Column(db.Float, nullable=False, default=0.0)
+    debit               = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    credit              = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    balance_after       = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     customer            = db.relationship("Customer", backref="ledger_entries", lazy=True)
 
 def calc_discount_tax(gross, discount_type, discount_value, tax_percent):
@@ -1173,6 +1173,31 @@ def migrate_database():
             )
         """))
 
+    # ── Convert legacy FLOAT money columns to exact NUMERIC(14,4) ──────────────
+    # Money must be stored as fixed-point decimal, not binary float, so ledger
+    # balances and totals don't accumulate rounding error. SQLite is dynamically
+    # typed (SQLAlchemy applies the Numeric processor on read once the models use
+    # Numeric), so only PostgreSQL needs a real column-type change. Idempotent:
+    # a column already stored as NUMERIC reflects as non-Float and is skipped.
+    if is_postgres:
+        from sqlalchemy import Float as _Float, Numeric as _Numeric
+        existing_tables = set(inspector.get_table_names())
+        for table in db.metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue
+            db_cols = {c["name"]: c for c in inspector.get_columns(table.name)}
+            for col in table.columns:
+                # our money columns are Numeric but NOT Float (Float subclasses Numeric)
+                if not isinstance(col.type, _Numeric) or isinstance(col.type, _Float):
+                    continue
+                db_col = db_cols.get(col.name)
+                if db_col is not None and isinstance(db_col["type"], _Float):
+                    with db.engine.begin() as conn:
+                        conn.execute(text(
+                            f'ALTER TABLE "{table.name}" ALTER COLUMN "{col.name}" '
+                            f'TYPE NUMERIC(14, 4) USING "{col.name}"::numeric(14,4)'
+                        ))
+
 # Create Database
 with app.app_context():
     try:
@@ -1185,6 +1210,27 @@ with app.app_context():
 @login_manager.user_loader
 def load_user(user_id):
     return db.session.get(User, int(user_id))
+
+# ── Custom error pages ────────────────────────────────────────────────────────
+@app.errorhandler(403)
+def error_403(e):
+    return render_template("error.html", code=403, title="Access Denied",
+                           message="You don't have permission to view this page."), 403
+
+@app.errorhandler(404)
+def error_404(e):
+    return render_template("error.html", code=404, title="Page Not Found",
+                           message="The page you're looking for doesn't exist or may have moved."), 404
+
+@app.errorhandler(500)
+def error_500(e):
+    # A failed request can leave the session in a broken state — roll back so the
+    # error page (and the next request) can still query the database.
+    db.session.rollback()
+    app.logger.exception("Unhandled 500 error")
+    return render_template("error.html", code=500, title="Something Went Wrong",
+                           message="An unexpected error occurred. Please try again, "
+                                   "or contact support if it keeps happening."), 500
 
 # Custom Jinja2 filter: number ko 999,999,999,999.99 format mein dikhaye
 @app.template_filter('fmt_num')
@@ -5577,4 +5623,12 @@ def seed_data_cmd(yes):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="127.0.0.1", port=5172)
+    # Debugger stays off in production. FLASK_DEBUG overrides explicitly;
+    # otherwise default to on only for local SQLite dev (no DATABASE_URL) so a
+    # stray `python app.py` against a real database never exposes the debugger.
+    _debug_env = os.getenv("FLASK_DEBUG")
+    if _debug_env is not None:
+        debug_mode = _debug_env.lower() in ("1", "true", "yes", "on")
+    else:
+        debug_mode = not DATABASE_URL
+    app.run(debug=debug_mode, host="127.0.0.1", port=5172)
