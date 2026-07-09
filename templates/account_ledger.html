@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block title %}{{ acct.name }} Ledger — {{ app_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h2><i class="bi bi-journal-text text-dark"></i> {{ acct.name }} — Ledger</h2>
+    <a href="{{ url_for('accounts') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> Back to Accounts
+    </a>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm"><div class="card-body py-2 text-center">
+            <div class="text-muted small">Opening</div>
+            <div class="fw-bold">{{ opening | fmt_num }}</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm"><div class="card-body py-2 text-center">
+            <div class="text-muted small">Current Balance</div>
+            <div class="fw-bold {{ 'text-success' if closing >= 0 else 'text-danger' }}">{{ closing | fmt_num }}</div>
+        </div></div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th class="text-end">In</th>
+                    <th class="text-end">Out</th>
+                    <th class="text-end">Balance</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="table-light">
+                    <td colspan="4" class="fw-semibold">Opening Balance</td>
+                    <td class="text-end fw-semibold">{{ opening | fmt_num }}</td>
+                </tr>
+                {% for t in ledger %}
+                <tr>
+                    <td class="text-nowrap small">{{ t.date | localdt('%Y-%m-%d') }}</td>
+                    <td>{{ t.desc }}</td>
+                    <td class="text-end text-success">{{ (t.inflow | fmt_num) if t.inflow else '' }}</td>
+                    <td class="text-end text-danger">{{ (t.outflow | fmt_num) if t.outflow else '' }}</td>
+                    <td class="text-end fw-semibold">{{ t.balance | fmt_num }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="text-center text-muted py-4">No transactions yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -511,6 +511,18 @@ class Expense(db.Model):
     reference_no    = db.Column(db.String(100), nullable=True)
     notes           = db.Column(db.String(300), nullable=True)
 
+class FinancialAccount(db.Model):
+    """A cash or bank account. Its live balance is derived from the existing
+    payment_method-tagged movements (customer receipts in, supplier payments and
+    expenses out) plus an opening balance — no changes to those records needed."""
+    __tablename__ = "financial_account"
+    id              = db.Column(db.Integer, primary_key=True)
+    name            = db.Column(db.String(80), nullable=False)          # display name
+    method          = db.Column(db.String(20), nullable=False, unique=True)  # payment_method it tracks
+    account_type    = db.Column(db.String(10), nullable=False, default="Cash")  # Cash / Bank
+    opening_balance = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    is_active       = db.Column(db.Boolean, nullable=False, default=True)
+
 # ── Purchase Order ────────────────────────────────────────────────────────────
 PO_STATUSES = ("Draft", "Confirmed", "Received", "Cancelled")
 
@@ -782,6 +794,38 @@ def total_supplier_ledger_balance():
 
 def total_customer_ledger_balance():
     return _total_ledger_balance("customer_ledger_entry", "customer_id", "customer")
+
+# ── Cash / Bank accounts (derived balances) ───────────────────────────────────
+def _sum_amount(model, method):
+    return float(db.session.query(func.sum(model.amount))
+                 .filter(model.payment_method == method).scalar() or 0)
+
+def get_account_balance(account):
+    """opening + customer receipts (in) − supplier payments (out) − expenses (out),
+    all matched by this account's payment_method. Read-only; touches nothing."""
+    m = account.method
+    inflow  = _sum_amount(CustomerPayment, m)
+    outflow = _sum_amount(SupplierPayment, m) + _sum_amount(Expense, m)
+    return float(account.opening_balance or 0) + inflow - outflow
+
+def total_cash_bank_balance():
+    return sum(get_account_balance(a) for a in FinancialAccount.query.all())
+
+def account_transactions(account):
+    """Chronological list of movements for an account's ledger view."""
+    m = account.method
+    rows = []
+    for r in CustomerPayment.query.filter_by(payment_method=m).all():
+        rows.append({"date": r.payment_date, "desc": f"Receipt #{r.id} — {r.customer.name if r.customer else ''}",
+                     "inflow": float(r.amount), "outflow": 0.0})
+    for p in SupplierPayment.query.filter_by(payment_method=m).all():
+        rows.append({"date": p.payment_date, "desc": f"Payment #{p.id} — {p.supplier.name if p.supplier else ''}",
+                     "inflow": 0.0, "outflow": float(p.amount)})
+    for e in Expense.query.filter_by(payment_method=m).all():
+        rows.append({"date": e.date, "desc": f"Expense — {e.description}",
+                     "inflow": 0.0, "outflow": float(e.amount)})
+    rows.sort(key=lambda x: (x["date"] or datetime.min))
+    return rows
 
 def supplier_balance_label(balance):
     if balance > 0.001:
@@ -1404,6 +1448,14 @@ def migrate_database():
                         )
                         migration_blocked = True
                         break
+
+    # Seed one cash/bank account per payment method (idempotent — only if none exist)
+    if FinancialAccount.query.count() == 0:
+        types = {"Cash": "Cash", "Bank": "Bank", "Cheque": "Bank", "Online": "Bank"}
+        for m in PAYMENT_METHODS:
+            db.session.add(FinancialAccount(name=m, method=m, account_type=types.get(m, "Bank"),
+                                            opening_balance=0))
+        db.session.commit()
 
 # Create Database
 with app.app_context():
@@ -5309,6 +5361,51 @@ def report_cash_book():
         entries=entries, start=start, end=end,
         total_in=total_in, total_out=total_out, net=net,
         method_filter=method_filter, payment_methods=PAYMENT_METHODS)
+
+# ─── Cash & Bank Accounts ───────────────────────────────────────────────────────
+@app.route("/accounts")
+@manager_required
+def accounts():
+    accts = FinancialAccount.query.order_by(FinancialAccount.id).all()
+    rows = [{"acct": a, "balance": get_account_balance(a)} for a in accts]
+    total = sum(r["balance"] for r in rows)
+    return render_template("accounts.html", rows=rows, total=total)
+
+@app.route("/accounts/<int:id>/edit", methods=["GET", "POST"])
+@admin_required
+def edit_account(id):
+    acct = db.session.get(FinancialAccount, id) or abort(404)
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        ob_str = request.form.get("opening_balance", "0").strip().replace(",", "")
+        acc_type = request.form.get("account_type", "Cash").strip()
+        if not name:
+            flash("Account name is required!", "danger")
+        elif ob_str and not ob_str.replace("-", "", 1).replace(".", "", 1).isdigit():
+            flash("Opening balance must be a valid number!", "danger")
+        else:
+            acct.name = name
+            acct.opening_balance = float(ob_str or 0)
+            acct.account_type = acc_type if acc_type in ("Cash", "Bank") else "Cash"
+            db.session.commit()
+            record_audit("update", "Account", acct.id, f"Account '{acct.name}' opening balance set to {float(acct.opening_balance):,.2f}")
+            flash("Account updated successfully!", "success")
+            return redirect(url_for("accounts"))
+    return render_template("edit_account.html", acct=acct)
+
+@app.route("/accounts/<int:id>/ledger")
+@manager_required
+def account_ledger(id):
+    acct = db.session.get(FinancialAccount, id) or abort(404)
+    txns = account_transactions(acct)
+    running = float(acct.opening_balance or 0)
+    ledger = []
+    for t in txns:
+        running += t["inflow"] - t["outflow"]
+        ledger.append({**t, "balance": running})
+    return render_template("account_ledger.html", acct=acct, ledger=ledger,
+                           opening=float(acct.opening_balance or 0),
+                           closing=get_account_balance(acct))
 
 @app.route("/reports/gst")
 @manager_required
