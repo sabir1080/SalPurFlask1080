@@ -60,13 +60,18 @@ body {
 }
 
 /* ── App navbar (the top bar on every logged-in page) ── */
+/* position + high z-index so the whole navbar (and its open dropdowns) stacks
+   above page content. Without this the dropdown menus slipped behind page
+   headings/cards. (No backdrop-filter — it created a stacking context that
+   trapped the dropdowns at the navbar's level.) */
 .navbar.bg-light {
+    position: relative;
+    z-index: 1030;
     background: linear-gradient(180deg, #f4f7fb 0%, #eaeef4 100%) !important;
     border-bottom: 1px solid var(--border);
     box-shadow: 0 2px 16px rgba(15, 23, 42, 0.05);
     padding-top: 0.55rem;
     padding-bottom: 0.55rem;
-    backdrop-filter: saturate(1.1);
 }
 
 [data-theme="dark"] .navbar.bg-light {
@@ -126,6 +131,7 @@ body {
 
 /* Dropdown menus: rounder, softer shadow, animated caret spacing */
 .navbar .dropdown-menu {
+    z-index: 1031;                 /* float above page headings/cards */
     border: 1px solid var(--border);
     border-radius: 14px;
     box-shadow: 0 12px 40px rgba(15, 23, 42, 0.14);
