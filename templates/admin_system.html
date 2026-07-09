@@ -18,17 +18,21 @@
             </div>
             <div class="card-body">
                 <p class="text-muted mb-3">
-                    Downloads a consistent snapshot of the SQLite database file.
-                    Store this file in a safe location.
+                    Downloads a portable <code>.json</code> snapshot of all data. It works on
+                    both the local and the live ({{ dialect }}) database — store it somewhere safe.
                 </p>
                 <dl class="row mb-4">
+                    <dt class="col-sm-5">Database engine</dt>
+                    <dd class="col-sm-7"><strong>{{ dialect }}</strong></dd>
+                    {% if dialect == 'sqlite' %}
                     <dt class="col-sm-5">Database size</dt>
                     <dd class="col-sm-7"><strong>{{ db_size_kb }} KB</strong></dd>
+                    {% endif %}
                     <dt class="col-sm-5">Suggested filename</dt>
                     <dd class="col-sm-7 text-muted small">{{ backup_name }}</dd>
                 </dl>
                 <a href="{{ url_for('admin_backup') }}" class="btn btn-primary">
-                    <i class="bi bi-cloud-download"></i> Download Backup (.db)
+                    <i class="bi bi-cloud-download"></i> Download Backup (.json)
                 </a>
             </div>
         </div>
@@ -44,19 +48,20 @@
                 <div class="alert alert-warning py-2 mb-3">
                     <i class="bi bi-exclamation-triangle-fill"></i>
                     <strong>Warning:</strong> Restoring will <strong>replace all current data</strong>
-                    with the uploaded backup. The current database is saved as
-                    <code>database.db.bak</code> before overwriting.
+                    with the uploaded backup. This cannot be undone — download a fresh
+                    backup first if you're unsure.
                 </div>
                 <form method="POST" action="{{ url_for('admin_restore') }}"
                       enctype="multipart/form-data"
-                      onsubmit="return confirm('Replace ALL current data with the uploaded backup? This cannot be undone (a .bak copy will be kept).')">
+                      onsubmit="return confirm('Replace ALL current data with the uploaded backup? This cannot be undone.')">
                     <div class="mb-3">
                         <label class="form-label fw-semibold">
                             Select backup file <span class="text-danger">*</span>
                         </label>
                         <input type="file" class="form-control" name="db_file"
-                               accept=".db" required>
-                        <div class="form-text">Only <code>.db</code> SQLite files accepted.</div>
+                               accept=".json,.db" required>
+                        <div class="form-text">Upload a <code>.json</code> backup (or a legacy
+                            <code>.db</code> file on a local SQLite install).</div>
                     </div>
                     <button type="submit" class="btn btn-danger">
                         <i class="bi bi-arrow-clockwise"></i> Restore Now

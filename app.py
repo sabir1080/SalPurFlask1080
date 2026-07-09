@@ -14,6 +14,8 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 import os
 import secrets
+import json
+from decimal import Decimal
 from sqlalchemy.exc import IntegrityError
 import smtplib
 from email.mime.text import MIMEText
@@ -5198,51 +5200,117 @@ def admin_toggle_verify(id):
     return redirect(url_for("admin_users"))
 
 # ─── Backup & Restore ──────────────────────────────────────────────────────────
+# Backups use a portable JSON dump of every table so they work identically on
+# SQLite (local) and PostgreSQL (production) — the old SQLite-file copy only
+# worked locally and did nothing useful on the deployed Postgres database.
+BACKUP_FORMAT_VERSION = 1
+
+def _json_default(v):
+    if isinstance(v, Decimal):
+        return str(v)               # preserve exact precision
+    if isinstance(v, datetime):
+        return v.isoformat()
+    if isinstance(v, bytes):
+        return v.decode("latin1")
+    raise TypeError(f"Not JSON serializable: {type(v)}")
+
+def _coerce_value(value, column):
+    """Convert a JSON-decoded value back to the Python type the column expects."""
+    if value is None:
+        return None
+    from sqlalchemy import DateTime, Numeric, Float, Boolean, Integer
+    coltype = column.type
+    if isinstance(coltype, DateTime):
+        return datetime.fromisoformat(value) if isinstance(value, str) else value
+    if isinstance(coltype, Float):
+        return float(value)
+    if isinstance(coltype, Numeric):
+        return Decimal(str(value))
+    if isinstance(coltype, Integer):
+        return int(value)
+    if isinstance(coltype, Boolean):
+        return bool(value)
+    return value
+
+def export_database_dict():
+    """Serialize every table to a plain dict suitable for json.dumps."""
+    data = {
+        "_meta": {
+            "app": "SalPurFlask",
+            "format_version": BACKUP_FORMAT_VERSION,
+            "created": datetime.now(timezone.utc).isoformat(),
+            "dialect": db.engine.dialect.name,
+        },
+        "tables": {},
+    }
+    for table in db.metadata.sorted_tables:
+        result = db.session.execute(table.select())
+        cols = list(result.keys())
+        data["tables"][table.name] = [dict(zip(cols, row)) for row in result]
+    return data
+
+def import_database_dict(data):
+    """Replace all data with the contents of a backup dict (atomic transaction)."""
+    tables_data = data.get("tables", {})
+    is_postgres = db.engine.dialect.name == "postgresql"
+    # Wipe children first, then insert parents first (FK-safe order).
+    for table in reversed(db.metadata.sorted_tables):
+        db.session.execute(table.delete())
+    for table in db.metadata.sorted_tables:
+        rows = tables_data.get(table.name)
+        if not rows:
+            continue
+        columns = {c.name: c for c in table.columns}
+        cleaned = [
+            {k: _coerce_value(v, columns[k]) for k, v in row.items() if k in columns}
+            for row in rows
+        ]
+        if cleaned:
+            db.session.execute(table.insert(), cleaned)
+    # Postgres SERIAL sequences don't advance on explicit-id inserts — realign them.
+    if is_postgres:
+        for table in db.metadata.sorted_tables:
+            if "id" in {c.name for c in table.columns}:
+                db.session.execute(text(
+                    "SELECT setval(pg_get_serial_sequence(:t, 'id'), "
+                    "COALESCE((SELECT MAX(id) FROM \"%s\"), 1), true)" % table.name
+                ), {"t": table.name})
+    db.session.commit()
 
 @app.route("/admin/system")
 @admin_required
 def admin_system():
+    dialect = db.engine.dialect.name
     db_path = os.path.join(BASE_DIR, "instance", "database.db")
     db_size_kb = round(os.path.getsize(db_path) / 1024, 1) if os.path.exists(db_path) else 0
-    from sqlalchemy import inspect as sa_inspect
-    with app.app_context():
-        tables = sa_inspect(db.engine).get_table_names()
+    tables = inspect(db.engine).get_table_names()
     table_counts = {}
     for t in sorted(tables):
         try:
-            count = db.session.execute(text(f"SELECT COUNT(*) FROM \"{t}\"")).scalar()
-            table_counts[t] = count
+            table_counts[t] = db.session.execute(text(f'SELECT COUNT(*) FROM "{t}"')).scalar()
         except Exception:
             table_counts[t] = "?"
     return render_template("admin_system.html",
+        dialect=dialect,
         db_size_kb=db_size_kb,
         table_counts=table_counts,
-        backup_name=f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db",
+        backup_name=f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
     )
 
 @app.route("/admin/backup")
 @admin_required
 def admin_backup():
-    db_path = os.path.join(BASE_DIR, "instance", "database.db")
-    if not os.path.exists(db_path):
-        flash("Database file not found.", "danger")
-        return redirect(url_for("admin_system"))
-    filename = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
-    # Use SQLite online backup API via a temp file to get a consistent snapshot
-    import sqlite3, tempfile, shutil
-    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
-    tmp.close()
     try:
-        src = sqlite3.connect(db_path)
-        dst = sqlite3.connect(tmp.name)
-        src.backup(dst)
-        dst.close()
-        src.close()
+        payload = json.dumps(export_database_dict(), default=_json_default, indent=1)
     except Exception as e:
+        app.logger.exception("Backup failed")
         flash(f"Backup failed: {e}", "danger")
         return redirect(url_for("admin_system"))
-    return send_file(tmp.name, as_attachment=True, download_name=filename,
-                     mimetype="application/octet-stream")
+    filename = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    return send_file(
+        BytesIO(payload.encode("utf-8")),
+        as_attachment=True, download_name=filename, mimetype="application/json",
+    )
 
 @app.route("/admin/restore", methods=["POST"])
 @admin_required
@@ -5251,31 +5319,50 @@ def admin_restore():
     if not uploaded or not uploaded.filename:
         flash("No file selected.", "danger")
         return redirect(url_for("admin_system"))
-    header = uploaded.read(16)
-    if not header.startswith(b"SQLite format 3"):
-        flash("Invalid file — not a SQLite database.", "danger")
+    raw = uploaded.read()
+
+    # Legacy path: a raw SQLite .db file can still be restored on a local SQLite
+    # install by swapping the file (this never worked on Postgres anyway).
+    if raw[:16].startswith(b"SQLite format 3"):
+        if db.engine.dialect.name != "sqlite":
+            flash("This looks like a SQLite .db file, but the server uses "
+                  f"{db.engine.dialect.name}. Please upload a .json backup instead.", "danger")
+            return redirect(url_for("admin_system"))
+        db_path = os.path.join(BASE_DIR, "instance", "database.db")
+        try:
+            import shutil
+            if os.path.exists(db_path):
+                shutil.copy2(db_path, db_path + ".bak")
+            db.session.remove()
+            db.engine.dispose()
+            with open(db_path, "wb") as f:
+                f.write(raw)
+            with app.app_context():
+                migrate_database()
+            flash("Database restored from SQLite file. Previous copy saved as database.db.bak.", "success")
+        except Exception as e:
+            app.logger.exception("SQLite restore failed")
+            flash(f"Restore failed: {e}", "danger")
         return redirect(url_for("admin_system"))
-    uploaded.seek(0)
-    db_path = os.path.join(BASE_DIR, "instance", "database.db")
-    bak_path = db_path + ".bak"
+
+    # Portable JSON restore (works on both SQLite and Postgres).
     try:
-        import shutil
-        if os.path.exists(db_path):
-            shutil.copy2(db_path, bak_path)
-        db.session.remove()
-        db.engine.dispose()
-        uploaded.save(db_path)
-        # Re-run migrations to ensure schema is current
-        with app.app_context():
-            migrate_database()
-        flash(
-            "Database restored successfully. Previous backup saved as database.db.bak. "
-            "If this server runs multiple worker processes, restart the application now — "
-            "other workers may still be using the old database file.",
-            "success",
-        )
+        data = json.loads(raw.decode("utf-8"))
+    except Exception:
+        flash("Invalid file — not a valid JSON backup.", "danger")
+        return redirect(url_for("admin_system"))
+    if not isinstance(data, dict) or "tables" not in data:
+        flash("Invalid backup file — missing table data.", "danger")
+        return redirect(url_for("admin_system"))
+    try:
+        import_database_dict(data)
+        n = sum(len(v) for v in data.get("tables", {}).values())
+        flash(f"Database restored successfully from backup ({n:,} rows). "
+              "All previous data was replaced.", "success")
     except Exception as e:
-        flash(f"Restore failed: {e}", "danger")
+        db.session.rollback()
+        app.logger.exception("JSON restore failed")
+        flash(f"Restore failed (no changes were applied): {e}", "danger")
     return redirect(url_for("admin_system"))
 
 @app.cli.command("seed-data")
