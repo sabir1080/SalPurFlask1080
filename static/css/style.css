@@ -5,10 +5,10 @@
     --success: #059669;
     --text-dark: #0f172a;
     --text-muted: #64748b;
-    --surface: #ffffff;
-    --border: #e2e8f0;
-    --bg: #f0f4f8;
-    --card-bg: #ffffff;
+    --surface: #f2f5f9;
+    --border: #dde3ec;
+    --bg: #e6eaf1;
+    --card-bg: #f8fafc;
     --shadow-sm: 0 4px 20px rgba(15, 23, 42, 0.06);
     --shadow-md: 0 12px 40px rgba(15, 23, 42, 0.12);
     --radius: 16px;
@@ -39,7 +39,7 @@ html {
 
 body {
     font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
-    background-color: #f0f4f8;
+    background-color: var(--bg);
     color: var(--text-dark);
     min-height: 100vh;
     overflow-x: hidden;
@@ -61,7 +61,7 @@ body {
 
 /* ── App navbar (the top bar on every logged-in page) ── */
 .navbar.bg-light {
-    background: linear-gradient(180deg, #ffffff 0%, #f6f8fc 100%) !important;
+    background: linear-gradient(180deg, #f4f7fb 0%, #eaeef4 100%) !important;
     border-bottom: 1px solid var(--border);
     box-shadow: 0 2px 16px rgba(15, 23, 42, 0.05);
     padding-top: 0.55rem;
@@ -149,6 +149,12 @@ body {
     margin-bottom: 20px;
     border: none;
     border-radius: 12px;
+}
+
+/* Softer off-white surfaces so the light theme doesn't glare */
+.card {
+    background: var(--card-bg);
+    border-color: var(--border);
 }
 
 .table {
@@ -368,7 +374,7 @@ body {
 
 .nh-title-brand {
     display: block;
-    font-size: clamp(3.5rem, 8vw, 6rem);
+    font-size: clamp(2rem, 5vw, 3.5rem);
     font-weight: 800;
     letter-spacing: -0.04em;
     background: linear-gradient(120deg, #e0e7ff 0%, #a5b4fc 40%, #22d3ee 70%, #818cf8 100%);
@@ -377,6 +383,8 @@ body {
     background-clip: text;
     line-height: 1.0;
     margin-bottom: 0.6rem;
+
+    /*<!--font-size: clamp(3.5rem, 8vw, 6rem);*/
 }
 
 .nh-title-sub {
@@ -1333,14 +1341,22 @@ body {
 }
 
 .nav-search-wrapper .input-group-text {
+    background: var(--card-bg);
     border-color: var(--border);
     color: var(--text-muted);
 }
 
 .nav-search-wrapper .form-control {
+    background: var(--card-bg);
     border-color: var(--border);
+    color: var(--text-dark);
     font-size: 0.85rem;
     height: 36px;
+}
+
+.nav-search-wrapper .form-control::placeholder {
+    color: var(--text-muted);
+    opacity: 1;
 }
 
 .nav-search-wrapper .form-control:focus {
