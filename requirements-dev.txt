@@ -1,0 +1,5 @@
+# Dev/test-only dependencies (not needed to run the app in production).
+#   pip install -r requirements-dev.txt
+#   pytest
+-r requirements.txt
+pytest

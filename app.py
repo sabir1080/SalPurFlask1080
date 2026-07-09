@@ -109,6 +109,20 @@ if not app.logger.handlers:
     app.logger.addHandler(_log_handler)
 app.logger.propagate = False
 
+# ── Error monitoring (optional) ───────────────────────────────────────────────
+# Enabled only when SENTRY_DSN is set, so it's a no-op locally and for anyone who
+# hasn't set up Sentry. Reports unhandled exceptions with request context.
+_sentry_dsn = os.getenv("SENTRY_DSN", "").strip()
+if _sentry_dsn:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.flask import FlaskIntegration
+        sentry_sdk.init(dsn=_sentry_dsn, integrations=[FlaskIntegration()],
+                        traces_sample_rate=0.0, send_default_pii=False)
+        app.logger.info("Sentry error monitoring enabled")
+    except Exception as e:
+        app.logger.warning("SENTRY_DSN set but Sentry could not start: %s", e)
+
 
 db = SQLAlchemy(app)  # iska matlab sqlite se connect ho raha ha
 csrf = CSRFProtect(app)
@@ -564,6 +578,7 @@ class RateLimitHit(db.Model):
 
 def calc_discount_tax(gross, discount_type, discount_value, tax_percent):
     """Returns (discount_amt, tax_amt, net_total). discount_type: 'percent' or 'fixed'."""
+    gross = float(gross or 0)          # tolerate Decimal/str inputs
     dv = float(discount_value or 0)
     tp = float(tax_percent or 0)
     if discount_type == "fixed":
