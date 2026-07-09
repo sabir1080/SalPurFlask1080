@@ -523,6 +523,28 @@ class FinancialAccount(db.Model):
     opening_balance = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     is_active       = db.Column(db.Boolean, nullable=False, default=True)
 
+class JournalEntry(db.Model):
+    """A manual double-entry adjustment (accruals, corrections, depreciation, etc.).
+    Every entry's lines must balance (total debit == total credit)."""
+    __tablename__ = "journal_entry"
+    id          = db.Column(db.Integer, primary_key=True)
+    entry_date  = db.Column(db.DateTime, nullable=False,
+                            default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    reference   = db.Column(db.String(50), nullable=True)
+    description = db.Column(db.String(300), nullable=False)
+    created_at  = db.Column(db.DateTime, nullable=False,
+                            default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    lines       = db.relationship("JournalLine", backref="entry", lazy=True,
+                                  cascade="all,delete-orphan")
+
+class JournalLine(db.Model):
+    __tablename__ = "journal_line"
+    id       = db.Column(db.Integer, primary_key=True)
+    entry_id = db.Column(db.Integer, db.ForeignKey("journal_entry.id"), nullable=False)
+    account  = db.Column(db.String(100), nullable=False)
+    debit    = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    credit   = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+
 # ── Purchase Order ────────────────────────────────────────────────────────────
 PO_STATUSES = ("Draft", "Confirmed", "Received", "Cancelled")
 
@@ -5457,6 +5479,89 @@ def report_trial_balance():
     total_cr = sum(r[2] for r in rows)
     return render_template("report_trial_balance.html", rows=rows,
                            total_dr=total_dr, total_cr=total_cr, as_of=now_local())
+
+# ─── Manual Journal Entries ─────────────────────────────────────────────────────
+@app.route("/journal")
+@manager_required
+def journal():
+    entries = JournalEntry.query.order_by(JournalEntry.entry_date.desc(), JournalEntry.id.desc()).all()
+    # net debit/credit per account across all entries (read-only summary)
+    summary = {}
+    for ln in JournalLine.query.all():
+        s = summary.setdefault(ln.account, {"debit": 0.0, "credit": 0.0})
+        s["debit"] += float(ln.debit or 0)
+        s["credit"] += float(ln.credit or 0)
+    return render_template("journal.html", entries=entries, summary=sorted(summary.items()))
+
+@app.route("/journal/new", methods=["GET", "POST"])
+@manager_required
+def journal_new():
+    if request.method == "POST":
+        date_str = request.form.get("entry_date", "").strip()
+        description = request.form.get("description", "").strip()
+        reference = request.form.get("reference", "").strip()
+        accounts = request.form.getlist("account[]")
+        debits   = request.form.getlist("debit[]")
+        credits  = request.form.getlist("credit[]")
+
+        lines, total_dr, total_cr = [], 0.0, 0.0
+        try:
+            for acc, d, c in zip(accounts, debits, credits):
+                acc = acc.strip()
+                d = float((d or "0").replace(",", "") or 0)
+                c = float((c or "0").replace(",", "") or 0)
+                if not acc and d == 0 and c == 0:
+                    continue                      # skip blank rows
+                if not acc:
+                    flash("Every line with an amount needs an account name.", "danger")
+                    return render_template("journal_new.html")
+                if d < 0 or c < 0 or (d > 0 and c > 0) or (d == 0 and c == 0):
+                    flash("Each line must have a positive amount in exactly one of Debit or Credit.", "danger")
+                    return render_template("journal_new.html")
+                lines.append((acc, d, c)); total_dr += d; total_cr += c
+        except ValueError:
+            flash("Amounts must be valid numbers.", "danger")
+            return render_template("journal_new.html")
+
+        if not description or not date_str:
+            flash("Date and description are required.", "danger")
+        elif len(lines) < 2:
+            flash("A journal entry needs at least two lines.", "danger")
+        elif abs(total_dr - total_cr) > 0.005:
+            flash(f"Entry is not balanced: debits {total_dr:,.2f} ≠ credits {total_cr:,.2f}.", "danger")
+        else:
+            try:
+                entry = JournalEntry(entry_date=datetime.strptime(date_str, "%Y-%m-%d"),
+                                     description=description, reference=reference or None)
+                db.session.add(entry); db.session.flush()
+                for acc, d, c in lines:
+                    db.session.add(JournalLine(entry_id=entry.id, account=acc, debit=d, credit=c))
+                db.session.commit()
+                record_audit("create", "JournalEntry", entry.id,
+                             f"Journal #{entry.id}: {description} ({total_dr:,.2f})")
+                flash("Journal entry saved successfully!", "success")
+                return redirect(url_for("journal"))
+            except ValueError as e:
+                flash(f"Invalid data: {e}", "danger")
+    return render_template("journal_new.html")
+
+@app.route("/journal/<int:id>")
+@manager_required
+def journal_view(id):
+    entry = db.session.get(JournalEntry, id) or abort(404)
+    total_dr = sum(float(l.debit or 0) for l in entry.lines)
+    total_cr = sum(float(l.credit or 0) for l in entry.lines)
+    return render_template("journal_view.html", entry=entry, total_dr=total_dr, total_cr=total_cr)
+
+@app.route("/journal/<int:id>/delete", methods=["POST"])
+@admin_required
+def journal_delete(id):
+    entry = db.session.get(JournalEntry, id) or abort(404)
+    db.session.delete(entry)
+    db.session.commit()
+    record_audit("delete", "JournalEntry", id, f"Journal entry #{id} deleted")
+    flash("Journal entry deleted.", "success")
+    return redirect(url_for("journal"))
 
 @app.route("/reports/gst")
 @manager_required

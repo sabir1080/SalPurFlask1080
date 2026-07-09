@@ -15,6 +15,9 @@ os.environ.setdefault("FLASK_DEBUG", "0")
 
 from app import app as flask_app, db  # noqa: E402
 
+flask_app.config["WTF_CSRF_ENABLED"] = False   # let tests POST forms without a token
+flask_app.config["PROPAGATE_EXCEPTIONS"] = False
+
 
 @pytest.fixture()
 def appctx():

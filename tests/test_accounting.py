@@ -1,9 +1,19 @@
 """Tests for the accounting features: cash/bank account balances."""
 from app import (
-    db, FinancialAccount, Supplier, Customer, Category, Item,
-    SupplierPayment, CustomerPayment, Expense,
+    app as flask_app, db, User, pwd_context,
+    FinancialAccount, Supplier, Customer, Category, Item,
+    SupplierPayment, CustomerPayment, Expense, JournalEntry,
     get_account_balance, total_cash_bank_balance, accounting_position,
 )
+
+
+def _login_manager(email="jn@test.com"):
+    db.session.add(User(name="M", email=email, password=pwd_context.hash("secret123"),
+                        verified=True, role="manager"))
+    db.session.commit()
+    c = flask_app.test_client()
+    c.post("/signin", data={"email": email, "password": "secret123"})
+    return c
 
 
 def _supplier():
@@ -49,3 +59,20 @@ def test_accounting_position_figures_and_balances(appctx):
     assert round(p["inventory"], 2) == 200.0
     # the statement must always balance: assets == liabilities + equity
     assert round(p["total_assets"], 2) == round(p["total_liabilities"] + p["equity"], 2)
+
+
+def test_journal_balanced_accepted_unbalanced_rejected(appctx):
+    c = _login_manager()
+    # balanced entry (Dr 100 = Cr 100) is saved
+    c.post("/journal/new", data={
+        "entry_date": "2026-01-01", "description": "depreciation",
+        "account[]": ["Depreciation", "Fixed Assets"],
+        "debit[]": ["100", "0"], "credit[]": ["0", "100"]})
+    assert JournalEntry.query.count() == 1
+
+    # unbalanced entry (Dr 100 != Cr 50) is rejected
+    c.post("/journal/new", data={
+        "entry_date": "2026-01-01", "description": "bad",
+        "account[]": ["Cash", "Sales"],
+        "debit[]": ["100", "0"], "credit[]": ["0", "50"]})
+    assert JournalEntry.query.count() == 1   # still only the first one

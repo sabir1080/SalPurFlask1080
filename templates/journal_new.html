@@ -1,0 +1,115 @@
+{% extends 'base.html' %}
+{% block title %}New Journal Entry — {{ app_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h2><i class="bi bi-journal-plus text-dark"></i> New Journal Entry</h2>
+    <a href="{{ url_for('journal') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
+</div>
+
+<form method="POST">
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold">Date</label>
+                    <input type="date" name="entry_date" class="form-control" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold">Reference</label>
+                    <input type="text" name="reference" class="form-control" placeholder="optional">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">Description</label>
+                    <input type="text" name="description" class="form-control" placeholder="e.g. Depreciation for the month" required>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-light fw-semibold d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-list-columns"></i> Lines</span>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="addRow"><i class="bi bi-plus-lg"></i> Add Line</button>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+            <table class="table mb-0 align-middle" id="jTable">
+                <thead class="table-light">
+                    <tr><th style="width:50%">Account</th><th class="text-end">Debit</th><th class="text-end">Credit</th><th></th></tr>
+                </thead>
+                <tbody id="jBody">
+                    <tr>
+                        <td><input type="text" name="account[]" class="form-control form-control-sm" placeholder="Account name" list="acctList"></td>
+                        <td><input type="text" name="debit[]" class="form-control form-control-sm text-end j-amt" placeholder="0.00"></td>
+                        <td><input type="text" name="credit[]" class="form-control form-control-sm text-end j-amt" placeholder="0.00"></td>
+                        <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger j-del"><i class="bi bi-x"></i></button></td>
+                    </tr>
+                    <tr>
+                        <td><input type="text" name="account[]" class="form-control form-control-sm" placeholder="Account name" list="acctList"></td>
+                        <td><input type="text" name="debit[]" class="form-control form-control-sm text-end j-amt" placeholder="0.00"></td>
+                        <td><input type="text" name="credit[]" class="form-control form-control-sm text-end j-amt" placeholder="0.00"></td>
+                        <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger j-del"><i class="bi bi-x"></i></button></td>
+                    </tr>
+                </tbody>
+                <tfoot>
+                    <tr class="table-light fw-bold">
+                        <td class="text-end">Totals</td>
+                        <td class="text-end" id="totDr">0.00</td>
+                        <td class="text-end" id="totCr">0.00</td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td colspan="4" class="text-center"><span id="balBadge" class="badge bg-secondary">Enter lines</span></td>
+                    </tr>
+                </tfoot>
+            </table>
+            </div>
+        </div>
+    </div>
+
+    <datalist id="acctList">
+        <option value="Cash"><option value="Bank"><option value="Accounts Receivable">
+        <option value="Accounts Payable"><option value="Inventory"><option value="Owner's Equity">
+        <option value="Sales"><option value="Purchases"><option value="Expenses">
+        <option value="Depreciation"><option value="Fixed Assets"><option value="Tax Payable">
+    </datalist>
+
+    <button type="submit" class="btn btn-primary" id="saveBtn"><i class="bi bi-check-lg"></i> Save Entry</button>
+</form>
+
+<script>
+(function () {
+  var body = document.getElementById('jBody');
+  function rowHtml() {
+    return '<tr>' +
+      '<td><input type="text" name="account[]" class="form-control form-control-sm" placeholder="Account name" list="acctList"></td>' +
+      '<td><input type="text" name="debit[]" class="form-control form-control-sm text-end j-amt" placeholder="0.00"></td>' +
+      '<td><input type="text" name="credit[]" class="form-control form-control-sm text-end j-amt" placeholder="0.00"></td>' +
+      '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger j-del"><i class="bi bi-x"></i></button></td></tr>';
+  }
+  function num(v){ v = parseFloat((v||'').replace(/,/g,'')); return isNaN(v) ? 0 : v; }
+  function recalc() {
+    var dr = 0, cr = 0;
+    body.querySelectorAll('tr').forEach(function (tr) {
+      var ins = tr.querySelectorAll('.j-amt');
+      dr += num(ins[0].value); cr += num(ins[1].value);
+    });
+    document.getElementById('totDr').textContent = dr.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+    document.getElementById('totCr').textContent = cr.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+    var badge = document.getElementById('balBadge');
+    if (dr === 0 && cr === 0) { badge.className = 'badge bg-secondary'; badge.textContent = 'Enter lines'; }
+    else if (Math.abs(dr - cr) < 0.005) { badge.className = 'badge bg-success'; badge.textContent = 'Balanced ✓'; }
+    else { badge.className = 'badge bg-danger'; badge.textContent = 'Out of balance by ' + Math.abs(dr - cr).toFixed(2); }
+  }
+  document.getElementById('addRow').addEventListener('click', function () {
+    body.insertAdjacentHTML('beforeend', rowHtml()); recalc();
+  });
+  document.addEventListener('input', function (e) { if (e.target.classList.contains('j-amt')) recalc(); });
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('.j-del');
+    if (btn && body.querySelectorAll('tr').length > 2) { btn.closest('tr').remove(); recalc(); }
+  });
+  recalc();
+})();
+</script>
+{% endblock %}
