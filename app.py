@@ -67,6 +67,20 @@ if _using_insecure_defaults and DATABASE_URL:
     )
 elif _using_insecure_defaults:
     print("WARNING: SECRET_KEY / SECURITY_PASSWORD_SALT are using insecure defaults. Set real values in .env before deploying.")
+
+# ── Session / cookie hardening ────────────────────────────────────────────────
+# Secure cookies are only sent over HTTPS, so enabling that locally (plain HTTP)
+# would break login. Gate it on production, detected by DATABASE_URL being set
+# (Render). HttpOnly stops JS from reading the cookie; SameSite=Lax blocks it on
+# cross-site POSTs (defence-in-depth on top of CSRF tokens).
+_is_production = bool(DATABASE_URL)
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = _is_production
+app.config["REMEMBER_COOKIE_HTTPONLY"] = True
+app.config["REMEMBER_COOKIE_SECURE"] = _is_production
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
+
 app.config["MAIL_SERVER"] = "smtp.gmail.com"
 app.config["MAIL_PORT"] = 587
 app.config["MAIL_USE_TLS"] = True
@@ -1332,6 +1346,33 @@ def handle_value_error(e):
     flash("Some values you entered are not valid numbers. Please check them and try again.", "danger")
     return redirect(_safe_referrer())
 
+# ── Security headers ──────────────────────────────────────────────────────────
+# CSP allows the CDNs the app actually uses (Bootstrap/icons/Chart.js on jsDelivr,
+# Google Fonts) plus 'unsafe-inline' for the app's inline <script>/<style> blocks
+# and onclick handlers. HSTS is only sent in production (HTTPS) so local HTTP dev
+# isn't pinned to https.
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+    "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; "
+    "img-src 'self' data:; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+)
+
+@app.after_request
+def set_security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Content-Security-Policy", _CSP)
+    if _is_production:
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
+    return response
+
 # Custom Jinja2 filter: number ko 999,999,999,999.99 format mein dikhaye
 @app.template_filter('fmt_num')
 def fmt_num(value):
@@ -1443,6 +1484,7 @@ def inject_form_defaults():
         "item_units": ITEM_UNITS,
         "roles": ROLES,
         "company_name": app.config.get("COMPANY_NAME", "TradeFlow"),
+        "app_name": app.config.get("APP_NAME", "TradeFlow"),
         "company_tagline": app.config.get("COMPANY_TAGLINE", "Inventory & Accounts Management"),
         "purchase_total": purchase_total,
         "sale_total": sale_total,
