@@ -576,6 +576,37 @@ class RateLimitHit(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, index=True,
                            default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
+class AuditLog(db.Model):
+    """Who did what, when — an append-only activity trail for accountability.
+    user_name is denormalized so the record still makes sense if the user is
+    later deleted. Written via record_audit()."""
+    __tablename__ = "audit_log"
+    id         = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, nullable=False, index=True,
+                           default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    user_id    = db.Column(db.Integer, nullable=True)
+    user_name  = db.Column(db.String(100), nullable=False, default="system")
+    action     = db.Column(db.String(20), nullable=False)   # create / update / delete / login / restore
+    entity     = db.Column(db.String(50), nullable=False)   # Purchase / Sale / Supplier / ...
+    entity_id  = db.Column(db.Integer, nullable=True)
+    summary    = db.Column(db.String(300), nullable=False, default="")
+
+def record_audit(action, entity, entity_id=None, summary=""):
+    """Write an audit entry in its own transaction. Called AFTER the business
+    change has committed, so a failure here can never roll back or break the real
+    operation — auditing is best-effort by design."""
+    try:
+        if current_user and current_user.is_authenticated:
+            uid, uname = current_user.id, current_user.name
+        else:
+            uid, uname = None, "system"
+        db.session.add(AuditLog(action=action, entity=entity, entity_id=entity_id,
+                                summary=(summary or "")[:300], user_id=uid, user_name=uname))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Failed to record audit entry (%s %s)", action, entity)
+
 def calc_discount_tax(gross, discount_type, discount_value, tax_percent):
     """Returns (discount_amt, tax_amt, net_total). discount_type: 'percent' or 'fixed'."""
     gross = float(gross or 0)          # tolerate Decimal/str inputs
@@ -1609,6 +1640,7 @@ def signin():
                     login_user(user)
                     session["user_id"] = user.id
                     session.pop("just_reset_email", None)
+                    record_audit("login", "User", user.id, f"Signed in from {request.remote_addr}")
                     app.logger.info("Login OK: %s (role=%s) from %s", email, user.role, request.remote_addr)
                     flash("Signed in successfully!", "success")
                     return redirect(url_for("index"))
@@ -1858,6 +1890,7 @@ def supplier():
             db.session.flush()
             sync_supplier_opening(supplier)
             db.session.commit()
+            record_audit("create", "Supplier", supplier.id, f"Supplier '{supplier.name}' added")
             flash("Supplier added successfully!", "success")
             return redirect(url_for("supplier"))
     return render_template("supplier.html", suppliers=suppliers, pagination=pagination, search=search)
@@ -1881,6 +1914,7 @@ def edit_supplier(id):
             supplier.opening_balance = float(opening_str or 0)
             sync_supplier_opening(supplier)
             db.session.commit()
+            record_audit("update", "Supplier", supplier.id, f"Supplier '{supplier.name}' edited")
             flash("Supplier updated successfully!", "success")
             return redirect(url_for("supplier"))
     return render_template("edit_supplier.html", supplier=supplier)
@@ -1894,9 +1928,11 @@ def delete_supplier(id):
     elif supplier.payments:
         flash("Cannot delete supplier with associated payments!", "danger")
     else:
+        sup_name = supplier.name
         SupplierLedgerEntry.query.filter_by(supplier_id=id).delete()
         db.session.delete(supplier)
         db.session.commit()
+        record_audit("delete", "Supplier", id, f"Supplier '{sup_name}' deleted")
         flash("Supplier deleted successfully!", "success")
     return redirect(url_for("supplier"))
 
@@ -1965,6 +2001,7 @@ def customer():
             db.session.flush()
             sync_customer_opening(customer)
             db.session.commit()
+            record_audit("create", "Customer", customer.id, f"Customer '{customer.name}' added")
             flash("Customer added successfully!", "success")
             return redirect(url_for("customer"))
     return render_template("customer.html", customers=customers, pagination=pagination, search=search)
@@ -1988,6 +2025,7 @@ def edit_customer(id):
             customer.opening_balance = float(opening_str or 0)
             sync_customer_opening(customer)
             db.session.commit()
+            record_audit("update", "Customer", customer.id, f"Customer '{customer.name}' edited")
             flash("Customer updated successfully!", "success")
             return redirect(url_for("customer"))
     return render_template("edit_customer.html", customer=customer)
@@ -2001,9 +2039,11 @@ def delete_customer(id):
     elif customer.receipts:
         flash("Cannot delete customer with associated receipts!", "danger")
     else:
+        cust_name = customer.name
         CustomerLedgerEntry.query.filter_by(customer_id=id).delete()
         db.session.delete(customer)
         db.session.commit()
+        record_audit("delete", "Customer", id, f"Customer '{cust_name}' deleted")
         flash("Customer deleted successfully!", "success")
     return redirect(url_for("customer"))
 
@@ -2142,6 +2182,7 @@ def item():
             )
             db.session.add(item)
             db.session.commit()
+            record_audit("create", "Item", item.id, f"Item '{item.name}' added")
             flash("Item added successfully!", "success")
             return redirect(url_for("item"))
     return render_template(
@@ -2192,6 +2233,7 @@ def edit_item(id):
             item.purchase_price = float(purchase_price) if purchase_price else None
             item.sale_price = float(sale_price) if sale_price else None
             db.session.commit()
+            record_audit("update", "Item", item.id, f"Item '{item.name}' edited")
             flash("Item updated successfully!", "success")
             return redirect(url_for("item"))
     return render_template("edit_item.html", item=item, categories=categories)
@@ -2203,8 +2245,10 @@ def delete_item(id):
     if item.purchases or item.sales:
         flash("Cannot delete item with associated purchases or sales!", "danger")
     else:
+        item_name = item.name
         db.session.delete(item)
         db.session.commit()
+        record_audit("delete", "Item", id, f"Item '{item_name}' deleted")
         flash("Item deleted successfully!", "success")
     return redirect(url_for("item"))
 
@@ -2462,6 +2506,7 @@ def purchase():
                 db.session.refresh(pur)
                 sync_supplier_purchase(pur)
                 db.session.commit()
+                record_audit("create", "Purchase", pur.id, f"Purchase #{pur.id}, total {purchase_total(pur):,.2f}")
                 flash("Purchase added successfully!", "success")
                 return redirect(url_for("purchase"))
             except ValueError as e:
@@ -2564,6 +2609,7 @@ def edit_purchase(id):
                     recalculate_supplier_ledger(old_supplier_id)
                 sync_supplier_purchase(pur)
                 db.session.commit()
+                record_audit("update", "Purchase", pur.id, f"Purchase #{pur.id} edited")
                 flash("Purchase updated successfully!", "success")
                 return redirect(url_for("purchase"))
             except ValueError as e:
@@ -2588,12 +2634,14 @@ def delete_purchase(id):
         item_obj = db.session.get(Item, pi.item_id)
         if item_obj:
             item_obj.stock -= pi.quantity
+    audit_summary = f"Purchase #{pur.id} ({pur.id_supplier.name if pur.id_supplier else 'supplier'}) deleted"
     supplier_id = remove_supplier_ledger_entry("purchase", pur.id)
     db.session.delete(pur)
     db.session.commit()
     if supplier_id:
         recalculate_supplier_ledger(supplier_id)
         db.session.commit()
+    record_audit("delete", "Purchase", id, audit_summary)
     flash("Purchase deleted successfully!", "success")
     return redirect(url_for("purchase"))
 
@@ -2683,6 +2731,7 @@ def sale():
                     db.session.refresh(sal)
                     sync_customer_sale(sal)
                     db.session.commit()
+                    record_audit("create", "Sale", sal.id, f"Sale #{sal.id}, total {sale_total(sal):,.2f}")
                     flash("Sale recorded successfully!", "success")
                     return redirect(url_for("sale"))
             except ValueError as e:
@@ -2786,6 +2835,7 @@ def edit_sale(id):
                         recalculate_customer_ledger(old_customer_id)
                     sync_customer_sale(sal)
                     db.session.commit()
+                    record_audit("update", "Sale", sal.id, f"Sale #{sal.id} edited")
                     flash("Sale updated successfully!", "success")
                     return redirect(url_for("sale"))
             except ValueError as e:
@@ -2807,12 +2857,14 @@ def delete_sale(id):
         item_obj = db.session.get(Item, si.item_id)
         if item_obj:
             item_obj.stock += si.quantity
+    audit_summary = f"Sale #{sal.id} ({sal.id_customer.name if sal.id_customer else 'customer'}) deleted"
     customer_id = remove_customer_ledger_entry("sale", sal.id)
     db.session.delete(sal)
     db.session.commit()
     if customer_id:
         recalculate_customer_ledger(customer_id)
         db.session.commit()
+    record_audit("delete", "Sale", id, audit_summary)
     flash("Sale deleted successfully!", "success")
     return redirect(url_for("sale"))
 
@@ -2861,6 +2913,7 @@ def supplier_payment():
                 db.session.flush()
                 sync_supplier_payment(payment)
                 db.session.commit()
+                record_audit("create", "SupplierPayment", payment.id, f"Paid {float(payment.amount):,.2f} to supplier #{payment.supplier_id} ({payment.payment_method})")
                 flash("Supplier payment recorded successfully!", "success")
                 return redirect(url_for("supplier_payment"))
     return render_template(
@@ -2909,6 +2962,7 @@ def edit_supplier_payment(id):
                     recalculate_supplier_ledger(old_supplier_id)
                 sync_supplier_payment(payment)
                 db.session.commit()
+                record_audit("update", "SupplierPayment", payment.id, f"Supplier payment #{payment.id} edited (amount {float(payment.amount):,.2f})")
                 flash("Supplier payment updated successfully!", "success")
                 return redirect(url_for("supplier_payment"))
     return render_template(
@@ -2922,12 +2976,14 @@ def edit_supplier_payment(id):
 @admin_required
 def delete_supplier_payment(id):
     payment = db.session.get(SupplierPayment, id) or abort(404)
+    audit_summary = f"Supplier payment #{payment.id} of {float(payment.amount):,.2f} deleted"
     supplier_id = remove_supplier_ledger_entry("payment", payment.id)
     db.session.delete(payment)
     db.session.commit()
     if supplier_id:
         recalculate_supplier_ledger(supplier_id)
         db.session.commit()
+    record_audit("delete", "SupplierPayment", id, audit_summary)
     flash("Supplier payment deleted successfully!", "success")
     return redirect(url_for("supplier_payment"))
 
@@ -3262,6 +3318,7 @@ def customer_receipt():
                 db.session.flush()
                 sync_customer_receipt(receipt)
                 db.session.commit()
+                record_audit("create", "CustomerReceipt", receipt.id, f"Received {float(receipt.amount):,.2f} from customer #{receipt.customer_id} ({receipt.payment_method})")
                 flash("Customer receipt recorded successfully!", "success")
                 return redirect(url_for("customer_receipt"))
     return render_template(
@@ -3310,6 +3367,7 @@ def edit_customer_receipt(id):
                     recalculate_customer_ledger(old_customer_id)
                 sync_customer_receipt(receipt)
                 db.session.commit()
+                record_audit("update", "CustomerReceipt", receipt.id, f"Customer receipt #{receipt.id} edited (amount {float(receipt.amount):,.2f})")
                 flash("Customer receipt updated successfully!", "success")
                 return redirect(url_for("customer_receipt"))
     return render_template(
@@ -3323,12 +3381,14 @@ def edit_customer_receipt(id):
 @admin_required
 def delete_customer_receipt(id):
     receipt = db.session.get(CustomerPayment, id) or abort(404)
+    audit_summary = f"Customer receipt #{receipt.id} of {float(receipt.amount):,.2f} deleted"
     customer_id = remove_customer_ledger_entry("receipt", receipt.id)
     db.session.delete(receipt)
     db.session.commit()
     if customer_id:
         recalculate_customer_ledger(customer_id)
         db.session.commit()
+    record_audit("delete", "CustomerReceipt", id, audit_summary)
     flash("Customer receipt deleted successfully!", "success")
     return redirect(url_for("customer_receipt"))
 
@@ -5332,6 +5392,7 @@ def admin_change_role(id):
     old_role = user.role
     user.role = role
     db.session.commit()
+    record_audit("update", "User", user.id, f"Role of '{user.name}' changed from '{old_role}' to '{role}'")
     flash(f"{user.name}'s role changed from '{old_role}' to '{role}'.", "success")
     return redirect(url_for("admin_users"))
 
@@ -5342,9 +5403,11 @@ def admin_delete_user(id):
     if user.id == current_user.id:
         flash("You cannot delete your own account.", "danger")
         return redirect(url_for("admin_users"))
+    user_name = user.name
     db.session.delete(user)
     db.session.commit()
-    flash(f"User '{user.name}' deleted.", "success")
+    record_audit("delete", "User", id, f"User '{user_name}' deleted")
+    flash(f"User '{user_name}' deleted.", "success")
     return redirect(url_for("admin_users"))
 
 @app.route("/admin/users/toggle-verify/<int:id>", methods=["POST"])
@@ -5354,8 +5417,22 @@ def admin_toggle_verify(id):
     user.verified = not user.verified
     db.session.commit()
     state = "verified" if user.verified else "unverified"
+    record_audit("update", "User", user.id, f"User '{user.name}' set to {state}")
     flash(f"User '{user.name}' is now {state}.", "success")
     return redirect(url_for("admin_users"))
+
+@app.route("/admin/audit")
+@admin_required
+def admin_audit():
+    action = request.args.get("action", "").strip()
+    query = AuditLog.query
+    if action:
+        query = query.filter(AuditLog.action == action)
+    query = query.order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+    entries, pagination = get_paginated_results(query)
+    actions = [a[0] for a in db.session.query(AuditLog.action).distinct().all()]
+    return render_template("admin_audit.html", entries=entries, pagination=pagination,
+                           actions=sorted(actions), current_action=action)
 
 # ─── Backup & Restore ──────────────────────────────────────────────────────────
 # Backups use a portable JSON dump of every table so they work identically on
@@ -5497,6 +5574,7 @@ def admin_restore():
                 f.write(raw)
             with app.app_context():
                 migrate_database()
+            record_audit("restore", "Database", None, "Database restored from uploaded SQLite file")
             flash("Database restored from SQLite file. Previous copy saved as database.db.bak.", "success")
         except Exception as e:
             app.logger.exception("SQLite restore failed")
@@ -5515,6 +5593,7 @@ def admin_restore():
     try:
         import_database_dict(data)
         n = sum(len(v) for v in data.get("tables", {}).values())
+        record_audit("restore", "Database", None, f"Database restored from JSON backup ({n} rows)")
         flash(f"Database restored successfully from backup ({n:,} rows). "
               "All previous data was replaced.", "success")
     except Exception as e:
