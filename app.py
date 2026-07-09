@@ -1052,6 +1052,13 @@ def parse_payment_amount(amount_str):
     amount = float(amount_str)
     return amount if amount > 0 else None
 
+def get_item_locked(item_id):
+    """Fetch an Item row FOR UPDATE so concurrent stock changes serialize instead
+    of racing (two simultaneous sales could otherwise both pass the stock check
+    and oversell, or two purchases could lose one update). It's a real row lock on
+    PostgreSQL; on SQLite it's a harmless no-op since SQLite serializes writes."""
+    return db.session.query(Item).filter_by(id=item_id).with_for_update().first()
+
 def validate_line_rows(rows, qty_idx=1, price_idx=2):
     """Validate quantity (positive whole number) and price (non-negative) for each
     parsed line-item row tuple. Returns an error string for the first bad row, or None."""
@@ -1449,6 +1456,17 @@ def set_security_headers(response):
             "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
         )
     return response
+
+@app.route("/health")
+def health():
+    """Lightweight, unauthenticated health check for uptime monitors and Render.
+    Returns 200 only if the database is reachable, else 503."""
+    try:
+        db.session.execute(text("SELECT 1"))
+        return {"status": "ok"}, 200
+    except Exception as e:
+        app.logger.error("Health check failed: %s", e)
+        return {"status": "error", "detail": "database unreachable"}, 503
 
 # Custom Jinja2 filter: number ko 999,999,999,999.99 format mein dikhaye
 @app.template_filter('fmt_num')
@@ -2517,7 +2535,7 @@ def purchase():
                 db.session.add(pur)
                 db.session.flush()
                 for iid, qty, price, d_type, d_val, tax in rows:
-                    item_obj = db.session.get(Item, int(iid)) or abort(404)
+                    item_obj = get_item_locked(int(iid)) or abort(404)   # lock: no lost stock updates
                     qty_i  = int(qty)
                     price_f = float(price)
                     d_val_f = float(d_val or 0)
@@ -2743,8 +2761,15 @@ def sale():
                     db.session.add(sal)
                     db.session.flush()
                     for iid, qty, price, d_type, d_val, tax in rows:
-                        item_obj = db.session.get(Item, int(iid)) or abort(404)
+                        item_obj = get_item_locked(int(iid)) or abort(404)
                         qty_i = int(qty); price_f = float(price)
+                        # Authoritative check under the row lock — a concurrent sale
+                        # may have reduced stock since the pre-check above.
+                        if item_obj.stock < qty_i:
+                            db.session.rollback()
+                            flash(f"Insufficient stock for {item_obj.name}: only {item_obj.stock} "
+                                  "available now (it changed while saving). Please try again.", "danger")
+                            return redirect(url_for("sale"))
                         d_val_f = float(d_val or 0); tax_f = float(tax or 0)
                         gross = qty_i * price_f
                         disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
