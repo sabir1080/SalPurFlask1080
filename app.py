@@ -1,5 +1,5 @@
 #app.py
-from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory, send_file, session, abort
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session, abort, Response
 from flask_sqlalchemy import SQLAlchemy
 from flask_paginate import Pagination, get_page_args
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
@@ -9,7 +9,7 @@ from passlib.context import CryptContext
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 import csv
-from io import BytesIO
+from io import BytesIO, StringIO
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 import os
@@ -50,6 +50,19 @@ else:
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "your_secret_key")
 app.config["SECURITY_PASSWORD_SALT"] = os.getenv("SECURITY_PASSWORD_SALT", "your_salt")
+
+_using_insecure_defaults = (
+    app.config["SECRET_KEY"] == "your_secret_key"
+    or app.config["SECURITY_PASSWORD_SALT"] == "your_salt"
+)
+if _using_insecure_defaults and DATABASE_URL:
+    # DATABASE_URL only set on real deployments (e.g. Render) — never run those on default secrets.
+    raise RuntimeError(
+        "SECRET_KEY / SECURITY_PASSWORD_SALT are still set to their insecure defaults. "
+        "Set real random values for both in your .env / environment before deploying."
+    )
+elif _using_insecure_defaults:
+    print("WARNING: SECRET_KEY / SECURITY_PASSWORD_SALT are using insecure defaults. Set real values in .env before deploying.")
 app.config["MAIL_SERVER"] = "smtp.gmail.com"
 app.config["MAIL_PORT"] = 587
 app.config["MAIL_USE_TLS"] = True
@@ -135,6 +148,19 @@ def send_email(to_email, subject, body):
         print(f"Email error ({to_email}): {str(e)}")
         flash(f"Failed to send email to {to_email}: {str(e)}", "danger")
         return False
+
+_rate_limit_hits = {}
+
+def check_rate_limit(key, max_attempts=5, window_seconds=300):
+    """Simple in-memory, per-process throttle. Returns False when the caller should be blocked."""
+    now = datetime.now(timezone.utc).timestamp()
+    hits = [t for t in _rate_limit_hits.get(key, []) if now - t < window_seconds]
+    if len(hits) >= max_attempts:
+        _rate_limit_hits[key] = hits
+        return False
+    hits.append(now)
+    _rate_limit_hits[key] = hits
+    return True
 
 def verified_required(f):
     @wraps(f)
@@ -840,13 +866,13 @@ def backfill_ledgers():
     db.session.commit()
 
 def get_total_payable():
-    return float(db.session.query(func.sum(Purchase.quantity * Purchase.purchase_price)).scalar() or 0.0)
+    return float(db.session.query(func.sum(PurchaseItem.amount)).scalar() or 0.0)
 
 def get_total_paid_suppliers():
     return float(db.session.query(func.sum(SupplierPayment.amount)).scalar() or 0.0)
 
 def get_total_receivable():
-    return float(db.session.query(func.sum(Sale.quantity * Sale.sale_price)).scalar() or 0.0)
+    return float(db.session.query(func.sum(SaleItem.amount)).scalar() or 0.0)
 
 def get_total_received_customers():
     return float(db.session.query(func.sum(CustomerPayment.amount)).scalar() or 0.0)
@@ -885,6 +911,20 @@ def parse_payment_amount(amount_str):
         return None
     amount = float(amount_str)
     return amount if amount > 0 else None
+
+def validate_line_rows(rows, qty_idx=1, price_idx=2):
+    """Validate quantity (positive whole number) and price (non-negative) for each
+    parsed line-item row tuple. Returns an error string for the first bad row, or None."""
+    for row in rows:
+        qty_s, price_s = row[qty_idx], row[price_idx]
+        if not qty_s.isdigit() or int(qty_s) <= 0:
+            return f"Quantity must be a positive whole number (got '{qty_s}')."
+        try:
+            if float(price_s) < 0:
+                return f"Price cannot be negative (got '{price_s}')."
+        except ValueError:
+            return f"Invalid price value '{price_s}'."
+    return None
 
 def validate_supplier_payment(supplier_id, amount, purchase_id=None, exclude_payment_id=None):
     supplier = db.session.get(Supplier, supplier_id)
@@ -1135,7 +1175,11 @@ def migrate_database():
 
 # Create Database
 with app.app_context():
-    migrate_database()
+    try:
+        migrate_database()
+    except Exception as e:
+        print(f"FATAL: database migration failed: {e}")
+        raise
 
 # Load user for Flask-Login
 @login_manager.user_loader
@@ -1162,6 +1206,21 @@ def write_csv_header(writer, report_title, start_date_str=None, end_date_str=Non
         writer.writerow(["Info:", extra_info])
     writer.writerow(["Generated On:", datetime.now().strftime("%Y-%m-%d %H:%M")])
     writer.writerow([])
+
+
+def csv_response(filename, title, col_headers, rows, start_date_str=None, end_date_str=None, extra_info=None):
+    """Build a CSV entirely in memory and return it as a download — no shared file on disk,
+    so concurrent exports from different users/tabs can never race or overwrite each other."""
+    buf = StringIO()
+    writer = csv.writer(buf)
+    write_csv_header(writer, title, start_date_str, end_date_str, extra_info)
+    writer.writerow(col_headers)
+    writer.writerows(rows)
+    return Response(
+        buf.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 def excel_response(filename, title, col_headers, rows, start_date_str=None, end_date_str=None, extra_info=None):
@@ -1333,6 +1392,9 @@ def signin():
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "").strip()
+        if not check_rate_limit(f"signin:{request.remote_addr}"):
+            flash("Too many login attempts. Please try again in a few minutes.", "danger")
+            return render_template("signin.html", just_reset=session.get("just_reset_email"))
         user = User.query.filter_by(email=email).first()
         if user:
             try:
@@ -1347,7 +1409,8 @@ def signin():
                     flash("Signed in successfully!", "success")
                     return redirect(url_for("index"))
                 flash("Invalid email or password!", "danger")
-            except Exception:
+            except Exception as e:
+                print(f"Login error for {email}: {e}")
                 flash("Invalid email or password!", "danger")
         else:
             flash("Invalid email or password!", "danger")
@@ -1368,9 +1431,13 @@ def forgot_password():
         return redirect(url_for("index"))
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
+        if not check_rate_limit(f"forgot_password:{request.remote_addr}"):
+            flash("Too many attempts. Please try again in a few minutes.", "danger")
+            return render_template("forgot_password.html")
         user = User.query.filter_by(email=email).first()
+        generic_msg = "If that email is registered, a password reset link has been sent. Check your inbox and spam/junk folder."
         if not user:
-            flash(f"Email {email} not found!", "danger")
+            flash(generic_msg, "success")
         else:
             token = secrets.token_urlsafe(32)
             expiry = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=1)
@@ -1385,10 +1452,7 @@ def forgot_password():
                 user.reset_token = token
                 user.reset_token_expiry = expiry
                 db.session.commit()
-                flash(
-                    f"Password reset link sent to {email}! Check your inbox and spam/junk folder (Yahoo/Hotmail often filter these).",
-                    "success",
-                )
+                flash(generic_msg, "success")
                 print(f"PASSWORD RESET LINK for {email}: {reset_url}")
                 if app.debug:
                     flash(f"Development — reset link for {email}: {reset_url}", "info")
@@ -1498,9 +1562,10 @@ def dashboard():
     items = Item.query.all()
     purchases = Purchase.query.order_by(Purchase.date.desc()).limit(5).all()
     sales = Sale.query.order_by(Sale.date.desc()).limit(5).all()
-    total_purchase_cost = db.session.query(func.sum(Purchase.quantity * Purchase.purchase_price)).scalar() or 0.0
-    total_sale_revenue = db.session.query(func.sum(Sale.quantity * Sale.sale_price)).scalar() or 0.0
-    total_gross_profit = db.session.query(func.sum((Sale.sale_price - Sale.cost_price) * Sale.quantity)).scalar() or 0.0
+    total_purchase_cost = db.session.query(func.sum(PurchaseItem.amount)).scalar() or 0.0
+    total_sale_revenue = db.session.query(func.sum(SaleItem.amount)).scalar() or 0.0
+    _profit_expr = SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.cost_price
+    total_gross_profit = db.session.query(func.sum(_profit_expr)).scalar() or 0.0
     total_purchase_returns = db.session.query(func.sum(PurchaseReturn.quantity * PurchaseReturn.return_price)).scalar() or 0.0
     total_sale_returns = db.session.query(func.sum(SaleReturn.quantity * SaleReturn.return_price)).scalar() or 0.0
     low_stock_count = Item.query.filter(Item.stock <= Item.reorder_level).count()
@@ -1513,9 +1578,10 @@ def dashboard():
     monthly_sales = (
         db.session.query(
             sql_date_fmt(Sale.date).label("month"),
-            db.func.sum(Sale.quantity * Sale.sale_price).label("sale_amt"),
-            db.func.sum((Sale.sale_price - Sale.cost_price) * Sale.quantity).label("profit_amt"),
+            db.func.sum(SaleItem.amount).label("sale_amt"),
+            db.func.sum(_profit_expr).label("profit_amt"),
         )
+        .join(SaleItem, SaleItem.sale_id == Sale.id)
         .group_by(sql_date_fmt(Sale.date))
         .order_by(sql_date_fmt(Sale.date))
         .limit(12)
@@ -1524,8 +1590,9 @@ def dashboard():
     monthly_purchases = (
         db.session.query(
             sql_date_fmt(Purchase.date).label("month"),
-            db.func.sum(Purchase.quantity * Purchase.purchase_price).label("purchase_amt"),
+            db.func.sum(PurchaseItem.amount).label("purchase_amt"),
         )
+        .join(PurchaseItem, PurchaseItem.purchase_id == Purchase.id)
         .group_by(sql_date_fmt(Purchase.date))
         .order_by(sql_date_fmt(Purchase.date))
         .limit(12)
@@ -1631,15 +1698,14 @@ def delete_supplier(id):
 @manager_required
 def export_suppliers():
     suppliers = Supplier.query.order_by(Supplier.name).all()
-    with open("static/suppliers.csv", "w", newline="") as file:
-        writer = csv.writer(file)
-        write_csv_header(writer, "Suppliers List")
-        writer.writerow(["ID", "Name", "Contact", "Address", "Opening Balance", "Current Balance"])
-        for s in suppliers:
-            writer.writerow([s.id, s.name, s.contact, s.address,
-                             round(float(s.opening_balance or 0), 2),
-                             round(get_supplier_balance(s.id), 2)])
-    return send_from_directory("static", "suppliers.csv")
+    rows = [
+        [s.id, s.name, s.contact, s.address,
+         round(float(s.opening_balance or 0), 2),
+         round(get_supplier_balance(s.id), 2)]
+        for s in suppliers
+    ]
+    return csv_response("suppliers.csv", "Suppliers List",
+                         ["ID", "Name", "Contact", "Address", "Opening Balance", "Current Balance"], rows)
 
 @app.route("/export_suppliers_excel")
 @manager_required
@@ -1739,15 +1805,14 @@ def delete_customer(id):
 @manager_required
 def export_customers():
     customers = Customer.query.order_by(Customer.name).all()
-    with open("static/customers.csv", "w", newline="") as file:
-        writer = csv.writer(file)
-        write_csv_header(writer, "Customers List")
-        writer.writerow(["ID", "Name", "Contact", "Address", "Opening Balance", "Current Balance"])
-        for c in customers:
-            writer.writerow([c.id, c.name, c.contact, c.address,
-                             round(float(c.opening_balance or 0), 2),
-                             round(get_customer_balance(c.id), 2)])
-    return send_from_directory("static", "customers.csv")
+    rows = [
+        [c.id, c.name, c.contact, c.address,
+         round(float(c.opening_balance or 0), 2),
+         round(get_customer_balance(c.id), 2)]
+        for c in customers
+    ]
+    return csv_response("customers.csv", "Customers List",
+                         ["ID", "Name", "Contact", "Address", "Opening Balance", "Current Balance"], rows)
 
 @app.route("/export_customers_excel")
 @manager_required
@@ -2059,15 +2124,15 @@ def export_item_ledger(id):
 
     rows.sort(key=lambda x: x[0])
     balance = 0
-    filename = f"item_ledger_{id}.csv"
-    with open(f"static/{filename}", "w", newline="") as f:
-        writer = csv.writer(f)
-        write_csv_header(writer, "Item Stock Ledger", extra_info=f"Item: {item.name}")
-        writer.writerow(["Date", "Type", "Reference", "Party", "Stock In", "Stock Out", "Rate", "Value", "Balance"])
-        for date, typ, ref, party, sin, sout, rate, value in rows:
-            balance += sin - sout
-            writer.writerow([date.strftime("%Y-%m-%d"), typ, ref, party, sin, sout, round(rate, 2), round(value, 2), balance])
-    return send_from_directory("static", filename, as_attachment=True, download_name=f"{item.name}_ledger.csv")
+    csv_rows = []
+    for date, typ, ref, party, sin, sout, rate, value in rows:
+        balance += sin - sout
+        csv_rows.append([date.strftime("%Y-%m-%d"), typ, ref, party, sin, sout, round(rate, 2), round(value, 2), balance])
+    return csv_response(
+        f"{item.name}_ledger.csv", "Item Stock Ledger",
+        ["Date", "Type", "Reference", "Party", "Stock In", "Stock Out", "Rate", "Value", "Balance"],
+        csv_rows, extra_info=f"Item: {item.name}",
+    )
 
 @app.route("/item/<int:id>/ledger/export/excel")
 @verified_required
@@ -2148,10 +2213,13 @@ def purchase():
                     tax_pcts[i] if i < len(tax_pcts) else "0",
                 ))
 
+        row_error = validate_line_rows(rows) if rows else None
         if not supplier_id or not date_str:
             flash("Supplier and date are required!", "danger")
         elif not rows:
             flash("At least one item is required!", "danger")
+        elif row_error:
+            flash(row_error, "danger")
         else:
             try:
                 purchase_date = datetime.strptime(date_str, "%Y-%m-%d")
@@ -2229,18 +2297,23 @@ def edit_purchase(id):
                     tax_pcts[i] if i < len(tax_pcts) else "0",
                 ))
 
+        row_error = validate_line_rows(rows) if rows else None
         if not supplier_id or not date_str:
             flash("Supplier and date are required!", "danger")
         elif not rows:
             flash("At least one item is required!", "danger")
+        elif row_error:
+            flash(row_error, "danger")
         else:
             try:
                 old_supplier_id = pur.supplier_id
                 # Reverse old stock
+                touched_items = {}
                 for pi in pur.line_items:
                     old_item = db.session.get(Item, pi.item_id)
                     if old_item:
                         old_item.stock -= pi.quantity
+                        touched_items[old_item.id] = old_item
                 # Delete old line items
                 PurchaseItem.query.filter_by(purchase_id=pur.id).delete()
                 # Update header
@@ -2269,6 +2342,15 @@ def edit_purchase(id):
                     )
                     db.session.add(pi)
                     item_obj.stock += qty_i
+                    touched_items[item_obj.id] = item_obj
+
+                negative_items = [it for it in touched_items.values() if it.stock < 0]
+                if negative_items:
+                    names = ", ".join(f"{it.name} ({it.stock})" for it in negative_items)
+                    db.session.rollback()
+                    flash(f"Cannot save — this change would make stock negative for: {names}", "danger")
+                    return render_template("edit_purchase.html", purchase=pur, suppliers=suppliers, items=items_all)
+
                 db.session.flush()
                 db.session.refresh(pur)
                 if old_supplier_id != int(supplier_id):
@@ -2291,6 +2373,10 @@ def delete_purchase(id):
         return redirect(url_for("purchase"))
     if pur.returns:
         flash("Cannot delete purchase with associated returns! Delete returns first.", "danger")
+        return redirect(url_for("purchase"))
+    linked_po = PurchaseOrder.query.filter_by(converted_purchase_id=pur.id).first()
+    if linked_po:
+        flash(f"Cannot delete purchase — it was created from Purchase Order #{linked_po.id}.", "danger")
         return redirect(url_for("purchase"))
     for pi in pur.line_items:
         item_obj = db.session.get(Item, pi.item_id)
@@ -2339,10 +2425,13 @@ def sale():
                     tax_pcts[i] if i < len(tax_pcts) else "0",
                 ))
 
+        row_error = validate_line_rows(rows) if rows else None
         if not customer_id or not date_str:
             flash("Customer and date are required!", "danger")
         elif not rows:
             flash("At least one item is required!", "danger")
+        elif row_error:
+            flash(row_error, "danger")
         else:
             try:
                 sale_date = datetime.strptime(date_str, "%Y-%m-%d")
@@ -2429,10 +2518,13 @@ def edit_sale(id):
                     tax_pcts[i] if i < len(tax_pcts) else "0",
                 ))
 
+        row_error = validate_line_rows(rows) if rows else None
         if not customer_id or not date_str:
             flash("Customer and date are required!", "danger")
         elif not rows:
             flash("At least one item is required!", "danger")
+        elif row_error:
+            flash(row_error, "danger")
         else:
             try:
                 old_customer_id = sal.customer_id
@@ -2500,6 +2592,10 @@ def delete_sale(id):
     sal = db.session.get(Sale, id) or abort(404)
     if sal.customer_payments:
         flash("Cannot delete sale with associated receipts! Delete receipts first.", "danger")
+        return redirect(url_for("sale"))
+    linked_quotation = Quotation.query.filter_by(converted_sale_id=sal.id).first()
+    if linked_quotation:
+        flash(f"Cannot delete sale — it was created from Quotation #{linked_quotation.id}.", "danger")
         return redirect(url_for("sale"))
     for si in sal.line_items:
         item_obj = db.session.get(Item, si.item_id)
@@ -2702,6 +2798,10 @@ def supplier_bulk_payment():
                     except ValueError:
                         errors.append(f"Invalid amount for purchase #{pid}.")
                         continue
+                    row_error = validate_supplier_payment(sup_id, amt, pid)
+                    if row_error:
+                        errors.append(f"Purchase #{pid}: {row_error}")
+                        continue
                     rows.append((int(pid), amt))
 
                 gen_amt = 0.0
@@ -2840,6 +2940,10 @@ def customer_bulk_receipt():
                         amt = float(amt_s)
                     except ValueError:
                         errors.append(f"Invalid amount for sale #{sid}.")
+                        continue
+                    row_error = validate_customer_receipt(cust_id, amt, sid)
+                    if row_error:
+                        errors.append(f"Sale #{sid}: {row_error}")
                         continue
                     rows.append((int(sid), amt))
 
@@ -3096,17 +3200,15 @@ def export_supplier_ledger(id):
         .order_by(SupplierLedgerEntry.entry_date.asc(), SupplierLedgerEntry.id.asc())
         .all()
     )
-    filename = f"supplier_ledger_{id}.csv"
-    with open(f"static/{filename}", "w", newline="") as file:
-        writer = csv.writer(file)
-        write_csv_header(writer, "Supplier Ledger", extra_info=f"Supplier: {supplier.name}")
-        writer.writerow(["Date", "Type", "Description", "Debit", "Credit", "Balance"])
-        for e in entries:
-            writer.writerow([
-                e.entry_date.strftime("%Y-%m-%d"), e.entry_type, e.description,
-                round(e.debit, 2), round(e.credit, 2), round(e.balance_after, 2),
-            ])
-    return send_from_directory("static", filename, as_attachment=True, download_name=f"{supplier.name}_ledger.csv")
+    rows = [
+        [e.entry_date.strftime("%Y-%m-%d"), e.entry_type, e.description, round(e.debit, 2), round(e.credit, 2), round(e.balance_after, 2)]
+        for e in entries
+    ]
+    return csv_response(
+        f"{supplier.name}_ledger.csv", "Supplier Ledger",
+        ["Date", "Type", "Description", "Debit", "Credit", "Balance"],
+        rows, extra_info=f"Supplier: {supplier.name}",
+    )
 
 @app.route("/supplier/<int:id>/ledger/export/excel")
 @manager_required
@@ -3203,17 +3305,15 @@ def export_customer_ledger(id):
         .order_by(CustomerLedgerEntry.entry_date.asc(), CustomerLedgerEntry.id.asc())
         .all()
     )
-    filename = f"customer_ledger_{id}.csv"
-    with open(f"static/{filename}", "w", newline="") as file:
-        writer = csv.writer(file)
-        write_csv_header(writer, "Customer Ledger", extra_info=f"Customer: {customer.name}")
-        writer.writerow(["Date", "Type", "Description", "Debit", "Credit", "Balance"])
-        for e in entries:
-            writer.writerow([
-                e.entry_date.strftime("%Y-%m-%d"), e.entry_type, e.description,
-                round(e.debit, 2), round(e.credit, 2), round(e.balance_after, 2),
-            ])
-    return send_from_directory("static", filename, as_attachment=True, download_name=f"{customer.name}_ledger.csv")
+    rows = [
+        [e.entry_date.strftime("%Y-%m-%d"), e.entry_type, e.description, round(e.debit, 2), round(e.credit, 2), round(e.balance_after, 2)]
+        for e in entries
+    ]
+    return csv_response(
+        f"{customer.name}_ledger.csv", "Customer Ledger",
+        ["Date", "Type", "Description", "Debit", "Credit", "Balance"],
+        rows, extra_info=f"Customer: {customer.name}",
+    )
 
 @app.route("/customer/<int:id>/ledger/export/excel")
 @manager_required
@@ -3358,16 +3458,18 @@ def reports():
                 purchase_return_report = PurchaseReturn.query.filter(PurchaseReturn.date.between(start_date, end_date)).order_by(PurchaseReturn.date.desc()).all()
                 sale_return_report = SaleReturn.query.filter(SaleReturn.date.between(start_date, end_date)).order_by(SaleReturn.date.desc()).all()
                 stock_report       = Item.query.outerjoin(Category, Item.category_id == Category.id).order_by(Category.name, Item.name).all()
-                # sale_amt  = gross - discount + tax  (what customer pays = net total)
+                # sale_amt  = gross - discount + tax  (what customer pays = net total) = SaleItem.amount
                 # profit    = gross - discount - cogs (tax excluded from profit)
-                _sale_net  = Sale.quantity * Sale.sale_price - Sale.discount_amount + Sale.tax_amount
-                _sale_prof = Sale.quantity * Sale.sale_price - Sale.discount_amount - Sale.quantity * Sale.cost_price
+                _sale_net  = SaleItem.amount
+                _sale_prof = SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.cost_price
                 date_profit_report = (
                     db.session.query(
                         db.func.date(Sale.date).label("sale_date"),
                         db.func.sum(_sale_net).label("sale_amt"),
                         db.func.sum(_sale_prof).label("profit_amt"),
                     )
+                    .select_from(SaleItem)
+                    .join(Sale, SaleItem.sale_id == Sale.id)
                     .filter(Sale.date.between(start_date, end_date))
                     .group_by(db.func.date(Sale.date))
                     .order_by(db.func.date(Sale.date))
@@ -3380,7 +3482,9 @@ def reports():
                         db.func.sum(_sale_net).label("sale_amt"),
                         db.func.sum(_sale_prof).label("profit_amt"),
                     )
-                    .join(Sale, Sale.item_id == Item.id)
+                    .select_from(SaleItem)
+                    .join(Sale, SaleItem.sale_id == Sale.id)
+                    .join(Item, SaleItem.item_id == Item.id)
                     .outerjoin(Category, Item.category_id == Category.id)
                     .filter(Sale.date.between(start_date, end_date))
                     .group_by(Item.name, Category.name)
@@ -3393,7 +3497,9 @@ def reports():
                         db.func.sum(_sale_net).label("sale_amt"),
                         db.func.sum(_sale_prof).label("profit_amt"),
                     )
-                    .join(Sale, Sale.customer_id == Customer.id)
+                    .select_from(SaleItem)
+                    .join(Sale, SaleItem.sale_id == Sale.id)
+                    .join(Customer, Sale.customer_id == Customer.id)
                     .filter(Sale.date.between(start_date, end_date))
                     .group_by(Customer.name)
                     .order_by(Customer.name)
@@ -3405,23 +3511,26 @@ def reports():
                         db.func.sum(_sale_net).label("sale_amt"),
                         db.func.sum(_sale_prof).label("profit_amt"),
                     )
-                    .select_from(Sale)
-                    .join(Item, Sale.item_id == Item.id)
+                    .select_from(SaleItem)
+                    .join(Sale, SaleItem.sale_id == Sale.id)
+                    .join(Item, SaleItem.item_id == Item.id)
                     .join(Category, Item.category_id == Category.id)
                     .filter(Sale.date.between(start_date, end_date))
                     .group_by(Category.name)
                     .order_by(Category.name)
                     .all()
                 )
-                _pur_net = Purchase.quantity * Purchase.purchase_price - Purchase.discount_amount + Purchase.tax_amount
+                _pur_net = PurchaseItem.amount
                 supplier_purchase_report = (
                     db.session.query(
                         Supplier.name.label("name"),
-                        db.func.count(Purchase.id).label("bill_count"),
-                        db.func.sum(Purchase.quantity).label("total_qty"),
+                        db.func.count(db.func.distinct(Purchase.id)).label("bill_count"),
+                        db.func.sum(PurchaseItem.quantity).label("total_qty"),
                         db.func.sum(_pur_net).label("total_amt"),
                     )
-                    .join(Purchase, Purchase.supplier_id == Supplier.id)
+                    .select_from(PurchaseItem)
+                    .join(Purchase, PurchaseItem.purchase_id == Purchase.id)
+                    .join(Supplier, Purchase.supplier_id == Supplier.id)
                     .filter(Purchase.date.between(start_date, end_date))
                     .group_by(Supplier.name)
                     .order_by(db.func.sum(_pur_net).desc())
@@ -3431,8 +3540,10 @@ def reports():
                     db.session.query(
                         db.func.sum(_sale_net).label("total_sale_amt"),
                         db.func.sum(_sale_prof).label("total_profit_amt"),
-                        db.func.sum(Sale.quantity * Sale.cost_price).label("total_purchase_cost"),
+                        db.func.sum(SaleItem.quantity * SaleItem.cost_price).label("total_purchase_cost"),
                     )
+                    .select_from(SaleItem)
+                    .join(Sale, SaleItem.sale_id == Sale.id)
                     .filter(Sale.date.between(start_date, end_date))
                     .first()
                 )
@@ -3444,9 +3555,9 @@ def reports():
                 net_sale_amt        = total_sale_amt - total_sale_return_amt
                 net_purchase_cost   = total_purchase_cost - total_purchase_return_amt
                 gross_profit        = total_profit_amt
-                purchase_qty_total  = sum(p.quantity for p in purchase_report)
+                purchase_qty_total  = sum(pi.quantity for p in purchase_report for pi in p.line_items)
                 purchase_amt_total  = sum(purchase_total(p) for p in purchase_report)
-                sale_qty_total      = sum(s.quantity for s in sale_report)
+                sale_qty_total      = sum(si.quantity for s in sale_report for si in s.line_items)
                 sale_amt_total      = sum(sale_total(s) for s in sale_report)
                 supplier_balances = [
                     {
@@ -3548,12 +3659,7 @@ def export_purchase_report():
         ]
         if request.form.get("format") == "xlsx":
             return excel_response("purchase_report.xlsx", "Purchase History", col_headers, rows, start_date_str, end_date_str)
-        with open("static/purchase_report.csv", "w", newline="") as file:
-            writer = csv.writer(file)
-            write_csv_header(writer, "Purchase History", start_date_str, end_date_str)
-            writer.writerow(col_headers)
-            writer.writerows(rows)
-        return send_from_directory("static", "purchase_report.csv")
+        return csv_response("purchase_report.csv", "Purchase History", col_headers, rows, start_date_str, end_date_str)
     except ValueError:
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
@@ -3585,12 +3691,7 @@ def export_sale_report():
         ]
         if request.form.get("format") == "xlsx":
             return excel_response("sale_report.xlsx", "Sale History", col_headers, rows, start_date_str, end_date_str)
-        with open("static/sale_report.csv", "w", newline="") as file:
-            writer = csv.writer(file)
-            write_csv_header(writer, "Sale History", start_date_str, end_date_str)
-            writer.writerow(col_headers)
-            writer.writerows(rows)
-        return send_from_directory("static", "sale_report.csv")
+        return csv_response("sale_report.csv", "Sale History", col_headers, rows, start_date_str, end_date_str)
     except ValueError:
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
@@ -3609,9 +3710,11 @@ def export_date_sale_report():
         date_sale_report = (
             db.session.query(
                 db.func.date(Sale.date).label("sale_date"),
-                db.func.sum(Sale.quantity * Sale.sale_price - Sale.discount_amount + Sale.tax_amount).label("sale_amt"),
-                db.func.sum(Sale.quantity * Sale.sale_price - Sale.discount_amount - Sale.quantity * Sale.cost_price).label("profit_amt"),
+                db.func.sum(SaleItem.amount).label("sale_amt"),
+                db.func.sum(SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.cost_price).label("profit_amt"),
             )
+            .select_from(SaleItem)
+            .join(Sale, SaleItem.sale_id == Sale.id)
             .filter(Sale.date.between(start_date, end_date))
             .group_by(db.func.date(Sale.date))
             .order_by(db.func.date(Sale.date))
@@ -3621,12 +3724,7 @@ def export_date_sale_report():
         rows = [[row.sale_date, round(row.sale_amt, 2), round(row.profit_amt, 2)] for row in date_sale_report]
         if request.form.get("format") == "xlsx":
             return excel_response("date_sale_report.xlsx", "Date-wise Profit Report", col_headers, rows, start_date_str, end_date_str)
-        with open("static/date_sale_report.csv", "w", newline="") as file:
-            writer = csv.writer(file)
-            write_csv_header(writer, "Date-wise Profit Report", start_date_str, end_date_str)
-            writer.writerow(col_headers)
-            writer.writerows(rows)
-        return send_from_directory("static", "date_sale_report.csv")
+        return csv_response("date_sale_report.csv", "Date-wise Profit Report", col_headers, rows, start_date_str, end_date_str)
     except ValueError:
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
@@ -3646,10 +3744,12 @@ def export_item_sale_report():
             db.session.query(
                 Item.name.label("name"),
                 Category.name.label("category"),
-                db.func.sum(Sale.quantity * Sale.sale_price - Sale.discount_amount + Sale.tax_amount).label("sale_amt"),
-                db.func.sum(Sale.quantity * Sale.sale_price - Sale.discount_amount - Sale.quantity * Sale.cost_price).label("profit_amt"),
+                db.func.sum(SaleItem.amount).label("sale_amt"),
+                db.func.sum(SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.cost_price).label("profit_amt"),
             )
-            .join(Sale, Sale.item_id == Item.id)
+            .select_from(SaleItem)
+            .join(Sale, SaleItem.sale_id == Sale.id)
+            .join(Item, SaleItem.item_id == Item.id)
             .outerjoin(Category, Item.category_id == Category.id)
             .filter(Sale.date.between(start_date, end_date))
             .group_by(Item.name, Category.name)
@@ -3660,12 +3760,7 @@ def export_item_sale_report():
         rows = [[row.name, row.category or "N/A", round(row.sale_amt, 2), round(row.profit_amt, 2)] for row in item_sale]
         if request.form.get("format") == "xlsx":
             return excel_response("item_sale_report.xlsx", "Item-wise Profit Report", col_headers, rows, start_date_str, end_date_str)
-        with open("static/item_sale_report.csv", "w", newline="") as file:
-            writer = csv.writer(file)
-            write_csv_header(writer, "Item-wise Profit Report", start_date_str, end_date_str)
-            writer.writerow(col_headers)
-            writer.writerows(rows)
-        return send_from_directory("static", "item_sale_report.csv")
+        return csv_response("item_sale_report.csv", "Item-wise Profit Report", col_headers, rows, start_date_str, end_date_str)
     except ValueError:
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
@@ -3684,10 +3779,12 @@ def export_customer_sale_report():
         customer_sale = (
             db.session.query(
                 Customer.name.label("name"),
-                db.func.sum(Sale.quantity * Sale.sale_price - Sale.discount_amount + Sale.tax_amount).label("sale_amt"),
-                db.func.sum(Sale.quantity * Sale.sale_price - Sale.discount_amount - Sale.quantity * Sale.cost_price).label("profit_amt"),
+                db.func.sum(SaleItem.amount).label("sale_amt"),
+                db.func.sum(SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.cost_price).label("profit_amt"),
             )
-            .join(Sale, Sale.customer_id == Customer.id)
+            .select_from(SaleItem)
+            .join(Sale, SaleItem.sale_id == Sale.id)
+            .join(Customer, Sale.customer_id == Customer.id)
             .filter(Sale.date.between(start_date, end_date))
             .group_by(Customer.name)
             .order_by(Customer.name)
@@ -3697,12 +3794,7 @@ def export_customer_sale_report():
         rows = [[row.name, round(row.sale_amt, 2), round(row.profit_amt, 2)] for row in customer_sale]
         if request.form.get("format") == "xlsx":
             return excel_response("customer_sale_report.xlsx", "Customer-wise Profit Report", col_headers, rows, start_date_str, end_date_str)
-        with open("static/customer_sale_report.csv", "w", newline="") as file:
-            writer = csv.writer(file)
-            write_csv_header(writer, "Customer-wise Profit Report", start_date_str, end_date_str)
-            writer.writerow(col_headers)
-            writer.writerows(rows)
-        return send_from_directory("static", "customer_sale_report.csv")
+        return csv_response("customer_sale_report.csv", "Customer-wise Profit Report", col_headers, rows, start_date_str, end_date_str)
     except ValueError:
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
@@ -3721,11 +3813,12 @@ def export_category_sale_report():
         category_sale = (
             db.session.query(
                 Category.name.label("name"),
-                db.func.sum(Sale.quantity * Sale.sale_price - Sale.discount_amount + Sale.tax_amount).label("sale_amt"),
-                db.func.sum(Sale.quantity * Sale.sale_price - Sale.discount_amount - Sale.quantity * Sale.cost_price).label("profit_amt"),
+                db.func.sum(SaleItem.amount).label("sale_amt"),
+                db.func.sum(SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.cost_price).label("profit_amt"),
             )
-            .select_from(Sale)
-            .join(Item, Sale.item_id == Item.id)
+            .select_from(SaleItem)
+            .join(Sale, SaleItem.sale_id == Sale.id)
+            .join(Item, SaleItem.item_id == Item.id)
             .join(Category, Item.category_id == Category.id)
             .filter(Sale.date.between(start_date, end_date))
             .group_by(Category.name)
@@ -3736,12 +3829,7 @@ def export_category_sale_report():
         rows = [[row.name, round(row.sale_amt, 2), round(row.profit_amt, 2)] for row in category_sale]
         if request.form.get("format") == "xlsx":
             return excel_response("category_sale_report.xlsx", "Category-wise Profit Report", col_headers, rows, start_date_str, end_date_str)
-        with open("static/category_sale_report.csv", "w", newline="") as file:
-            writer = csv.writer(file)
-            write_csv_header(writer, "Category-wise Profit Report", start_date_str, end_date_str)
-            writer.writerow(col_headers)
-            writer.writerows(rows)
-        return send_from_directory("static", "category_sale_report.csv")
+        return csv_response("category_sale_report.csv", "Category-wise Profit Report", col_headers, rows, start_date_str, end_date_str)
     except ValueError:
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
@@ -3758,12 +3846,7 @@ def export_supplier_payable():
                      round(bal, 2), supplier_balance_label(bal)])
     if request.args.get("format") == "xlsx":
         return excel_response("supplier_payable_report.xlsx", "Supplier Payable Report", col_headers, rows)
-    with open("static/supplier_payable_report.csv", "w", newline="") as file:
-        writer = csv.writer(file)
-        write_csv_header(writer, "Supplier Payable Report")
-        writer.writerow(col_headers)
-        writer.writerows(rows)
-    return send_from_directory("static", "supplier_payable_report.csv")
+    return csv_response("supplier_payable_report.csv", "Supplier Payable Report", col_headers, rows)
 
 @app.route("/export_customer_receivable")
 @manager_required
@@ -3777,12 +3860,7 @@ def export_customer_receivable():
                      round(bal, 2), customer_balance_label(bal)])
     if request.args.get("format") == "xlsx":
         return excel_response("customer_receivable_report.xlsx", "Customer Receivable Report", col_headers, rows)
-    with open("static/customer_receivable_report.csv", "w", newline="") as file:
-        writer = csv.writer(file)
-        write_csv_header(writer, "Customer Receivable Report")
-        writer.writerow(col_headers)
-        writer.writerows(rows)
-    return send_from_directory("static", "customer_receivable_report.csv")
+    return csv_response("customer_receivable_report.csv", "Customer Receivable Report", col_headers, rows)
 
 @app.route("/export_purchase_return_report", methods=["POST"])
 @manager_required
@@ -3805,12 +3883,7 @@ def export_purchase_return_report():
         ]
         if request.form.get("format") == "xlsx":
             return excel_response("purchase_return_report.xlsx", "Purchase Returns Report", col_headers, rows, start_date_str, end_date_str)
-        with open("static/purchase_return_report.csv", "w", newline="") as file:
-            writer = csv.writer(file)
-            write_csv_header(writer, "Purchase Returns Report", start_date_str, end_date_str)
-            writer.writerow(col_headers)
-            writer.writerows(rows)
-        return send_from_directory("static", "purchase_return_report.csv")
+        return csv_response("purchase_return_report.csv", "Purchase Returns Report", col_headers, rows, start_date_str, end_date_str)
     except ValueError:
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
@@ -3836,12 +3909,7 @@ def export_sale_return_report():
         ]
         if request.form.get("format") == "xlsx":
             return excel_response("sale_return_report.xlsx", "Sale Returns Report", col_headers, rows, start_date_str, end_date_str)
-        with open("static/sale_return_report.csv", "w", newline="") as file:
-            writer = csv.writer(file)
-            write_csv_header(writer, "Sale Returns Report", start_date_str, end_date_str)
-            writer.writerow(col_headers)
-            writer.writerows(rows)
-        return send_from_directory("static", "sale_return_report.csv")
+        return csv_response("sale_return_report.csv", "Sale Returns Report", col_headers, rows, start_date_str, end_date_str)
     except ValueError:
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
@@ -3860,26 +3928,23 @@ def export_supplier_purchase_report():
         data = (
             db.session.query(
                 Supplier.name.label("name"),
-                db.func.count(Purchase.id).label("bill_count"),
-                db.func.sum(Purchase.quantity).label("total_qty"),
-                db.func.sum(Purchase.quantity * Purchase.purchase_price - Purchase.discount_amount + Purchase.tax_amount).label("total_amt"),
+                db.func.count(db.func.distinct(Purchase.id)).label("bill_count"),
+                db.func.sum(PurchaseItem.quantity).label("total_qty"),
+                db.func.sum(PurchaseItem.amount).label("total_amt"),
             )
-            .join(Purchase, Purchase.supplier_id == Supplier.id)
+            .select_from(PurchaseItem)
+            .join(Purchase, PurchaseItem.purchase_id == Purchase.id)
+            .join(Supplier, Purchase.supplier_id == Supplier.id)
             .filter(Purchase.date.between(start_date, end_date))
             .group_by(Supplier.name)
-            .order_by(db.func.sum(Purchase.quantity * Purchase.purchase_price - Purchase.discount_amount + Purchase.tax_amount).desc())
+            .order_by(db.func.sum(PurchaseItem.amount).desc())
             .all()
         )
         col_headers = ["Supplier", "Bills", "Total Qty", "Total Amount"]
         rows = [[row.name, row.bill_count, row.total_qty, round(row.total_amt, 2)] for row in data]
         if request.form.get("format") == "xlsx":
             return excel_response("supplier_purchase_report.xlsx", "Supplier-wise Purchase Report", col_headers, rows, start_date_str, end_date_str)
-        with open("static/supplier_purchase_report.csv", "w", newline="") as file:
-            writer = csv.writer(file)
-            write_csv_header(writer, "Supplier-wise Purchase Report", start_date_str, end_date_str)
-            writer.writerow(col_headers)
-            writer.writerows(rows)
-        return send_from_directory("static", "supplier_purchase_report.csv")
+        return csv_response("supplier_purchase_report.csv", "Supplier-wise Purchase Report", col_headers, rows, start_date_str, end_date_str)
     except ValueError:
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
@@ -3900,12 +3965,7 @@ def export_stock_report():
         ])
     if request.args.get("format") == "xlsx":
         return excel_response("stock_report.xlsx", "Stock / Inventory Report", col_headers, rows)
-    with open("static/stock_report.csv", "w", newline="") as file:
-        writer = csv.writer(file)
-        write_csv_header(writer, "Stock / Inventory Report")
-        writer.writerow(col_headers)
-        writer.writerows(rows)
-    return send_from_directory("static", "stock_report.csv")
+    return csv_response("stock_report.csv", "Stock / Inventory Report", col_headers, rows)
 
 @app.route("/export_supplier_payment_history", methods=["POST"])
 @manager_required
@@ -3933,12 +3993,7 @@ def export_supplier_payment_history():
         ]
         if request.form.get("format") == "xlsx":
             return excel_response("supplier_payment_history.xlsx", "Supplier Payment History", col_headers, rows, start_date_str, end_date_str)
-        with open("static/supplier_payment_history.csv", "w", newline="") as file:
-            writer = csv.writer(file)
-            write_csv_header(writer, "Supplier Payment History", start_date_str, end_date_str)
-            writer.writerow(col_headers)
-            writer.writerows(rows)
-        return send_from_directory("static", "supplier_payment_history.csv")
+        return csv_response("supplier_payment_history.csv", "Supplier Payment History", col_headers, rows, start_date_str, end_date_str)
     except ValueError:
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
@@ -3969,12 +4024,7 @@ def export_customer_receipt_history():
         ]
         if request.form.get("format") == "xlsx":
             return excel_response("customer_receipt_history.xlsx", "Customer Receipt History", col_headers, rows, start_date_str, end_date_str)
-        with open("static/customer_receipt_history.csv", "w", newline="") as file:
-            writer = csv.writer(file)
-            write_csv_header(writer, "Customer Receipt History", start_date_str, end_date_str)
-            writer.writerow(col_headers)
-            writer.writerows(rows)
-        return send_from_directory("static", "customer_receipt_history.csv")
+        return csv_response("customer_receipt_history.csv", "Customer Receipt History", col_headers, rows, start_date_str, end_date_str)
     except ValueError:
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
@@ -4034,6 +4084,9 @@ def purchase_return():
                     remaining = pi.quantity - get_purchase_item_returned_qty(pi.purchase_id, pi.item_id)
                     if int(qty_s) > remaining:
                         errors.append(f"Row {idx} ({pi.item.name}): cannot return {qty_s}, only {remaining} remaining.")
+                        continue
+                    if pi.item and pi.item.stock < int(qty_s):
+                        errors.append(f"Row {idx} ({pi.item.name}): only {pi.item.stock} in current stock, cannot return {qty_s}.")
                         continue
                     rows.append((pi, int(qty_s), price_f, reason_s.strip() or None))
                 if errors:
@@ -4254,6 +4307,8 @@ def stock_adjustment():
             flash("Item, type, quantity and date are required.", "danger")
         elif not qty_str.isdigit() or int(qty_str) <= 0:
             flash("Quantity must be a positive integer.", "danger")
+        elif not db.session.get(Item, int(item_id)):
+            flash("Item not found.", "danger")
         else:
             item_obj = db.session.get(Item, int(item_id))
             qty = int(qty_str)
@@ -4393,10 +4448,13 @@ def purchase_orders():
         rows = [(iid.strip(), qty.strip(), pr.strip())
                 for iid, qty, pr in zip(item_ids, quantities, prices)
                 if iid.strip() and qty.strip() and pr.strip()]
+        row_error = validate_line_rows(rows) if rows else None
         if not supplier_id or not order_date:
             flash("Supplier and order date are required.", "danger")
         elif not rows:
             flash("At least one item is required.", "danger")
+        elif row_error:
+            flash(row_error, "danger")
         else:
             po = PurchaseOrder(
                 supplier_id=int(supplier_id),
@@ -4534,10 +4592,13 @@ def quotations():
                     disc_types[i] if i < len(disc_types) else "percent",
                     disc_values[i] if i < len(disc_values) else "0",
                     tax_pcts[i] if i < len(tax_pcts) else "0"))
+        row_error = validate_line_rows(rows) if rows else None
         if not customer_id or not quote_date:
             flash("Customer and date are required.", "danger")
         elif not rows:
             flash("At least one item is required.", "danger")
+        elif row_error:
+            flash(row_error, "danger")
         else:
             q = Quotation(
                 customer_id=int(customer_id),
@@ -5161,7 +5222,12 @@ def admin_restore():
         # Re-run migrations to ensure schema is current
         with app.app_context():
             migrate_database()
-        flash("Database restored successfully. Previous backup saved as database.db.bak", "success")
+        flash(
+            "Database restored successfully. Previous backup saved as database.db.bak. "
+            "If this server runs multiple worker processes, restart the application now — "
+            "other workers may still be using the old database file.",
+            "success",
+        )
     except Exception as e:
         flash(f"Restore failed: {e}", "danger")
     return redirect(url_for("admin_system"))
