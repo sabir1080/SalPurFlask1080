@@ -15,12 +15,14 @@ from openpyxl.styles import Font, PatternFill, Alignment
 import os
 import secrets
 import json
+import logging
 from decimal import Decimal
 from sqlalchemy.exc import IntegrityError
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from itsdangerous import URLSafeTimedSerializer
+from urllib.parse import urlsplit
 from dotenv import load_dotenv
 from sqlalchemy.sql import func
 from sqlalchemy import inspect, text
@@ -71,10 +73,27 @@ app.config["MAIL_USE_TLS"] = True
 app.config["MAIL_USERNAME"] = os.getenv("MAIL_USERNAME", "").strip()
 app.config["MAIL_PASSWORD"] = os.getenv("MAIL_PASSWORD", "").replace(" ", "")
 app.config["COMPANY_NAME"] = os.getenv("COMPANY_NAME", "TradeFlow")
+app.config["APP_NAME"] = os.getenv("APP_NAME", "TradeFlow")
 app.config["COMPANY_TAGLINE"] = os.getenv("COMPANY_TAGLINE", "Inventory & Accounts Management")
 
 # Gmail App Password: https://myaccount.google.com/apppasswords
 # .env file (project root) mein MAIL_USERNAME aur MAIL_PASSWORD set karein
+
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+# Structured logs to stderr (captured by Render / any process manager). LOG_LEVEL
+# can be overridden via env; defaults to INFO. Replaces the scattered print()s so
+# there's a single, timestamped, level-tagged stream to debug production issues.
+_log_handler = logging.StreamHandler()
+_log_handler.setFormatter(logging.Formatter(
+    "[%(asctime)s] %(levelname)s in %(module)s: %(message)s"
+))
+_log_level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
+for _lg in (app.logger, logging.getLogger("werkzeug")):
+    _lg.setLevel(_log_level)
+if not app.logger.handlers:
+    app.logger.addHandler(_log_handler)
+app.logger.propagate = False
 
 
 db = SQLAlchemy(app)  # iska matlab sqlite se connect ho raha ha
@@ -151,18 +170,37 @@ def send_email(to_email, subject, body):
         flash(f"Failed to send email to {to_email}: {str(e)}", "danger")
         return False
 
-_rate_limit_hits = {}
-
 def check_rate_limit(key, max_attempts=5, window_seconds=300):
-    """Simple in-memory, per-process throttle. Returns False when the caller should be blocked."""
-    now = datetime.now(timezone.utc).timestamp()
-    hits = [t for t in _rate_limit_hits.get(key, []) if now - t < window_seconds]
-    if len(hits) >= max_attempts:
-        _rate_limit_hits[key] = hits
-        return False
-    hits.append(now)
-    _rate_limit_hits[key] = hits
-    return True
+    """Database-backed throttle. Returns False when the caller should be blocked.
+
+    Stored in the DB (not an in-process dict) so the limit is shared across all
+    gunicorn workers and survives restarts — a per-process dict silently let an
+    attacker get max_attempts * worker_count tries and reset on every deploy.
+    Fails open: if the rate-limit table itself errors, never lock a user out.
+    """
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    cutoff = now - timedelta(seconds=window_seconds)
+    try:
+        # Drop this key's expired hits, plus anything older than a day globally so
+        # one-off hits from many IPs can't grow the table without bound.
+        RateLimitHit.query.filter(
+            (RateLimitHit.created_at < now - timedelta(days=1)) |
+            ((RateLimitHit.key == key) & (RateLimitHit.created_at < cutoff))
+        ).delete(synchronize_session=False)
+        recent = RateLimitHit.query.filter(
+            RateLimitHit.key == key, RateLimitHit.created_at >= cutoff
+        ).count()
+        if recent >= max_attempts:
+            db.session.commit()
+            app.logger.warning("Rate limit hit for key=%s (%s attempts)", key, recent)
+            return False
+        db.session.add(RateLimitHit(key=key, created_at=now))
+        db.session.commit()
+        return True
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Rate-limit check failed; allowing request (fail-open)")
+        return True
 
 def verified_required(f):
     @wraps(f)
@@ -500,6 +538,15 @@ class CustomerLedgerEntry(db.Model):
     credit              = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     balance_after       = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     customer            = db.relationship("Customer", backref="ledger_entries", lazy=True)
+
+class RateLimitHit(db.Model):
+    """One row per throttled action attempt (login, password reset). Shared across
+    workers so brute-force limits actually hold. See check_rate_limit()."""
+    __tablename__ = "rate_limit_hit"
+    id         = db.Column(db.Integer, primary_key=True)
+    key        = db.Column(db.String(200), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, nullable=False, index=True,
+                           default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 def calc_discount_tax(gross, discount_type, discount_value, tax_percent):
     """Returns (discount_amt, tax_amt, net_total). discount_type: 'percent' or 'fixed'."""
@@ -908,7 +955,7 @@ def sale_return_total(sr):
     return float(sr.quantity * sr.return_price)
 
 def parse_payment_amount(amount_str):
-    amount_str = (amount_str or "").strip()
+    amount_str = (amount_str or "").strip().replace(",", "")   # tolerate "1,000"
     if not amount_str.replace(".", "", 1).isdigit():
         return None
     amount = float(amount_str)
@@ -1259,6 +1306,32 @@ def error_500(e):
                            message="An unexpected error occurred. Please try again, "
                                    "or contact support if it keeps happening."), 500
 
+def _safe_referrer():
+    """Return the referring URL only if it points back at this app (no open redirect)."""
+    ref = request.referrer
+    if ref and urlsplit(ref).netloc == urlsplit(request.host_url).netloc:
+        return ref
+    return url_for("index")
+
+@app.errorhandler(400)
+def error_400(e):
+    # Includes CSRF failures and other bad requests — send the user back with a note
+    # instead of a bare 400 page.
+    app.logger.info("Bad request (400): %s", e)
+    flash("Your request could not be processed. Please refresh the page and try again.", "danger")
+    return redirect(_safe_referrer())
+
+@app.errorhandler(ValueError)
+def handle_value_error(e):
+    # Last-resort guard: a stray numeric parse of bad form input raises ValueError.
+    # Turn it into a friendly "check your numbers" message instead of a 500, and log
+    # it so a genuine bug is still visible in the logs. Per-route validation
+    # (validate_line_rows, parse_payment_amount, etc.) remains the first line.
+    db.session.rollback()
+    app.logger.warning("Invalid input rejected (ValueError): %s", e)
+    flash("Some values you entered are not valid numbers. Please check them and try again.", "danger")
+    return redirect(_safe_referrer())
+
 # Custom Jinja2 filter: number ko 999,999,999,999.99 format mein dikhaye
 @app.template_filter('fmt_num')
 def fmt_num(value):
@@ -1479,13 +1552,16 @@ def signin():
                     login_user(user)
                     session["user_id"] = user.id
                     session.pop("just_reset_email", None)
+                    app.logger.info("Login OK: %s (role=%s) from %s", email, user.role, request.remote_addr)
                     flash("Signed in successfully!", "success")
                     return redirect(url_for("index"))
+                app.logger.warning("Login FAILED (bad password): %s from %s", email, request.remote_addr)
                 flash("Invalid email or password!", "danger")
             except Exception as e:
-                print(f"Login error for {email}: {e}")
+                app.logger.exception("Login error for %s: %s", email, e)
                 flash("Invalid email or password!", "danger")
         else:
+            app.logger.warning("Login FAILED (unknown email): %s from %s", email, request.remote_addr)
             flash("Invalid email or password!", "danger")
     just_reset = session.get("just_reset_email")
     return render_template("signin.html", just_reset=just_reset)
