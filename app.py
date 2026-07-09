@@ -1176,15 +1176,27 @@ def migrate_database():
         """))
 
     # ── Convert legacy FLOAT money columns to exact NUMERIC(14,4) ──────────────
-    # Money must be stored as fixed-point decimal, not binary float, so ledger
+    # Money should be stored as fixed-point decimal, not binary float, so ledger
     # balances and totals don't accumulate rounding error. SQLite is dynamically
     # typed (SQLAlchemy applies the Numeric processor on read once the models use
     # Numeric), so only PostgreSQL needs a real column-type change. Idempotent:
     # a column already stored as NUMERIC reflects as non-Float and is skipped.
+    #
+    # CRITICAL: ALTER COLUMN TYPE needs an ACCESS EXCLUSIVE lock and rewrites the
+    # table. During a zero-downtime deploy the OLD instance is still running and
+    # holding connections, so the ALTER can block indefinitely and hang the whole
+    # deploy until it times out. We therefore make this best-effort: a short
+    # lock_timeout means it fails fast instead of hanging, and any failure is
+    # logged and skipped so the app always boots. The app works correctly on the
+    # old FLOAT columns too (SQLAlchemy converts to Decimal on read); a skipped
+    # column simply gets converted on a later startup once the lock is free.
     if is_postgres:
         from sqlalchemy import Float as _Float, Numeric as _Numeric
         existing_tables = set(inspector.get_table_names())
+        migration_blocked = False
         for table in db.metadata.sorted_tables:
+            if migration_blocked:
+                break
             if table.name not in existing_tables:
                 continue
             db_cols = {c["name"]: c for c in inspector.get_columns(table.name)}
@@ -1194,11 +1206,24 @@ def migrate_database():
                     continue
                 db_col = db_cols.get(col.name)
                 if db_col is not None and isinstance(db_col["type"], _Float):
-                    with db.engine.begin() as conn:
-                        conn.execute(text(
-                            f'ALTER TABLE "{table.name}" ALTER COLUMN "{col.name}" '
-                            f'TYPE NUMERIC(14, 4) USING "{col.name}"::numeric(14,4)'
-                        ))
+                    try:
+                        with db.engine.begin() as conn:
+                            conn.execute(text("SET LOCAL lock_timeout = '4s'"))
+                            conn.execute(text(
+                                f'ALTER TABLE "{table.name}" ALTER COLUMN "{col.name}" '
+                                f'TYPE NUMERIC(14, 4) USING "{col.name}"::numeric(14,4)'
+                            ))
+                    except Exception as e:
+                        # Almost always a lock_timeout because a previous instance is
+                        # still holding the table during a zero-downtime deploy. Stop
+                        # here so boot stays fast; the rest converts on a later startup
+                        # when the lock is free. The app runs fine on FLOAT meanwhile.
+                        app.logger.warning(
+                            "Deferring money-column migration (lock busy at %s.%s); "
+                            "will retry on next startup: %s", table.name, col.name, e
+                        )
+                        migration_blocked = True
+                        break
 
 # Create Database
 with app.app_context():
