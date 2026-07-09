@@ -17,6 +17,7 @@ import secrets
 import json
 import logging
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 from sqlalchemy.exc import IntegrityError
 import smtplib
 from email.mime.text import MIMEText
@@ -130,6 +131,38 @@ if _sentry_dsn:
         app.logger.info("Sentry error monitoring enabled")
     except Exception as e:
         app.logger.warning("SENTRY_DSN set but Sentry could not start: %s", e)
+
+# ── Timezone ──────────────────────────────────────────────────────────────────
+# Datetimes are stored in UTC; they're displayed in APP_TIMEZONE (an IANA name
+# like "Asia/Karachi"). Set it once in .env — invalid names fall back to UTC.
+#   to_local(dt)   — convert a stored (UTC) datetime to the local zone for display
+#   now_local()    — current time in the local zone (for "generated on" stamps)
+#   {{ dt|localdt }}  — Jinja filter: format a stored datetime in the local zone
+app.config["APP_TIMEZONE"] = os.getenv("APP_TIMEZONE", "UTC").strip() or "UTC"
+_UTC = ZoneInfo("UTC")
+try:
+    APP_TZ = ZoneInfo(app.config["APP_TIMEZONE"])
+except Exception:
+    app.logger.warning("Invalid APP_TIMEZONE %r — falling back to UTC", app.config["APP_TIMEZONE"])
+    app.config["APP_TIMEZONE"] = "UTC"
+    APP_TZ = _UTC
+
+def to_local(dt):
+    """A stored datetime (assumed UTC; naive or aware) -> aware datetime in APP_TZ."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_UTC)
+    return dt.astimezone(APP_TZ)
+
+def now_local():
+    """Current wall-clock time in APP_TZ, naive (for display / 'generated on')."""
+    return datetime.now(APP_TZ).replace(tzinfo=None)
+
+@app.template_filter("localdt")
+def localdt_filter(dt, fmt="%Y-%m-%d %H:%M"):
+    local = to_local(dt)
+    return local.strftime(fmt) if local else ""
 
 
 db = SQLAlchemy(app)  # iska matlab sqlite se connect ho raha ha
@@ -1486,7 +1519,7 @@ def write_csv_header(writer, report_title, start_date_str=None, end_date_str=Non
         writer.writerow(["Period:", f"{start_date_str}  to  {end_date_str}"])
     if extra_info:
         writer.writerow(["Info:", extra_info])
-    writer.writerow(["Generated On:", datetime.now().strftime("%Y-%m-%d %H:%M")])
+    writer.writerow(["Generated On:", now_local().strftime("%Y-%m-%d %H:%M")])
     writer.writerow([])
 
 
@@ -1581,6 +1614,7 @@ def inject_form_defaults():
         "company_name": app.config["COMPANY_NAME"],
         "app_name": app.config["APP_NAME"],
         "company_tagline": app.config["COMPANY_TAGLINE"],
+        "app_timezone": app.config["APP_TIMEZONE"],
         "purchase_total": purchase_total,
         "sale_total": sale_total,
         "get_purchase_paid": get_purchase_paid,
@@ -5324,7 +5358,7 @@ def send_low_stock_alert():
         flash("No items are below reorder level — no alert sent.", "info")
         return redirect(url_for("item"))
     lines = [f"LOW STOCK ALERT — {app.config['COMPANY_NAME']}\n"]
-    lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
+    lines.append(f"Generated: {now_local().strftime('%Y-%m-%d %H:%M')}\n")
     lines.append(f"{'Item':<30} {'Stock':>8} {'Reorder':>8}")
     lines.append("-" * 50)
     for it in low_items:

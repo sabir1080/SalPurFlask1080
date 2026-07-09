@@ -14,3 +14,4 @@ openpyxl
 psycopg[binary]
 psycopg2-binary
 sentry-sdk[flask]
+tzdata
