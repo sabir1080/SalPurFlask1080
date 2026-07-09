@@ -91,9 +91,9 @@
         <table class="table table-bordered mb-0 items-table">
             <colgroup>
                 <col style="width:4%">
-                <col style="width:20%">
-                <col style="width:13%">
-                <col style="width:10%">
+                <col style="width:19%">
+                <col style="width:12%">
+                <col style="width:12%">
                 <col style="width:13%">
                 <col style="width:13%">
                 <col style="width:12%">
@@ -124,7 +124,7 @@
                     <td>{{ loop.index }}</td>
                     <td class="fw-semibold">{{ si.item.name }}</td>
                     <td class="text-muted">{{ si.item.id_category.name if si.item.id_category else '—' }}</td>
-                    <td class="text-end">{{ si.quantity | fmt_num }} <small class="text-muted">{{ si.item.unit or 'Pcs' }}</small></td>
+                    <td class="text-end text-nowrap">{{ "{:,}".format(si.quantity) }}<small class="text-muted d-block">{{ si.item.unit or 'Pcs' }}</small></td>
                     <td class="text-end">{{ si.sale_price | fmt_num }}</td>
                     <td class="text-end text-danger">
                         {% if row_disc > 0 %}
