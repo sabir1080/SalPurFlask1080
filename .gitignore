@@ -11,4 +11,6 @@ static/*.csv
 .claude/
 ~$*
 *.docx
+desktop.ini
+.pytest_cache/
 
