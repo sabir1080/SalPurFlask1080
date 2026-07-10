@@ -359,10 +359,26 @@ class Item(db.Model):
     opening_stock       = db.Column(db.Integer, nullable=False, default=0)
     stock               = db.Column(db.Integer, nullable=False, default=0)
     reorder_level       = db.Column(db.Integer, nullable=False, default=50)
+    # The price the item is *currently bought at* — a catalogue figure, used to
+    # prefill forms. It is NOT what the stock on hand cost; see inventory_value.
     purchase_price      = db.Column(db.Numeric(14, 4), nullable=True)
     sale_price          = db.Column(db.Numeric(14, 4), nullable=True)
+    # What the stock on hand actually cost, under weighted-average costing. Every
+    # inbound movement adds its cost here, every outbound removes qty × avg_cost.
+    # Holding the value (not the average) is what makes a reversal exact: undoing
+    # a document subtracts precisely the amount it added. It also keeps this in
+    # step with the Inventory control account, which is posted the same amounts.
+    inventory_value     = db.Column(db.Numeric(14, 4), nullable=False, default=0)
     purchases           = db.relationship("Purchase", backref="id_item", lazy=True)
     sales               = db.relationship("Sale", backref="id_item", lazy=True)
+
+    @property
+    def avg_cost(self):
+        """Weighted-average unit cost. Falls back to the catalogue price when there
+        is no stock, so the first purchase of an item still values correctly."""
+        if self.stock and self.inventory_value:
+            return (Decimal(str(self.inventory_value)) / Decimal(str(self.stock))).quantize(MONEY)
+        return Decimal(str(self.purchase_price or 0)).quantize(MONEY)
 
 class Purchase(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
@@ -475,6 +491,9 @@ class PurchaseReturn(db.Model):
     date         = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     reason       = db.Column(db.String(300), nullable=True)
     purchase     = db.relationship("Purchase", backref="returns", lazy=True)
+    # What the returned goods actually cost us (weighted average at return time).
+    # Stored so the journal entry and its later reversal use the same figure.
+    cost_removed = db.Column(db.Numeric(14, 4), nullable=False, default=0)
     is_reversed  = db.Column(db.Boolean, nullable=False, default=False)
     reversed_at  = db.Column(db.DateTime, nullable=True)
     supplier     = db.relationship("Supplier", backref="purchase_returns", lazy=True)
@@ -490,6 +509,8 @@ class SaleReturn(db.Model):
     date         = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     reason       = db.Column(db.String(300), nullable=True)
     sale         = db.relationship("Sale", backref="returns", lazy=True)
+    # What the goods cost when they were sold — the cost they come back in at.
+    cost_restored = db.Column(db.Numeric(14, 4), nullable=False, default=0)
     is_reversed  = db.Column(db.Boolean, nullable=False, default=False)
     reversed_at  = db.Column(db.DateTime, nullable=True)
     customer     = db.relationship("Customer", backref="sale_returns", lazy=True)
@@ -507,6 +528,8 @@ class StockAdjustment(db.Model):
     direction       = db.Column(db.String(4), nullable=False, default="in")   # "in" or "out"
     date            = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     reason          = db.Column(db.String(300), nullable=True)
+    # The value moved in or out, costed at the average when the adjustment was made.
+    cost_value      = db.Column(db.Numeric(14, 4), nullable=False, default=0)
     is_reversed     = db.Column(db.Boolean, nullable=False, default=False)
     reversed_at     = db.Column(db.DateTime, nullable=True)
     item            = db.relationship("Item", backref="adjustments", lazy=True)
@@ -1092,25 +1115,33 @@ def post_expense(exp, created_by_id=None):
                               "debit": 0, "credit": amount, "memo": exp.payment_method}])
 
 def post_purchase_return(pr, created_by_id=None):
-    """Goods go back to the supplier: Dr Accounts Payable / Cr Inventory."""
+    """Goods go back to the supplier. Inventory is credited with what the goods
+    actually cost us (their average), while the supplier's account is debited
+    with what we agreed to get back. The two rarely match exactly — the gap is a
+    real gain or loss and goes to Inventory Adjustment."""
     if posted_entry("purchase_return", pr.id):
         return None
-    amount = (Decimal(str(pr.quantity)) * Decimal(str(pr.return_price))).quantize(MONEY)
+    credit_note = (Decimal(str(pr.quantity)) * Decimal(str(pr.return_price))).quantize(MONEY)
+    cost = Decimal(str(pr.cost_removed or 0)).quantize(MONEY)
+    lines = [{"code": ACC_AP, "debit": credit_note, "credit": 0,
+              "memo": pr.supplier.name if pr.supplier else None},
+             {"code": ACC_INVENTORY, "debit": 0, "credit": cost}]
+    variance = credit_note - cost
+    if variance > 0:                       # got back more than it cost — a gain
+        lines.append({"code": ACC_STOCK_ADJ, "debit": 0, "credit": variance, "memo": "Return price variance"})
+    elif variance < 0:
+        lines.append({"code": ACC_STOCK_ADJ, "debit": -variance, "credit": 0, "memo": "Return price variance"})
     return post_entry(entry_date=pr.date, description=f"Purchase return #{pr.id}",
                       reference=f"PRT-{pr.id}", source_type="purchase_return", source_id=pr.id,
-                      allow_control=True, created_by_id=created_by_id,
-                      lines=[{"code": ACC_AP, "debit": amount, "credit": 0,
-                              "memo": pr.supplier.name if pr.supplier else None},
-                             {"code": ACC_INVENTORY, "debit": 0, "credit": amount}])
+                      allow_control=True, created_by_id=created_by_id, lines=lines)
 
 def post_sale_return(sr, created_by_id=None):
     """Dr Sales Returns / Cr Accounts Receivable, and the goods come back into
-    stock at what they cost us: Dr Inventory / Cr Cost of Goods Sold."""
+    stock at what they cost when they left: Dr Inventory / Cr Cost of Goods Sold."""
     if posted_entry("sale_return", sr.id):
         return None
     amount = (Decimal(str(sr.quantity)) * Decimal(str(sr.return_price))).quantize(MONEY)
-    item = db.session.get(Item, sr.item_id)
-    cost = (Decimal(str(sr.quantity)) * Decimal(str(item.purchase_price or 0))).quantize(MONEY) if item else Decimal("0")
+    cost = Decimal(str(sr.cost_restored or 0)).quantize(MONEY)
     lines = [{"code": ACC_SALES_RETURNS, "debit": amount, "credit": 0},
              {"code": ACC_AR, "debit": 0, "credit": amount,
               "memo": sr.customer.name if sr.customer else None}]
@@ -1236,7 +1267,10 @@ def _unwind_stock_and_subledger(kind, doc):
         for pi in doc.line_items:
             item = db.session.get(Item, pi.item_id)
             if item:
-                item.stock -= pi.quantity
+                # Remove exactly the cost this line added — its taxable amount —
+                # not today's average, which later purchases may have moved.
+                item_remove_stock(item, pi.quantity,
+                                  cost_total=Decimal(str(pi.amount)) - Decimal(str(pi.tax_amount or 0)))
         sup_id = remove_supplier_ledger_entry("purchase", doc.id)
         return ("supplier", sup_id)
 
@@ -1244,7 +1278,9 @@ def _unwind_stock_and_subledger(kind, doc):
         for si in doc.line_items:
             item = db.session.get(Item, si.item_id)
             if item:
-                item.stock += si.quantity
+                # Goods come back in at the cost they left at.
+                item_add_stock(item, si.quantity,
+                               Decimal(str(si.cost_price or 0)) * Decimal(str(si.quantity)))
         cust_id = remove_customer_ledger_entry("sale", doc.id)
         return ("customer", cust_id)
 
@@ -1259,20 +1295,24 @@ def _unwind_stock_and_subledger(kind, doc):
 
     if kind == "purchase_return":
         item = db.session.get(Item, doc.item_id)
-        if item:
-            item.stock += doc.quantity            # goods had left; bring them back
+        if item:                                   # goods had left; bring them back
+            item_add_stock(item, doc.quantity, Decimal(str(doc.cost_removed or 0)))
         return ("supplier", remove_supplier_ledger_entry("purchase_return", doc.id))
 
     if kind == "sale_return":
         item = db.session.get(Item, doc.item_id)
-        if item:
-            item.stock -= doc.quantity            # goods had come back; send them out
+        if item:                                   # goods had come back; send them out
+            item_remove_stock(item, doc.quantity, cost_total=Decimal(str(doc.cost_restored or 0)))
         return ("customer", remove_customer_ledger_entry("sale_return", doc.id))
 
     if kind == "stock_adjustment":
         item = db.session.get(Item, doc.item_id)
         if item:
-            item.stock += doc.quantity if doc.direction == "out" else -doc.quantity
+            value = Decimal(str(doc.cost_value or 0))
+            if doc.direction == "out":
+                item_add_stock(item, doc.quantity, value)
+            else:
+                item_remove_stock(item, doc.quantity, cost_total=value)
         return (None, None)
 
     raise PostingError(f"Don't know how to reverse a {kind}.")
@@ -1314,6 +1354,42 @@ def reverse_document(kind, doc):
     doc.is_reversed = True
     doc.reversed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     return reversal
+
+# ── Weighted-average inventory costing ────────────────────────────────────────
+# Goods in add their cost to Item.inventory_value; goods out remove qty × the
+# average at that moment. The average is never stored, only derived, so it can
+# never drift out of step with the value it came from.
+#
+# Every amount here is also what the Inventory control account is posted, which
+# is why the reconciliation report can compare the two.
+
+def item_add_stock(item, qty, cost_total):
+    """Goods in, at a known total cost."""
+    item.stock += qty
+    item.inventory_value = Decimal(str(item.inventory_value or 0)) + Decimal(str(cost_total)).quantize(MONEY)
+
+def item_remove_stock(item, qty, cost_total=None):
+    """Goods out. Costed at the current average unless a cost is given (a sale
+    return puts goods back at what they left at, not at today's average).
+
+    Returns the cost removed, which is what the caller posts as COGS."""
+    cost = Decimal(str(cost_total)) if cost_total is not None else (item.avg_cost * Decimal(str(qty)))
+    cost = cost.quantize(MONEY)
+    item.stock -= qty
+    item.inventory_value = Decimal(str(item.inventory_value or 0)) - cost
+    if item.stock <= 0:
+        # Last unit gone: any rounding residue would otherwise linger as value
+        # against zero stock, which the reconciliation would (rightly) flag.
+        item.inventory_value = Decimal("0")
+    return cost
+
+def sale_line_cost(sale_return):
+    """What the returned goods cost when they were sold. Recorded on the original
+    sale line, so a return never re-values stock at today's average."""
+    si = SaleItem.query.filter_by(sale_id=sale_return.sale_id,
+                                  item_id=sale_return.item_id).first()
+    unit = Decimal(str(si.cost_price)) if si else Decimal(str(sale_return.item.avg_cost if sale_return.item else 0))
+    return (unit * Decimal(str(sale_return.quantity))).quantize(MONEY)
 
 # ── Opening balances ──────────────────────────────────────────────────────────
 # What the business already owned and owed before it started using the system.
@@ -1368,7 +1444,9 @@ def post_customer_opening(customer):
                            f"Opening balance — {customer.name}", lines)
 
 def post_item_opening(item):
-    """Stock on hand before the system existed, valued at the item's cost."""
+    """Stock on hand before the system existed, valued at the item's cost. This is
+    the one place `purchase_price` legitimately values inventory: there is no
+    purchase history to average over yet."""
     qty = Decimal(str(item.opening_stock or 0))
     cost = Decimal(str(item.purchase_price or 0))
     value = (qty * cost).quantize(MONEY)
@@ -1399,12 +1477,12 @@ def post_document(kind, doc):
     return poster(doc, created_by_id=uid)
 
 def post_stock_adjustment(adj, created_by_id=None):
-    """Stock found or lost, valued at the item's cost. The other side is an
-    expense account, so a write-off lands in the P&L where it belongs."""
+    """Stock found or lost, valued at the weighted-average cost recorded on the
+    adjustment. The other side is an expense account, so a write-off lands in the
+    P&L where it belongs."""
     if posted_entry("stock_adjustment", adj.id):
         return None
-    item = db.session.get(Item, adj.item_id)
-    value = (Decimal(str(adj.quantity)) * Decimal(str((item.purchase_price if item else 0) or 0))).quantize(MONEY)
+    value = Decimal(str(adj.cost_value or 0)).quantize(MONEY)
     if not value:
         return None                        # a zero-cost item has no accounting effect
     if adj.direction == "in":
@@ -2479,6 +2557,26 @@ def migrate_database():
                         "REFERENCES account(id)"
                     ))
 
+    # Weighted-average costing: what the stock on hand actually cost.
+    if "item" in inspector.get_table_names():
+        cols = {col["name"] for col in inspector.get_columns("item")}
+        if "inventory_value" not in cols:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE item ADD COLUMN inventory_value NUMERIC(14,4) NOT NULL DEFAULT 0"))
+                # Seed from the only figure the old schema had: today's price.
+                conn.execute(text("UPDATE item SET inventory_value = stock * COALESCE(purchase_price, 0)"))
+
+    # A document records the cost it moved, so its reversal undoes exactly that.
+    for table, col in (("purchase_return", "cost_removed"),
+                       ("sale_return", "cost_restored"),
+                       ("stock_adjustment", "cost_value")):
+        if table in inspector.get_table_names():
+            cols = {c["name"] for c in inspector.get_columns(table)}
+            if col not in cols:
+                with db.engine.begin() as conn:
+                    conn.execute(text(
+                        f"ALTER TABLE {table} ADD COLUMN {col} NUMERIC(14,4) NOT NULL DEFAULT 0"))
+
     # Documents are never deleted once posted — they are reversed and flagged.
     # DEFAULT FALSE (not 0) so the same DDL is valid on SQLite and PostgreSQL.
     for table in ("purchase", "sale", "supplier_payment", "customer_payment",
@@ -3387,6 +3485,8 @@ def item():
                 sale_price=float(sale_price) if sale_price else None,
             )
             db.session.add(item)
+            item.inventory_value = (Decimal(str(item.opening_stock or 0))
+                                    * Decimal(str(item.purchase_price or 0))).quantize(MONEY)
             db.session.flush()
             post_item_opening(item)
             db.session.commit()
@@ -3432,6 +3532,10 @@ def edit_item(id):
         else:
             new_os = int(opening_stock)
             stock_adjustment = new_os - item.opening_stock
+            # The opening entry is about to be reversed and re-posted, so the
+            # inventory value must move by the same amount the GL does.
+            old_opening_value = (Decimal(str(item.opening_stock or 0))
+                                 * Decimal(str(item.purchase_price or 0))).quantize(MONEY)
             item.name = name
             item.category_id = int(category_id)
             item.unit = unit
@@ -3440,6 +3544,9 @@ def edit_item(id):
             item.reorder_level = int(reorder_level)
             item.purchase_price = float(purchase_price) if purchase_price else None
             item.sale_price = float(sale_price) if sale_price else None
+            new_opening_value = (Decimal(str(new_os)) * Decimal(str(item.purchase_price or 0))).quantize(MONEY)
+            item.inventory_value = (Decimal(str(item.inventory_value or 0))
+                                    - old_opening_value + new_opening_value)
             db.session.flush()
             post_item_opening(item)          # reverses the old opening entry and re-posts
             db.session.commit()
@@ -3711,7 +3818,8 @@ def purchase():
                         tax_amount=tax_amt, amount=net,
                     )
                     db.session.add(pi)
-                    item_obj.stock += qty_i
+                    # Tax is recoverable, so it is not part of what the goods cost.
+                    item_add_stock(item_obj, qty_i, net - tax_amt)
                 db.session.flush()
                 db.session.refresh(pur)
                 sync_supplier_purchase(pur)
@@ -3804,7 +3912,7 @@ def edit_purchase(id):
                         tax_amount=tax_amt, amount=net,
                     )
                     db.session.add(pi)
-                    item_obj.stock += qty_i
+                    item_add_stock(item_obj, qty_i, net - tax_amt)
                     touched_items[item_obj.id] = item_obj
 
                 negative_items = [it for it in touched_items.values() if it.stock < 0]
@@ -3937,16 +4045,19 @@ def sale():
                         d_val_f = float(d_val or 0); tax_f = float(tax or 0)
                         gross = qty_i * price_f
                         disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
+                        # Cost is the weighted average at the moment of sale, captured
+                        # on the line so a later purchase never re-values a past sale.
+                        unit_cost = item_obj.avg_cost
                         si = SaleItem(
                             sale_id=sal.id, item_id=int(iid),
                             quantity=qty_i, sale_price=price_f,
-                            cost_price=float(item_obj.purchase_price or 0),
+                            cost_price=float(unit_cost),
                             discount_type=d_type or "percent", discount_value=d_val_f,
                             discount_amount=disc_amt, tax_percent=tax_f,
                             tax_amount=tax_amt, amount=net,
                         )
                         db.session.add(si)
-                        item_obj.stock -= qty_i
+                        item_remove_stock(item_obj, qty_i, cost_total=unit_cost * Decimal(str(qty_i)))
                     db.session.flush()
                     db.session.refresh(sal)
                     sync_customer_sale(sal)
@@ -4040,16 +4151,19 @@ def edit_sale(id):
                         d_val_f = float(d_val or 0); tax_f = float(tax or 0)
                         gross = qty_i * price_f
                         disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
+                        # Cost is the weighted average at the moment of sale, captured
+                        # on the line so a later purchase never re-values a past sale.
+                        unit_cost = item_obj.avg_cost
                         si = SaleItem(
                             sale_id=sal.id, item_id=int(iid),
                             quantity=qty_i, sale_price=price_f,
-                            cost_price=float(item_obj.purchase_price or 0),
+                            cost_price=float(unit_cost),
                             discount_type=d_type or "percent", discount_value=d_val_f,
                             discount_amount=disc_amt, tax_percent=tax_f,
                             tax_amount=tax_amt, amount=net,
                         )
                         db.session.add(si)
-                        item_obj.stock -= qty_i
+                        item_remove_stock(item_obj, qty_i, cost_total=unit_cost * Decimal(str(qty_i)))
                     db.session.flush()
                     db.session.refresh(sal)
                     if old_customer_id != int(customer_id):
@@ -5566,7 +5680,10 @@ def purchase_return():
             .filter((Supplier.name.ilike(f"%{search}%")) | (Item.name.ilike(f"%{search}%")))
         )
     returns, pagination = get_paginated_results(query)
-    all_pis = PurchaseItem.query.join(Purchase).order_by(Purchase.date.desc(), PurchaseItem.id).all()
+    # A reversed purchase never happened, so nothing can be returned against it.
+    all_pis = (PurchaseItem.query.join(Purchase)
+               .filter(Purchase.is_reversed.is_(False))
+               .order_by(Purchase.date.desc(), PurchaseItem.id).all())
     items_available = [
         {"pi": pi, "remaining": pi.quantity - get_purchase_item_returned_qty(pi.purchase_id, pi.item_id)}
         for pi in all_pis
@@ -5631,7 +5748,9 @@ def purchase_return():
                             reason=reason_val,
                         )
                         if item:
-                            item.stock -= qty
+                            # Goods leave at what they cost us, not at the agreed
+                            # credit note — the difference is a gain or loss.
+                            pr.cost_removed = item_remove_stock(item, qty)
                         db.session.add(pr)
                         db.session.flush()
                         sync_supplier_purchase_return(pr)
@@ -5679,7 +5798,10 @@ def sale_return():
             .filter((Customer.name.ilike(f"%{search}%")) | (Item.name.ilike(f"%{search}%")))
         )
     returns, pagination = get_paginated_results(query)
-    all_sis = SaleItem.query.join(Sale).order_by(Sale.date.desc(), SaleItem.id).all()
+    # A reversed sale never happened, so nothing can be returned against it.
+    all_sis = (SaleItem.query.join(Sale)
+               .filter(Sale.is_reversed.is_(False))
+               .order_by(Sale.date.desc(), SaleItem.id).all())
     items_available = [
         {"si": si, "remaining": si.quantity - get_sale_item_returned_qty(si.sale_id, si.item_id)}
         for si in all_sis
@@ -5741,7 +5863,11 @@ def sale_return():
                             reason=reason_val,
                         )
                         if item:
-                            item.stock += qty
+                            # Back into stock at the cost they left at, taken from
+                            # the original sale line — never at today's average.
+                            cost = (Decimal(str(si.cost_price or 0)) * Decimal(str(qty))).quantize(MONEY)
+                            sr.cost_restored = cost
+                            item_add_stock(item, qty, cost)
                         db.session.add(sr)
                         db.session.flush()
                         sync_customer_sale_return(sr)
@@ -5852,10 +5978,14 @@ def stock_adjustment():
                     reason=reason or None,
                 )
                 db.session.add(adj)
+                # Both directions are valued at the average: stock found is worth
+                # what the rest of the stock is worth, stock lost costs the same.
+                unit = item_obj.avg_cost
                 if direction == "out":
-                    item_obj.stock -= qty
+                    adj.cost_value = item_remove_stock(item_obj, qty)
                 else:
-                    item_obj.stock += qty
+                    adj.cost_value = (unit * Decimal(str(qty))).quantize(MONEY)
+                    item_add_stock(item_obj, qty, adj.cost_value)
                 db.session.flush()
                 post_document("stock_adjustment", adj)
                 db.session.commit()
@@ -6080,7 +6210,7 @@ def convert_po_to_purchase(id):
         ))
         item_obj = db.session.get(Item, poi.item_id)
         if item_obj:
-            item_obj.stock += poi.quantity
+            item_add_stock(item_obj, poi.quantity, gross)   # PO lines carry no tax
     db.session.flush()
     db.session.refresh(pur)
     sync_supplier_purchase(pur)
@@ -6234,16 +6364,18 @@ def convert_quotation_to_sale(id):
         gross = qi.quantity * qi.sale_price
         disc_amt, tax_amt, net = calc_discount_tax(gross, qi.discount_type, qi.discount_value, qi.tax_percent)
         item_obj = db.session.get(Item, qi.item_id)
+        unit_cost = item_obj.avg_cost if item_obj else Decimal("0")
         db.session.add(SaleItem(
             sale_id=sal.id, item_id=qi.item_id,
             quantity=qi.quantity, sale_price=qi.sale_price,
-            cost_price=float(item_obj.purchase_price or 0) if item_obj else 0,
+            cost_price=float(unit_cost),
             discount_type=qi.discount_type, discount_value=qi.discount_value,
             discount_amount=disc_amt, tax_percent=qi.tax_percent,
             tax_amount=tax_amt, amount=net,
         ))
         if item_obj:
-            item_obj.stock -= qi.quantity
+            item_remove_stock(item_obj, qi.quantity,
+                              cost_total=unit_cost * Decimal(str(qi.quantity)))
     db.session.flush()
     db.session.refresh(sal)
     sync_customer_sale(sal)
@@ -6809,8 +6941,9 @@ def report_reconciliation():
     # exactly what the control account holds.
     sub_ar = sum(Decimal(str(get_customer_balance(c.id))) for c in Customer.query.all())
     sub_ap = sum(Decimal(str(get_supplier_balance(s.id))) for s in Supplier.query.all())
-    sub_inv = Decimal(str(db.session.query(
-        func.sum(Item.stock * func.coalesce(Item.purchase_price, 0))).scalar() or 0))
+    # Weighted-average cost of the stock on hand — the same amounts the Inventory
+    # control account was posted, arrived at independently.
+    sub_inv = Decimal(str(db.session.query(func.sum(Item.inventory_value)).scalar() or 0))
 
     rows = [
         {"acct": ar_acct,  "gl": gl_ar,  "sub": sub_ar,
