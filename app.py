@@ -7699,6 +7699,107 @@ def _wipe_transactional_data():
         fa.opening_balance = 0
     db.session.commit()
 
+@app.cli.command("clear-transactions")
+@click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
+def clear_transactions_cmd(yes):
+    """Delete every transaction, keeping the chart of accounts and master data.
+
+    Kept: chart of accounts, tax codes, fiscal years, cash/bank accounts,
+    suppliers, customers, items, categories, expense categories, users.
+
+    Deleted: purchases, sales, payments, receipts, expenses, returns, stock
+    adjustments, purchase orders, quotations, challans, and every journal entry.
+
+    Opening balances survive as *values* on the master records, but the journal
+    entries that carried them into the ledger do not — so they are posted again
+    afterwards, and stock is reset to opening stock. Without that the general
+    ledger would be empty while the subledgers still showed balances."""
+    if not yes:
+        click.echo("This deletes ALL transactions. Chart of accounts and master data are kept.")
+        if DATABASE_URL:
+            click.echo(f"Target: DEPLOYED database at "
+                       f"{urlsplit(DATABASE_URL).hostname or 'unknown host'}")
+        if not click.confirm("Continue?"):
+            click.echo("Aborted.")
+            return
+
+    # Children before parents. Journal lines before entries, ledger entries last.
+    for model in (DeliveryChallan, QuotationItem, Quotation,
+                  PurchaseOrderItem, PurchaseOrder,
+                  SaleReturn, PurchaseReturn, StockAdjustment,
+                  CustomerPayment, SupplierPayment, Expense,
+                  SaleItem, PurchaseItem, Sale, Purchase,
+                  JournalLine, JournalEntry,
+                  SupplierLedgerEntry, CustomerLedgerEntry):
+        deleted = db.session.query(model).delete()
+        if deleted:
+            click.echo(f"  removed {deleted:>5} {model.__name__}")
+    db.session.commit()
+
+    # A closed year's closing entry has just been deleted with everything else,
+    # so leaving the year closed would lock a ledger that no longer has one.
+    reopened = 0
+    for fy in FiscalYear.query.all():
+        if fy.is_closed:
+            fy.is_closed, fy.closed_at = False, None
+            reopened += 1
+        for p in fy.periods:
+            p.is_closed = False
+    if reopened:
+        click.echo(f"  reopened {reopened} closed fiscal year(s)")
+
+    # Stock goes back to what the item started with.
+    for it in Item.query.all():
+        it.stock = it.opening_stock
+        it.inventory_value = (Decimal(str(it.opening_stock or 0))
+                              * Decimal(str(it.purchase_price or 0))).quantize(MONEY)
+    db.session.commit()
+
+    # Re-lay the opening balances into both the subledgers and the GL.
+    for sup in Supplier.query.all():
+        sync_supplier_opening(sup)
+        post_supplier_opening(sup)
+    for cus in Customer.query.all():
+        sync_customer_opening(cus)
+        post_customer_opening(cus)
+    for it in Item.query.all():
+        post_item_opening(it)
+    db.session.commit()
+
+    entries = JournalEntry.query.count()
+    click.echo(f"  re-posted opening balances: {entries} journal entr{'y' if entries == 1 else 'ies'}")
+
+    # Same checks the seeder runs — an empty ledger must reconcile too.
+    b = gl_balances()
+
+    def gl_of(code):
+        a = get_account(code)
+        return natural_balance(a, b.get(a.id, Decimal("0")))
+
+    sub_ar = sum(Decimal(str(get_customer_balance(c.id))) for c in Customer.query.all())
+    sub_ap = sum(Decimal(str(get_supplier_balance(s.id))) for s in Supplier.query.all())
+    sub_inv = Decimal(str(db.session.query(func.sum(Item.inventory_value)).scalar() or 0))
+    dr = db.session.query(func.sum(JournalLine.debit)).scalar() or 0
+    cr = db.session.query(func.sum(JournalLine.credit)).scalar() or 0
+
+    def check(label, left, right):
+        ok = abs(Decimal(str(left)) - Decimal(str(right))) < Decimal("0.01")
+        click.echo(f"  {'OK  ' if ok else 'FAIL'} {label:<34} {float(left):>14,.2f}  vs {float(right):>14,.2f}")
+        return ok
+
+    click.echo("")
+    click.echo("Verification")
+    all_ok = check("Journal debits = credits", dr, cr)
+    all_ok &= check("AR: ledger = customer subledger", gl_of(ACC_AR), sub_ar)
+    all_ok &= check("AP: ledger = supplier subledger", gl_of(ACC_AP), sub_ap)
+    all_ok &= check("Inventory: ledger = stock value", gl_of(ACC_INVENTORY), sub_inv)
+    click.echo("")
+    click.echo(f"  Chart of accounts kept: {Account.query.count()} accounts, "
+               f"{Item.query.count()} items, {Supplier.query.count()} suppliers, "
+               f"{Customer.query.count()} customers")
+    click.echo("")
+    click.echo("ALL CHECKS PASSED" if all_ok else "SOME CHECKS FAILED - investigate before using this data")
+
 @app.cli.command("seed-data")
 @click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
 def seed_data_cmd(yes):
