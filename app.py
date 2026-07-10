@@ -748,6 +748,15 @@ CHART_OF_ACCOUNTS = [
     ("6090", "Other Expenses",            "Expense",   ACC_EXPENSES, False, False),
 ]
 
+# Codes the posting layer looks up by name. Renaming one is fine; changing its
+# code or deleting it would break a posting path, so the UI refuses both.
+SYSTEM_ACCOUNT_CODES = frozenset({
+    ACC_CASH_IN_HAND, ACC_AR, ACC_INVENTORY, ACC_TAX_INPUT, ACC_AP, ACC_TAX_OUTPUT,
+    ACC_CAPITAL, ACC_DRAWINGS, ACC_OPENING_EQUITY, ACC_RETAINED,
+    ACC_SALES, ACC_SALES_RETURNS, ACC_COGS, ACC_STOCK_ADJ, ACC_EXPENSES,
+    "1000", "1020", "2000", "3000", "6090",
+})
+
 def get_account(code):
     """Posting-layer lookup. Raises rather than returning None: a missing account
     is a seeding bug, and a silently skipped journal line is far worse than a
@@ -756,6 +765,36 @@ def get_account(code):
     if acct is None:
         raise LookupError(f"Account {code} is missing from the chart of accounts")
     return acct
+
+def account_has_activity(acct):
+    return db.session.query(
+        JournalLine.query.filter_by(account_id=acct.id).exists()).scalar()
+
+def expense_gl_accounts():
+    """Postable expense accounts an expense category may be pointed at.
+
+    Cost of Goods Sold and Inventory Adjustment are excluded: the posting layer
+    owns them, and an expense landing in COGS would silently distort gross
+    profit."""
+    return (Account.query
+            .filter(Account.type == "Expense", Account.is_group.is_(False),
+                    Account.is_control.is_(False), Account.is_active.is_(True),
+                    Account.code.notin_((ACC_COGS, ACC_STOCK_ADJ)))
+            .order_by(Account.code).all())
+
+def parse_expense_gl_account(raw):
+    """Form value → (account_id or None, error or None). Blank means 'use 6090'."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None, None
+    if not raw.isdigit():
+        return None, "Invalid account."
+    acct = db.session.get(Account, int(raw))
+    if acct is None or acct.type != "Expense" or acct.is_group or not acct.is_active:
+        return None, "Pick an active expense account that is not a heading."
+    if acct.code in (ACC_COGS, ACC_STOCK_ADJ):
+        return None, f"{acct.code} {acct.name} is maintained by the system and cannot take expenses."
+    return acct.id, None
 
 def seed_chart_of_accounts():
     """Idempotent: inserts only accounts whose code is absent, so it is safe to
@@ -6040,14 +6079,30 @@ def expenses():
         action = request.form.get("_action", "expense")
         if action == "add_category":
             cat_name = request.form.get("cat_name", "").strip()
+            gl_id, gl_error = parse_expense_gl_account(request.form.get("gl_account_id"))
             if not cat_name:
                 flash("Category name is required.", "danger")
             elif ExpenseCategory.query.filter_by(name=cat_name).first():
                 flash("Category already exists.", "warning")
+            elif gl_error:
+                flash(gl_error, "danger")
             else:
-                db.session.add(ExpenseCategory(name=cat_name))
+                db.session.add(ExpenseCategory(name=cat_name, gl_account_id=gl_id))
                 db.session.commit()
                 flash(f"Category '{cat_name}' added.", "success")
+            return redirect(url_for("expenses"))
+        if action == "set_category_account":
+            cat = db.session.get(ExpenseCategory, int(request.form.get("category_id", 0))) or abort(404)
+            gl_id, gl_error = parse_expense_gl_account(request.form.get("gl_account_id"))
+            if gl_error:
+                flash(gl_error, "danger")
+            else:
+                cat.gl_account_id = gl_id
+                db.session.commit()
+                target = cat.gl_account.code if cat.gl_account else "6090 (default)"
+                record_audit("update", "ExpenseCategory", cat.id,
+                             f"Category '{cat.name}' now posts to {target}")
+                flash(f"'{cat.name}' now posts to {target}.", "success")
             return redirect(url_for("expenses"))
         # add expense
         desc       = request.form.get("description", "").strip()
@@ -6090,6 +6145,7 @@ def expenses():
         expense_list=expense_list, categories=categories,
         pagination=pagination, search=search,
         payment_methods=PAYMENT_METHODS,
+        gl_accounts=expense_gl_accounts(),
         total_expenses=total_expenses,
         today=datetime.now().strftime("%Y-%m-%d"))
 
@@ -6979,7 +7035,136 @@ def report_reconciliation():
 @manager_required
 def chart_of_accounts():
     accounts = Account.query.order_by(Account.code).all()
-    return render_template("chart_of_accounts.html", accounts=accounts)
+    return render_template("chart_of_accounts.html", accounts=accounts,
+                           system_codes=SYSTEM_ACCOUNT_CODES)
+
+def _validate_account_form(code, name, type_, parent, is_group, exclude_id=None):
+    """Shared by create and edit. Returns an error string, or None."""
+    if not code or not code.isalnum():
+        return "Account code is required and must be letters or digits only."
+    if len(code) > 20:
+        return "Account code is too long (20 characters maximum)."
+    clash = Account.query.filter(Account.code == code)
+    if exclude_id:
+        clash = clash.filter(Account.id != exclude_id)
+    if db.session.query(clash.exists()).scalar():
+        return f"Account code {code} is already in use."
+    if not name:
+        return "Account name is required."
+    if type_ not in ACCOUNT_TYPES:
+        return "Choose a valid account type."
+    if parent is not None:
+        if not parent.is_group:
+            return f"{parent.code} {parent.name} is not a heading, so it cannot hold sub-accounts."
+        if parent.type != type_:
+            return (f"A sub-account of {parent.code} {parent.name} must be of type "
+                    f"{parent.type}, not {type_}.")
+        if is_group and parent.parent_id and parent.parent.parent_id:
+            return "Headings can only be nested two levels deep."
+    return None
+
+@app.route("/chart_of_accounts/new", methods=["GET", "POST"])
+@admin_required
+def new_gl_account():
+    """Create a main account (a heading) or a subsidiary one (a postable leaf).
+
+    Control accounts cannot be created here: they only mean something if a
+    subledger maintains them, and nothing in the app would maintain a new one."""
+    groups = Account.query.filter_by(is_group=True, is_active=True).order_by(Account.code).all()
+    if request.method == "POST":
+        code      = request.form.get("code", "").strip()
+        name      = request.form.get("name", "").strip()
+        type_     = request.form.get("type", "").strip()
+        parent_id = request.form.get("parent_id", "").strip()
+        is_group  = request.form.get("is_group") == "1"
+        parent    = db.session.get(Account, int(parent_id)) if parent_id.isdigit() else None
+
+        if parent is not None and not type_:
+            type_ = parent.type            # a sub-account inherits its parent's type
+
+        error = _validate_account_form(code, name, type_, parent, is_group)
+        if error:
+            flash(error, "danger")
+            return render_template("gl_account_new.html", groups=groups,
+                                   types=ACCOUNT_TYPES, form_data=request.form)
+
+        acct = Account(code=code, name=name, type=type_,
+                       parent_id=parent.id if parent else None,
+                       is_group=is_group, is_control=False)
+        db.session.add(acct)
+        db.session.commit()
+        record_audit("create", "Account", acct.id,
+                     f"Account {acct.code} {acct.name} created ({'heading' if is_group else acct.type})")
+        flash(f"Account {acct.code} — {acct.name} created.", "success")
+        return redirect(url_for("chart_of_accounts"))
+    return render_template("gl_account_new.html", groups=groups, types=ACCOUNT_TYPES,
+                           form_data={})
+
+@app.route("/chart_of_accounts/<int:id>/edit", methods=["GET", "POST"])
+@admin_required
+def edit_gl_account(id):
+    acct = db.session.get(Account, id) or abort(404)
+    groups = (Account.query.filter(Account.is_group.is_(True), Account.is_active.is_(True),
+                                   Account.id != acct.id)
+              .order_by(Account.code).all())
+    is_system = acct.code in SYSTEM_ACCOUNT_CODES
+
+    if request.method == "POST":
+        name      = request.form.get("name", "").strip()
+        code      = acct.code if is_system else request.form.get("code", "").strip()
+        parent_id = request.form.get("parent_id", "").strip()
+        is_active = request.form.get("is_active") == "1"
+        parent    = db.session.get(Account, int(parent_id)) if parent_id.isdigit() else None
+
+        error = _validate_account_form(code, name, acct.type, parent, acct.is_group,
+                                       exclude_id=acct.id)
+        if error is None and parent is not None and parent.id == acct.id:
+            error = "An account cannot be its own parent."
+        if error is None and not is_active:
+            if account_has_activity(acct):
+                error = "This account has journal entries; it cannot be deactivated."
+            elif acct.is_group and any(c.is_active for c in acct.children):
+                error = "This heading still has active sub-accounts."
+        if error:
+            flash(error, "danger")
+            return redirect(url_for("edit_gl_account", id=id))
+
+        acct.code, acct.name = code, name
+        acct.parent_id = parent.id if parent else None
+        acct.is_active = is_active
+        db.session.commit()
+        record_audit("update", "Account", acct.id, f"Account {acct.code} {acct.name} edited")
+        flash(f"Account {acct.code} — {acct.name} updated.", "success")
+        return redirect(url_for("chart_of_accounts"))
+
+    return render_template("gl_account_edit.html", acct=acct, groups=groups, is_system=is_system)
+
+@app.route("/chart_of_accounts/<int:id>/delete", methods=["POST"])
+@admin_required
+def delete_gl_account(id):
+    """Only an unused account can go. Once a journal line points at it, deleting
+    it would orphan a posting that really happened — deactivate it instead."""
+    acct = db.session.get(Account, id) or abort(404)
+    if acct.code in SYSTEM_ACCOUNT_CODES:
+        flash(f"{acct.code} {acct.name} is used by the posting layer and cannot be deleted.", "danger")
+    elif account_has_activity(acct):
+        flash(f"{acct.code} {acct.name} has journal entries. Deactivate it instead.", "danger")
+    elif acct.children:
+        flash(f"{acct.code} {acct.name} still has sub-accounts.", "danger")
+    elif FinancialAccount.query.filter_by(gl_account_id=acct.id).first():
+        flash(f"{acct.code} {acct.name} belongs to a cash/bank account.", "danger")
+    elif ExpenseCategory.query.filter_by(gl_account_id=acct.id).first():
+        flash(f"{acct.code} {acct.name} is used by an expense category.", "danger")
+    elif TaxComponent.query.filter((TaxComponent.input_account_id == acct.id) |
+                                   (TaxComponent.output_account_id == acct.id)).first():
+        flash(f"{acct.code} {acct.name} is used by a tax code.", "danger")
+    else:
+        code, name = acct.code, acct.name
+        db.session.delete(acct)
+        db.session.commit()
+        record_audit("delete", "Account", id, f"Account {code} {name} deleted")
+        flash(f"Account {code} — {name} deleted.", "success")
+    return redirect(url_for("chart_of_accounts"))
 
 @app.route("/tax_codes", methods=["GET", "POST"])
 @admin_required

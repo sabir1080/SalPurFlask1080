@@ -5,6 +5,7 @@
     <h2><i class="bi bi-diagram-3 text-dark"></i> Chart of Accounts</h2>
     <div class="d-flex gap-2">
         {% if current_user.is_admin %}
+        <a href="{{ url_for('new_gl_account') }}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> New Account</a>
         <a href="{{ url_for('tax_codes') }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-percent"></i> Tax Codes</a>
         {% endif %}
         <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Dashboard</a>
@@ -24,7 +25,8 @@
         <div class="table-responsive">
         <table class="table table-hover mb-0 align-middle">
             <thead class="table-dark">
-                <tr><th>Code</th><th>Account</th><th>Type</th><th>Flags</th></tr>
+                <tr><th>Code</th><th>Account</th><th>Type</th><th>Flags</th>
+                    {% if current_user.is_admin %}<th class="text-end">Actions</th>{% endif %}</tr>
             </thead>
             <tbody>
                 {% for a in accounts %}
@@ -35,11 +37,17 @@
                     <td>
                         {% if a.is_group %}<span class="badge bg-secondary">group</span>{% endif %}
                         {% if a.is_control %}<span class="badge bg-info text-dark">control</span>{% endif %}
+                        {% if a.code in system_codes %}<span class="badge bg-light text-dark border" title="Used by the posting layer">system</span>{% endif %}
                         {% if not a.is_active %}<span class="badge bg-light text-dark border">inactive</span>{% endif %}
                     </td>
+                    {% if current_user.is_admin %}
+                    <td class="text-end">
+                        <a href="{{ url_for('edit_gl_account', id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>
+                    </td>
+                    {% endif %}
                 </tr>
                 {% else %}
-                <tr><td colspan="4" class="text-center text-muted py-4">No accounts. Run <code>flask seed-accounting</code>.</td></tr>
+                <tr><td colspan="5" class="text-center text-muted py-4">No accounts. Run <code>flask seed-accounting</code>.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

@@ -1,0 +1,104 @@
+{% extends 'base.html' %}
+{% block title %}New Account — {{ app_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-plus-circle text-dark"></i> New Account</h2>
+    <a href="{{ url_for('chart_of_accounts') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> Chart of Accounts
+    </a>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle me-1"></i>
+            A <strong>main account</strong> is a heading — it groups others and holds no balance.
+            A <strong>subsidiary account</strong> sits under a heading and is what you post to.
+            Pick a parent and the type follows it, because a sub-account of an asset heading
+            must itself be an asset.
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <form method="POST">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Code <span class="text-danger">*</span></label>
+                            <input type="text" name="code" class="form-control"
+                                   value="{{ form_data.get('code', '') }}" placeholder="6050" required>
+                            <div class="form-text">Digits or letters. Cannot be changed later.</div>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
+                            <input type="text" name="name" class="form-control"
+                                   value="{{ form_data.get('name', '') }}" placeholder="Internet &amp; Broadband" required>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Parent (main account)</label>
+                            <select name="parent_id" id="parent_id" class="form-select">
+                                <option value="">— none: this is a top-level account —</option>
+                                {% for g in groups %}
+                                <option value="{{ g.id }}" data-type="{{ g.type }}"
+                                        {% if form_data.get('parent_id')|string == g.id|string %}selected{% endif %}>
+                                    {{ g.code }} — {{ g.name }} ({{ g.type }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Type <span class="text-danger">*</span></label>
+                            <select name="type" id="type" class="form-select" required>
+                                <option value="">— choose —</option>
+                                {% for t in types %}
+                                <option value="{{ t }}" {% if form_data.get('type') == t %}selected{% endif %}>{{ t }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text" id="typeHint">Picking a parent sets this for you.</div>
+                        </div>
+
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="is_group" value="1" id="is_group"
+                                       {% if form_data.get('is_group') %}checked{% endif %}>
+                                <label class="form-check-label" for="is_group">
+                                    This is a <strong>main account</strong> (a heading). Nothing can be posted to it.
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary mt-4"><i class="bi bi-check-lg"></i> Create Account</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// A sub-account inherits its parent's type; without a parent the user chooses.
+(function () {
+    var parent = document.getElementById('parent_id');
+    var type = document.getElementById('type');
+    var hint = document.getElementById('typeHint');
+    function sync() {
+        var opt = parent.selectedOptions[0];
+        var parentType = opt ? opt.dataset.type : '';
+        if (parentType) {
+            type.value = parentType;
+            type.setAttribute('readonly', 'readonly');
+            type.style.pointerEvents = 'none';
+            type.style.background = '#e9ecef';
+            hint.textContent = 'Set to ' + parentType + ' to match the parent.';
+        } else {
+            type.removeAttribute('readonly');
+            type.style.pointerEvents = '';
+            type.style.background = '';
+            hint.textContent = 'Picking a parent sets this for you.';
+        }
+    }
+    parent.addEventListener('change', sync);
+    sync();
+})();
+</script>
+{% endblock %}

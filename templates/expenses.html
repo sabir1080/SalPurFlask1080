@@ -76,16 +76,45 @@
             <div class="card-body">
                 <form method="POST" class="row g-2 mb-3">
                     <input type="hidden" name="_action" value="add_category">
-                    <div class="col-9">
-                        <input type="text" class="form-control" name="cat_name" placeholder="New category name" required>
+                    <div class="col-12">
+                        <input type="text" class="form-control form-control-sm" name="cat_name" placeholder="New category name" required>
                     </div>
-                    <div class="col-3">
-                        <button type="submit" class="btn btn-secondary w-100">Add</button>
+                    <div class="col-8">
+                        <select class="form-select form-select-sm" name="gl_account_id">
+                            <option value="">Posts to 6090 Other Expenses</option>
+                            {% for a in gl_accounts %}
+                            <option value="{{ a.id }}">{{ a.code }} — {{ a.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-4">
+                        <button type="submit" class="btn btn-secondary btn-sm w-100">Add</button>
                     </div>
                 </form>
+
+                <div class="small text-muted mb-2">
+                    Each category posts to a general-ledger account. Change it here — the accounts
+                    themselves live in <a href="{{ url_for('chart_of_accounts') }}">Chart of Accounts</a>.
+                </div>
+
                 <ul class="list-group list-group-flush">
                     {% for cat in categories %}
-                    <li class="list-group-item py-1 px-0">{{ cat.name }}</li>
+                    <li class="list-group-item py-2 px-0">
+                        <div class="fw-semibold">{{ cat.name }}</div>
+                        <form method="POST" class="d-flex gap-1 mt-1">
+                            <input type="hidden" name="_action" value="set_category_account">
+                            <input type="hidden" name="category_id" value="{{ cat.id }}">
+                            <select class="form-select form-select-sm" name="gl_account_id">
+                                <option value="">6090 — Other Expenses (default)</option>
+                                {% for a in gl_accounts %}
+                                <option value="{{ a.id }}" {% if cat.gl_account_id == a.id %}selected{% endif %}>
+                                    {{ a.code }} — {{ a.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <button class="btn btn-outline-secondary btn-sm" title="Save"><i class="bi bi-check-lg"></i></button>
+                        </form>
+                    </li>
                     {% else %}
                     <li class="list-group-item text-muted">No categories yet</li>
                     {% endfor %}
