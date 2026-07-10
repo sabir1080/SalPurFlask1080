@@ -1117,6 +1117,62 @@ def post_sale_return(sr, created_by_id=None):
                       reference=f"SRT-{sr.id}", source_type="sale_return", source_id=sr.id,
                       allow_control=True, created_by_id=created_by_id, lines=lines)
 
+# ── Reading the ledger ────────────────────────────────────────────────────────
+# Every report below sums journal lines. Nothing is derived from the Purchase /
+# Sale / payment tables any more, so a reversal, a manual adjustment and a sale
+# all reach the reports by exactly the same path.
+
+def gl_balances(as_of=None, start=None):
+    """Net movement per account as {account_id: Decimal(debit - credit)}.
+
+    `start` and `as_of` bound the entry_date. Leaving `start` open gives a
+    cumulative balance (what a balance sheet needs); passing both gives the
+    movement in a period (what a P&L needs)."""
+    q = (db.session.query(JournalLine.account_id,
+                          func.sum(JournalLine.debit).label("dr"),
+                          func.sum(JournalLine.credit).label("cr"))
+         .join(JournalEntry, JournalLine.entry_id == JournalEntry.id))
+    if start is not None:
+        q = q.filter(JournalEntry.entry_date >= start)
+    if as_of is not None:
+        q = q.filter(JournalEntry.entry_date <= as_of)
+    return {aid: Decimal(str(dr or 0)) - Decimal(str(cr or 0))
+            for aid, dr, cr in q.group_by(JournalLine.account_id).all()}
+
+def natural_balance(account, signed_balance):
+    """`signed_balance` is debit-minus-credit. Flip it for credit-natured accounts
+    so a liability with a credit balance reads as a positive number, the way it is
+    printed on a balance sheet."""
+    return signed_balance if account.is_debit_natured else -signed_balance
+
+def accounts_by_type(balances, *types):
+    """(account, natural_balance) for leaf accounts of the given types, skipping
+    the ones that never moved. Groups are excluded — their children carry the money."""
+    out = []
+    for acct in Account.query.filter(Account.type.in_(types), Account.is_group.is_(False)
+                                     ).order_by(Account.code).all():
+        raw = balances.get(acct.id, Decimal("0"))
+        if raw:
+            out.append((acct, natural_balance(acct, raw)))
+    return out
+
+def gl_profit(start, end):
+    """Net profit for a period, straight from the income and expense accounts."""
+    b = gl_balances(as_of=end, start=start)
+    income  = sum(bal for _, bal in accounts_by_type(b, "Income"))
+    expense = sum(bal for _, bal in accounts_by_type(b, "Expense"))
+    return Decimal(str(income or 0)), Decimal(str(expense or 0))
+
+def retained_earnings_to_date(as_of):
+    """Profit earned up to `as_of` that has not been closed into equity yet.
+
+    Until a fiscal year is closed, income and expense accounts still carry their
+    balances. The balance sheet must show that profit inside equity, or it will
+    not balance. Once year-end closing exists (Phase 6) this becomes the profit
+    of the *current* year only; the rest will already sit in 3900."""
+    income, expense = gl_profit(None, as_of)
+    return income - expense
+
 def _unwind_stock_and_subledger(kind, doc):
     """Undo a document's operational effects — the physical stock it moved and the
     supplier/customer subledger row it created. The GL is NOT touched here; its
@@ -6171,7 +6227,7 @@ def report_aging():
     ap_rows = []
     for sup in Supplier.query.order_by(Supplier.name).all():
         buckets = {"0-30": 0, "31-60": 0, "61-90": 0, "90+": 0}
-        for pur in Purchase.query.filter_by(supplier_id=sup.id).all():
+        for pur in Purchase.query.filter_by(supplier_id=sup.id, is_reversed=False).all():
             due = purchase_total(pur) - get_purchase_paid(pur.id)
             if due > 0.01:
                 buckets[age_bucket(pur.date)] += due
@@ -6183,7 +6239,7 @@ def report_aging():
     ar_rows = []
     for cust in Customer.query.order_by(Customer.name).all():
         buckets = {"0-30": 0, "31-60": 0, "61-90": 0, "90+": 0}
-        for sal in Sale.query.filter_by(customer_id=cust.id).all():
+        for sal in Sale.query.filter_by(customer_id=cust.id, is_reversed=False).all():
             due = sale_total(sal) - get_sale_received(sal.id)
             if due > 0.01:
                 buckets[age_bucket(sal.date)] += due
@@ -6197,6 +6253,11 @@ def report_aging():
 @app.route("/reports/profit_loss")
 @manager_required
 def report_profit_loss():
+    """Income and expense movement over a period, summed from the GL.
+
+    Sales Returns is a contra-income account, so it carries a debit balance and
+    its natural balance is negative — subtracting it from revenue happens for
+    free when the income accounts are added up."""
     start_str = request.args.get("start", "")
     end_str   = request.args.get("end", "")
     today     = datetime.now()
@@ -6207,46 +6268,27 @@ def report_profit_loss():
         start = datetime(today.year, 1, 1)
         end   = today
 
-    # Sales revenue & COGS from SaleItem
-    sales_q = Sale.query.filter(Sale.date >= start, Sale.date <= end).all()
-    revenue  = sum(sale_total(s) for s in sales_q)
-    cogs     = sum(
-        float(si.cost_price * si.quantity)
-        for s in sales_q for si in s.line_items
-    )
-    gross_profit = revenue - cogs
+    b = gl_balances(as_of=end, start=start)
+    income_rows  = accounts_by_type(b, "Income")
+    expense_rows = accounts_by_type(b, "Expense")
 
-    # Purchase returns reduce COGS
-    pr_total = float(db.session.query(func.sum(PurchaseReturn.quantity * PurchaseReturn.return_price))
-        .filter(PurchaseReturn.date >= start, PurchaseReturn.date <= end).scalar() or 0)
-    # Sale returns reduce revenue
-    sr_total = float(db.session.query(func.sum(SaleReturn.quantity * SaleReturn.return_price))
-        .filter(SaleReturn.date >= start, SaleReturn.date <= end).scalar() or 0)
+    total_income   = sum((bal for _, bal in income_rows), Decimal("0"))
+    total_expenses = sum((bal for _, bal in expense_rows), Decimal("0"))
 
-    net_revenue     = revenue - sr_total
-    adj_gross       = net_revenue - (cogs - pr_total)
-
-    # Expenses
-    expense_rows = (
-        db.session.query(
-            ExpenseCategory.name,
-            func.sum(Expense.amount).label("total")
-        )
-        .outerjoin(ExpenseCategory, Expense.category_id == ExpenseCategory.id)
-        .filter(Expense.date >= start, Expense.date <= end)
-        .group_by(ExpenseCategory.name)
-        .all()
-    )
-    total_expenses = float(db.session.query(func.sum(Expense.amount))
-        .filter(Expense.date >= start, Expense.date <= end).scalar() or 0)
-    net_profit = adj_gross - total_expenses
+    # Cost of Goods Sold is an expense account, but it belongs above the gross
+    # profit line rather than among operating costs.
+    cogs = sum((bal for acct, bal in expense_rows if acct.code == ACC_COGS), Decimal("0"))
+    operating_rows = [(a, bal) for a, bal in expense_rows if a.code != ACC_COGS]
+    total_operating = sum((bal for _, bal in operating_rows), Decimal("0"))
+    gross_profit = total_income - cogs
+    net_profit   = total_income - total_expenses
 
     return render_template("report_pl.html",
         start=start, end=end,
-        revenue=revenue, sr_total=sr_total, net_revenue=net_revenue,
-        cogs=cogs, pr_total=pr_total, adj_gross=adj_gross,
-        expense_rows=expense_rows, total_expenses=total_expenses,
-        net_profit=net_profit)
+        income_rows=income_rows, total_income=total_income,
+        cogs=cogs, gross_profit=gross_profit,
+        operating_rows=operating_rows, total_operating=total_operating,
+        total_expenses=total_expenses, net_profit=net_profit)
 
 @app.route("/reports/cash_book")
 @manager_required
@@ -6262,56 +6304,45 @@ def report_cash_book():
         start = datetime(today.year, today.month, 1)
         end   = today
 
+    # Every journal line that touches a cash or bank GL account — so a manual
+    # journal entry that moves cash appears here too, which the old
+    # payments-and-expenses version could never show.
+    cash_gl_ids = [fa.gl_account_id for fa in FinancialAccount.query.all() if fa.gl_account_id]
+    account_names = {fa.gl_account_id: fa.name for fa in FinancialAccount.query.all()}
+
+    q = (db.session.query(JournalLine, JournalEntry)
+         .join(JournalEntry, JournalLine.entry_id == JournalEntry.id)
+         .filter(JournalLine.account_id.in_(cash_gl_ids or [-1]),
+                 JournalEntry.entry_date >= start,
+                 JournalEntry.entry_date <= end)
+         .order_by(JournalEntry.entry_date, JournalEntry.id))
+
     entries = []
-
-    # Supplier payments (cash out)
-    sp_q = SupplierPayment.query.filter(
-        SupplierPayment.payment_date >= start,
-        SupplierPayment.payment_date <= end,
-    )
-    if method_filter:
-        sp_q = sp_q.filter(SupplierPayment.payment_method == method_filter)
-    for p in sp_q.all():
+    for line, entry in q.all():
+        name = account_names.get(line.account_id, "")
+        if method_filter and name != method_filter:
+            continue
         entries.append({
-            "date": p.payment_date, "type": "Supplier Payment",
-            "description": f"{p.supplier.name}" + (f" — Bill #{p.purchase_id}" if p.purchase_id else ""),
-            "method": p.payment_method, "out": p.amount, "in": 0,
+            "date": entry.entry_date,
+            "type": entry.source_type.replace("_", " ").title(),
+            "description": entry.description,
+            "method": name,
+            "in":  float(line.debit or 0),      # money into a cash account is a debit
+            "out": float(line.credit or 0),
+            "entry_id": entry.id,
         })
 
-    # Customer receipts (cash in)
-    cr_q = CustomerPayment.query.filter(
-        CustomerPayment.payment_date >= start,
-        CustomerPayment.payment_date <= end,
-    )
-    if method_filter:
-        cr_q = cr_q.filter(CustomerPayment.payment_method == method_filter)
-    for r in cr_q.all():
-        entries.append({
-            "date": r.payment_date, "type": "Customer Receipt",
-            "description": f"{r.customer.name}" + (f" — Sale #{r.sale_id}" if r.sale_id else ""),
-            "method": r.payment_method, "in": r.amount, "out": 0,
-        })
-
-    # Expenses (cash out)
-    exp_q = Expense.query.filter(Expense.date >= start, Expense.date <= end)
-    if method_filter:
-        exp_q = exp_q.filter(Expense.payment_method == method_filter)
-    for e in exp_q.all():
-        entries.append({
-            "date": e.date, "type": "Expense",
-            "description": e.description,
-            "method": e.payment_method, "out": e.amount, "in": 0,
-        })
-
-    entries.sort(key=lambda x: x["date"])
     total_in  = sum(e["in"]  for e in entries)
     total_out = sum(e["out"] for e in entries)
     net       = total_in - total_out
 
+    # Filter offers the actual accounts, not the payment methods, now that a
+    # business can have more than one bank.
     return render_template("report_cash_book.html",
         entries=entries, start=start, end=end,
         total_in=total_in, total_out=total_out, net=net,
-        method_filter=method_filter, payment_methods=PAYMENT_METHODS)
+        method_filter=method_filter,
+        payment_methods=[fa.name for fa in active_accounts()])
 
 # ─── Cash & Bank Accounts ───────────────────────────────────────────────────────
 @app.route("/accounts")
@@ -6398,56 +6429,67 @@ def account_ledger(id):
                            opening=float(acct.opening_balance or 0),
                            closing=get_account_balance(acct))
 
-def accounting_position():
-    """Point-in-time figures for the balance sheet / trial balance, all derived
-    read-only from existing data. Balances by construction (equity is residual)."""
-    cash_bank = total_cash_bank_balance()
-    ar = cust_adv = 0.0
-    for c in Customer.query.all():
-        b = get_customer_balance(c.id)
-        if b > 0: ar += b
-        elif b < 0: cust_adv += -b        # customer paid in advance -> we owe them
-    ap = supp_adv = 0.0
-    for s in Supplier.query.all():
-        b = get_supplier_balance(s.id)
-        if b > 0: ap += b
-        elif b < 0: supp_adv += -b         # we paid supplier in advance -> they owe us
-    inventory = float(db.session.query(
-        func.sum(Item.stock * func.coalesce(Item.purchase_price, 0))).scalar() or 0)
-    total_assets = cash_bank + ar + supp_adv + inventory
-    total_liabilities = ap + cust_adv
-    equity = total_assets - total_liabilities
-    return dict(cash_bank=cash_bank, ar=ar, supp_adv=supp_adv, inventory=inventory,
-                total_assets=total_assets, ap=ap, cust_adv=cust_adv,
-                total_liabilities=total_liabilities, equity=equity)
+def parse_as_of(default=None):
+    """`?as_of=YYYY-MM-DD` → end of that day, so entries dated that day are included."""
+    raw = request.args.get("as_of", "").strip()
+    if not raw:
+        return default or datetime.now()
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+    except ValueError:
+        return default or datetime.now()
+
+def accounting_position(as_of=None):
+    """Point-in-time figures, summed from the general ledger.
+
+    Equity is no longer a residual: it is the sum of the equity accounts plus the
+    profit earned to date. That the sheet balances is therefore a *result* — and
+    if it ever does not, something is genuinely wrong."""
+    as_of = as_of or datetime.now()
+    b = gl_balances(as_of=as_of)
+
+    assets      = accounts_by_type(b, "Asset")
+    liabilities = accounts_by_type(b, "Liability")
+    equity_accs = accounts_by_type(b, "Equity")
+
+    total_assets      = sum((bal for _, bal in assets), Decimal("0"))
+    total_liabilities = sum((bal for _, bal in liabilities), Decimal("0"))
+    equity_posted     = sum((bal for _, bal in equity_accs), Decimal("0"))
+    profit            = retained_earnings_to_date(as_of)
+    total_equity      = equity_posted + profit
+
+    return dict(
+        as_of=as_of, assets=assets, liabilities=liabilities, equity_accs=equity_accs,
+        total_assets=total_assets, total_liabilities=total_liabilities,
+        equity_posted=equity_posted, profit=profit, total_equity=total_equity,
+        difference=total_assets - (total_liabilities + total_equity),
+    )
 
 @app.route("/reports/balance_sheet")
 @manager_required
 def report_balance_sheet():
-    return render_template("report_balance_sheet.html", p=accounting_position(),
-                           as_of=now_local())
+    return render_template("report_balance_sheet.html", p=accounting_position(parse_as_of()))
 
 @app.route("/reports/trial_balance")
 @manager_required
 def report_trial_balance():
-    p = accounting_position()
-    # (label, debit, credit) — a balance shown on its natural side; the opposite sign
-    # (e.g. negative cash) is placed on the other side so totals still tie out.
-    def dr(x): return (x, 0.0) if x >= 0 else (0.0, -x)
-    def cr(x): return (0.0, x) if x >= 0 else (-x, 0.0)
-    rows = [
-        ("Cash & Bank", *dr(p["cash_bank"])),
-        ("Accounts Receivable", *dr(p["ar"])),
-        ("Advances to Suppliers", *dr(p["supp_adv"])),
-        ("Inventory (at cost)", *dr(p["inventory"])),
-        ("Accounts Payable", *cr(p["ap"])),
-        ("Advances from Customers", *cr(p["cust_adv"])),
-        ("Owner's Equity (net worth)", *cr(p["equity"])),
-    ]
-    total_dr = sum(r[1] for r in rows)
-    total_cr = sum(r[2] for r in rows)
+    """Every account's balance on its natural side. Because both sides are read
+    from the same journal lines, the totals agreeing is a real check that no
+    entry was written half-way — not an accounting identity we imposed."""
+    as_of = parse_as_of()
+    balances = gl_balances(as_of=as_of)
+    rows, total_dr, total_cr = [], Decimal("0"), Decimal("0")
+    for acct in Account.query.filter_by(is_group=False).order_by(Account.code).all():
+        raw = balances.get(acct.id, Decimal("0"))
+        if not raw:
+            continue
+        debit  = raw if raw > 0 else Decimal("0")
+        credit = -raw if raw < 0 else Decimal("0")
+        rows.append((acct, debit, credit))
+        total_dr += debit
+        total_cr += credit
     return render_template("report_trial_balance.html", rows=rows,
-                           total_dr=total_dr, total_cr=total_cr, as_of=now_local())
+                           total_dr=total_dr, total_cr=total_cr, as_of=as_of)
 
 # ─── Manual Journal Entries ─────────────────────────────────────────────────────
 @app.route("/journal")

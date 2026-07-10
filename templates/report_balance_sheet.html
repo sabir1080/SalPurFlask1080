@@ -3,46 +3,106 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
     <h2><i class="bi bi-clipboard-data text-dark"></i> Balance Sheet</h2>
-    <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('report_trial_balance', as_of=p.as_of.strftime('%Y-%m-%d')) }}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-list-columns-reverse"></i> Trial Balance
+        </a>
+        <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
+    </div>
 </div>
-<p class="text-muted">{{ company_name }} &mdash; as of {{ as_of.strftime('%d %B %Y, %H:%M') }}</p>
+<p class="text-muted">{{ company_name }} &mdash; as of {{ p.as_of.strftime('%d %B %Y') }}</p>
 
-<div class="row g-4">
+<form method="GET" class="row g-2 align-items-end mb-3 d-print-none">
+    <div class="col-auto">
+        <label class="form-label fw-semibold mb-1">As of date</label>
+        <input type="date" name="as_of" class="form-control form-control-sm" value="{{ p.as_of.strftime('%Y-%m-%d') }}">
+    </div>
+    <div class="col-auto"><button class="btn btn-sm btn-primary">Show</button></div>
+</form>
+
+<div class="row g-3">
     <!-- Assets -->
     <div class="col-lg-6">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-header bg-primary text-white fw-semibold"><i class="bi bi-arrow-down-circle"></i> Assets</div>
             <div class="card-body p-0">
-                <table class="table mb-0">
+                <table class="table mb-0 align-middle">
                     <tbody>
-                        <tr><td>Cash &amp; Bank</td><td class="text-end">{{ p.cash_bank | fmt_num }}</td></tr>
-                        <tr><td>Accounts Receivable</td><td class="text-end">{{ p.ar | fmt_num }}</td></tr>
-                        <tr><td>Advances to Suppliers</td><td class="text-end">{{ p.supp_adv | fmt_num }}</td></tr>
-                        <tr><td>Inventory (at cost)</td><td class="text-end">{{ p.inventory | fmt_num }}</td></tr>
+                        {% for acct, bal in p.assets %}
+                        <tr>
+                            <td class="text-muted small">{{ acct.code }}</td>
+                            <td>{{ acct.name }}</td>
+                            <td class="text-end {{ 'text-danger' if bal < 0 }}">{{ bal | fmt_num }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="3" class="text-muted text-center py-3">No assets recorded</td></tr>
+                        {% endfor %}
                     </tbody>
                     <tfoot>
-                        <tr class="table-light fw-bold"><td>Total Assets</td><td class="text-end">{{ p.total_assets | fmt_num }}</td></tr>
+                        <tr class="table-light fw-bold">
+                            <td colspan="2" class="text-end">Total Assets</td>
+                            <td class="text-end">{{ p.total_assets | fmt_num }}</td>
+                        </tr>
                     </tfoot>
                 </table>
             </div>
         </div>
     </div>
+
     <!-- Liabilities + Equity -->
     <div class="col-lg-6">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-dark text-white fw-semibold"><i class="bi bi-arrow-up-circle"></i> Liabilities &amp; Equity</div>
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-danger text-white fw-semibold"><i class="bi bi-arrow-up-circle"></i> Liabilities</div>
             <div class="card-body p-0">
-                <table class="table mb-0">
+                <table class="table mb-0 align-middle">
                     <tbody>
-                        <tr class="fw-semibold text-muted"><td colspan="2" class="small">Liabilities</td></tr>
-                        <tr><td>Accounts Payable</td><td class="text-end">{{ p.ap | fmt_num }}</td></tr>
-                        <tr><td>Advances from Customers</td><td class="text-end">{{ p.cust_adv | fmt_num }}</td></tr>
-                        <tr class="table-light"><td class="fw-semibold">Total Liabilities</td><td class="text-end fw-semibold">{{ p.total_liabilities | fmt_num }}</td></tr>
-                        <tr class="fw-semibold text-muted"><td colspan="2" class="small pt-3">Equity</td></tr>
-                        <tr><td>Owner's Equity (net worth)</td><td class="text-end">{{ p.equity | fmt_num }}</td></tr>
+                        {% for acct, bal in p.liabilities %}
+                        <tr>
+                            <td class="text-muted small">{{ acct.code }}</td>
+                            <td>{{ acct.name }}</td>
+                            <td class="text-end {{ 'text-danger' if bal < 0 }}">{{ bal | fmt_num }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="3" class="text-muted text-center py-3">No liabilities</td></tr>
+                        {% endfor %}
                     </tbody>
                     <tfoot>
-                        <tr class="table-light fw-bold"><td>Total Liabilities &amp; Equity</td><td class="text-end">{{ (p.total_liabilities + p.equity) | fmt_num }}</td></tr>
+                        <tr class="table-light fw-bold">
+                            <td colspan="2" class="text-end">Total Liabilities</td>
+                            <td class="text-end">{{ p.total_liabilities | fmt_num }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-dark text-white fw-semibold"><i class="bi bi-safe"></i> Equity</div>
+            <div class="card-body p-0">
+                <table class="table mb-0 align-middle">
+                    <tbody>
+                        {% for acct, bal in p.equity_accs %}
+                        <tr>
+                            <td class="text-muted small">{{ acct.code }}</td>
+                            <td>{{ acct.name }}</td>
+                            <td class="text-end">{{ bal | fmt_num }}</td>
+                        </tr>
+                        {% endfor %}
+                        <tr>
+                            <td class="text-muted small">&mdash;</td>
+                            <td>Profit to date <span class="text-muted small">(not yet closed)</span></td>
+                            <td class="text-end {{ 'text-danger' if p.profit < 0 else 'text-success' }}">{{ p.profit | fmt_num }}</td>
+                        </tr>
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-light fw-bold">
+                            <td colspan="2" class="text-end">Total Equity</td>
+                            <td class="text-end">{{ p.total_equity | fmt_num }}</td>
+                        </tr>
+                        <tr class="fw-bold">
+                            <td colspan="2" class="text-end">Liabilities + Equity</td>
+                            <td class="text-end">{{ (p.total_liabilities + p.total_equity) | fmt_num }}</td>
+                        </tr>
                     </tfoot>
                 </table>
             </div>
@@ -50,10 +110,18 @@
     </div>
 </div>
 
-<div class="alert alert-info mt-4">
+<div class="text-center my-4">
+    {% if p.difference | abs < 0.01 %}
+    <span class="badge bg-success fs-6"><i class="bi bi-check-circle"></i> Balanced — Assets = Liabilities + Equity</span>
+    {% else %}
+    <span class="badge bg-danger fs-6">Out of balance by {{ p.difference | fmt_num }}</span>
+    {% endif %}
+</div>
+
+<div class="alert alert-info">
     <i class="bi bi-info-circle"></i>
-    <small>Derived from your live data: cash/bank account balances, customer &amp; supplier
-    ledgers, and inventory valued at cost. Owner's Equity is the net worth
-    (Total Assets − Total Liabilities), so the statement always balances.</small>
+    <small>Summed from the general ledger. Equity is <strong>not</strong> a balancing figure:
+    it is the equity accounts plus the profit earned to date. The two sides matching is a
+    result, so if they ever differ, something is genuinely wrong.</small>
 </div>
 {% endblock %}
