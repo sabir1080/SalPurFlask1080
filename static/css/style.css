@@ -369,9 +369,9 @@ body {
 }
 
 .nh-detail {
-    margin-bottom: 1.4rem;
-    line-height: 0}
-
+    margin-bottom: 0.35rem;
+    line-height: 1.4;
+}
 
 .nh-title-welcome {
     display: block;
