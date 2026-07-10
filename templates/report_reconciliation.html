@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+{% block title %}Reconciliation — {{ app_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+    <h2><i class="bi bi-check2-square text-dark"></i> Subledger Reconciliation</h2>
+    <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
+</div>
+<p class="text-muted">{{ company_name }} &mdash; as of {{ as_of.strftime('%d %B %Y') }}</p>
+
+<div class="alert {{ 'alert-success' if all_ok else 'alert-danger' }}">
+    {% if all_ok %}
+    <i class="bi bi-check-circle-fill me-1"></i>
+    <strong>All control accounts agree with their subledgers.</strong>
+    The general ledger and the underlying documents tell the same story.
+    {% else %}
+    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+    <strong>A control account does not match its subledger.</strong>
+    This is a real discrepancy — the ledger and the documents disagree. Do not rely on the
+    balance sheet until it is resolved.
+    {% endif %}
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+        <table class="table mb-0 align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th>Control Account</th>
+                    <th>Subledger</th>
+                    <th class="text-end">General Ledger</th>
+                    <th class="text-end">Subledger</th>
+                    <th class="text-end">Difference</th>
+                    <th class="text-center">Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                <tr class="{{ '' if r.ok else 'table-danger' }}">
+                    <td><span class="text-muted small">{{ r.acct.code }}</span> {{ r.acct.name }}</td>
+                    <td class="small text-muted">{{ r.sub_label }}</td>
+                    <td class="text-end">{{ r.gl | fmt_num }}</td>
+                    <td class="text-end">{{ r.sub | fmt_num }}</td>
+                    <td class="text-end fw-bold {{ 'text-danger' if not r.ok }}">{{ r.diff | fmt_num }}</td>
+                    <td class="text-center">
+                        {% if r.ok %}<span class="badge bg-success">match</span>
+                        {% else %}<span class="badge bg-danger">mismatch</span>{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-light fw-semibold">Customers making up Accounts Receivable</div>
+            <div class="card-body p-0">
+                <table class="table table-sm mb-0 align-middle">
+                    <tbody>
+                        {% for c, bal in customers %}
+                        <tr>
+                            <td>{{ c.name }}</td>
+                            <td class="text-end {{ 'text-danger' if bal < 0 }}">{{ bal | fmt_num }}</td>
+                            <td class="small text-muted">{{ customer_balance_label(bal) }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td class="text-muted text-center py-3">No outstanding customer balances</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-light fw-semibold">Suppliers making up Accounts Payable</div>
+            <div class="card-body p-0">
+                <table class="table table-sm mb-0 align-middle">
+                    <tbody>
+                        {% for sup, bal in suppliers %}
+                        <tr>
+                            <td>{{ sup.name }}</td>
+                            <td class="text-end {{ 'text-danger' if bal < 0 }}">{{ bal | fmt_num }}</td>
+                            <td class="small text-muted">{{ supplier_balance_label(bal) }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td class="text-muted text-center py-3">No outstanding supplier balances</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="alert alert-info mt-4">
+    <i class="bi bi-info-circle"></i>
+    <small>The two columns are computed by completely different routes: the general ledger
+    adds up journal lines, the subledgers add up documents. Neither is copied from the other,
+    which is what makes their agreement meaningful.</small>
+</div>
+{% endblock %}

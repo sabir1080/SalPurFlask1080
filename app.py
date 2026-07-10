@@ -683,6 +683,7 @@ ACC_AP             = "2100"
 ACC_TAX_OUTPUT     = "2300"
 ACC_CAPITAL        = "3100"
 ACC_DRAWINGS       = "3200"
+ACC_OPENING_EQUITY = "3300"
 ACC_RETAINED       = "3900"
 ACC_SALES          = "4000"
 ACC_SALES_RETURNS  = "4100"
@@ -706,6 +707,9 @@ CHART_OF_ACCOUNTS = [
     ("3000", "Equity",                    "Equity",    None,   True,  False),
     (ACC_CAPITAL, "Owner's Capital",      "Equity",    "3000", False, False),
     (ACC_DRAWINGS, "Owner's Drawings",    "Equity",    "3000", False, False),
+    # The other side of every opening balance: what the business already owned and
+    # owed on the day it started using the system.
+    (ACC_OPENING_EQUITY, "Opening Balance Equity", "Equity", "3000", False, False),
     (ACC_RETAINED, "Retained Earnings",   "Equity",    "3000", False, False),
 
     (ACC_SALES, "Sales Revenue",          "Income",    None,   False, False),
@@ -1173,6 +1177,56 @@ def retained_earnings_to_date(as_of):
     income, expense = gl_profit(None, as_of)
     return income - expense
 
+# ── Period and year-end closing ───────────────────────────────────────────────
+def close_fiscal_year(fy, created_by_id=None):
+    """Post the closing entry and lock the year.
+
+    Income and expense accounts measure one year only. Closing zeroes each of
+    them against Retained Earnings, so that on the first day of the next year the
+    P&L starts from nothing while the balance sheet carries forward untouched.
+
+    The entry is dated the last day of the year and posted before the year is
+    marked closed — otherwise post_entry() would refuse its own closing entry."""
+    if fy.is_closed:
+        raise PostingError(f"Fiscal year {fy.name} is already closed.")
+    if FiscalYear.query.filter(FiscalYear.end_date < fy.start_date,
+                               FiscalYear.is_closed.is_(False)).first():
+        raise PostingError("An earlier fiscal year is still open. Close years in order.")
+
+    end = datetime.combine(fy.end_date, datetime.max.time().replace(microsecond=0))
+    start = datetime.combine(fy.start_date, datetime.min.time())
+    b = gl_balances(as_of=end, start=start)
+
+    lines, profit = [], Decimal("0")
+    for acct in Account.query.filter(Account.type.in_(("Income", "Expense")),
+                                     Account.is_group.is_(False)).order_by(Account.code).all():
+        raw = b.get(acct.id, Decimal("0"))                    # debit-minus-credit
+        if not raw:
+            continue
+        # Post the opposite of whatever the account carries, to bring it to zero.
+        if raw > 0:
+            lines.append({"account_id": acct.id, "debit": 0, "credit": raw})
+        else:
+            lines.append({"account_id": acct.id, "debit": -raw, "credit": 0})
+        profit -= raw          # income is credit-natured (raw < 0) and adds to profit
+
+    if lines:
+        if profit > 0:
+            lines.append({"code": ACC_RETAINED, "debit": 0, "credit": profit,
+                          "memo": f"Profit for {fy.name}"})
+        else:
+            lines.append({"code": ACC_RETAINED, "debit": -profit, "credit": 0,
+                          "memo": f"Loss for {fy.name}"})
+        post_entry(entry_date=end, description=f"Year-end closing — {fy.name}",
+                   reference=f"CLOSE-{fy.name}", source_type="closing", source_id=fy.id,
+                   allow_control=True, created_by_id=created_by_id, lines=lines)
+
+    for p in fy.periods:
+        p.is_closed = True
+    fy.is_closed = True
+    fy.closed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    return profit
+
 def _unwind_stock_and_subledger(kind, doc):
     """Undo a document's operational effects — the physical stock it moved and the
     supplier/customer subledger row it created. The GL is NOT touched here; its
@@ -1260,6 +1314,70 @@ def reverse_document(kind, doc):
     doc.is_reversed = True
     doc.reversed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     return reversal
+
+# ── Opening balances ──────────────────────────────────────────────────────────
+# What the business already owned and owed before it started using the system.
+# Without these the GL's control accounts can never agree with their subledgers,
+# because a customer's opening balance is real receivable that no sale created.
+
+def _repost_opening(source_type, source_id, entry_date, description, lines):
+    """Opening balances are the one thing a user legitimately edits after the fact.
+    Rather than let the GL drift, reverse the old entry and post a fresh one — the
+    correction stays visible in the ledger."""
+    existing = posted_entry(source_type, source_id)
+    uid = current_user.id if current_user and current_user.is_authenticated else None
+    if existing:
+        reverse_entry(existing, created_by_id=uid)
+    if not lines:
+        return None
+    return post_entry(entry_date=entry_date, description=description,
+                      reference=f"OB-{source_type}-{source_id}",
+                      source_type=source_type, source_id=source_id,
+                      allow_control=True, created_by_id=uid, lines=lines)
+
+def _opening_date():
+    """Dated to the start of the open fiscal year, so an opening balance lands in
+    the period it describes rather than on whatever day it was typed."""
+    fy = FiscalYear.query.filter_by(is_closed=False).order_by(FiscalYear.start_date).first()
+    return datetime.combine(fy.start_date, datetime.min.time()) if fy else datetime.now()
+
+def post_supplier_opening(supplier):
+    """A positive opening balance is money we already owed: Cr Accounts Payable."""
+    ob = Decimal(str(supplier.opening_balance or 0)).quantize(MONEY)
+    lines = []
+    if ob > 0:
+        lines = [{"code": ACC_OPENING_EQUITY, "debit": ob, "credit": 0},
+                 {"code": ACC_AP, "debit": 0, "credit": ob, "memo": supplier.name}]
+    elif ob < 0:                       # we had already paid them in advance
+        lines = [{"code": ACC_AP, "debit": -ob, "credit": 0, "memo": supplier.name},
+                 {"code": ACC_OPENING_EQUITY, "debit": 0, "credit": -ob}]
+    return _repost_opening("supplier_opening", supplier.id, _opening_date(),
+                           f"Opening balance — {supplier.name}", lines)
+
+def post_customer_opening(customer):
+    """A positive opening balance is money already owed to us: Dr Accounts Receivable."""
+    ob = Decimal(str(customer.opening_balance or 0)).quantize(MONEY)
+    lines = []
+    if ob > 0:
+        lines = [{"code": ACC_AR, "debit": ob, "credit": 0, "memo": customer.name},
+                 {"code": ACC_OPENING_EQUITY, "debit": 0, "credit": ob}]
+    elif ob < 0:                       # they had already paid us in advance
+        lines = [{"code": ACC_OPENING_EQUITY, "debit": -ob, "credit": 0},
+                 {"code": ACC_AR, "debit": 0, "credit": -ob, "memo": customer.name}]
+    return _repost_opening("customer_opening", customer.id, _opening_date(),
+                           f"Opening balance — {customer.name}", lines)
+
+def post_item_opening(item):
+    """Stock on hand before the system existed, valued at the item's cost."""
+    qty = Decimal(str(item.opening_stock or 0))
+    cost = Decimal(str(item.purchase_price or 0))
+    value = (qty * cost).quantize(MONEY)
+    lines = []
+    if value > 0:
+        lines = [{"code": ACC_INVENTORY, "debit": value, "credit": 0, "memo": item.name},
+                 {"code": ACC_OPENING_EQUITY, "debit": 0, "credit": value}]
+    return _repost_opening("item_opening", item.id, _opening_date(),
+                           f"Opening stock — {item.name}", lines)
 
 def post_document(kind, doc):
     """Post `doc` to the GL. Called from route handlers after db.session.flush()
@@ -2973,6 +3091,7 @@ def supplier():
             db.session.add(supplier)
             db.session.flush()
             sync_supplier_opening(supplier)
+            post_supplier_opening(supplier)
             db.session.commit()
             record_audit("create", "Supplier", supplier.id, f"Supplier '{supplier.name}' added")
             flash("Supplier added successfully!", "success")
@@ -2997,6 +3116,7 @@ def edit_supplier(id):
         else:
             supplier.opening_balance = float(opening_str or 0)
             sync_supplier_opening(supplier)
+            post_supplier_opening(supplier)
             db.session.commit()
             record_audit("update", "Supplier", supplier.id, f"Supplier '{supplier.name}' edited")
             flash("Supplier updated successfully!", "success")
@@ -3084,6 +3204,7 @@ def customer():
             db.session.add(customer)
             db.session.flush()
             sync_customer_opening(customer)
+            post_customer_opening(customer)
             db.session.commit()
             record_audit("create", "Customer", customer.id, f"Customer '{customer.name}' added")
             flash("Customer added successfully!", "success")
@@ -3108,6 +3229,7 @@ def edit_customer(id):
         else:
             customer.opening_balance = float(opening_str or 0)
             sync_customer_opening(customer)
+            post_customer_opening(customer)
             db.session.commit()
             record_audit("update", "Customer", customer.id, f"Customer '{customer.name}' edited")
             flash("Customer updated successfully!", "success")
@@ -3265,6 +3387,8 @@ def item():
                 sale_price=float(sale_price) if sale_price else None,
             )
             db.session.add(item)
+            db.session.flush()
+            post_item_opening(item)
             db.session.commit()
             record_audit("create", "Item", item.id, f"Item '{item.name}' added")
             flash("Item added successfully!", "success")
@@ -3316,6 +3440,8 @@ def edit_item(id):
             item.reorder_level = int(reorder_level)
             item.purchase_price = float(purchase_price) if purchase_price else None
             item.sale_price = float(sale_price) if sale_price else None
+            db.session.flush()
+            post_item_opening(item)          # reverses the old opening entry and re-posts
             db.session.commit()
             record_audit("update", "Item", item.id, f"Item '{item.name}' edited")
             flash("Item updated successfully!", "success")
@@ -6601,6 +6727,111 @@ def reverse_document_route(kind, id):
     flash(f"{label} #{doc.id} reversed. Journal entry #{reversal.id} cancels it; "
           f"stock and ledgers have been corrected.", "success")
     return redirect(request.referrer or url_for(list_endpoint))
+
+# ─── Fiscal years and period close ─────────────────────────────────────────────
+@app.route("/periods")
+@manager_required
+def periods():
+    years = FiscalYear.query.order_by(FiscalYear.start_date.desc()).all()
+    return render_template("periods.html", years=years, today=datetime.now().date())
+
+@app.route("/periods/<int:id>/toggle", methods=["POST"])
+@admin_required
+def toggle_period(id):
+    """Closing a month stops backdated postings into it. Unlike a year close it
+    posts nothing, so it is safe to reopen."""
+    period = db.session.get(AccountingPeriod, id) or abort(404)
+    if period.fiscal_year.is_closed:
+        raise PostingError(f"Fiscal year {period.fiscal_year.name} is closed; "
+                           f"its periods cannot be reopened individually.")
+    period.is_closed = not period.is_closed
+    db.session.commit()
+    state = "closed" if period.is_closed else "reopened"
+    record_audit("update", "AccountingPeriod", period.id, f"Period {period.name} {state}")
+    flash(f"{period.name} {state}.", "success")
+    return redirect(url_for("periods"))
+
+@app.route("/fiscal_years/<int:id>/close", methods=["POST"])
+@admin_required
+def close_year(id):
+    fy = db.session.get(FiscalYear, id) or abort(404)
+    profit = close_fiscal_year(fy, created_by_id=current_user.id)
+    db.session.commit()
+    record_audit("close", "FiscalYear", fy.id,
+                 f"Fiscal year {fy.name} closed, {float(profit):,.2f} moved to Retained Earnings")
+    flash(f"Fiscal year {fy.name} closed. {float(profit):,.2f} "
+          f"{'profit' if profit >= 0 else 'loss'} moved to Retained Earnings. "
+          f"This cannot be undone.", "success")
+    return redirect(url_for("periods"))
+
+@app.route("/fiscal_years/new", methods=["POST"])
+@admin_required
+def new_fiscal_year():
+    try:
+        year = int(request.form.get("year", "").strip())
+    except ValueError:
+        flash("Enter a valid year.", "danger")
+        return redirect(url_for("periods"))
+    if not 1900 <= year <= 2200:
+        flash("Enter a valid year.", "danger")
+        return redirect(url_for("periods"))
+    created = seed_fiscal_year(year)
+    if created:
+        record_audit("create", "FiscalYear", 0, f"Fiscal year {year} created")
+        flash(f"Fiscal year {year} created with 12 periods.", "success")
+    else:
+        flash(f"Fiscal year {year} already exists.", "warning")
+    return redirect(url_for("periods"))
+
+# ─── Subledger ↔ control account reconciliation ────────────────────────────────
+@app.route("/reports/reconciliation")
+@manager_required
+def report_reconciliation():
+    """Prove that each control account in the GL equals the subledger that owns it.
+
+    These are two independent records of the same money: the GL adds up journal
+    lines, the subledgers add up documents. They are kept in step by the posting
+    layer, never copied from one another — so if they agree, both are almost
+    certainly right, and if they differ, the difference is a real bug, not a
+    rounding artefact. This page is the check that makes the other reports
+    trustworthy."""
+    balances = gl_balances()
+
+    def gl_of(code):
+        acct = get_account(code)
+        return acct, natural_balance(acct, balances.get(acct.id, Decimal("0")))
+
+    ar_acct, gl_ar   = gl_of(ACC_AR)
+    ap_acct, gl_ap   = gl_of(ACC_AP)
+    inv_acct, gl_inv = gl_of(ACC_INVENTORY)
+
+    # Subledger side. Customer/supplier balances are net of advances, which is
+    # exactly what the control account holds.
+    sub_ar = sum(Decimal(str(get_customer_balance(c.id))) for c in Customer.query.all())
+    sub_ap = sum(Decimal(str(get_supplier_balance(s.id))) for s in Supplier.query.all())
+    sub_inv = Decimal(str(db.session.query(
+        func.sum(Item.stock * func.coalesce(Item.purchase_price, 0))).scalar() or 0))
+
+    rows = [
+        {"acct": ar_acct,  "gl": gl_ar,  "sub": sub_ar,
+         "sub_label": "Sum of customer ledger balances"},
+        {"acct": ap_acct,  "gl": gl_ap,  "sub": sub_ap,
+         "sub_label": "Sum of supplier ledger balances"},
+        {"acct": inv_acct, "gl": gl_inv, "sub": sub_inv,
+         "sub_label": "Stock on hand × cost"},
+    ]
+    for r in rows:
+        r["diff"] = Decimal(str(r["gl"])) - Decimal(str(r["sub"]))
+        r["ok"] = abs(r["diff"]) < Decimal("0.01")
+
+    # Per-party detail, so a mismatch can be traced rather than merely reported.
+    customers = [(c, get_customer_balance(c.id)) for c in Customer.query.order_by(Customer.name).all()]
+    suppliers = [(s, get_supplier_balance(s.id)) for s in Supplier.query.order_by(Supplier.name).all()]
+
+    return render_template("report_reconciliation.html", rows=rows, as_of=datetime.now(),
+                           customers=[c for c in customers if abs(c[1]) > 0.001],
+                           suppliers=[s for s in suppliers if abs(s[1]) > 0.001],
+                           all_ok=all(r["ok"] for r in rows))
 
 # ─── Chart of Accounts & Tax Codes ─────────────────────────────────────────────
 @app.route("/chart_of_accounts")
