@@ -12,12 +12,22 @@
     </div>
 </div>
 
+<form method="GET" class="row g-2 align-items-end mb-3 d-print-none">
+    <div class="col-auto">
+        <label class="form-label fw-semibold mb-1">Balances as of</label>
+        <input type="date" name="as_of" class="form-control form-control-sm" value="{{ as_of.strftime('%Y-%m-%d') }}">
+    </div>
+    <div class="col-auto"><button class="btn btn-sm btn-primary">Show</button></div>
+</form>
+
 <div class="alert alert-info">
     <i class="bi bi-info-circle me-1"></i>
-    <strong>Group</strong> accounts are headings and hold no balance.
-    <strong>Control</strong> accounts are owned by their subledger — Accounts Receivable by the
-    customer ledgers, Accounts Payable by the supplier ledgers, Inventory by stock movements —
-    so no journal entry may be posted to them by hand.
+    <strong>Group</strong> accounts are headings: the balance shown against one is the total of
+    the accounts beneath it. <strong>Control</strong> accounts are owned by their subledger —
+    Accounts Receivable by the customer ledgers, Accounts Payable by the supplier ledgers,
+    Inventory by stock movements — so no journal entry may be posted to them by hand.
+    Every balance is shown on its natural side, so a positive number means what the account
+    normally holds.
 </div>
 
 <div class="card border-0 shadow-sm">
@@ -26,10 +36,11 @@
         <table class="table table-hover mb-0 align-middle">
             <thead class="table-dark">
                 <tr><th>Code</th><th>Account</th><th>Type</th><th>Flags</th>
+                    <th class="text-end">Balance</th>
                     {% if current_user.is_admin %}<th class="text-end">Actions</th>{% endif %}</tr>
             </thead>
             <tbody>
-                {% for a, level in rows %}
+                {% for a, level, balance in rows %}
                 <tr {% if a.is_group %}class="table-light fw-bold"{% endif %}>
                     <td class="text-muted">{{ a.code }}</td>
                     <td>
@@ -47,6 +58,9 @@
                         {% if a.code in system_codes %}<span class="badge bg-light text-dark border" title="Used by the posting layer">system</span>{% endif %}
                         {% if not a.is_active %}<span class="badge bg-light text-dark border">inactive</span>{% endif %}
                     </td>
+                    <td class="text-end {{ 'text-danger' if balance < 0 }}">
+                        {% if balance %}{{ balance | fmt_num }}{% else %}<span class="text-muted">—</span>{% endif %}
+                    </td>
                     {% if current_user.is_admin %}
                     <td class="text-end">
                         <a href="{{ url_for('edit_gl_account', id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>
@@ -54,7 +68,7 @@
                     {% endif %}
                 </tr>
                 {% else %}
-                <tr><td colspan="5" class="text-center text-muted py-4">No accounts. Run <code>flask seed-accounting</code>.</td></tr>
+                <tr><td colspan="6" class="text-center text-muted py-4">No accounts. Run <code>flask seed-accounting</code>.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

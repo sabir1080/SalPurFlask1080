@@ -7034,7 +7034,10 @@ def report_reconciliation():
 @app.route("/chart_of_accounts")
 @manager_required
 def chart_of_accounts():
+    as_of = parse_as_of()
     accounts = Account.query.order_by(Account.code).all()
+    balances = gl_balances(as_of=as_of)
+
     # Depth from the parent chain, walked over the rows already fetched rather
     # than by following .parent, which would be one query per account.
     parent_of = {a.id: a.parent_id for a in accounts}
@@ -7043,8 +7046,22 @@ def chart_of_accounts():
         while pid is not None:
             d, pid = d + 1, parent_of.get(pid)
         return d
-    rows = [(a, depth(a)) for a in accounts]
-    return render_template("chart_of_accounts.html", rows=rows,
+
+    # A heading holds no balance of its own; what it shows is the sum of the
+    # accounts beneath it. Roll each leaf's raw (debit-minus-credit) figure up
+    # its ancestors, then convert once at the end — signs only make sense on a
+    # single account's own natural side.
+    rolled = {a.id: balances.get(a.id, Decimal("0")) for a in accounts}
+    for a in accounts:
+        if a.is_group:
+            continue
+        pid = a.parent_id
+        while pid is not None:
+            rolled[pid] = rolled.get(pid, Decimal("0")) + balances.get(a.id, Decimal("0"))
+            pid = parent_of.get(pid)
+
+    rows = [(a, depth(a), natural_balance(a, rolled.get(a.id, Decimal("0")))) for a in accounts]
+    return render_template("chart_of_accounts.html", rows=rows, as_of=as_of,
                            system_codes=SYSTEM_ACCOUNT_CODES)
 
 def _validate_account_form(code, name, type_, parent, is_group, exclude_id=None):

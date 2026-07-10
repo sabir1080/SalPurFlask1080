@@ -13,4 +13,4 @@ static/*.csv
 *.docx
 desktop.ini
 .pytest_cache/
-
+ForMyUseOnly/
