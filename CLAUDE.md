@@ -84,3 +84,20 @@ Export routes write files directly to the `static/` folder, then serve them with
 
 ### Payment methods
 Defined as a module-level tuple: `PAYMENT_METHODS = ("Cash", "Bank", "Cheque", "Online")`. Used for validation and passed to templates via context processor.
+
+It has a second job: it decides which `FinancialAccount` rows absorb legacy movements (see below). Adding or removing a member changes which cash/bank account untagged records fall into — don't edit it casually.
+
+### Cash / bank accounts
+`FinancialAccount` rows are cash or bank accounts. Balances are never stored; `get_account_balance()` derives them from `opening_balance` plus customer receipts, minus supplier payments and expenses.
+
+A movement (`SupplierPayment` / `CustomerPayment` / `Expense`) belongs to an account in one of two ways, both encoded in `account_movement_filter()`:
+
+1. **Explicitly** — its nullable `account_id` FK points at the account. Every movement created through the UI is tagged this way (the `_account_select.html` partial renders the dropdown).
+2. **Implicitly (legacy)** — `account_id IS NULL` and `payment_method == account.method`. This is how rows created before `account_id` existed keep counting, with no backfill.
+
+Only the four seeded accounts carry a real `method` (one of `PAYMENT_METHODS`), so only they absorb untagged rows. Accounts created later get a synthetic `method` token from `new_account_method_token()` that matches no payment method — `method` is `NOT NULL UNIQUE` in the existing schema, and relaxing that would mean a table rebuild on SQLite and locking DDL on Postgres at startup (see the deploy note below).
+
+Account names are unique case- and space-insensitively, enforced in the app by `account_name_taken()` — not by a DB constraint, for the same DDL reason.
+
+### Migrations at startup
+`migrate_database()` runs on every boot. Adding a **nullable** column is safe on both engines. Never add blocking DDL (`ALTER COLUMN TYPE`, adding a `UNIQUE` index, dropping a constraint) — during Render's zero-downtime deploy the old instance holds locks and the ALTER hangs until the deploy times out. The money-column `Float`→`Numeric` migration is already best-effort with a `lock_timeout` and skip-on-busy for exactly this reason.
