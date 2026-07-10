@@ -89,8 +89,23 @@
                             <li><a class="dropdown-item" href="{{ url_for('report_cash_book') }}"><i class="bi bi-journal-text"></i> Cash Book</a></li>
                             <li><a class="dropdown-item" href="{{ url_for('report_gst') }}"><i class="bi bi-receipt-cutoff"></i> GST Summary</a></li>
                             <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="{{ url_for('accounts') }}"><i class="bi bi-bank"></i> Cash &amp; Bank Accounts</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('report_reconciliation') }}"><i class="bi bi-check2-square"></i> Reconciliation</a></li>
+                        </ul>
+                    </li>
+
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-journal-bookmark"></i> Accounting
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('chart_of_accounts') }}"><i class="bi bi-diagram-3"></i> Chart of Accounts</a></li>
                             <li><a class="dropdown-item" href="{{ url_for('journal') }}"><i class="bi bi-journal-plus"></i> Journal Entries</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('accounts') }}"><i class="bi bi-bank"></i> Cash &amp; Bank Accounts</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('periods') }}"><i class="bi bi-calendar-range"></i> Fiscal Years &amp; Periods</a></li>
+                            {% if current_user.is_admin %}
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('tax_codes') }}"><i class="bi bi-percent"></i> Tax Codes</a></li>
+                            {% endif %}
                         </ul>
                     </li>
                     {% endif %}
