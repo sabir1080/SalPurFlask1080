@@ -844,6 +844,14 @@ MONEY = Decimal("0.0001")            # Numeric(14,4) — the smallest storable u
 class PostingError(Exception):
     """A posting was refused. The message is shown to the user verbatim."""
 
+def current_user_id():
+    """The signed-in user's id, or None. Safe outside a request — the CLI seeder
+    and any background task post entries with no user attached."""
+    try:
+        return current_user.id if current_user and current_user.is_authenticated else None
+    except Exception:
+        return None
+
 def _money(value):
     """Parse to Decimal at storage precision. Never float: 0.1 + 0.2 must not
     decide whether an entry balances."""
@@ -1341,7 +1349,7 @@ def reverse_document(kind, doc):
         raise PostingError(
             f"{label} #{doc.id} has no live journal entry, so there is nothing to reverse.")
 
-    uid = current_user.id if current_user and current_user.is_authenticated else None
+    uid = current_user_id()
     reversal = reverse_entry(entry, created_by_id=uid)
 
     owner_kind, owner_id = _unwind_stock_and_subledger(kind, doc)
@@ -1401,7 +1409,7 @@ def _repost_opening(source_type, source_id, entry_date, description, lines):
     Rather than let the GL drift, reverse the old entry and post a fresh one — the
     correction stays visible in the ledger."""
     existing = posted_entry(source_type, source_id)
-    uid = current_user.id if current_user and current_user.is_authenticated else None
+    uid = current_user_id()
     if existing:
         reverse_entry(existing, created_by_id=uid)
     if not lines:
@@ -1473,7 +1481,7 @@ def post_document(kind, doc):
         "sale_return":      post_sale_return,
         "stock_adjustment": post_stock_adjustment,
     }[kind]
-    uid = current_user.id if current_user and current_user.is_authenticated else None
+    uid = current_user_id()
     return poster(doc, created_by_id=uid)
 
 def post_stock_adjustment(adj, created_by_id=None):
@@ -7076,25 +7084,42 @@ def seed_accounting_cmd():
 
 @app.cli.command("reset-db")
 @click.option("--yes", is_flag=True, help="Required. Drops every table.")
-def reset_db_cmd(yes):
+@click.option("--i-understand-this-wipes-the-deployed-database", "wipe_remote", is_flag=True,
+              help="Also allow this when DATABASE_URL is set (Render). Irreversible.")
+def reset_db_cmd(yes, wipe_remote):
     """Drop and recreate every table, then seed accounting. Destroys all data."""
     if not yes:
         click.echo("Refusing without --yes. This drops every table.")
         return
-    if DATABASE_URL:
-        # DATABASE_URL is only set on real deployments (Render). A stray reset
-        # there would wipe production, so make it impossible from the CLI.
-        click.echo("Refusing: DATABASE_URL is set, this looks like a deployed database.")
+    if DATABASE_URL and not wipe_remote:
+        # DATABASE_URL is only set on real deployments (Render). Wiping one has to
+        # be a sentence someone typed on purpose, not a flag they reached for.
+        click.echo("Refusing: DATABASE_URL is set, so this is a deployed database.")
+        click.echo("If you really mean it, add:")
+        click.echo("    --i-understand-this-wipes-the-deployed-database")
         return
+    if DATABASE_URL:
+        click.echo(f"About to wipe the DEPLOYED database at "
+                   f"{urlsplit(DATABASE_URL).hostname or 'unknown host'}.")
+        if not click.confirm("There is no undo. Continue?"):
+            click.echo("Aborted.")
+            return
+
     db.drop_all()
     db.create_all()
     click.echo("All tables dropped and recreated.")
     seed_chart_of_accounts()
     seed_tax_codes()
     seed_fiscal_year(datetime.now().year)
+    # drop_all took the seeded cash/bank accounts with it.
+    types = {"Cash": "Cash", "Bank": "Bank", "Cheque": "Bank", "Online": "Bank"}
+    for m in PAYMENT_METHODS:
+        db.session.add(FinancialAccount(name=m, method=m, account_type=types[m], opening_balance=0))
+    db.session.commit()
+    seed_financial_account_links()
     click.echo(f"Seeded {Account.query.count()} accounts, {TaxCode.query.count()} tax codes, "
                f"{AccountingPeriod.query.count()} periods.")
-    click.echo("Now run: flask create-user")
+    click.echo("Now run: flask create-user, then: flask seed-data --yes")
 
 @app.cli.command("create-user")
 @click.option("--name", prompt="Name")
@@ -7433,348 +7458,372 @@ def backup_db_cmd(path):
     rows = sum(len(v) for v in data["tables"].values())
     click.echo(f"Backup written to {path} ({rows} rows, {os.path.getsize(path)//1024} KB).")
 
+DEMO_ITEMS = [
+    # (name, category, unit, opening_stock, reorder, purchase_price, sale_price)
+    ("Samsung A15 Mobile",   "Electronics",     "Pcs",    12,  5, 42000, 49000),
+    ("HP Laptop 15s",        "Electronics",     "Pcs",     6,  2, 98000, 118000),
+    ("USB-C Cable 2m",       "Electronics",     "Pcs",   150, 40,   320,    650),
+    ("Wireless Mouse",       "Electronics",     "Pcs",    60, 15,   850,   1500),
+    ("Cotton Fabric",        "Fabric & Textile","Meter", 400, 100,  210,    310),
+    ("Polyester Fabric",     "Fabric & Textile","Meter", 250,  80,  160,    240),
+    ("Office Chair",         "Furniture",       "Pcs",    18,   5, 7200,  11500),
+    ("Steel Almirah",        "Furniture",       "Pcs",     4,   2,24000,  33000),
+]
+
+DEMO_SUPPLIERS = [
+    ("Shaheen Electronics", "03211234567", "Hall Road, Lahore",      35000),
+    ("Karimi Cloth House",  "03337654321", "Bolton Market, Karachi", 12000),
+    ("National Traders",    "03459876543", "Blue Area, Islamabad",       0),
+    ("Meezan Furniture",    "03018889999", "Ferozepur Road, Lahore", -8000),   # advance paid
+]
+
+DEMO_CUSTOMERS = [
+    ("Ahmed Brothers",     "03121111111", "Karkhana Bazaar, Faisalabad", 18000),
+    ("Zafar Retail Store", "03222222222", "Hussain Agahi, Multan",           0),
+    ("City Electronics",   "03003333333", "Saddar, Rawalpindi",          25000),
+    ("Gulberg Interiors",  "03334444444", "Gulberg III, Lahore",         -5000),  # advance received
+    ("Rehman Traders",     "03015555555", "University Road, Peshawar",       0),
+]
+
+def _wipe_transactional_data():
+    """Everything except users. Children before parents; the ledger goes first
+    because journal lines reference accounts, which survive."""
+    for model in (JournalLine, JournalEntry,
+                  SupplierLedgerEntry, CustomerLedgerEntry,
+                  SaleReturn, PurchaseReturn, StockAdjustment,
+                  CustomerPayment, SupplierPayment, Expense, ExpenseCategory,
+                  SaleItem, PurchaseItem, Sale, Purchase,
+                  DeliveryChallan, QuotationItem, Quotation,
+                  PurchaseOrderItem, PurchaseOrder,
+                  Item, Category, Customer, Supplier, AuditLog):
+        db.session.query(model).delete()
+    # Cash/bank accounts survive, but their opening balances are demo data too.
+    for fa in FinancialAccount.query.all():
+        fa.opening_balance = 0
+    db.session.commit()
+
 @app.cli.command("seed-data")
-@click.option("--yes", is_flag=True, help="Skip confirmation prompt")
+@click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
 def seed_data_cmd(yes):
-    """Wipe all non-user data and populate with demo master data + all transaction types."""
+    """Wipe all non-user data and build a realistic demo company.
+
+    Everything goes through the same posting layer the web app uses, so the
+    general ledger, the subledgers and the stock all end up consistent — the
+    reconciliation report passes on the data this produces, and the command
+    checks that itself before it finishes."""
     if not yes:
-        click.echo("WARNING: This will DELETE ALL existing data (except User accounts) and insert demo data.")
+        click.echo("WARNING: deletes ALL data except user accounts, then inserts demo data.")
         if not click.confirm("Continue?"):
             click.echo("Aborted.")
             return
 
-    # ── 1. Clear data in FK-safe order ───────────────────────────────────────
-    click.echo("Step 1/3: Clearing all data...")
-    db.session.query(SupplierLedgerEntry).delete()
-    db.session.query(CustomerLedgerEntry).delete()
-    db.session.query(SaleReturn).delete()
-    db.session.query(PurchaseReturn).delete()
-    db.session.query(CustomerPayment).delete()
-    db.session.query(SupplierPayment).delete()
-    db.session.query(SaleItem).delete()
-    db.session.query(PurchaseItem).delete()
-    db.session.query(Sale).delete()
-    db.session.query(Purchase).delete()
-    db.session.query(Item).delete()
-    db.session.query(Category).delete()
-    db.session.query(Customer).delete()
-    db.session.query(Supplier).delete()
+    year = datetime.now().year
+    seed_chart_of_accounts()
+    seed_tax_codes()
+    seed_fiscal_year(year)
+    seed_financial_account_links()
+
+    fy = FiscalYear.query.filter_by(name=str(year)).first()
+    if fy and fy.is_closed:
+        click.echo(f"Fiscal year {year} is closed; demo data cannot be posted into it.")
+        return
+
+    click.echo("Clearing existing data ...")
+    _wipe_transactional_data()
+
+    def D(month, day):
+        """A date inside the current fiscal year, so every posting is accepted."""
+        return datetime(year, month, day)
+
+    # -- Master data ----------------------------------------------------------
+    cats = {}
+    for name in ("Electronics", "Fabric & Textile", "Furniture"):
+        c = Category(name=name)
+        db.session.add(c)
+        cats[name] = c
+    db.session.flush()
+
+    items = {}
+    for name, cat, unit, opening, reorder, pp, sp in DEMO_ITEMS:
+        it = Item(name=name, category_id=cats[cat].id, unit=unit,
+                  opening_stock=opening, stock=opening, reorder_level=reorder,
+                  purchase_price=pp, sale_price=sp,
+                  inventory_value=Decimal(str(opening)) * Decimal(str(pp)))
+        db.session.add(it)
+        items[name] = it
+    db.session.flush()
+    for it in items.values():
+        post_item_opening(it)
+
+    suppliers = {}
+    for name, contact, address, ob in DEMO_SUPPLIERS:
+        sup = Supplier(name=name, contact=contact, address=address, opening_balance=ob)
+        db.session.add(sup)
+        suppliers[name] = sup
+    db.session.flush()
+    for sup in suppliers.values():
+        sync_supplier_opening(sup)
+        post_supplier_opening(sup)
+
+    customers = {}
+    for name, contact, address, ob in DEMO_CUSTOMERS:
+        cus = Customer(name=name, contact=contact, address=address, opening_balance=ob)
+        db.session.add(cus)
+        customers[name] = cus
+    db.session.flush()
+    for cus in customers.values():
+        sync_customer_opening(cus)
+        post_customer_opening(cus)
+
+    for name in ("Rent", "Salaries & Wages", "Utilities", "Freight"):
+        db.session.add(ExpenseCategory(name=name))
     db.session.commit()
-    click.echo("  Done.")
+    click.echo(f"  {len(cats)} categories, {len(items)} items, "
+               f"{len(suppliers)} suppliers, {len(customers)} customers.")
 
-    # ── 2. Master Data ────────────────────────────────────────────────────────
-    click.echo("Step 2/3: Creating master data...")
+    accounts = {fa.method: fa for fa in FinancialAccount.query.all()}
 
-    cat_elec   = Category(name="Electronics")
-    cat_fabric = Category(name="Fabric & Textile")
-    db.session.add_all([cat_elec, cat_fabric])
-    db.session.flush()
-
-    item_mobile = Item(name="Samsung Mobile",  category_id=cat_elec.id,   unit="Pcs",
-                       opening_stock=10,  stock=10,  reorder_level=5,
-                       purchase_price=25000.0, sale_price=30000.0)
-    item_laptop = Item(name="Laptop HP",        category_id=cat_elec.id,   unit="Pcs",
-                       opening_stock=5,   stock=5,   reorder_level=2,
-                       purchase_price=55000.0, sale_price=65000.0)
-    item_cable  = Item(name="USB Cable",        category_id=cat_elec.id,   unit="Pcs",
-                       opening_stock=100, stock=100, reorder_level=20,
-                       purchase_price=300.0,   sale_price=500.0)
-    item_cotton = Item(name="Cotton Fabric",    category_id=cat_fabric.id, unit="Meter",
-                       opening_stock=500, stock=500, reorder_level=100,
-                       purchase_price=200.0,   sale_price=280.0)
-    item_poly   = Item(name="Polyester Fabric", category_id=cat_fabric.id, unit="Meter",
-                       opening_stock=300, stock=300, reorder_level=50,
-                       purchase_price=150.0,   sale_price=200.0)
-    db.session.add_all([item_mobile, item_laptop, item_cable, item_cotton, item_poly])
-    db.session.flush()
-
-    sup1 = Supplier(name="Shaheen Electronics", contact="0321-1234567",
-                    address="Hall Road, Lahore",       opening_balance=15000.0)
-    sup2 = Supplier(name="Karimi Cloth House",  contact="0333-7654321",
-                    address="Bolton Market, Karachi",  opening_balance=8000.0)
-    sup3 = Supplier(name="National Traders",    contact="0345-9876543",
-                    address="Blue Area, Islamabad",    opening_balance=0.0)
-    db.session.add_all([sup1, sup2, sup3])
-    db.session.flush()
-
-    cust1 = Customer(name="Ahmed Brothers",     contact="0312-1111111",
-                     address="Karkhana Bazaar, Faisalabad", opening_balance=5000.0)
-    cust2 = Customer(name="Zafar Retail Store", contact="0322-2222222",
-                     address="Hussain Agahi, Multan",       opening_balance=0.0)
-    cust3 = Customer(name="City Electronics",   contact="0300-3333333",
-                     address="Saddar, Rawalpindi",           opening_balance=12000.0)
-    db.session.add_all([cust1, cust2, cust3])
-    db.session.flush()
-
-    for s in [sup1, sup2, sup3]:
-        sync_supplier_opening(s)
-    for c in [cust1, cust2, cust3]:
-        sync_customer_opening(c)
+    # -- Capital injection, so the company has cash to spend -------------------
+    post_entry(entry_date=D(1, 2), description="Owner's capital introduced",
+               reference="JV-001", lines=[
+                   {"code": ACC_CASH_IN_HAND, "debit": 300000, "credit": 0},
+                   {"code": ACC_CAPITAL, "debit": 0, "credit": 300000}])
     db.session.commit()
-    click.echo("  2 categories, 5 items, 3 suppliers, 3 customers created.")
 
-    # ── 3. Transactions ───────────────────────────────────────────────────────
-    click.echo("Step 3/3: Creating all transaction types...")
-
-    def dt(s):
-        return datetime.strptime(s, "%Y-%m-%d")
-
-    # Shorthand tuple: no discount, no tax
-    _N = ("percent", 0.0, 0.0)
-
-    def make_purchase(supplier, date, rows, notes=None):
+    # -- Purchases ------------------------------------------------------------
+    def purchase(supplier, date, rows, tax=0):
+        """rows: [(item_name, qty, unit_price)]"""
         first = rows[0]
-        pur = Purchase(
-            supplier_id=supplier.id,
-            item_id=first[0].id, quantity=first[1], purchase_price=first[2],
-            discount_type="percent", discount_value=0, discount_amount=0,
-            tax_percent=0, tax_amount=0,
-            date=date, notes=notes,
-        )
+        pur = Purchase(supplier_id=suppliers[supplier].id, item_id=items[first[0]].id,
+                       quantity=first[1], purchase_price=first[2],
+                       discount_type="percent", discount_value=0, discount_amount=0,
+                       tax_percent=0, tax_amount=0, date=date)
         db.session.add(pur)
         db.session.flush()
-        for item, qty, price, d_type, d_val, tax in rows:
+        for iname, qty, price in rows:
+            it = items[iname]
             gross = qty * price
-            disc_amt, tax_amt, net = calc_discount_tax(gross, d_type, d_val, tax)
-            db.session.add(PurchaseItem(
-                purchase_id=pur.id, item_id=item.id,
-                quantity=qty, purchase_price=price,
-                discount_type=d_type, discount_value=d_val,
-                discount_amount=disc_amt, tax_percent=tax,
-                tax_amount=tax_amt, amount=net,
-            ))
-            item.stock += qty
+            disc, tax_amt, net = calc_discount_tax(gross, "percent", 0, tax)
+            db.session.add(PurchaseItem(purchase_id=pur.id, item_id=it.id,
+                                        quantity=qty, purchase_price=price,
+                                        discount_type="percent", discount_value=0,
+                                        discount_amount=disc, tax_percent=tax,
+                                        tax_amount=tax_amt, amount=net))
+            item_add_stock(it, qty, net - tax_amt)
         db.session.flush()
         db.session.refresh(pur)
         sync_supplier_purchase(pur)
+        post_document("purchase", pur)
         db.session.commit()
         return pur
 
-    def make_sale(customer, date, rows, notes=None):
+    purchases = [
+        purchase("Shaheen Electronics", D(1, 12), [("Samsung A15 Mobile", 20, 41500),
+                                                   ("USB-C Cable 2m", 200, 300)], tax=17),
+        purchase("Karimi Cloth House",  D(1, 25), [("Cotton Fabric", 600, 205),
+                                                   ("Polyester Fabric", 400, 158)]),
+        purchase("Shaheen Electronics", D(2, 14), [("HP Laptop 15s", 10, 97000)], tax=17),
+        purchase("Meezan Furniture",    D(3, 3),  [("Office Chair", 25, 7000),
+                                                   ("Steel Almirah", 8, 23500)]),
+        purchase("Shaheen Electronics", D(4, 8),  [("Samsung A15 Mobile", 15, 43000),
+                                                   ("Wireless Mouse", 80, 820)], tax=17),
+        purchase("National Traders",    D(5, 19), [("USB-C Cable 2m", 300, 290)]),
+        purchase("Karimi Cloth House",  D(6, 6),  [("Cotton Fabric", 400, 215)]),
+    ]
+    click.echo(f"  {len(purchases)} purchases.")
+
+    # -- Sales ----------------------------------------------------------------
+    def sale(customer, date, rows, tax=0):
         first = rows[0]
-        sal = Sale(
-            customer_id=customer.id,
-            item_id=first[0].id, quantity=first[1], sale_price=first[2],
-            cost_price=0.0,
-            discount_type="percent", discount_value=0, discount_amount=0,
-            tax_percent=0, tax_amount=0,
-            date=date, notes=notes,
-        )
+        sal = Sale(customer_id=customers[customer].id, item_id=items[first[0]].id,
+                   quantity=first[1], sale_price=first[2], cost_price=0,
+                   discount_type="percent", discount_value=0, discount_amount=0,
+                   tax_percent=0, tax_amount=0, date=date)
         db.session.add(sal)
         db.session.flush()
-        for item, qty, price, d_type, d_val, tax in rows:
+        for iname, qty, price in rows:
+            it = items[iname]
             gross = qty * price
-            disc_amt, tax_amt, net = calc_discount_tax(gross, d_type, d_val, tax)
-            db.session.add(SaleItem(
-                sale_id=sal.id, item_id=item.id,
-                quantity=qty, sale_price=price,
-                cost_price=float(item.purchase_price or 0),
-                discount_type=d_type, discount_value=d_val,
-                discount_amount=disc_amt, tax_percent=tax,
-                tax_amount=tax_amt, amount=net,
-            ))
-            item.stock -= qty
+            disc, tax_amt, net = calc_discount_tax(gross, "percent", 0, tax)
+            unit_cost = it.avg_cost
+            db.session.add(SaleItem(sale_id=sal.id, item_id=it.id,
+                                    quantity=qty, sale_price=price,
+                                    cost_price=float(unit_cost),
+                                    discount_type="percent", discount_value=0,
+                                    discount_amount=disc, tax_percent=tax,
+                                    tax_amount=tax_amt, amount=net))
+            item_remove_stock(it, qty, cost_total=unit_cost * Decimal(str(qty)))
         db.session.flush()
         db.session.refresh(sal)
         sync_customer_sale(sal)
+        post_document("sale", sal)
         db.session.commit()
         return sal
 
-    # Purchases  ──────────────────────────────────────────────────────────────
-    pur1 = make_purchase(sup1, dt("2026-05-01"), [
-        (item_mobile,  5, 25000.0) + _N,   # 125,000
-        (item_cable,  20,   300.0) + _N,   #   6,000  → total 131,000
-    ], notes="Stock replenishment")
-    pur2 = make_purchase(sup2, dt("2026-05-05"), [
-        (item_cotton, 100, 200.0) + _N,    #  20,000
-        (item_poly,    50, 150.0) + _N,    #   7,500  → total 27,500
-    ])
-    pur3 = make_purchase(sup3, dt("2026-05-10"), [
-        (item_laptop, 2, 55000.0) + _N,    # 110,000
-    ])
-    click.echo("  Purchases:  3 invoices (2 multi-item, 1 single)")
+    sales = [
+        sale("Ahmed Brothers",     D(2, 3),  [("Samsung A15 Mobile", 6, 49000)], tax=17),
+        sale("City Electronics",   D(2, 20), [("USB-C Cable 2m", 80, 650),
+                                              ("Wireless Mouse", 20, 1500)], tax=17),
+        sale("Zafar Retail Store", D(3, 9),  [("Cotton Fabric", 250, 310)]),
+        sale("Ahmed Brothers",     D(3, 22), [("HP Laptop 15s", 4, 118000)], tax=17),
+        sale("Gulberg Interiors",  D(4, 2),  [("Office Chair", 10, 11500),
+                                              ("Steel Almirah", 3, 33000)]),
+        sale("City Electronics",   D(4, 27), [("Samsung A15 Mobile", 9, 48500)], tax=17),
+        sale("Rehman Traders",     D(5, 11), [("Polyester Fabric", 300, 240)]),
+        sale("Zafar Retail Store", D(6, 1),  [("Cotton Fabric", 350, 315)]),
+        sale("Ahmed Brothers",     D(6, 18), [("Wireless Mouse", 30, 1450),
+                                              ("USB-C Cable 2m", 120, 640)], tax=17),
+        sale("City Electronics",   D(7, 4),  [("HP Laptop 15s", 3, 120000)], tax=17),
+    ]
+    click.echo(f"  {len(sales)} sales.")
 
-    # Sales  ──────────────────────────────────────────────────────────────────
-    sal1 = make_sale(cust1, dt("2026-05-15"), [
-        (item_mobile, 2, 30000.0) + _N,    #  60,000
-        (item_cable,  10,   500.0) + _N,   #   5,000  → total 65,000
-    ])
-    sal2 = make_sale(cust2, dt("2026-05-20"), [
-        (item_cotton, 50, 280.0) + _N,     #  14,000
-        (item_poly,   30, 200.0) + _N,     #   6,000  → total 20,000
-    ])
-    sal3 = make_sale(cust3, dt("2026-05-25"), [
-        (item_laptop, 1, 65000.0) + _N,    #  65,000
-    ])
-    click.echo("  Sales:      3 invoices (2 multi-item, 1 single)")
+    # -- Payments and receipts, across all four methods ----------------------
+    def pay(supplier, date, amount, method="Bank"):
+        acct = accounts[method]
+        p = SupplierPayment(supplier_id=suppliers[supplier].id, amount=amount,
+                            payment_date=date, payment_method=method,
+                            account_id=acct.id, reference_no=f"PAY-{date:%m%d}")
+        db.session.add(p); db.session.flush()
+        sync_supplier_payment(p); post_document("payment", p); db.session.commit()
 
-    # Supplier Payments  ───────────────────────────────────────────────────────
-    def sup_pay(supplier, purchase, amount, date, method, ref=None, notes=None):
-        p = SupplierPayment(
-            supplier_id=supplier.id,
-            purchase_id=purchase.id if purchase else None,
-            amount=amount, payment_date=date,
-            payment_method=method, reference_no=ref, notes=notes,
-        )
-        db.session.add(p)
+    def receipt(customer, date, amount, method="Cash"):
+        acct = accounts[method]
+        r = CustomerPayment(customer_id=customers[customer].id, amount=amount,
+                            payment_date=date, payment_method=method,
+                            account_id=acct.id, reference_no=f"RCT-{date:%m%d}")
+        db.session.add(r); db.session.flush()
+        sync_customer_receipt(r); post_document("receipt", r); db.session.commit()
+
+    pay("Shaheen Electronics", D(2, 1),  500000)
+    pay("Karimi Cloth House",  D(2, 10), 150000, method="Cheque")
+    pay("Shaheen Electronics", D(3, 5),  600000)
+    pay("Meezan Furniture",    D(4, 1),  200000, method="Online")
+    pay("National Traders",    D(6, 2),   50000, method="Cash")
+
+    receipt("Ahmed Brothers",     D(2, 12), 300000, method="Bank")
+    receipt("City Electronics",   D(3, 1),   80000)
+    receipt("Zafar Retail Store", D(3, 30),  70000, method="Bank")
+    receipt("Ahmed Brothers",     D(4, 15), 400000, method="Online")
+    receipt("Gulberg Interiors",  D(5, 5),  150000, method="Cheque")
+    receipt("Rehman Traders",     D(6, 10),  60000, method="Bank")
+    click.echo("  5 supplier payments, 6 customer receipts.")
+
+    # -- Expenses, each category wired to its GL account ----------------------
+    exp_cats = {c.name: c for c in ExpenseCategory.query.all()}
+    for cname, code in (("Rent", "6010"), ("Salaries & Wages", "6020"),
+                        ("Utilities", "6030"), ("Freight", "6040")):
+        exp_cats[cname].gl_account_id = get_account(code).id
+    db.session.commit()
+
+    demo_expenses = [
+        ("Rent",             "Shop rent - January",  30000, D(1, 31), "Cash"),
+        ("Salaries & Wages", "Staff salaries - Jan", 62000, D(1, 31), "Bank"),
+        ("Utilities",        "Electricity bill",     18500, D(2, 8),  "Cash"),
+        ("Rent",             "Shop rent - February", 30000, D(2, 28), "Cash"),
+        ("Freight",          "Delivery charges",     12000, D(3, 15), "Cash"),
+        ("Salaries & Wages", "Staff salaries - Mar", 64000, D(3, 31), "Bank"),
+        ("Utilities",        "Internet & phone",      9500, D(4, 10), "Online"),
+        ("Rent",             "Shop rent - April",    30000, D(4, 30), "Cash"),
+        ("Freight",          "Courier - Multan",      7800, D(5, 20), "Cash"),
+        ("Salaries & Wages", "Staff salaries - Jun", 66000, D(6, 30), "Bank"),
+    ]
+    for cat, desc, amount, date, method in demo_expenses:
+        e = Expense(category_id=exp_cats[cat].id, description=desc, amount=amount,
+                    date=date, payment_method=method, account_id=accounts[method].id)
+        db.session.add(e); db.session.flush()
+        post_document("expense", e); db.session.commit()
+    click.echo(f"  {len(demo_expenses)} expenses.")
+
+    # -- Returns --------------------------------------------------------------
+    pi = PurchaseItem.query.filter_by(purchase_id=purchases[4].id).first()
+    item = db.session.get(Item, pi.item_id)
+    pr = PurchaseReturn(purchase_id=pi.purchase_id, supplier_id=purchases[4].supplier_id,
+                        item_id=pi.item_id, quantity=2, return_price=43000,
+                        date=D(4, 20), reason="Damaged in transit")
+    pr.cost_removed = item_remove_stock(item, 2)
+    db.session.add(pr); db.session.flush()
+    sync_supplier_purchase_return(pr); post_document("purchase_return", pr); db.session.commit()
+
+    si = SaleItem.query.filter_by(sale_id=sales[2].id).first()
+    item = db.session.get(Item, si.item_id)
+    cost = (Decimal(str(si.cost_price)) * Decimal("40")).quantize(MONEY)
+    sr = SaleReturn(sale_id=si.sale_id, customer_id=sales[2].customer_id,
+                    item_id=si.item_id, quantity=40, return_price=310,
+                    date=D(3, 18), reason="Colour mismatch", cost_restored=cost)
+    item_add_stock(item, 40, cost)
+    db.session.add(sr); db.session.flush()
+    sync_customer_sale_return(sr); post_document("sale_return", sr); db.session.commit()
+    click.echo("  1 purchase return, 1 sale return.")
+
+    # -- Stock adjustments ----------------------------------------------------
+    for iname, qty, adj_type, date in (("USB-C Cable 2m", 5, "Damage Write-off", D(5, 6)),
+                                       ("Wireless Mouse", 3, "Count Correction", D(6, 21))):
+        it = items[iname]
+        direction = "out" if adj_type in ("Stock Out", "Damage Write-off", "Sample / Free Issue") else "in"
+        adj = StockAdjustment(item_id=it.id, adj_type=adj_type, quantity=qty,
+                              direction=direction, date=date, reason="Demo data")
+        db.session.add(adj)
+        if direction == "out":
+            adj.cost_value = item_remove_stock(it, qty)
+        else:
+            adj.cost_value = (it.avg_cost * Decimal(str(qty))).quantize(MONEY)
+            item_add_stock(it, qty, adj.cost_value)
         db.session.flush()
-        sync_supplier_payment(p)
+        post_document("stock_adjustment", adj)
         db.session.commit()
+    click.echo("  2 stock adjustments.")
 
-    sup_pay(sup1, pur1, 80000.0, dt("2026-05-16"), "Bank",   "TXN-001", "Partial against Bill #1")
-    sup_pay(sup1, None, 20000.0, dt("2026-05-22"), "Cash",   notes="On account")
-    sup_pay(sup2, pur2, 27500.0, dt("2026-05-25"), "Cheque", "CHQ-4521", "Full payment - fabric")
-    click.echo("  Supplier Payments: 3 recorded")
+    # -- Manual journal entries, one of them reversed --------------------------
+    post_entry(entry_date=D(5, 31), description="Owner's drawings", reference="JV-002",
+               lines=[{"code": ACC_DRAWINGS, "debit": 50000, "credit": 0},
+                      {"code": ACC_CASH_IN_HAND, "debit": 0, "credit": 50000}])
+    mistake = post_entry(entry_date=D(6, 15), description="Misposted utilities",
+                         reference="JV-003",
+                         lines=[{"code": "6030", "debit": 5000, "credit": 0},
+                                {"code": ACC_CASH_IN_HAND, "debit": 0, "credit": 5000}])
+    db.session.commit()
+    reverse_entry(mistake)                 # leaves a visible correction in the ledger
+    db.session.commit()
+    click.echo("  3 manual journal entries (one reversed).")
 
-    # Customer Receipts  ───────────────────────────────────────────────────────
-    def cust_recv(customer, sale, amount, date, method, ref=None, notes=None):
-        r = CustomerPayment(
-            customer_id=customer.id,
-            sale_id=sale.id if sale else None,
-            amount=amount, payment_date=date,
-            payment_method=method, reference_no=ref, notes=notes,
-        )
-        db.session.add(r)
-        db.session.flush()
-        sync_customer_receipt(r)
-        db.session.commit()
+    # -- A reversed sale, so the reversal flow has demo data too ---------------
+    reverse_document("sale", sales[6])
+    db.session.commit()
+    click.echo("  1 reversed sale.")
 
-    cust_recv(cust1, sal1, 40000.0, dt("2026-05-17"), "Cash",   notes="Partial against Sale #1")
-    cust_recv(cust1, None, 15000.0, dt("2026-05-23"), "Bank",   "TXN-502", "On account")
-    cust_recv(cust3, sal3, 65000.0, dt("2026-05-28"), "Online", "ONL-789",  "Full payment - laptop")
-    click.echo("  Customer Receipts: 3 recorded")
+    # -- Prove the result -----------------------------------------------------
+    dr = db.session.query(func.sum(JournalLine.debit)).scalar() or 0
+    cr = db.session.query(func.sum(JournalLine.credit)).scalar() or 0
+    b = gl_balances()
 
-    # Purchase Returns  ────────────────────────────────────────────────────────
-    def pur_ret(purchase, supplier, item, qty, price, date, reason=None):
-        item.stock -= qty
-        pr = PurchaseReturn(
-            purchase_id=purchase.id, supplier_id=supplier.id, item_id=item.id,
-            quantity=qty, return_price=price, date=date, reason=reason,
-        )
-        db.session.add(pr)
-        db.session.flush()
-        sync_supplier_purchase_return(pr)
-        db.session.commit()
+    def gl_of(code):
+        a = get_account(code)
+        return natural_balance(a, b.get(a.id, Decimal("0")))
 
-    pur_ret(pur2, sup2, item_cotton,  10, 200.0, dt("2026-06-01"), "Defective material")
-    pur_ret(pur1, sup1, item_cable,    5, 300.0, dt("2026-06-03"), "Wrong specification")
-    click.echo("  Purchase Returns: 2 recorded")
+    sub_ar = sum(Decimal(str(get_customer_balance(c.id))) for c in Customer.query.all())
+    sub_ap = sum(Decimal(str(get_supplier_balance(s.id))) for s in Supplier.query.all())
+    sub_inv = Decimal(str(db.session.query(func.sum(Item.inventory_value)).scalar() or 0))
 
-    # Sale Returns  ────────────────────────────────────────────────────────────
-    def sal_ret(sale, customer, item, qty, price, date, reason=None):
-        item.stock += qty
-        sr = SaleReturn(
-            sale_id=sale.id, customer_id=customer.id, item_id=item.id,
-            quantity=qty, return_price=price, date=date, reason=reason,
-        )
-        db.session.add(sr)
-        db.session.flush()
-        sync_customer_sale_return(sr)
-        db.session.commit()
-
-    sal_ret(sal1, cust1, item_cable, 2, 500.0, dt("2026-06-05"), "Customer not satisfied")
-    sal_ret(sal2, cust2, item_poly,  5, 200.0, dt("2026-06-07"), "Wrong color")
-    click.echo("  Sale Returns:     2 recorded")
-
-    # ── Verification Report ───────────────────────────────────────────────────
-    db.session.expire_all()
-    click.echo("")
-    W = 66
-    click.echo("=" * W)
-    click.echo("  VERIFICATION REPORT")
-    click.echo("=" * W)
-    all_ok = True
-
-    def chk(label, expected, actual):
-        nonlocal all_ok
-        ok = abs(float(actual) - float(expected)) < 0.01
-        if not ok:
-            all_ok = False
-        tick = "OK" if ok else "FAIL"
-        click.echo(
-            f"  {label:<28} {float(expected):>12,.2f} {float(actual):>12,.2f}"
-            f"  {'OK' if ok else '!! FAIL'}"
-        )
+    def check(label, left, right):
+        ok = abs(Decimal(str(left)) - Decimal(str(right))) < Decimal("0.01")
+        click.echo(f"  {'OK  ' if ok else 'FAIL'} {label:<34} {float(left):>14,.2f}  vs {float(right):>14,.2f}")
+        return ok
 
     click.echo("")
-    click.echo("ITEM STOCKS  (expected = opening + purchases - sales - pur.returns + sal.returns):")
-    click.echo(f"  {'Item':<28} {'Expected':>12} {'Actual':>12}  Verdict")
-    click.echo(f"  {'-'*28} {'-'*12} {'-'*12}  {'-'*7}")
-    exp_stock = {
-        item_mobile.id: 10 + 5  - 2,             # 13
-        item_cable.id:  100 + 20 - 10 - 5 + 2,   # 107
-        item_cotton.id: 500 + 100 - 50 - 10,      # 540
-        item_poly.id:   300 + 50 - 30 + 5,        # 325
-        item_laptop.id: 5 + 2   - 1,              # 6
-    }
-    for item in Item.query.order_by(Item.name).all():
-        chk(item.name, exp_stock.get(item.id, 0), item.stock)
+    click.echo("Verification")
+    all_ok = check("Journal debits = credits", dr, cr)
+    all_ok &= check("AR: ledger = customer subledger", gl_of(ACC_AR), sub_ar)
+    all_ok &= check("AP: ledger = supplier subledger", gl_of(ACC_AP), sub_ap)
+    all_ok &= check("Inventory: ledger = stock value", gl_of(ACC_INVENTORY), sub_inv)
 
+    income, expense = gl_profit(None, datetime.now())
     click.echo("")
-    click.echo("SUPPLIER BALANCES  (opening + purchases - payments - pur.returns):")
-    click.echo(f"  {'Supplier':<28} {'Expected':>12} {'Actual':>12}  Verdict")
-    click.echo(f"  {'-'*28} {'-'*12} {'-'*12}  {'-'*7}")
-    exp_sup = {
-        # 15,000 opening + 131,000 pur1 - 80,000 pay1 - 20,000 pay2 - 1,500 pr2 = 44,500
-        sup1.id: 15000 + (5*25000 + 20*300) - 80000 - 20000 - (5*300),
-        # 8,000 opening + 27,500 pur2 - 27,500 pay3 - 2,000 pr1 = 6,000
-        sup2.id: 8000  + (100*200 + 50*150) - 27500 - (10*200),
-        # 0 opening + 110,000 pur3 = 110,000
-        sup3.id: 0     + (2*55000),
-    }
-    for sup in Supplier.query.order_by(Supplier.name).all():
-        chk(sup.name, exp_sup.get(sup.id, 0), get_supplier_balance(sup.id))
-
+    click.echo(f"  Journal entries {JournalEntry.query.count()}, lines {JournalLine.query.count()}")
+    click.echo(f"  Revenue {float(income):,.2f}   Expenses {float(expense):,.2f}   "
+               f"Profit {float(income - expense):,.2f}")
     click.echo("")
-    click.echo("CUSTOMER BALANCES  (opening + sales - receipts - sal.returns):")
-    click.echo(f"  {'Customer':<28} {'Expected':>12} {'Actual':>12}  Verdict")
-    click.echo(f"  {'-'*28} {'-'*12} {'-'*12}  {'-'*7}")
-    exp_cust = {
-        # 5,000 opening + 65,000 sal1 - 40,000 rec1 - 15,000 rec2 - 1,000 sr1 = 14,000
-        cust1.id: 5000  + (2*30000 + 10*500) - 40000 - 15000 - (2*500),
-        # 0 opening + 20,000 sal2 - 1,000 sr2 = 19,000
-        cust2.id: 0     + (50*280 + 30*200)  - 0     - 0     - (5*200),
-        # 12,000 opening + 65,000 sal3 - 65,000 rec3 = 12,000
-        cust3.id: 12000 + (1*65000)          - 65000,
-    }
-    for cust in Customer.query.order_by(Customer.name).all():
-        chk(cust.name, exp_cust.get(cust.id, 0), get_customer_balance(cust.id))
-
-    click.echo("")
-    click.echo("PURCHASE INVOICE STATUS:")
-    click.echo(f"  {'#':<4} {'Supplier':<22} {'Total':>10} {'Paid':>9} {'Due':>9}  Status")
-    click.echo(f"  {'-'*4} {'-'*22} {'-'*10} {'-'*9} {'-'*9}  {'-'*8}")
-    for pur in Purchase.query.order_by(Purchase.id).all():
-        total = purchase_total(pur)
-        paid  = get_purchase_paid(pur.id)
-        due   = total - paid
-        click.echo(
-            f"  #{pur.id:<3} {pur.id_supplier.name:<22} {total:>10,.2f}"
-            f" {paid:>9,.2f} {due:>9,.2f}  {get_payment_status(total, paid)}"
-        )
-
-    click.echo("")
-    click.echo("SALE INVOICE STATUS:")
-    click.echo(f"  {'#':<4} {'Customer':<22} {'Total':>10} {'Rcvd':>9} {'Due':>9}  Status")
-    click.echo(f"  {'-'*4} {'-'*22} {'-'*10} {'-'*9} {'-'*9}  {'-'*8}")
-    for sal in Sale.query.order_by(Sale.id).all():
-        total    = sale_total(sal)
-        received = get_sale_received(sal.id)
-        due      = total - received
-        click.echo(
-            f"  #{sal.id:<3} {sal.id_customer.name:<22} {total:>10,.2f}"
-            f" {received:>9,.2f} {due:>9,.2f}  {get_payment_status(total, received)}"
-        )
-
-    click.echo("")
-    click.echo("=" * W)
-    if all_ok:
-        click.echo("  RESULT: ALL CHECKS PASSED  OK")
-    else:
-        click.echo("  RESULT: SOME CHECKS FAILED — see !! FAIL lines above")
-    click.echo("=" * W)
-    click.echo("")
-    click.echo("Seed complete. Log in and explore all features.")
+    click.echo("ALL CHECKS PASSED" if all_ok else "SOME CHECKS FAILED - do not trust this data")
+    click.echo("Seed complete. Log in and explore.")
 
 
 if __name__ == "__main__":
