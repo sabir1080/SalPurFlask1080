@@ -1,8 +1,8 @@
 {% extends 'base.html' %}
-{% block title %}Edit Account — {{ app_name }}{% endblock %}
+{% block title %}New Account — {{ app_name }}{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="bi bi-pencil-square text-dark"></i> Edit Account</h2>
+    <h2><i class="bi bi-plus-circle text-dark"></i> New Cash / Bank Account</h2>
     <a href="{{ url_for('accounts') }}" class="btn btn-outline-secondary btn-sm">
         <i class="bi bi-arrow-left"></i> Back to Accounts
     </a>
@@ -15,28 +15,27 @@
                 <form method="POST">
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Account Name</label>
-                        <input type="text" name="name" class="form-control" value="{{ acct.name }}" required>
+                        <input type="text" name="name" class="form-control" placeholder="e.g. HBL Current A/C — 1234" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Type</label>
                         <select name="account_type" class="form-select">
-                            <option value="Cash" {% if acct.account_type == 'Cash' %}selected{% endif %}>Cash</option>
-                            <option value="Bank" {% if acct.account_type == 'Bank' %}selected{% endif %}>Bank</option>
+                            <option value="Bank" selected>Bank</option>
+                            <option value="Cash">Cash</option>
                         </select>
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Opening Balance</label>
-                        <input type="text" name="opening_balance" class="form-control" value="{{ acct.opening_balance | fmt_num }}">
+                        <input type="text" name="opening_balance" class="form-control" value="0">
                         <div class="form-text">Balance of this account before you started using the system.</div>
                     </div>
-                    {% if acct.method in payment_methods %}
-                    <div class="mb-2">
-                        <span class="text-muted small">Also absorbs older records saved with payment method</span>
-                        <code>{{ acct.method }}</code>
-                        <span class="text-muted small">and no account assigned.</span>
+                    <div class="alert alert-info small">
+                        <i class="bi bi-info-circle me-1"></i>
+                        This account starts empty. It only collects the payments, receipts and
+                        expenses where you pick it in the <strong>Account</strong> field. Existing
+                        records stay with the four built-in accounts.
                     </div>
-                    {% endif %}
-                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Save</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Create Account</button>
                 </form>
             </div>
         </div>

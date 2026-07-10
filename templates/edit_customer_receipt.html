@@ -45,6 +45,9 @@
             </select>
         </div>
         <div class="col-md-3">
+            {% with selected_account_id = receipt.account_id %}{% include '_account_select.html' %}{% endwith %}
+        </div>
+        <div class="col-md-3">
             <label for="reference_no" class="form-label">Reference No.</label>
             <input type="text" class="form-control" id="reference_no" name="reference_no" value="{{ receipt.reference_no or '' }}">
         </div>

@@ -3,9 +3,16 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <h2><i class="bi bi-bank text-dark"></i> Cash &amp; Bank Accounts</h2>
-    <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary btn-sm">
-        <i class="bi bi-arrow-left"></i> Dashboard
-    </a>
+    <div class="d-flex gap-2">
+        {% if current_user.is_admin %}
+        <a href="{{ url_for('new_account') }}" class="btn btn-primary btn-sm">
+            <i class="bi bi-plus-lg"></i> New Account
+        </a>
+        {% endif %}
+        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i> Dashboard
+        </a>
+    </div>
 </div>
 
 <div class="row g-3 mb-4">
@@ -22,9 +29,10 @@
     <div class="col-md-8">
         <div class="alert alert-info mb-0 h-100 d-flex align-items-center">
             <i class="bi bi-info-circle me-2"></i>
-            <small>Balances are computed from each account's opening balance plus customer
-            receipts, minus supplier payments and expenses recorded with that payment method.
-            Set opening balances by editing an account.</small>
+            <small>Balances are computed from each account's opening balance, plus customer
+            receipts, minus supplier payments and expenses assigned to it. The four built-in
+            accounts also pick up older records that were saved with their payment method
+            before accounts existed. Set opening balances by editing an account.</small>
         </div>
     </div>
 </div>

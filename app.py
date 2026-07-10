@@ -16,6 +16,7 @@ import os
 import secrets
 import json
 import logging
+import uuid
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 from sqlalchemy.exc import IntegrityError
@@ -26,7 +27,7 @@ from itsdangerous import URLSafeTimedSerializer
 from urllib.parse import urlsplit
 from dotenv import load_dotenv
 from sqlalchemy.sql import func
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, text, or_, and_
 
 app = Flask(__name__)
 
@@ -435,10 +436,12 @@ class SupplierPayment(db.Model):
     amount              = db.Column(db.Numeric(14, 4), nullable=False)
     payment_date        = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     payment_method      = db.Column(db.String(20), nullable=False, default="Cash")
+    account_id          = db.Column(db.Integer, db.ForeignKey("financial_account.id"), nullable=True)
     reference_no        = db.Column(db.String(100), nullable=True)
     notes               = db.Column(db.String(300), nullable=True)
     supplier            = db.relationship("Supplier", backref="payments", lazy=True)
     purchase            = db.relationship("Purchase", backref="supplier_payments", lazy=True)
+    account             = db.relationship("FinancialAccount", lazy=True)
 
 class CustomerPayment(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
@@ -447,10 +450,12 @@ class CustomerPayment(db.Model):
     amount              = db.Column(db.Numeric(14, 4), nullable=False)
     payment_date        = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     payment_method      = db.Column(db.String(20), nullable=False, default="Cash")
+    account_id          = db.Column(db.Integer, db.ForeignKey("financial_account.id"), nullable=True)
     reference_no        = db.Column(db.String(100), nullable=True)
     notes               = db.Column(db.String(300), nullable=True)
     customer            = db.relationship("Customer", backref="receipts", lazy=True)
     sale                = db.relationship("Sale", backref="customer_payments", lazy=True)
+    account             = db.relationship("FinancialAccount", lazy=True)
 
 class PurchaseReturn(db.Model):
     id           = db.Column(db.Integer, primary_key=True)
@@ -508,20 +513,41 @@ class Expense(db.Model):
     date            = db.Column(db.DateTime, nullable=False,
                                 default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     payment_method  = db.Column(db.String(20), nullable=False, default="Cash")
+    account_id      = db.Column(db.Integer, db.ForeignKey("financial_account.id"), nullable=True)
     reference_no    = db.Column(db.String(100), nullable=True)
     notes           = db.Column(db.String(300), nullable=True)
+    account         = db.relationship("FinancialAccount", lazy=True)
 
 class FinancialAccount(db.Model):
-    """A cash or bank account. Its live balance is derived from the existing
-    payment_method-tagged movements (customer receipts in, supplier payments and
-    expenses out) plus an opening balance — no changes to those records needed."""
+    """A cash or bank account. Balance = opening_balance + receipts in − (payments
+    + expenses) out.
+
+    A movement belongs to an account in one of two ways:
+
+      1. Explicitly, via its `account_id` FK. This is how every new movement is
+         tagged, and it is what makes more than one bank account possible.
+      2. Implicitly (legacy), when `account_id` is NULL: the movement is matched
+         by `payment_method == account.method`. This is how records created before
+         `account_id` existed keep counting, with no backfill needed.
+
+    Only the four seeded accounts carry a real `method` (one of PAYMENT_METHODS),
+    so only they absorb untagged legacy rows. Accounts created afterwards get an
+    unused synthetic token instead — `method` is NOT NULL + UNIQUE in the existing
+    schema, and relaxing that would mean a table rebuild on SQLite and a locking
+    DDL on Postgres during deploy. The token satisfies the constraint and matches
+    no payment_method, so a new account sees only its explicitly tagged rows."""
     __tablename__ = "financial_account"
     id              = db.Column(db.Integer, primary_key=True)
     name            = db.Column(db.String(80), nullable=False)          # display name
-    method          = db.Column(db.String(20), nullable=False, unique=True)  # payment_method it tracks
+    method          = db.Column(db.String(20), nullable=False, unique=True)  # legacy payment_method, or synthetic token
     account_type    = db.Column(db.String(10), nullable=False, default="Cash")  # Cash / Bank
     opening_balance = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     is_active       = db.Column(db.Boolean, nullable=False, default=True)
+
+def new_account_method_token():
+    """A `method` value for a user-created account: unique, ≤20 chars, and
+    guaranteed never to equal a payment_method (so it absorbs no legacy rows)."""
+    return f"acct-{uuid.uuid4().hex[:10]}"
 
 class JournalEntry(db.Model):
     """A manual double-entry adjustment (accruals, corrections, depreciation, etc.).
@@ -818,16 +844,25 @@ def total_customer_ledger_balance():
     return _total_ledger_balance("customer_ledger_entry", "customer_id", "customer")
 
 # ── Cash / Bank accounts (derived balances) ───────────────────────────────────
-def _sum_amount(model, method):
+def account_movement_filter(model, account):
+    """Rows of `model` belonging to `account`: those tagged with its account_id,
+    plus — for the seeded accounts only — untagged legacy rows carrying its
+    payment_method. See FinancialAccount's docstring for why."""
+    owns = [model.account_id == account.id]
+    if account.method in PAYMENT_METHODS:
+        owns.append(and_(model.account_id.is_(None),
+                         model.payment_method == account.method))
+    return or_(*owns)
+
+def _sum_amount(model, account):
     return float(db.session.query(func.sum(model.amount))
-                 .filter(model.payment_method == method).scalar() or 0)
+                 .filter(account_movement_filter(model, account)).scalar() or 0)
 
 def get_account_balance(account):
-    """opening + customer receipts (in) − supplier payments (out) − expenses (out),
-    all matched by this account's payment_method. Read-only; touches nothing."""
-    m = account.method
-    inflow  = _sum_amount(CustomerPayment, m)
-    outflow = _sum_amount(SupplierPayment, m) + _sum_amount(Expense, m)
+    """opening + customer receipts (in) − supplier payments (out) − expenses (out).
+    Read-only; touches nothing."""
+    inflow  = _sum_amount(CustomerPayment, account)
+    outflow = _sum_amount(SupplierPayment, account) + _sum_amount(Expense, account)
     return float(account.opening_balance or 0) + inflow - outflow
 
 def total_cash_bank_balance():
@@ -835,19 +870,35 @@ def total_cash_bank_balance():
 
 def account_transactions(account):
     """Chronological list of movements for an account's ledger view."""
-    m = account.method
     rows = []
-    for r in CustomerPayment.query.filter_by(payment_method=m).all():
+    for r in CustomerPayment.query.filter(account_movement_filter(CustomerPayment, account)).all():
         rows.append({"date": r.payment_date, "desc": f"Receipt #{r.id} — {r.customer.name if r.customer else ''}",
                      "inflow": float(r.amount), "outflow": 0.0})
-    for p in SupplierPayment.query.filter_by(payment_method=m).all():
+    for p in SupplierPayment.query.filter(account_movement_filter(SupplierPayment, account)).all():
         rows.append({"date": p.payment_date, "desc": f"Payment #{p.id} — {p.supplier.name if p.supplier else ''}",
                      "inflow": 0.0, "outflow": float(p.amount)})
-    for e in Expense.query.filter_by(payment_method=m).all():
+    for e in Expense.query.filter(account_movement_filter(Expense, account)).all():
         rows.append({"date": e.date, "desc": f"Expense — {e.description}",
                      "inflow": 0.0, "outflow": float(e.amount)})
     rows.sort(key=lambda x: (x["date"] or datetime.min))
     return rows
+
+def active_accounts():
+    return (FinancialAccount.query.filter_by(is_active=True)
+            .order_by(FinancialAccount.account_type, FinancialAccount.name).all())
+
+def parse_account_id(raw):
+    """Form value → (account_id or None, error or None). Blank means 'untagged',
+    which stays valid so the account dropdown can be left empty."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None, None
+    if not raw.isdigit():
+        return None, "Invalid account!"
+    acct = db.session.get(FinancialAccount, int(raw))
+    if acct is None or not acct.is_active:
+        return None, "Invalid account!"
+    return acct.id, None
 
 def supplier_balance_label(balance):
     if balance > 0.001:
@@ -1471,6 +1522,20 @@ def migrate_database():
                         migration_blocked = True
                         break
 
+    # Tag money movements with the cash/bank account they hit. Nullable and no
+    # backfill: existing rows stay NULL and keep being matched by payment_method
+    # (see FinancialAccount). Adding a nullable column takes no table rewrite on
+    # either engine, so this is safe to run at startup.
+    for table in ("supplier_payment", "customer_payment", "expense"):
+        if table in inspector.get_table_names():
+            cols = {col["name"] for col in inspector.get_columns(table)}
+            if "account_id" not in cols:
+                with db.engine.begin() as conn:
+                    conn.execute(text(
+                        f"ALTER TABLE {table} ADD COLUMN account_id INTEGER "
+                        "REFERENCES financial_account(id)"
+                    ))
+
     # Seed one cash/bank account per payment method (idempotent — only if none exist)
     if FinancialAccount.query.count() == 0:
         types = {"Cash": "Cash", "Bank": "Bank", "Cheque": "Bank", "Online": "Bank"}
@@ -1685,6 +1750,7 @@ def inject_form_defaults():
     ctx = {
         "form_data": {},
         "payment_methods": PAYMENT_METHODS,
+        "financial_accounts": active_accounts,
         "item_units": ITEM_UNITS,
         "roles": ROLES,
         "company_name": app.config["COMPANY_NAME"],
@@ -3058,10 +3124,13 @@ def supplier_payment():
         reference_no = request.form.get("reference_no", "").strip()
         notes = request.form.get("notes", "").strip()
         amount = parse_payment_amount(amount_str)
+        account_id, account_error = parse_account_id(request.form.get("account_id"))
         if not supplier_id or not payment_date or amount is None:
             flash("Supplier, amount and payment date are required!", "danger")
         elif payment_method not in PAYMENT_METHODS:
             flash("Invalid payment method!", "danger")
+        elif account_error:
+            flash(account_error, "danger")
         else:
             error = validate_supplier_payment(supplier_id, amount, purchase_id)
             if error:
@@ -3073,6 +3142,7 @@ def supplier_payment():
                     amount=amount,
                     payment_date=datetime.strptime(payment_date, "%Y-%m-%d"),
                     payment_method=payment_method,
+                    account_id=account_id,
                     reference_no=reference_no or None,
                     notes=notes or None,
                 )
@@ -3107,10 +3177,13 @@ def edit_supplier_payment(id):
         reference_no = request.form.get("reference_no", "").strip()
         notes = request.form.get("notes", "").strip()
         amount = parse_payment_amount(amount_str)
+        account_id, account_error = parse_account_id(request.form.get("account_id"))
         if not supplier_id or not payment_date or amount is None:
             flash("Supplier, amount and payment date are required!", "danger")
         elif payment_method not in PAYMENT_METHODS:
             flash("Invalid payment method!", "danger")
+        elif account_error:
+            flash(account_error, "danger")
         else:
             error = validate_supplier_payment(supplier_id, amount, purchase_id, exclude_payment_id=payment.id)
             if error:
@@ -3122,6 +3195,7 @@ def edit_supplier_payment(id):
                 payment.amount = amount
                 payment.payment_date = datetime.strptime(payment_date, "%Y-%m-%d")
                 payment.payment_method = payment_method
+                payment.account_id = account_id
                 payment.reference_no = reference_no or None
                 payment.notes = notes or None
                 if old_supplier_id != int(supplier_id):
@@ -3208,11 +3282,14 @@ def supplier_bulk_payment():
         purch_ids    = request.form.getlist("purchase_id[]")
         amounts      = request.form.getlist("amount[]")
         gen_amt_str  = request.form.get("general_amount", "").strip()
+        account_id, account_error = parse_account_id(request.form.get("account_id"))
 
         if not sup_id or not date_str:
             flash("Supplier and payment date are required!", "danger")
         elif method not in PAYMENT_METHODS:
             flash("Invalid payment method!", "danger")
+        elif account_error:
+            flash(account_error, "danger")
         else:
             try:
                 pay_date = datetime.strptime(date_str, "%Y-%m-%d")
@@ -3255,6 +3332,7 @@ def supplier_bulk_payment():
                             amount=amt,
                             payment_date=pay_date,
                             payment_method=method,
+                            account_id=account_id,
                             reference_no=reference_no or None,
                             notes=notes or None,
                         )
@@ -3270,6 +3348,7 @@ def supplier_bulk_payment():
                             amount=gen_amt,
                             payment_date=pay_date,
                             payment_method=method,
+                            account_id=account_id,
                             reference_no=reference_no or None,
                             notes=notes or None,
                         )
@@ -3351,11 +3430,14 @@ def customer_bulk_receipt():
         sale_ids     = request.form.getlist("sale_id[]")
         amounts      = request.form.getlist("amount[]")
         gen_amt_str  = request.form.get("general_amount", "").strip()
+        account_id, account_error = parse_account_id(request.form.get("account_id"))
 
         if not cust_id or not date_str:
             flash("Customer and receipt date are required!", "danger")
         elif method not in PAYMENT_METHODS:
             flash("Invalid payment method!", "danger")
+        elif account_error:
+            flash(account_error, "danger")
         else:
             try:
                 pay_date = datetime.strptime(date_str, "%Y-%m-%d")
@@ -3398,6 +3480,7 @@ def customer_bulk_receipt():
                             amount=amt,
                             payment_date=pay_date,
                             payment_method=method,
+                            account_id=account_id,
                             reference_no=reference_no or None,
                             notes=notes or None,
                         )
@@ -3413,6 +3496,7 @@ def customer_bulk_receipt():
                             amount=gen_amt,
                             payment_date=pay_date,
                             payment_method=method,
+                            account_id=account_id,
                             reference_no=reference_no or None,
                             notes=notes or None,
                         )
@@ -3463,10 +3547,13 @@ def customer_receipt():
         reference_no = request.form.get("reference_no", "").strip()
         notes = request.form.get("notes", "").strip()
         amount = parse_payment_amount(amount_str)
+        account_id, account_error = parse_account_id(request.form.get("account_id"))
         if not customer_id or not payment_date or amount is None:
             flash("Customer, amount and receipt date are required!", "danger")
         elif payment_method not in PAYMENT_METHODS:
             flash("Invalid payment method!", "danger")
+        elif account_error:
+            flash(account_error, "danger")
         else:
             error = validate_customer_receipt(customer_id, amount, sale_id)
             if error:
@@ -3478,6 +3565,7 @@ def customer_receipt():
                     amount=amount,
                     payment_date=datetime.strptime(payment_date, "%Y-%m-%d"),
                     payment_method=payment_method,
+                    account_id=account_id,
                     reference_no=reference_no or None,
                     notes=notes or None,
                 )
@@ -3512,10 +3600,13 @@ def edit_customer_receipt(id):
         reference_no = request.form.get("reference_no", "").strip()
         notes = request.form.get("notes", "").strip()
         amount = parse_payment_amount(amount_str)
+        account_id, account_error = parse_account_id(request.form.get("account_id"))
         if not customer_id or not payment_date or amount is None:
             flash("Customer, amount and receipt date are required!", "danger")
         elif payment_method not in PAYMENT_METHODS:
             flash("Invalid payment method!", "danger")
+        elif account_error:
+            flash(account_error, "danger")
         else:
             error = validate_customer_receipt(customer_id, amount, sale_id, exclude_payment_id=receipt.id)
             if error:
@@ -3527,6 +3618,7 @@ def edit_customer_receipt(id):
                 receipt.amount = amount
                 receipt.payment_date = datetime.strptime(payment_date, "%Y-%m-%d")
                 receipt.payment_method = payment_method
+                receipt.account_id = account_id
                 receipt.reference_no = reference_no or None
                 receipt.notes = notes or None
                 if old_customer_id != int(customer_id):
@@ -4820,8 +4912,13 @@ def expenses():
         cat_id     = request.form.get("category_id", "").strip() or None
         ref        = request.form.get("reference_no", "").strip() or None
         notes      = request.form.get("notes", "").strip() or None
+        account_id, account_error = parse_account_id(request.form.get("account_id"))
         if not desc or not amount_str or not date_str:
             flash("Description, amount and date are required.", "danger")
+        elif method not in PAYMENT_METHODS:
+            flash("Invalid payment method!", "danger")
+        elif account_error:
+            flash(account_error, "danger")
         else:
             try:
                 amount = float(amount_str)
@@ -4832,7 +4929,8 @@ def expenses():
                         category_id=int(cat_id) if cat_id else None,
                         description=desc, amount=amount,
                         date=datetime.strptime(date_str, "%Y-%m-%d"),
-                        payment_method=method, reference_no=ref, notes=notes,
+                        payment_method=method, account_id=account_id,
+                        reference_no=ref, notes=notes,
                     ))
                     db.session.commit()
                     flash("Expense recorded.", "success")
@@ -5393,6 +5491,42 @@ def accounts():
     total = sum(r["balance"] for r in rows)
     return render_template("accounts.html", rows=rows, total=total)
 
+def account_name_taken(name, exclude_id=None):
+    """Two accounts with the same name are indistinguishable in every dropdown,
+    so names must be unique. Case- and space-insensitive."""
+    q = FinancialAccount.query.filter(
+        func.lower(func.trim(FinancialAccount.name)) == name.strip().lower())
+    if exclude_id is not None:
+        q = q.filter(FinancialAccount.id != exclude_id)
+    return db.session.query(q.exists()).scalar()
+
+@app.route("/accounts/new", methods=["GET", "POST"])
+@admin_required
+def new_account():
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        ob_str = request.form.get("opening_balance", "0").strip().replace(",", "")
+        acc_type = request.form.get("account_type", "Bank").strip()
+        if not name:
+            flash("Account name is required!", "danger")
+        elif account_name_taken(name):
+            flash(f"An account named '{name}' already exists!", "danger")
+        elif ob_str and not ob_str.replace("-", "", 1).replace(".", "", 1).isdigit():
+            flash("Opening balance must be a valid number!", "danger")
+        else:
+            acct = FinancialAccount(
+                name=name,
+                method=new_account_method_token(),
+                account_type=acc_type if acc_type in ("Cash", "Bank") else "Bank",
+                opening_balance=float(ob_str or 0),
+            )
+            db.session.add(acct)
+            db.session.commit()
+            record_audit("create", "Account", acct.id, f"Account '{acct.name}' created ({acct.account_type})")
+            flash(f"Account '{acct.name}' created. Select it when recording payments, receipts or expenses.", "success")
+            return redirect(url_for("accounts"))
+    return render_template("new_account.html")
+
 @app.route("/accounts/<int:id>/edit", methods=["GET", "POST"])
 @admin_required
 def edit_account(id):
@@ -5403,6 +5537,8 @@ def edit_account(id):
         acc_type = request.form.get("account_type", "Cash").strip()
         if not name:
             flash("Account name is required!", "danger")
+        elif account_name_taken(name, exclude_id=acct.id):
+            flash(f"An account named '{name}' already exists!", "danger")
         elif ob_str and not ob_str.replace("-", "", 1).replace(".", "", 1).isdigit():
             flash("Opening balance must be a valid number!", "danger")
         else:
