@@ -34,7 +34,8 @@
                     <td class="text-muted">{{ a.code }}</td>
                     <td>
                         {%- if level > 1 -%}
-                        <span class="text-muted" style="white-space:pre">{{ '    ' * (level - 2) }}   └ </span>
+                        {# Seven characters per level: five spaces, the elbow, a space. #}
+                        <span class="text-muted" style="white-space:pre">{{ ' ' * (7 * (level - 1) - 2) }}└ </span>
                         {%- endif -%}
                         {{ a.name }}
                         <span class="text-muted small ms-1">L{{ level }}</span>
