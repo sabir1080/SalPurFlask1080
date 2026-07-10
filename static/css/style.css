@@ -368,6 +368,11 @@ body {
     line-height: 1.1;
 }
 
+.nh-detail {
+    margin-bottom: 1.4rem;
+    line-height: 0}
+
+
 .nh-title-welcome {
     display: block;
     font-size: clamp(0.95rem, 2vw, 1.15rem);
