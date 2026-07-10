@@ -29,10 +29,16 @@
                     {% if current_user.is_admin %}<th class="text-end">Actions</th>{% endif %}</tr>
             </thead>
             <tbody>
-                {% for a in accounts %}
+                {% for a, level in rows %}
                 <tr {% if a.is_group %}class="table-light fw-bold"{% endif %}>
                     <td class="text-muted">{{ a.code }}</td>
-                    <td>{% if a.parent_id %}<span class="text-muted">&nbsp;&nbsp;&nbsp;└&nbsp;</span>{% endif %}{{ a.name }}</td>
+                    <td>
+                        {%- if level > 1 -%}
+                        <span class="text-muted" style="white-space:pre">{{ '    ' * (level - 2) }}   └ </span>
+                        {%- endif -%}
+                        {{ a.name }}
+                        <span class="text-muted small ms-1">L{{ level }}</span>
+                    </td>
                     <td><span class="badge bg-{{ {'Asset':'primary','Liability':'danger','Equity':'dark','Income':'success','Expense':'warning text-dark'}[a.type] }}">{{ a.type }}</span></td>
                     <td>
                         {% if a.is_group %}<span class="badge bg-secondary">group</span>{% endif %}

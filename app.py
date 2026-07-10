@@ -7035,7 +7035,16 @@ def report_reconciliation():
 @manager_required
 def chart_of_accounts():
     accounts = Account.query.order_by(Account.code).all()
-    return render_template("chart_of_accounts.html", accounts=accounts,
+    # Depth from the parent chain, walked over the rows already fetched rather
+    # than by following .parent, which would be one query per account.
+    parent_of = {a.id: a.parent_id for a in accounts}
+    def depth(a):
+        d, pid = 1, a.parent_id
+        while pid is not None:
+            d, pid = d + 1, parent_of.get(pid)
+        return d
+    rows = [(a, depth(a)) for a in accounts]
+    return render_template("chart_of_accounts.html", rows=rows,
                            system_codes=SYSTEM_ACCOUNT_CODES)
 
 def _validate_account_form(code, name, type_, parent, is_group, exclude_id=None):
@@ -7059,8 +7068,11 @@ def _validate_account_form(code, name, type_, parent, is_group, exclude_id=None)
         if parent.type != type_:
             return (f"A sub-account of {parent.code} {parent.name} must be of type "
                     f"{parent.type}, not {type_}.")
+        # A heading may sit at level 1, 2 or 3. Refusing a fourth keeps the chart
+        # readable; postable accounts may still hang off a level-3 heading.
         if is_group and parent.parent_id and parent.parent.parent_id:
-            return "Headings can only be nested two levels deep."
+            return ("Headings can be nested three levels deep at most. "
+                    "You can still add postable accounts under this heading.")
     return None
 
 @app.route("/chart_of_accounts/new", methods=["GET", "POST"])
