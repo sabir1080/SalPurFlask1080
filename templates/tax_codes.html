@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% block title %}Tax Codes — {{ app_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h2><i class="bi bi-percent text-dark"></i> Tax Codes</h2>
+    <a href="{{ url_for('chart_of_accounts') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> Chart of Accounts
+    </a>
+</div>
+
+<div class="alert alert-info">
+    <i class="bi bi-globe me-1"></i>
+    A tax code is made of one or more <strong>components</strong>, and the rate lives on the
+    component. One component is a single tax (Pakistan's sales tax, UK VAT). Two components
+    are a split tax (India's CGST + SGST). Set your country's rate below.
+</div>
+
+<form method="POST">
+    {% for code in codes %}
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-light fw-semibold d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-tag"></i> {{ code.name }}</span>
+            <span class="badge bg-{{ 'success' if code.is_active else 'secondary' }}">
+                total {{ '%.2f' | format(code.total_rate) }}%
+            </span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+            <table class="table table-sm mb-0 align-middle">
+                <thead class="table-light">
+                    <tr><th>Component</th><th style="width:160px">Rate %</th><th>Input Account</th><th>Output Account</th></tr>
+                </thead>
+                <tbody>
+                    {% for c in code.components %}
+                    <tr>
+                        <td class="fw-semibold">{{ c.name }}</td>
+                        <td>
+                            <input type="text" name="rate_{{ c.id }}" class="form-control form-control-sm text-end"
+                                   value="{{ '%.2f' | format(c.rate) }}">
+                        </td>
+                        <td class="small text-muted">{{ c.input_account.code }} — {{ c.input_account.name }}</td>
+                        <td class="small text-muted">{{ c.output_account.code }} — {{ c.output_account.name }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-warning">No tax codes. Run <code>flask seed-accounting</code>.</div>
+    {% endfor %}
+
+    {% if codes %}
+    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Save Rates</button>
+    {% endif %}
+</form>
+{% endblock %}

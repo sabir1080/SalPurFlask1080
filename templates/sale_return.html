@@ -96,11 +96,7 @@
             <td>{{ r.date.strftime('%Y-%m-%d') }}</td>
             <td>{{ r.reason or '—' }}</td>
             <td>
-                {% if current_user.is_admin %}
-                <form method="POST" action="{{ url_for('delete_sale_return', id=r.id) }}" class="d-inline">
-                    <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this return? Stock will be deducted back.')">Delete</button>
-                </form>
-                {% endif %}
+                {% with doc = r, kind = "sale_return" %}{% include "_reverse_button.html" %}{% endwith %}
             </td>
         </tr>
         {% else %}

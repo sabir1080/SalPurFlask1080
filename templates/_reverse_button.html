@@ -1,0 +1,16 @@
+{# Reverse action for a posted document. Callers set `doc` and `kind`.
+   Posted documents cannot be deleted — reversing posts a cancelling journal
+   entry and undoes the stock/ledger effects, leaving both on record. #}
+{% if doc.is_reversed %}
+<span class="badge bg-warning text-dark" title="Reversed{% if doc.reversed_at %} on {{ doc.reversed_at | localdt('%Y-%m-%d') }}{% endif %}">
+    <i class="bi bi-arrow-counterclockwise"></i> reversed
+</span>
+{% elif current_user.is_admin %}
+{% set label = kind | replace('_', ' ') %}
+<form method="POST" action="{{ url_for('reverse_document_route', kind=kind, id=doc.id) }}" class="d-inline"
+      onsubmit="return confirm('Reverse this {{ label }}? A cancelling journal entry is posted and stock is corrected. Nothing is deleted.')">
+    <button class="btn btn-sm btn-outline-warning" title="Reverse — posts a cancelling entry, deletes nothing">
+        <i class="bi bi-arrow-counterclockwise"></i>
+    </button>
+</form>
+{% endif %}

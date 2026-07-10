@@ -148,11 +148,7 @@
                 {% if current_user.is_manager %}
                 <a href="{{ url_for('edit_purchase', id=p.id) }}" class="btn btn-warning btn-sm" title="Edit this purchase"><i class="bi bi-pencil"></i></a>
                 {% endif %}
-                {% if current_user.is_admin %}
-                <form method="POST" action="{{ url_for('delete_purchase', id=p.id) }}" class="d-inline">
-                    <button type="submit" class="btn btn-danger btn-sm" title="Delete this purchase" onclick="return confirm('Delete this purchase? Stock will be reversed.')"><i class="bi bi-trash"></i></button>
-                </form>
-                {% endif %}
+                {% with doc = p, kind = "purchase" %}{% include "_reverse_button.html" %}{% endwith %}
             </td>
         </tr>
         {% else %}

@@ -61,7 +61,7 @@
                     <th>#</th><th>Date</th><th>Item</th><th>Type</th>
                     <th class="text-center">Direction</th>
                     <th class="text-end">Qty</th><th>Reason</th>
-                    {% if current_user.is_admin %}<th>Delete</th>{% endif %}
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -80,13 +80,9 @@
                     </td>
                     <td class="text-end fw-semibold">{{ adj.quantity }}</td>
                     <td>{{ adj.reason or '—' }}</td>
-                    {% if current_user.is_admin %}
                     <td>
-                        <form method="POST" action="{{ url_for('delete_stock_adjustment', id=adj.id) }}" class="d-inline">
-                            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete and reverse this adjustment?')">Delete</button>
-                        </form>
+                        {% with doc = adj, kind = "stock_adjustment" %}{% include "_reverse_button.html" %}{% endwith %}
                     </td>
-                    {% endif %}
                 </tr>
                 {% else %}
                 <tr><td colspan="8" class="text-center text-muted py-3">No adjustments yet</td></tr>

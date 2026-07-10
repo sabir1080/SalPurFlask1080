@@ -6,7 +6,7 @@ from flask_login import LoginManager, UserMixin, login_user, logout_user, login_
 from flask_wtf.csrf import CSRFProtect
 import click
 from passlib.context import CryptContext
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from functools import wraps
 import csv
 from io import BytesIO, StringIO
@@ -17,7 +17,7 @@ import secrets
 import json
 import logging
 import uuid
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 from sqlalchemy.exc import IntegrityError
 import smtplib
@@ -378,6 +378,8 @@ class Purchase(db.Model):
     date                = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     notes               = db.Column(db.String(300), nullable=True)
     line_items          = db.relationship("PurchaseItem", backref="purchase_header", lazy=True, cascade="all,delete-orphan")
+    is_reversed         = db.Column(db.Boolean, nullable=False, default=False)
+    reversed_at         = db.Column(db.DateTime, nullable=True)
 
 class Sale(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
@@ -394,6 +396,8 @@ class Sale(db.Model):
     date                = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     notes               = db.Column(db.String(300), nullable=True)
     line_items          = db.relationship("SaleItem", backref="sale_header", lazy=True, cascade="all,delete-orphan")
+    is_reversed         = db.Column(db.Boolean, nullable=False, default=False)
+    reversed_at         = db.Column(db.DateTime, nullable=True)
 
 class PurchaseItem(db.Model):
     __tablename__   = "purchase_item"
@@ -440,6 +444,8 @@ class SupplierPayment(db.Model):
     reference_no        = db.Column(db.String(100), nullable=True)
     notes               = db.Column(db.String(300), nullable=True)
     supplier            = db.relationship("Supplier", backref="payments", lazy=True)
+    is_reversed         = db.Column(db.Boolean, nullable=False, default=False)
+    reversed_at         = db.Column(db.DateTime, nullable=True)
     purchase            = db.relationship("Purchase", backref="supplier_payments", lazy=True)
     account             = db.relationship("FinancialAccount", lazy=True)
 
@@ -454,6 +460,8 @@ class CustomerPayment(db.Model):
     reference_no        = db.Column(db.String(100), nullable=True)
     notes               = db.Column(db.String(300), nullable=True)
     customer            = db.relationship("Customer", backref="receipts", lazy=True)
+    is_reversed         = db.Column(db.Boolean, nullable=False, default=False)
+    reversed_at         = db.Column(db.DateTime, nullable=True)
     sale                = db.relationship("Sale", backref="customer_payments", lazy=True)
     account             = db.relationship("FinancialAccount", lazy=True)
 
@@ -467,6 +475,8 @@ class PurchaseReturn(db.Model):
     date         = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     reason       = db.Column(db.String(300), nullable=True)
     purchase     = db.relationship("Purchase", backref="returns", lazy=True)
+    is_reversed  = db.Column(db.Boolean, nullable=False, default=False)
+    reversed_at  = db.Column(db.DateTime, nullable=True)
     supplier     = db.relationship("Supplier", backref="purchase_returns", lazy=True)
     item         = db.relationship("Item", backref="purchase_returns", lazy=True)
 
@@ -480,6 +490,8 @@ class SaleReturn(db.Model):
     date         = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     reason       = db.Column(db.String(300), nullable=True)
     sale         = db.relationship("Sale", backref="returns", lazy=True)
+    is_reversed  = db.Column(db.Boolean, nullable=False, default=False)
+    reversed_at  = db.Column(db.DateTime, nullable=True)
     customer     = db.relationship("Customer", backref="sale_returns", lazy=True)
     item         = db.relationship("Item", backref="sale_returns", lazy=True)
 
@@ -495,6 +507,8 @@ class StockAdjustment(db.Model):
     direction       = db.Column(db.String(4), nullable=False, default="in")   # "in" or "out"
     date            = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     reason          = db.Column(db.String(300), nullable=True)
+    is_reversed     = db.Column(db.Boolean, nullable=False, default=False)
+    reversed_at     = db.Column(db.DateTime, nullable=True)
     item            = db.relationship("Item", backref="adjustments", lazy=True)
 
 # ── Expense Tracking ──────────────────────────────────────────────────────────
@@ -502,6 +516,9 @@ class ExpenseCategory(db.Model):
     __tablename__ = "expense_category"
     id      = db.Column(db.Integer, primary_key=True)
     name    = db.Column(db.String(100), unique=True, nullable=False)
+    # Which GL expense account this category debits. Unset falls back to 6090.
+    gl_account_id = db.Column(db.Integer, db.ForeignKey("account.id"), nullable=True)
+    gl_account    = db.relationship("Account", lazy=True)
     expenses = db.relationship("Expense", backref="category", lazy=True)
 
 class Expense(db.Model):
@@ -515,6 +532,8 @@ class Expense(db.Model):
     payment_method  = db.Column(db.String(20), nullable=False, default="Cash")
     account_id      = db.Column(db.Integer, db.ForeignKey("financial_account.id"), nullable=True)
     reference_no    = db.Column(db.String(100), nullable=True)
+    is_reversed     = db.Column(db.Boolean, nullable=False, default=False)
+    reversed_at     = db.Column(db.DateTime, nullable=True)
     notes           = db.Column(db.String(300), nullable=True)
     account         = db.relationship("FinancialAccount", lazy=True)
 
@@ -543,33 +562,760 @@ class FinancialAccount(db.Model):
     account_type    = db.Column(db.String(10), nullable=False, default="Cash")  # Cash / Bank
     opening_balance = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     is_active       = db.Column(db.Boolean, nullable=False, default=True)
+    # Every cash/bank account is a GL account too — that is what a payment credits.
+    gl_account_id   = db.Column(db.Integer, db.ForeignKey("account.id"), nullable=True)
+    gl_account      = db.relationship("Account", lazy="joined")
 
 def new_account_method_token():
     """A `method` value for a user-created account: unique, ≤20 chars, and
     guaranteed never to equal a payment_method (so it absorbs no legacy rows)."""
     return f"acct-{uuid.uuid4().hex[:10]}"
 
-class JournalEntry(db.Model):
-    """A manual double-entry adjustment (accruals, corrections, depreciation, etc.).
-    Every entry's lines must balance (total debit == total credit)."""
-    __tablename__ = "journal_entry"
+# ═══ General Ledger foundation ═══════════════════════════════════════════════
+# The GL is the single source of truth: every report sums journal lines. Nothing
+# is derived from Purchase/Sale/payment tables any more.
+
+ACCOUNT_TYPES = ("Asset", "Liability", "Equity", "Income", "Expense")
+
+# Which side increases an account of this type. Debit-natured accounts (assets,
+# expenses) grow with debits; the rest grow with credits. Used everywhere a
+# balance is turned into a report figure.
+DEBIT_NATURED = ("Asset", "Expense")
+
+class Account(db.Model):
+    """A chart-of-accounts node. Groups (`is_group`) are headers only and can
+    never be posted to; leaves carry the balance.
+
+    `is_control` marks an account whose balance is owned by a subledger —
+    Accounts Receivable by customer ledgers, Accounts Payable by supplier
+    ledgers, Inventory by stock movements. Manual journal entries are refused
+    against control accounts, otherwise the GL and its subledger silently drift
+    apart and no report can be trusted.
+
+    `code` is what accountants navigate by, so it is the natural sort key."""
+    __tablename__ = "account"
     id          = db.Column(db.Integer, primary_key=True)
-    entry_date  = db.Column(db.DateTime, nullable=False,
-                            default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
-    reference   = db.Column(db.String(50), nullable=True)
-    description = db.Column(db.String(300), nullable=False)
-    created_at  = db.Column(db.DateTime, nullable=False,
-                            default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
-    lines       = db.relationship("JournalLine", backref="entry", lazy=True,
-                                  cascade="all,delete-orphan")
+    code        = db.Column(db.String(20), nullable=False, unique=True)
+    name        = db.Column(db.String(100), nullable=False)
+    type        = db.Column(db.String(20), nullable=False)   # one of ACCOUNT_TYPES
+    parent_id   = db.Column(db.Integer, db.ForeignKey("account.id"), nullable=True)
+    is_group    = db.Column(db.Boolean, nullable=False, default=False)
+    is_control  = db.Column(db.Boolean, nullable=False, default=False)
+    is_active   = db.Column(db.Boolean, nullable=False, default=True)
+    children    = db.relationship("Account", backref=db.backref("parent", remote_side=[id]), lazy=True)
+
+    @property
+    def is_debit_natured(self):
+        return self.type in DEBIT_NATURED
+
+    def __repr__(self):
+        return f"<Account {self.code} {self.name}>"
+
+class TaxCode(db.Model):
+    """A named tax treatment picked on a document line. Its components produce
+    the actual GL postings, which is what makes one model serve every country:
+
+      Pakistan  "Standard 17%"   → 1 component  @17%
+      UK        "VAT 20%"        → 1 component  @20%
+      India     "GST 18% intra"  → 2 components @9% (CGST) + @9% (SGST)
+      India     "IGST 18%"       → 1 component  @18%
+      anywhere  "Zero-rated"     → 1 component  @0%
+
+    Rates live on the component, never on the code, so a split tax is not a
+    special case in any calling code."""
+    __tablename__ = "tax_code"
+    id         = db.Column(db.Integer, primary_key=True)
+    name       = db.Column(db.String(60), nullable=False, unique=True)
+    is_active  = db.Column(db.Boolean, nullable=False, default=True)
+    components = db.relationship("TaxComponent", backref="tax_code", lazy=True,
+                                 cascade="all,delete-orphan")
+
+    @property
+    def total_rate(self):
+        return sum(float(c.rate) for c in self.components)
+
+class TaxComponent(db.Model):
+    """One leg of a tax code. Input tax is recoverable (an asset); output tax is
+    owed to the authority (a liability) — hence two different accounts."""
+    __tablename__ = "tax_component"
+    id                = db.Column(db.Integer, primary_key=True)
+    tax_code_id       = db.Column(db.Integer, db.ForeignKey("tax_code.id"), nullable=False)
+    name              = db.Column(db.String(40), nullable=False)          # "CGST", "VAT", "Sales Tax"
+    rate              = db.Column(db.Numeric(7, 4), nullable=False, default=0)   # percent
+    input_account_id  = db.Column(db.Integer, db.ForeignKey("account.id"), nullable=False)
+    output_account_id = db.Column(db.Integer, db.ForeignKey("account.id"), nullable=False)
+    input_account     = db.relationship("Account", foreign_keys=[input_account_id], lazy=True)
+    output_account    = db.relationship("Account", foreign_keys=[output_account_id], lazy=True)
+
+class FiscalYear(db.Model):
+    """Closing a year moves income and expense balances into Retained Earnings.
+    Nothing may be posted into a closed year."""
+    __tablename__ = "fiscal_year"
+    id         = db.Column(db.Integer, primary_key=True)
+    name       = db.Column(db.String(40), nullable=False, unique=True)     # "2026" or "FY 2025-26"
+    start_date = db.Column(db.Date, nullable=False)
+    end_date   = db.Column(db.Date, nullable=False)
+    is_closed  = db.Column(db.Boolean, nullable=False, default=False)
+    closed_at  = db.Column(db.DateTime, nullable=True)
+    periods    = db.relationship("AccountingPeriod", backref="fiscal_year", lazy=True,
+                                 cascade="all,delete-orphan")
+
+class AccountingPeriod(db.Model):
+    """Usually a month. Closing a period stops backdated postings into it, which
+    is what stops last month's already-filed numbers from moving."""
+    __tablename__ = "accounting_period"
+    id             = db.Column(db.Integer, primary_key=True)
+    fiscal_year_id = db.Column(db.Integer, db.ForeignKey("fiscal_year.id"), nullable=False)
+    name           = db.Column(db.String(40), nullable=False)              # "Jan 2026"
+    start_date     = db.Column(db.Date, nullable=False)
+    end_date       = db.Column(db.Date, nullable=False)
+    is_closed      = db.Column(db.Boolean, nullable=False, default=False)
+
+# ── Chart of accounts ─────────────────────────────────────────────────────────
+# The posting layer looks accounts up by code, never by name — names are the
+# user's to rename, codes are the contract. Keep these constants in step with
+# the seed below.
+ACC_CASH_IN_HAND   = "1010"
+ACC_AR             = "1100"
+ACC_INVENTORY      = "1200"
+ACC_TAX_INPUT      = "1300"
+ACC_AP             = "2100"
+ACC_TAX_OUTPUT     = "2300"
+ACC_CAPITAL        = "3100"
+ACC_DRAWINGS       = "3200"
+ACC_RETAINED       = "3900"
+ACC_SALES          = "4000"
+ACC_SALES_RETURNS  = "4100"
+ACC_COGS           = "5000"
+ACC_STOCK_ADJ      = "5100"
+ACC_EXPENSES       = "6000"
+
+# (code, name, type, parent_code, is_group, is_control)
+CHART_OF_ACCOUNTS = [
+    ("1000", "Current Assets",            "Asset",     None,   True,  False),
+    (ACC_CASH_IN_HAND, "Cash in Hand",    "Asset",     "1000", False, False),
+    ("1020", "Bank Accounts",             "Asset",     "1000", True,  False),
+    (ACC_AR, "Accounts Receivable",       "Asset",     "1000", False, True),
+    (ACC_INVENTORY, "Inventory",          "Asset",     "1000", False, True),
+    (ACC_TAX_INPUT, "Tax Input (Recoverable)", "Asset", "1000", False, False),
+
+    ("2000", "Current Liabilities",       "Liability", None,   True,  False),
+    (ACC_AP, "Accounts Payable",          "Liability", "2000", False, True),
+    (ACC_TAX_OUTPUT, "Tax Output (Payable)", "Liability", "2000", False, False),
+
+    ("3000", "Equity",                    "Equity",    None,   True,  False),
+    (ACC_CAPITAL, "Owner's Capital",      "Equity",    "3000", False, False),
+    (ACC_DRAWINGS, "Owner's Drawings",    "Equity",    "3000", False, False),
+    (ACC_RETAINED, "Retained Earnings",   "Equity",    "3000", False, False),
+
+    (ACC_SALES, "Sales Revenue",          "Income",    None,   False, False),
+    (ACC_SALES_RETURNS, "Sales Returns",  "Income",    None,   False, False),
+
+    (ACC_COGS, "Cost of Goods Sold",      "Expense",   None,   False, False),
+    (ACC_STOCK_ADJ, "Inventory Adjustment", "Expense",  None,   False, False),
+    (ACC_EXPENSES, "Operating Expenses",  "Expense",   None,   True,  False),
+    ("6010", "Rent",                      "Expense",   ACC_EXPENSES, False, False),
+    ("6020", "Salaries & Wages",          "Expense",   ACC_EXPENSES, False, False),
+    ("6030", "Utilities",                 "Expense",   ACC_EXPENSES, False, False),
+    ("6040", "Freight & Carriage",        "Expense",   ACC_EXPENSES, False, False),
+    ("6090", "Other Expenses",            "Expense",   ACC_EXPENSES, False, False),
+]
+
+def get_account(code):
+    """Posting-layer lookup. Raises rather than returning None: a missing account
+    is a seeding bug, and a silently skipped journal line is far worse than a
+    loud failure."""
+    acct = Account.query.filter_by(code=code).first()
+    if acct is None:
+        raise LookupError(f"Account {code} is missing from the chart of accounts")
+    return acct
+
+def seed_chart_of_accounts():
+    """Idempotent: inserts only accounts whose code is absent, so it is safe to
+    re-run after adding a row to CHART_OF_ACCOUNTS."""
+    existing = {a.code: a for a in Account.query.all()}
+    created = 0
+    for code, name, type_, parent_code, is_group, is_control in CHART_OF_ACCOUNTS:
+        if code in existing:
+            continue
+        acct = Account(code=code, name=name, type=type_, is_group=is_group,
+                       is_control=is_control)
+        db.session.add(acct)
+        db.session.flush()          # need the id before a child references it
+        existing[code] = acct
+        created += 1
+    # Second pass: parents are resolved once every code exists, so CHART_OF_ACCOUNTS
+    # does not have to be topologically ordered.
+    for code, _, _, parent_code, _, _ in CHART_OF_ACCOUNTS:
+        if parent_code:
+            existing[code].parent_id = existing[parent_code].id
+    db.session.commit()
+    return created
+
+ACC_ASSETS_GROUP = "1000"
+ACC_BANK_GROUP   = "1020"
+
+def next_child_code(parent_code):
+    """Next free code under a group, e.g. 1020 → 1021, 1022 … Keeps user-created
+    bank accounts inside the Bank Accounts heading where an accountant expects them."""
+    parent = get_account(parent_code)
+    used = {a.code for a in Account.query.filter_by(parent_id=parent.id).all()}
+    base = int(parent_code)
+    for n in range(base + 1, base + 100):
+        if str(n) not in used:
+            return str(n)
+    raise PostingError(f"No free account code left under {parent_code}.")
+
+def ensure_gl_account_for_financial(fin_acct):
+    """Give a cash/bank account its own GL leaf. Cash accounts land under Current
+    Assets, bank ones under Bank Accounts. Idempotent."""
+    if fin_acct.gl_account_id:
+        return fin_acct.gl_account
+    if fin_acct.method == "Cash":
+        gl = get_account(ACC_CASH_IN_HAND)     # the seeded 1010, shared by the Cash account
+    else:
+        parent_code = ACC_BANK_GROUP if fin_acct.account_type == "Bank" else ACC_ASSETS_GROUP
+        parent = get_account(parent_code)
+        gl = Account(code=next_child_code(parent_code), name=fin_acct.name,
+                     type="Asset", parent_id=parent.id, is_group=False, is_control=False)
+        db.session.add(gl)
+        db.session.flush()
+    fin_acct.gl_account_id = gl.id
+    return gl
+
+def seed_financial_account_links():
+    """Back-fill gl_account_id for the seeded cash/bank accounts."""
+    for fa in FinancialAccount.query.filter_by(gl_account_id=None).all():
+        ensure_gl_account_for_financial(fa)
+    db.session.commit()
+
+def seed_fiscal_year(year):
+    """One fiscal year with twelve monthly periods. Calendar-year by default;
+    an April–March year is a matter of changing the dates here."""
+    from calendar import monthrange
+    name = str(year)
+    if FiscalYear.query.filter_by(name=name).first():
+        return 0
+    fy = FiscalYear(name=name, start_date=date(year, 1, 1), end_date=date(year, 12, 31))
+    db.session.add(fy)
+    db.session.flush()
+    for m in range(1, 13):
+        last = monthrange(year, m)[1]
+        db.session.add(AccountingPeriod(
+            fiscal_year_id=fy.id,
+            name=date(year, m, 1).strftime("%b %Y"),
+            start_date=date(year, m, 1), end_date=date(year, m, last)))
+    db.session.commit()
+    return 12
+
+# ── Posting service ───────────────────────────────────────────────────────────
+# The only way a journal entry may be created. Every rule that protects the GL
+# lives here, so no caller can bypass one by forgetting to check it.
+
+MONEY = Decimal("0.0001")            # Numeric(14,4) — the smallest storable unit
+
+class PostingError(Exception):
+    """A posting was refused. The message is shown to the user verbatim."""
+
+def _money(value):
+    """Parse to Decimal at storage precision. Never float: 0.1 + 0.2 must not
+    decide whether an entry balances."""
+    try:
+        return Decimal(str(value or 0)).quantize(MONEY)
+    except (InvalidOperation, ValueError):
+        raise PostingError(f"'{value}' is not a valid amount.")
+
+def find_period(when):
+    """The accounting period containing this date, or None if no fiscal year
+    covers it."""
+    d = when.date() if isinstance(when, datetime) else when
+    return (AccountingPeriod.query
+            .filter(AccountingPeriod.start_date <= d, AccountingPeriod.end_date >= d)
+            .first())
+
+def post_entry(*, entry_date, description, lines, reference=None,
+               source_type="manual", source_id=None, allow_control=False,
+               created_by_id=None):
+    """Validate and write one balanced journal entry. Returns the JournalEntry.
+
+    `lines` is a list of dicts: {"account_id" or "code", "debit", "credit", "memo"}.
+
+    Raises PostingError — never writes a partial entry — if any of:
+      · fewer than two lines
+      · a line has both or neither of debit/credit
+      · debits ≠ credits
+      · the account is missing, inactive, or a group header
+      · the account is a control account and allow_control is False
+      · the date falls in no fiscal year, or in a closed period/year
+
+    `allow_control=True` is for the posting layer itself (a sale legitimately
+    debits Accounts Receivable). Manual entries never get it: a hand-written
+    line against AR would silently desynchronise the customer subledger.
+
+    Does NOT commit — the caller commits, so a document and its entry land in
+    one transaction."""
+    if not description or not str(description).strip():
+        raise PostingError("A journal entry needs a description.")
+
+    period = find_period(entry_date)
+    if period is None:
+        raise PostingError(
+            f"No fiscal year covers {entry_date:%Y-%m-%d}. Create the fiscal year first.")
+    if period.is_closed:
+        raise PostingError(f"{period.name} is closed. Post to an open period.")
+    if period.fiscal_year.is_closed:
+        raise PostingError(f"Fiscal year {period.fiscal_year.name} is closed.")
+
+    prepared, total_dr, total_cr = [], Decimal("0"), Decimal("0")
+    for raw in lines:
+        debit, credit = _money(raw.get("debit")), _money(raw.get("credit"))
+        if debit < 0 or credit < 0:
+            raise PostingError("Amounts cannot be negative.")
+        if debit > 0 and credit > 0:
+            raise PostingError("A line cannot be both a debit and a credit.")
+        if debit == 0 and credit == 0:
+            continue                                   # blank row — skip silently
+
+        acct = (db.session.get(Account, raw["account_id"]) if raw.get("account_id")
+                else get_account(raw["code"]))
+        if acct is None:
+            raise PostingError("Unknown account on one of the lines.")
+        if not acct.is_active:
+            raise PostingError(f"Account {acct.code} {acct.name} is inactive.")
+        if acct.is_group:
+            raise PostingError(
+                f"{acct.code} {acct.name} is a heading, not a postable account.")
+        if acct.is_control and not allow_control:
+            raise PostingError(
+                f"{acct.code} {acct.name} is a control account — it is maintained by "
+                f"its subledger and cannot be posted to by hand.")
+
+        prepared.append((acct, debit, credit, (raw.get("memo") or None)))
+        total_dr += debit
+        total_cr += credit
+
+    if len(prepared) < 2:
+        raise PostingError("A journal entry needs at least two lines with amounts.")
+    if total_dr != total_cr:
+        raise PostingError(
+            f"Entry is out of balance: debits {total_dr:,.2f} ≠ credits {total_cr:,.2f} "
+            f"(difference {abs(total_dr - total_cr):,.2f}).")
+    if total_dr == 0:
+        raise PostingError("An entry of zero has no effect.")
+
+    entry = JournalEntry(
+        entry_date=entry_date, description=str(description).strip(),
+        reference=(reference or None), source_type=source_type, source_id=source_id,
+        period_id=period.id, created_by_id=created_by_id)
+    db.session.add(entry)
+    db.session.flush()
+    for acct, debit, credit, memo in prepared:
+        db.session.add(JournalLine(entry_id=entry.id, account_id=acct.id,
+                                   debit=debit, credit=credit, memo=memo))
+    return entry
+
+def reverse_entry(entry, on_date=None, created_by_id=None):
+    """Post the mirror image of `entry`. The original is never touched beyond
+    being flagged, which is the whole point: both rows stay in the ledger.
+
+    The reversal is dated today by default, not on the original's date — a
+    correction made in July belongs in July, not backdated into a period whose
+    numbers may already have been reported."""
+    if entry.is_reversed:
+        raise PostingError(f"Entry #{entry.id} has already been reversed.")
+    if entry.is_reversal:
+        raise PostingError("A reversal cannot itself be reversed.")
+
+    reversal = post_entry(
+        entry_date=on_date or datetime.now(),
+        description=f"Reversal of #{entry.id}: {entry.description}",
+        reference=entry.reference,
+        source_type=entry.source_type, source_id=entry.source_id,
+        allow_control=True,          # mirrors whatever the original touched
+        created_by_id=created_by_id,
+        lines=[{"account_id": l.account_id, "debit": l.credit, "credit": l.debit,
+                "memo": l.memo} for l in entry.lines],
+    )
+    reversal.reversal_of_id = entry.id
+    entry.is_reversed = True
+    return reversal
+
+def postable_accounts():
+    """Accounts a human may choose in the manual journal form: active leaves that
+    are not control accounts."""
+    return (Account.query
+            .filter_by(is_active=True, is_group=False, is_control=False)
+            .order_by(Account.code).all())
+
+# ── Document posting ──────────────────────────────────────────────────────────
+# Every business document becomes a journal entry. These functions are the only
+# place the debit/credit shape of a document is written down.
+
+def posted_entry(source_type, source_id):
+    """The live (non-reversed) entry for a document, or None. Reversals carry the
+    same source_type/source_id, so they are excluded explicitly."""
+    return (JournalEntry.query
+            .filter_by(source_type=source_type, source_id=source_id,
+                       reversal_of_id=None, is_reversed=False)
+            .first())
+
+def assert_not_posted(source_type, source_id, what):
+    """Guard for edit/delete routes. A posted document is history: changing the
+    row underneath a journal entry would make the ledger describe something that
+    no longer exists.
+
+    A *reversed* document is refused too. Its entry is no longer live, so
+    posted_entry() returns None — but its journal entries are still in the ledger
+    and deleting the document would orphan them."""
+    if posted_entry(source_type, source_id):
+        raise PostingError(
+            f"{what} is posted to the general ledger and can no longer be changed. "
+            f"Reverse it instead.")
+    if JournalEntry.query.filter_by(source_type=source_type, source_id=source_id).first():
+        raise PostingError(
+            f"{what} has already been reversed. It stays in the ledger as a record "
+            f"of what happened and cannot be deleted.")
+
+def _cash_gl(fin_acct):
+    if fin_acct is None:
+        raise PostingError("This movement has no cash/bank account, so it cannot be posted. "
+                           "Pick an account on the form.")
+    gl = ensure_gl_account_for_financial(fin_acct)
+    return gl.id
+
+def _resolve_financial_account(movement):
+    """A movement points at its account explicitly, or (legacy) by payment_method."""
+    if movement.account_id:
+        return db.session.get(FinancialAccount, movement.account_id)
+    return FinancialAccount.query.filter_by(method=movement.payment_method).first()
+
+def _doc_lines(doc, price_attr):
+    """Normalise a purchase/sale to (taxable, tax) totals whether it uses
+    line_items or the older single-item columns."""
+    taxable = tax = Decimal("0")
+    rows = doc.line_items or []
+    if rows:
+        for r in rows:
+            gross = Decimal(str(r.quantity)) * Decimal(str(getattr(r, price_attr)))
+            disc, t, _ = calc_discount_tax(gross, r.discount_type, r.discount_value, r.tax_percent)
+            taxable += Decimal(str(gross)) - Decimal(str(disc))
+            tax     += Decimal(str(t))
+    elif doc.quantity and getattr(doc, price_attr):
+        gross = Decimal(str(doc.quantity)) * Decimal(str(getattr(doc, price_attr)))
+        disc, t, _ = calc_discount_tax(gross, doc.discount_type, doc.discount_value, doc.tax_percent)
+        taxable = Decimal(str(gross)) - Decimal(str(disc))
+        tax     = Decimal(str(t))
+    return taxable.quantize(MONEY), tax.quantize(MONEY)
+
+def _cogs_of(sale):
+    rows = sale.line_items or []
+    if rows:
+        return sum(Decimal(str(r.quantity)) * Decimal(str(r.cost_price or 0)) for r in rows).quantize(MONEY)
+    return (Decimal(str(sale.quantity or 0)) * Decimal(str(sale.cost_price or 0))).quantize(MONEY)
+
+def post_purchase(pur, created_by_id=None):
+    """Dr Inventory (goods) + Dr Tax Input (tax) / Cr Accounts Payable (total)."""
+    if posted_entry("purchase", pur.id):
+        return None                                    # idempotent
+    goods, tax = _doc_lines(pur, "purchase_price")
+    lines = [{"code": ACC_INVENTORY, "debit": goods, "credit": 0, "memo": "Goods received"}]
+    if tax:
+        lines.append({"code": ACC_TAX_INPUT, "debit": tax, "credit": 0, "memo": "Recoverable tax"})
+    lines.append({"code": ACC_AP, "debit": 0, "credit": goods + tax,
+                  "memo": pur.id_supplier.name if pur.id_supplier else None})
+    return post_entry(entry_date=pur.date, description=f"Purchase #{pur.id}",
+                      reference=f"PUR-{pur.id}", source_type="purchase", source_id=pur.id,
+                      allow_control=True, created_by_id=created_by_id, lines=lines)
+
+def post_sale(sale, created_by_id=None):
+    """Two economic events in one entry: the revenue side, and the cost of the
+    goods that left. Perpetual inventory means both happen at the moment of sale."""
+    if posted_entry("sale", sale.id):
+        return None
+    revenue, tax = _doc_lines(sale, "sale_price")
+    cogs = _cogs_of(sale)
+    lines = [{"code": ACC_AR, "debit": revenue + tax, "credit": 0,
+              "memo": sale.id_customer.name if sale.id_customer else None},
+             {"code": ACC_SALES, "debit": 0, "credit": revenue}]
+    if tax:
+        lines.append({"code": ACC_TAX_OUTPUT, "debit": 0, "credit": tax, "memo": "Tax payable"})
+    if cogs:
+        lines.append({"code": ACC_COGS, "debit": cogs, "credit": 0, "memo": "Cost of goods sold"})
+        lines.append({"code": ACC_INVENTORY, "debit": 0, "credit": cogs})
+    return post_entry(entry_date=sale.date, description=f"Sale #{sale.id}",
+                      reference=f"SAL-{sale.id}", source_type="sale", source_id=sale.id,
+                      allow_control=True, created_by_id=created_by_id, lines=lines)
+
+def post_supplier_payment(pmt, created_by_id=None):
+    """Dr Accounts Payable / Cr Cash or Bank."""
+    if posted_entry("payment", pmt.id):
+        return None
+    amount = Decimal(str(pmt.amount)).quantize(MONEY)
+    return post_entry(entry_date=pmt.payment_date, description=f"Payment to {pmt.supplier.name}",
+                      reference=pmt.reference_no or f"PAY-{pmt.id}",
+                      source_type="payment", source_id=pmt.id,
+                      allow_control=True, created_by_id=created_by_id,
+                      lines=[{"code": ACC_AP, "debit": amount, "credit": 0},
+                             {"account_id": _cash_gl(_resolve_financial_account(pmt)),
+                              "debit": 0, "credit": amount, "memo": pmt.payment_method}])
+
+def post_customer_receipt(rcpt, created_by_id=None):
+    """Dr Cash or Bank / Cr Accounts Receivable."""
+    if posted_entry("receipt", rcpt.id):
+        return None
+    amount = Decimal(str(rcpt.amount)).quantize(MONEY)
+    return post_entry(entry_date=rcpt.payment_date, description=f"Receipt from {rcpt.customer.name}",
+                      reference=rcpt.reference_no or f"RCT-{rcpt.id}",
+                      source_type="receipt", source_id=rcpt.id,
+                      allow_control=True, created_by_id=created_by_id,
+                      lines=[{"account_id": _cash_gl(_resolve_financial_account(rcpt)),
+                              "debit": amount, "credit": 0, "memo": rcpt.payment_method},
+                             {"code": ACC_AR, "debit": 0, "credit": amount}])
+
+def post_expense(exp, created_by_id=None):
+    """Dr the category's expense account / Cr Cash or Bank."""
+    if posted_entry("expense", exp.id):
+        return None
+    amount = Decimal(str(exp.amount)).quantize(MONEY)
+    cat = exp.category
+    expense_gl = (cat.gl_account_id if cat and cat.gl_account_id else get_account("6090").id)
+    return post_entry(entry_date=exp.date, description=f"Expense: {exp.description}",
+                      reference=exp.reference_no or f"EXP-{exp.id}",
+                      source_type="expense", source_id=exp.id,
+                      allow_control=True, created_by_id=created_by_id,
+                      lines=[{"account_id": expense_gl, "debit": amount, "credit": 0},
+                             {"account_id": _cash_gl(_resolve_financial_account(exp)),
+                              "debit": 0, "credit": amount, "memo": exp.payment_method}])
+
+def post_purchase_return(pr, created_by_id=None):
+    """Goods go back to the supplier: Dr Accounts Payable / Cr Inventory."""
+    if posted_entry("purchase_return", pr.id):
+        return None
+    amount = (Decimal(str(pr.quantity)) * Decimal(str(pr.return_price))).quantize(MONEY)
+    return post_entry(entry_date=pr.date, description=f"Purchase return #{pr.id}",
+                      reference=f"PRT-{pr.id}", source_type="purchase_return", source_id=pr.id,
+                      allow_control=True, created_by_id=created_by_id,
+                      lines=[{"code": ACC_AP, "debit": amount, "credit": 0,
+                              "memo": pr.supplier.name if pr.supplier else None},
+                             {"code": ACC_INVENTORY, "debit": 0, "credit": amount}])
+
+def post_sale_return(sr, created_by_id=None):
+    """Dr Sales Returns / Cr Accounts Receivable, and the goods come back into
+    stock at what they cost us: Dr Inventory / Cr Cost of Goods Sold."""
+    if posted_entry("sale_return", sr.id):
+        return None
+    amount = (Decimal(str(sr.quantity)) * Decimal(str(sr.return_price))).quantize(MONEY)
+    item = db.session.get(Item, sr.item_id)
+    cost = (Decimal(str(sr.quantity)) * Decimal(str(item.purchase_price or 0))).quantize(MONEY) if item else Decimal("0")
+    lines = [{"code": ACC_SALES_RETURNS, "debit": amount, "credit": 0},
+             {"code": ACC_AR, "debit": 0, "credit": amount,
+              "memo": sr.customer.name if sr.customer else None}]
+    if cost:
+        lines.append({"code": ACC_INVENTORY, "debit": cost, "credit": 0, "memo": "Goods returned to stock"})
+        lines.append({"code": ACC_COGS, "debit": 0, "credit": cost})
+    return post_entry(entry_date=sr.date, description=f"Sale return #{sr.id}",
+                      reference=f"SRT-{sr.id}", source_type="sale_return", source_id=sr.id,
+                      allow_control=True, created_by_id=created_by_id, lines=lines)
+
+def _unwind_stock_and_subledger(kind, doc):
+    """Undo a document's operational effects — the physical stock it moved and the
+    supplier/customer subledger row it created. The GL is NOT touched here; its
+    correction is a reversing entry, because the GL is a record of what happened,
+    not of what is currently true."""
+    if kind == "purchase":
+        for pi in doc.line_items:
+            item = db.session.get(Item, pi.item_id)
+            if item:
+                item.stock -= pi.quantity
+        sup_id = remove_supplier_ledger_entry("purchase", doc.id)
+        return ("supplier", sup_id)
+
+    if kind == "sale":
+        for si in doc.line_items:
+            item = db.session.get(Item, si.item_id)
+            if item:
+                item.stock += si.quantity
+        cust_id = remove_customer_ledger_entry("sale", doc.id)
+        return ("customer", cust_id)
+
+    if kind == "payment":
+        return ("supplier", remove_supplier_ledger_entry("payment", doc.id))
+
+    if kind == "receipt":
+        return ("customer", remove_customer_ledger_entry("receipt", doc.id))
+
+    if kind == "expense":
+        return (None, None)                       # touches no stock, no subledger
+
+    if kind == "purchase_return":
+        item = db.session.get(Item, doc.item_id)
+        if item:
+            item.stock += doc.quantity            # goods had left; bring them back
+        return ("supplier", remove_supplier_ledger_entry("purchase_return", doc.id))
+
+    if kind == "sale_return":
+        item = db.session.get(Item, doc.item_id)
+        if item:
+            item.stock -= doc.quantity            # goods had come back; send them out
+        return ("customer", remove_customer_ledger_entry("sale_return", doc.id))
+
+    if kind == "stock_adjustment":
+        item = db.session.get(Item, doc.item_id)
+        if item:
+            item.stock += doc.quantity if doc.direction == "out" else -doc.quantity
+        return (None, None)
+
+    raise PostingError(f"Don't know how to reverse a {kind}.")
+
+DOCUMENT_LABELS = {
+    "purchase": "Purchase", "sale": "Sale", "payment": "Supplier payment",
+    "receipt": "Customer receipt", "expense": "Expense",
+    "purchase_return": "Purchase return", "sale_return": "Sale return",
+    "stock_adjustment": "Stock adjustment",
+}
+
+def reverse_document(kind, doc):
+    """Cancel a posted document without erasing it.
+
+    Three things happen, in this order: a mirror journal entry is posted, the
+    stock and subledger effects are undone, and the document is flagged. The
+    document row and both journal entries stay — that is the audit trail.
+
+    Does not commit; the caller does."""
+    label = DOCUMENT_LABELS.get(kind, kind)
+    if getattr(doc, "is_reversed", False):
+        raise PostingError(f"{label} #{doc.id} has already been reversed.")
+
+    entry = posted_entry(kind, doc.id)
+    if entry is None:
+        raise PostingError(
+            f"{label} #{doc.id} has no live journal entry, so there is nothing to reverse.")
+
+    uid = current_user.id if current_user and current_user.is_authenticated else None
+    reversal = reverse_entry(entry, created_by_id=uid)
+
+    owner_kind, owner_id = _unwind_stock_and_subledger(kind, doc)
+    db.session.flush()
+    if owner_kind == "supplier" and owner_id:
+        recalculate_supplier_ledger(owner_id)
+    elif owner_kind == "customer" and owner_id:
+        recalculate_customer_ledger(owner_id)
+
+    doc.is_reversed = True
+    doc.reversed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    return reversal
+
+def post_document(kind, doc):
+    """Post `doc` to the GL. Called from route handlers after db.session.flush()
+    and before their commit, so the document and its entry share one transaction:
+    if posting is refused, the document is never written either.
+
+    Raises PostingError, which routes turn into a flash message."""
+    poster = {
+        "purchase":         post_purchase,
+        "sale":             post_sale,
+        "payment":          post_supplier_payment,
+        "receipt":          post_customer_receipt,
+        "expense":          post_expense,
+        "purchase_return":  post_purchase_return,
+        "sale_return":      post_sale_return,
+        "stock_adjustment": post_stock_adjustment,
+    }[kind]
+    uid = current_user.id if current_user and current_user.is_authenticated else None
+    return poster(doc, created_by_id=uid)
+
+def post_stock_adjustment(adj, created_by_id=None):
+    """Stock found or lost, valued at the item's cost. The other side is an
+    expense account, so a write-off lands in the P&L where it belongs."""
+    if posted_entry("stock_adjustment", adj.id):
+        return None
+    item = db.session.get(Item, adj.item_id)
+    value = (Decimal(str(adj.quantity)) * Decimal(str((item.purchase_price if item else 0) or 0))).quantize(MONEY)
+    if not value:
+        return None                        # a zero-cost item has no accounting effect
+    if adj.direction == "in":
+        lines = [{"code": ACC_INVENTORY, "debit": value, "credit": 0},
+                 {"code": ACC_STOCK_ADJ, "debit": 0, "credit": value, "memo": adj.adj_type}]
+    else:
+        lines = [{"code": ACC_STOCK_ADJ, "debit": value, "credit": 0, "memo": adj.adj_type},
+                 {"code": ACC_INVENTORY, "debit": 0, "credit": value}]
+    return post_entry(entry_date=adj.date, description=f"Stock adjustment #{adj.id}: {adj.adj_type}",
+                      reference=f"ADJ-{adj.id}", source_type="stock_adjustment", source_id=adj.id,
+                      allow_control=True, created_by_id=created_by_id, lines=lines)
+
+def seed_tax_codes():
+    """A single zero-rated code plus one standard rate. Everything else is the
+    user's to define — that is the point of the TaxCode/TaxComponent split."""
+    if TaxCode.query.count():
+        return 0
+    tax_in  = get_account(ACC_TAX_INPUT).id
+    tax_out = get_account(ACC_TAX_OUTPUT).id
+    for name, comps in (
+        ("Zero-rated", [("Tax", 0)]),
+        ("Standard",   [("Tax", 0)]),   # rate left at 0 — the user sets their country's rate
+    ):
+        code = TaxCode(name=name)
+        db.session.add(code)
+        db.session.flush()
+        for cname, rate in comps:
+            db.session.add(TaxComponent(tax_code_id=code.id, name=cname, rate=rate,
+                                        input_account_id=tax_in, output_account_id=tax_out))
+    db.session.commit()
+    return TaxCode.query.count()
+
+class JournalEntry(db.Model):
+    """A balanced double-entry posting. Every financial event in the system —
+    manual adjustment, purchase, sale, payment, expense — becomes one of these.
+
+    Entries are immutable once written. A mistake is corrected by posting a
+    reversing entry (`reverse_entry`), never by editing or deleting, so the
+    audit trail always shows what was recorded and what corrected it.
+
+    `source_type` + `source_id` link the entry back to the document that caused
+    it ("purchase", 12). Together they also make posting idempotent: a document
+    that already has an entry is never posted twice."""
+    __tablename__ = "journal_entry"
+    id             = db.Column(db.Integer, primary_key=True)
+    entry_date     = db.Column(db.DateTime, nullable=False,
+                               default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    reference      = db.Column(db.String(50), nullable=True)
+    description    = db.Column(db.String(300), nullable=False)
+    source_type    = db.Column(db.String(20), nullable=False, default="manual")
+    source_id      = db.Column(db.Integer, nullable=True)
+    period_id      = db.Column(db.Integer, db.ForeignKey("accounting_period.id"), nullable=True)
+    reversal_of_id = db.Column(db.Integer, db.ForeignKey("journal_entry.id"), nullable=True)
+    is_reversed    = db.Column(db.Boolean, nullable=False, default=False)
+    created_by_id  = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    created_at     = db.Column(db.DateTime, nullable=False,
+                               default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    lines          = db.relationship("JournalLine", backref="entry", lazy=True,
+                                     cascade="all,delete-orphan")
+    period         = db.relationship("AccountingPeriod", lazy=True)
+    created_by     = db.relationship("User", lazy=True)
+    reversal_of    = db.relationship("JournalEntry", remote_side=[id], lazy=True)
+
+    @property
+    def total_debit(self):
+        return sum(Decimal(str(l.debit or 0)) for l in self.lines)
+
+    @property
+    def total_credit(self):
+        return sum(Decimal(str(l.credit or 0)) for l in self.lines)
+
+    @property
+    def is_reversal(self):
+        return self.reversal_of_id is not None
 
 class JournalLine(db.Model):
+    """One side of an entry. Exactly one of debit/credit is positive."""
     __tablename__ = "journal_line"
-    id       = db.Column(db.Integer, primary_key=True)
-    entry_id = db.Column(db.Integer, db.ForeignKey("journal_entry.id"), nullable=False)
-    account  = db.Column(db.String(100), nullable=False)
-    debit    = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
-    credit   = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    id         = db.Column(db.Integer, primary_key=True)
+    entry_id   = db.Column(db.Integer, db.ForeignKey("journal_entry.id"), nullable=False)
+    account_id = db.Column(db.Integer, db.ForeignKey("account.id"), nullable=False)
+    debit      = db.Column(db.Numeric(14, 4), nullable=False, default=0)
+    credit     = db.Column(db.Numeric(14, 4), nullable=False, default=0)
+    memo       = db.Column(db.String(200), nullable=True)
+    account    = db.relationship("Account", lazy="joined")
 
 # ── Purchase Order ────────────────────────────────────────────────────────────
 PO_STATUSES = ("Draft", "Confirmed", "Received", "Cancelled")
@@ -752,13 +1498,17 @@ def sale_total(sale):
     return 0.0
 
 def get_purchase_paid(purchase_id, exclude_payment_id=None):
-    query = db.session.query(func.sum(SupplierPayment.amount)).filter(SupplierPayment.purchase_id == purchase_id)
+    query = (db.session.query(func.sum(SupplierPayment.amount))
+             .filter(SupplierPayment.purchase_id == purchase_id,
+                     SupplierPayment.is_reversed.is_(False)))
     if exclude_payment_id:
         query = query.filter(SupplierPayment.id != exclude_payment_id)
     return float(query.scalar() or 0.0)
 
 def get_sale_received(sale_id, exclude_payment_id=None):
-    query = db.session.query(func.sum(CustomerPayment.amount)).filter(CustomerPayment.sale_id == sale_id)
+    query = (db.session.query(func.sum(CustomerPayment.amount))
+             .filter(CustomerPayment.sale_id == sale_id,
+                     CustomerPayment.is_reversed.is_(False)))
     if exclude_payment_id:
         query = query.filter(CustomerPayment.id != exclude_payment_id)
     return float(query.scalar() or 0.0)
@@ -771,21 +1521,26 @@ def get_payment_status(total, paid):
     return "Partial"
 
 def get_supplier_payable(supplier_id):
-    purchases = Purchase.query.filter_by(supplier_id=supplier_id).all()
+    # A reversed purchase was cancelled — it owes the supplier nothing.
+    purchases = Purchase.query.filter_by(supplier_id=supplier_id, is_reversed=False).all()
     return sum(purchase_total(p) for p in purchases)
 
 def get_supplier_paid(supplier_id, exclude_payment_id=None):
-    query = db.session.query(func.sum(SupplierPayment.amount)).filter(SupplierPayment.supplier_id == supplier_id)
+    query = (db.session.query(func.sum(SupplierPayment.amount))
+             .filter(SupplierPayment.supplier_id == supplier_id,
+                     SupplierPayment.is_reversed.is_(False)))
     if exclude_payment_id:
         query = query.filter(SupplierPayment.id != exclude_payment_id)
     return float(query.scalar() or 0.0)
 
 def get_customer_receivable(customer_id):
-    sales = Sale.query.filter_by(customer_id=customer_id).all()
+    sales = Sale.query.filter_by(customer_id=customer_id, is_reversed=False).all()
     return sum(sale_total(s) for s in sales)
 
 def get_customer_received(customer_id, exclude_payment_id=None):
-    query = db.session.query(func.sum(CustomerPayment.amount)).filter(CustomerPayment.customer_id == customer_id)
+    query = (db.session.query(func.sum(CustomerPayment.amount))
+             .filter(CustomerPayment.customer_id == customer_id,
+                     CustomerPayment.is_reversed.is_(False)))
     if exclude_payment_id:
         query = query.filter(CustomerPayment.id != exclude_payment_id)
     return float(query.scalar() or 0.0)
@@ -847,12 +1602,15 @@ def total_customer_ledger_balance():
 def account_movement_filter(model, account):
     """Rows of `model` belonging to `account`: those tagged with its account_id,
     plus — for the seeded accounts only — untagged legacy rows carrying its
-    payment_method. See FinancialAccount's docstring for why."""
+    payment_method. See FinancialAccount's docstring for why.
+
+    Reversed movements are excluded. A reversed payment never left the bank, so
+    it must not move the bank balance — the document stays only as a record."""
     owns = [model.account_id == account.id]
     if account.method in PAYMENT_METHODS:
         owns.append(and_(model.account_id.is_(None),
                          model.payment_method == account.method))
-    return or_(*owns)
+    return and_(model.is_reversed.is_(False), or_(*owns))
 
 def _sum_amount(model, account):
     return float(db.session.query(func.sum(model.amount))
@@ -1536,6 +2294,37 @@ def migrate_database():
                         "REFERENCES financial_account(id)"
                     ))
 
+    # Link cash/bank accounts and expense categories to their GL accounts.
+    for table in ("financial_account", "expense_category"):
+        if table in inspector.get_table_names():
+            cols = {col["name"] for col in inspector.get_columns(table)}
+            if "gl_account_id" not in cols:
+                with db.engine.begin() as conn:
+                    conn.execute(text(
+                        f"ALTER TABLE {table} ADD COLUMN gl_account_id INTEGER "
+                        "REFERENCES account(id)"
+                    ))
+
+    # Documents are never deleted once posted — they are reversed and flagged.
+    # DEFAULT FALSE (not 0) so the same DDL is valid on SQLite and PostgreSQL.
+    for table in ("purchase", "sale", "supplier_payment", "customer_payment",
+                  "expense", "purchase_return", "sale_return", "stock_adjustment"):
+        if table in inspector.get_table_names():
+            cols = {col["name"] for col in inspector.get_columns(table)}
+            with db.engine.begin() as conn:
+                if "is_reversed" not in cols:
+                    conn.execute(text(
+                        f"ALTER TABLE {table} ADD COLUMN is_reversed BOOLEAN NOT NULL DEFAULT FALSE"))
+                if "reversed_at" not in cols:
+                    conn.execute(text(
+                        f"ALTER TABLE {table} ADD COLUMN reversed_at {datetime_type}"))
+
+    # Seed the GL foundation. All three are idempotent, so a fresh database (local
+    # or a new deploy) always boots with a usable chart of accounts.
+    seed_chart_of_accounts()
+    seed_tax_codes()
+    seed_fiscal_year(datetime.now().year)
+
     # Seed one cash/bank account per payment method (idempotent — only if none exist)
     if FinancialAccount.query.count() == 0:
         types = {"Cash": "Cash", "Bank": "Bank", "Cheque": "Bank", "Online": "Bank"}
@@ -1543,6 +2332,9 @@ def migrate_database():
             db.session.add(FinancialAccount(name=m, method=m, account_type=types.get(m, "Bank"),
                                             opening_balance=0))
         db.session.commit()
+
+    # Nothing can be posted until every cash/bank account has a GL counterpart.
+    seed_financial_account_links()
 
 # Create Database
 with app.app_context():
@@ -1630,6 +2422,16 @@ def set_security_headers(response):
             "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
         )
     return response
+
+@app.errorhandler(PostingError)
+def handle_posting_error(e):
+    """A refused posting must never leave a half-written document behind. Rolling
+    back here means the route's own db.session.add() calls are discarded too, so
+    the document and its journal entry are all-or-nothing."""
+    db.session.rollback()
+    flash(str(e), "danger")
+    app.logger.info("Posting refused: %s", e)
+    return redirect(request.referrer or url_for("dashboard"))
 
 @app.route("/health")
 def health():
@@ -2731,6 +3533,7 @@ def purchase():
                 db.session.flush()
                 db.session.refresh(pur)
                 sync_supplier_purchase(pur)
+                post_document("purchase", pur)
                 db.session.commit()
                 record_audit("create", "Purchase", pur.id, f"Purchase #{pur.id}, total {purchase_total(pur):,.2f}")
                 flash("Purchase added successfully!", "success")
@@ -2751,6 +3554,7 @@ def purchase():
 @manager_required
 def edit_purchase(id):
     pur = db.session.get(Purchase, id) or abort(404)
+    assert_not_posted("purchase", pur.id, f"Purchase #{pur.id}")
     suppliers = Supplier.query.order_by(Supplier.name).all()
     items_all = Item.query.order_by(Item.name).all()
     if request.method == "POST":
@@ -2846,6 +3650,7 @@ def edit_purchase(id):
 @admin_required
 def delete_purchase(id):
     pur = db.session.get(Purchase, id) or abort(404)
+    assert_not_posted("purchase", pur.id, f"Purchase #{pur.id}")
     if pur.supplier_payments:
         flash("Cannot delete purchase with associated payments! Delete payments first.", "danger")
         return redirect(url_for("purchase"))
@@ -2963,6 +3768,7 @@ def sale():
                     db.session.flush()
                     db.session.refresh(sal)
                     sync_customer_sale(sal)
+                    post_document("sale", sal)
                     db.session.commit()
                     record_audit("create", "Sale", sal.id, f"Sale #{sal.id}, total {sale_total(sal):,.2f}")
                     flash("Sale recorded successfully!", "success")
@@ -2983,6 +3789,7 @@ def sale():
 @manager_required
 def edit_sale(id):
     sal = db.session.get(Sale, id) or abort(404)
+    assert_not_posted("sale", sal.id, f"Sale #{sal.id}")
     customers = Customer.query.order_by(Customer.name).all()
     items_all = Item.query.order_by(Item.name).all()
     if request.method == "POST":
@@ -3079,6 +3886,7 @@ def edit_sale(id):
 @admin_required
 def delete_sale(id):
     sal = db.session.get(Sale, id) or abort(404)
+    assert_not_posted("sale", sal.id, f"Sale #{sal.id}")
     if sal.customer_payments:
         flash("Cannot delete sale with associated receipts! Delete receipts first.", "danger")
         return redirect(url_for("sale"))
@@ -3149,6 +3957,7 @@ def supplier_payment():
                 db.session.add(payment)
                 db.session.flush()
                 sync_supplier_payment(payment)
+                post_document("payment", payment)
                 db.session.commit()
                 record_audit("create", "SupplierPayment", payment.id, f"Paid {float(payment.amount):,.2f} to supplier #{payment.supplier_id} ({payment.payment_method})")
                 flash("Supplier payment recorded successfully!", "success")
@@ -3166,6 +3975,7 @@ def supplier_payment():
 @manager_required
 def edit_supplier_payment(id):
     payment = db.session.get(SupplierPayment, id) or abort(404)
+    assert_not_posted("payment", payment.id, f"Payment #{payment.id}")
     suppliers = Supplier.query.order_by(Supplier.name).all()
     purchases = Purchase.query.order_by(Purchase.date.desc()).all()
     if request.method == "POST":
@@ -3217,6 +4027,7 @@ def edit_supplier_payment(id):
 @admin_required
 def delete_supplier_payment(id):
     payment = db.session.get(SupplierPayment, id) or abort(404)
+    assert_not_posted("payment", payment.id, f"Payment #{payment.id}")
     audit_summary = f"Supplier payment #{payment.id} of {float(payment.amount):,.2f} deleted"
     supplier_id = remove_supplier_ledger_entry("payment", payment.id)
     db.session.delete(payment)
@@ -3339,6 +4150,7 @@ def supplier_bulk_payment():
                         db.session.add(pmt)
                         db.session.flush()
                         sync_supplier_payment(pmt)
+                        post_document("payment", pmt)
                         count += 1
                         total_paid_sum += amt
                     if gen_amt > 0:
@@ -3355,6 +4167,7 @@ def supplier_bulk_payment():
                         db.session.add(pmt)
                         db.session.flush()
                         sync_supplier_payment(pmt)
+                        post_document("payment", pmt)
                         count += 1
                         total_paid_sum += gen_amt
                     db.session.commit()
@@ -3487,6 +4300,7 @@ def customer_bulk_receipt():
                         db.session.add(rcpt)
                         db.session.flush()
                         sync_customer_receipt(rcpt)
+                        post_document("receipt", rcpt)
                         count += 1
                         total_recv_sum += amt
                     if gen_amt > 0:
@@ -3503,6 +4317,7 @@ def customer_bulk_receipt():
                         db.session.add(rcpt)
                         db.session.flush()
                         sync_customer_receipt(rcpt)
+                        post_document("receipt", rcpt)
                         count += 1
                         total_recv_sum += gen_amt
                     db.session.commit()
@@ -3572,6 +4387,7 @@ def customer_receipt():
                 db.session.add(receipt)
                 db.session.flush()
                 sync_customer_receipt(receipt)
+                post_document("receipt", receipt)
                 db.session.commit()
                 record_audit("create", "CustomerReceipt", receipt.id, f"Received {float(receipt.amount):,.2f} from customer #{receipt.customer_id} ({receipt.payment_method})")
                 flash("Customer receipt recorded successfully!", "success")
@@ -3589,6 +4405,7 @@ def customer_receipt():
 @manager_required
 def edit_customer_receipt(id):
     receipt = db.session.get(CustomerPayment, id) or abort(404)
+    assert_not_posted("receipt", receipt.id, f"Receipt #{receipt.id}")
     customers = Customer.query.order_by(Customer.name).all()
     sales = Sale.query.order_by(Sale.date.desc()).all()
     if request.method == "POST":
@@ -3640,6 +4457,7 @@ def edit_customer_receipt(id):
 @admin_required
 def delete_customer_receipt(id):
     receipt = db.session.get(CustomerPayment, id) or abort(404)
+    assert_not_posted("receipt", receipt.id, f"Receipt #{receipt.id}")
     audit_summary = f"Customer receipt #{receipt.id} of {float(receipt.amount):,.2f} deleted"
     customer_id = remove_customer_ledger_entry("receipt", receipt.id)
     db.session.delete(receipt)
@@ -4635,6 +5453,7 @@ def purchase_return():
                         db.session.add(pr)
                         db.session.flush()
                         sync_supplier_purchase_return(pr)
+                        post_document("purchase_return", pr)
                     db.session.commit()
                     flash(f"{len(rows)} purchase return(s) recorded successfully!", "success")
                     return redirect(url_for("purchase_return"))
@@ -4653,6 +5472,7 @@ def purchase_return():
 @admin_required
 def delete_purchase_return(id):
     pr = db.session.get(PurchaseReturn, id) or abort(404)
+    assert_not_posted("purchase_return", pr.id, f"Purchase return #{pr.id}")
     item = db.session.get(Item, pr.item_id)
     if item:
         item.stock += pr.quantity
@@ -4743,6 +5563,7 @@ def sale_return():
                         db.session.add(sr)
                         db.session.flush()
                         sync_customer_sale_return(sr)
+                        post_document("sale_return", sr)
                     db.session.commit()
                     flash(f"{len(rows)} sale return(s) recorded successfully!", "success")
                     return redirect(url_for("sale_return"))
@@ -4761,6 +5582,7 @@ def sale_return():
 @admin_required
 def delete_sale_return(id):
     sr = db.session.get(SaleReturn, id) or abort(404)
+    assert_not_posted("sale_return", sr.id, f"Sale return #{sr.id}")
     item = db.session.get(Item, sr.item_id)
     if item:
         item.stock -= sr.quantity
@@ -4852,6 +5674,8 @@ def stock_adjustment():
                     item_obj.stock -= qty
                 else:
                     item_obj.stock += qty
+                db.session.flush()
+                post_document("stock_adjustment", adj)
                 db.session.commit()
                 flash(f"Stock {'reduced' if direction=='out' else 'increased'} by {qty} for {item_obj.name}.", "success")
                 return redirect(url_for("stock_adjustment"))
@@ -4864,6 +5688,7 @@ def stock_adjustment():
 @admin_required
 def delete_stock_adjustment(id):
     adj = db.session.get(StockAdjustment, id) or abort(404)
+    assert_not_posted("stock_adjustment", adj.id, f"Stock adjustment #{adj.id}")
     item_obj = db.session.get(Item, adj.item_id)
     if item_obj:
         if adj.direction == "out":
@@ -4925,13 +5750,16 @@ def expenses():
                 if amount <= 0:
                     flash("Amount must be positive.", "danger")
                 else:
-                    db.session.add(Expense(
+                    exp = Expense(
                         category_id=int(cat_id) if cat_id else None,
                         description=desc, amount=amount,
                         date=datetime.strptime(date_str, "%Y-%m-%d"),
                         payment_method=method, account_id=account_id,
                         reference_no=ref, notes=notes,
-                    ))
+                    )
+                    db.session.add(exp)
+                    db.session.flush()
+                    post_document("expense", exp)
                     db.session.commit()
                     flash("Expense recorded.", "success")
                     return redirect(url_for("expenses"))
@@ -4949,6 +5777,7 @@ def expenses():
 @admin_required
 def delete_expense(id):
     exp = db.session.get(Expense, id) or abort(404)
+    assert_not_posted("expense", exp.id, f"Expense #{exp.id}")
     db.session.delete(exp)
     db.session.commit()
     flash("Expense deleted.", "success")
@@ -5073,6 +5902,7 @@ def convert_po_to_purchase(id):
     db.session.flush()
     db.session.refresh(pur)
     sync_supplier_purchase(pur)
+    post_document("purchase", pur)
     po.status = "Received"
     po.converted_purchase_id = pur.id
     db.session.commit()
@@ -5235,6 +6065,7 @@ def convert_quotation_to_sale(id):
     db.session.flush()
     db.session.refresh(sal)
     sync_customer_sale(sal)
+    post_document("sale", sal)
     q.status = "Converted"
     q.converted_sale_id = sal.id
     db.session.commit()
@@ -5521,6 +6352,8 @@ def new_account():
                 opening_balance=float(ob_str or 0),
             )
             db.session.add(acct)
+            db.session.flush()
+            ensure_gl_account_for_financial(acct)     # its GL leaf, so payments can post
             db.session.commit()
             record_audit("create", "Account", acct.id, f"Account '{acct.name}' created ({acct.account_type})")
             flash(f"Account '{acct.name}' created. Select it when recording payments, receipts or expenses.", "success")
@@ -5621,83 +6454,143 @@ def report_trial_balance():
 @manager_required
 def journal():
     entries = JournalEntry.query.order_by(JournalEntry.entry_date.desc(), JournalEntry.id.desc()).all()
-    # net debit/credit per account across all entries (read-only summary)
-    summary = {}
-    for ln in JournalLine.query.all():
-        s = summary.setdefault(ln.account, {"debit": 0.0, "credit": 0.0})
-        s["debit"] += float(ln.debit or 0)
-        s["credit"] += float(ln.credit or 0)
-    return render_template("journal.html", entries=entries, summary=sorted(summary.items()))
+    # Net movement per account across every entry (read-only summary). Grouped in
+    # SQL rather than in Python so a large ledger stays one query.
+    summary = (db.session.query(
+                    Account.code, Account.name,
+                    func.sum(JournalLine.debit).label("debit"),
+                    func.sum(JournalLine.credit).label("credit"))
+               .join(Account, JournalLine.account_id == Account.id)
+               .group_by(Account.code, Account.name)
+               .order_by(Account.code).all())
+    return render_template("journal.html", entries=entries, summary=summary)
 
 @app.route("/journal/new", methods=["GET", "POST"])
 @manager_required
 def journal_new():
+    accounts = postable_accounts()
     if request.method == "POST":
-        date_str = request.form.get("entry_date", "").strip()
+        date_str    = request.form.get("entry_date", "").strip()
         description = request.form.get("description", "").strip()
-        reference = request.form.get("reference", "").strip()
-        accounts = request.form.getlist("account[]")
-        debits   = request.form.getlist("debit[]")
-        credits  = request.form.getlist("credit[]")
+        reference   = request.form.get("reference", "").strip()
+        account_ids = request.form.getlist("account_id[]")
+        debits      = request.form.getlist("debit[]")
+        credits     = request.form.getlist("credit[]")
 
-        lines, total_dr, total_cr = [], 0.0, 0.0
+        lines = [{"account_id": int(a), "debit": d.replace(",", ""), "credit": c.replace(",", "")}
+                 for a, d, c in zip(account_ids, debits, credits) if a.strip().isdigit()]
         try:
-            for acc, d, c in zip(accounts, debits, credits):
-                acc = acc.strip()
-                d = float((d or "0").replace(",", "") or 0)
-                c = float((c or "0").replace(",", "") or 0)
-                if not acc and d == 0 and c == 0:
-                    continue                      # skip blank rows
-                if not acc:
-                    flash("Every line with an amount needs an account name.", "danger")
-                    return render_template("journal_new.html")
-                if d < 0 or c < 0 or (d > 0 and c > 0) or (d == 0 and c == 0):
-                    flash("Each line must have a positive amount in exactly one of Debit or Credit.", "danger")
-                    return render_template("journal_new.html")
-                lines.append((acc, d, c)); total_dr += d; total_cr += c
+            entry_date = datetime.strptime(date_str, "%Y-%m-%d")
         except ValueError:
-            flash("Amounts must be valid numbers.", "danger")
-            return render_template("journal_new.html")
+            flash("A valid date is required.", "danger")
+            return render_template("journal_new.html", accounts=accounts)
 
-        if not description or not date_str:
-            flash("Date and description are required.", "danger")
-        elif len(lines) < 2:
-            flash("A journal entry needs at least two lines.", "danger")
-        elif abs(total_dr - total_cr) > 0.005:
-            flash(f"Entry is not balanced: debits {total_dr:,.2f} ≠ credits {total_cr:,.2f}.", "danger")
-        else:
-            try:
-                entry = JournalEntry(entry_date=datetime.strptime(date_str, "%Y-%m-%d"),
-                                     description=description, reference=reference or None)
-                db.session.add(entry); db.session.flush()
-                for acc, d, c in lines:
-                    db.session.add(JournalLine(entry_id=entry.id, account=acc, debit=d, credit=c))
-                db.session.commit()
-                record_audit("create", "JournalEntry", entry.id,
-                             f"Journal #{entry.id}: {description} ({total_dr:,.2f})")
-                flash("Journal entry saved successfully!", "success")
-                return redirect(url_for("journal"))
-            except ValueError as e:
-                flash(f"Invalid data: {e}", "danger")
-    return render_template("journal_new.html")
+        try:
+            entry = post_entry(entry_date=entry_date, description=description,
+                               reference=reference, lines=lines,
+                               created_by_id=current_user.id)
+            db.session.commit()
+        except PostingError as e:
+            db.session.rollback()
+            flash(str(e), "danger")
+            return render_template("journal_new.html", accounts=accounts)
+
+        record_audit("create", "JournalEntry", entry.id,
+                     f"Journal #{entry.id}: {entry.description} ({float(entry.total_debit):,.2f})")
+        flash(f"Journal entry #{entry.id} posted.", "success")
+        return redirect(url_for("journal"))
+    return render_template("journal_new.html", accounts=accounts)
 
 @app.route("/journal/<int:id>")
 @manager_required
 def journal_view(id):
     entry = db.session.get(JournalEntry, id) or abort(404)
-    total_dr = sum(float(l.debit or 0) for l in entry.lines)
-    total_cr = sum(float(l.credit or 0) for l in entry.lines)
-    return render_template("journal_view.html", entry=entry, total_dr=total_dr, total_cr=total_cr)
+    reversal = JournalEntry.query.filter_by(reversal_of_id=entry.id).first()
+    return render_template("journal_view.html", entry=entry, reversal=reversal,
+                           total_dr=float(entry.total_debit),
+                           total_cr=float(entry.total_credit))
 
-@app.route("/journal/<int:id>/delete", methods=["POST"])
+@app.route("/journal/<int:id>/reverse", methods=["POST"])
 @admin_required
-def journal_delete(id):
+def journal_reverse(id):
+    """Posted entries are immutable — correcting one means posting its mirror."""
     entry = db.session.get(JournalEntry, id) or abort(404)
-    db.session.delete(entry)
+    try:
+        reversal = reverse_entry(entry, created_by_id=current_user.id)
+        db.session.commit()
+    except PostingError as e:
+        db.session.rollback()
+        flash(str(e), "danger")
+        return redirect(url_for("journal_view", id=id))
+
+    record_audit("reverse", "JournalEntry", entry.id,
+                 f"Journal #{entry.id} reversed by #{reversal.id}")
+    flash(f"Entry #{entry.id} reversed by #{reversal.id}. Both remain in the ledger.", "success")
+    return redirect(url_for("journal_view", id=reversal.id))
+
+# ─── Document reversal ─────────────────────────────────────────────────────────
+DOCUMENT_MODELS = {
+    "purchase":         (lambda: Purchase,        "purchase"),
+    "sale":             (lambda: Sale,            "sale"),
+    "payment":          (lambda: SupplierPayment, "supplier_payment"),
+    "receipt":          (lambda: CustomerPayment, "customer_receipt"),
+    "expense":          (lambda: Expense,         "expenses"),
+    "purchase_return":  (lambda: PurchaseReturn,  "purchase_return"),
+    "sale_return":      (lambda: SaleReturn,      "sale_return"),
+    "stock_adjustment": (lambda: StockAdjustment, "stock_adjustment"),
+}
+
+@app.route("/document/<kind>/<int:id>/reverse", methods=["POST"])
+@admin_required
+def reverse_document_route(kind, id):
+    """One route for every document type — the shape of a reversal is the same
+    whatever the document, and the differences live in reverse_document()."""
+    if kind not in DOCUMENT_MODELS:
+        abort(404)
+    model_fn, list_endpoint = DOCUMENT_MODELS[kind]
+    doc = db.session.get(model_fn(), id) or abort(404)
+
+    reversal = reverse_document(kind, doc)
     db.session.commit()
-    record_audit("delete", "JournalEntry", id, f"Journal entry #{id} deleted")
-    flash("Journal entry deleted.", "success")
-    return redirect(url_for("journal"))
+
+    label = DOCUMENT_LABELS[kind]
+    record_audit("reverse", label.replace(" ", ""), doc.id,
+                 f"{label} #{doc.id} reversed by journal entry #{reversal.id}")
+    flash(f"{label} #{doc.id} reversed. Journal entry #{reversal.id} cancels it; "
+          f"stock and ledgers have been corrected.", "success")
+    return redirect(request.referrer or url_for(list_endpoint))
+
+# ─── Chart of Accounts & Tax Codes ─────────────────────────────────────────────
+@app.route("/chart_of_accounts")
+@manager_required
+def chart_of_accounts():
+    accounts = Account.query.order_by(Account.code).all()
+    return render_template("chart_of_accounts.html", accounts=accounts)
+
+@app.route("/tax_codes", methods=["GET", "POST"])
+@admin_required
+def tax_codes():
+    """Rates live on components, so one code can be a single tax (Pakistan, UK)
+    or a split one (India's CGST + SGST) without the rest of the app knowing."""
+    if request.method == "POST":
+        try:
+            for comp in TaxComponent.query.all():
+                raw = request.form.get(f"rate_{comp.id}")
+                if raw is None:
+                    continue
+                rate = Decimal(str(raw).strip() or 0)
+                if rate < 0 or rate > 100:
+                    raise PostingError(f"Rate for {comp.name} must be between 0 and 100.")
+                comp.rate = rate
+            db.session.commit()
+        except (InvalidOperation, PostingError) as e:
+            db.session.rollback()
+            flash(str(e) if isinstance(e, PostingError) else "Rates must be valid numbers.", "danger")
+            return redirect(url_for("tax_codes"))
+        record_audit("update", "TaxCode", 0, "Tax rates updated")
+        flash("Tax rates updated.", "success")
+        return redirect(url_for("tax_codes"))
+    return render_template("tax_codes.html", codes=TaxCode.query.order_by(TaxCode.name).all())
 
 @app.route("/reports/gst")
 @manager_required
@@ -5764,6 +6657,38 @@ def send_low_stock_alert():
     if ok:
         flash(f"Low stock alert sent for {len(low_items)} item(s).", "success")
     return redirect(url_for("item"))
+
+@app.cli.command("seed-accounting")
+def seed_accounting_cmd():
+    """Seed the chart of accounts, tax codes and the current fiscal year. Safe to re-run."""
+    n = seed_chart_of_accounts()
+    click.echo(f"Chart of accounts: {n} account(s) created, {Account.query.count()} total.")
+    t = seed_tax_codes()
+    click.echo(f"Tax codes: {t} total.")
+    p = seed_fiscal_year(datetime.now().year)
+    click.echo(f"Fiscal year {datetime.now().year}: {p} period(s) created.")
+
+@app.cli.command("reset-db")
+@click.option("--yes", is_flag=True, help="Required. Drops every table.")
+def reset_db_cmd(yes):
+    """Drop and recreate every table, then seed accounting. Destroys all data."""
+    if not yes:
+        click.echo("Refusing without --yes. This drops every table.")
+        return
+    if DATABASE_URL:
+        # DATABASE_URL is only set on real deployments (Render). A stray reset
+        # there would wipe production, so make it impossible from the CLI.
+        click.echo("Refusing: DATABASE_URL is set, this looks like a deployed database.")
+        return
+    db.drop_all()
+    db.create_all()
+    click.echo("All tables dropped and recreated.")
+    seed_chart_of_accounts()
+    seed_tax_codes()
+    seed_fiscal_year(datetime.now().year)
+    click.echo(f"Seeded {Account.query.count()} accounts, {TaxCode.query.count()} tax codes, "
+               f"{AccountingPeriod.query.count()} periods.")
+    click.echo("Now run: flask create-user")
 
 @app.cli.command("create-user")
 @click.option("--name", prompt="Name")

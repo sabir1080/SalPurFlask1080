@@ -38,18 +38,21 @@
                     <tr><th style="width:50%">Account</th><th class="text-end">Debit</th><th class="text-end">Credit</th><th></th></tr>
                 </thead>
                 <tbody id="jBody">
+                    {% for _ in range(2) %}
                     <tr>
-                        <td><input type="text" name="account[]" class="form-control form-control-sm" placeholder="Account name" list="acctList"></td>
+                        <td>
+                            <select name="account_id[]" class="form-select form-select-sm">
+                                <option value="">— choose account —</option>
+                                {% for a in accounts %}
+                                <option value="{{ a.id }}">{{ a.code }} — {{ a.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </td>
                         <td><input type="text" name="debit[]" class="form-control form-control-sm text-end j-amt" placeholder="0.00"></td>
                         <td><input type="text" name="credit[]" class="form-control form-control-sm text-end j-amt" placeholder="0.00"></td>
                         <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger j-del"><i class="bi bi-x"></i></button></td>
                     </tr>
-                    <tr>
-                        <td><input type="text" name="account[]" class="form-control form-control-sm" placeholder="Account name" list="acctList"></td>
-                        <td><input type="text" name="debit[]" class="form-control form-control-sm text-end j-amt" placeholder="0.00"></td>
-                        <td><input type="text" name="credit[]" class="form-control form-control-sm text-end j-amt" placeholder="0.00"></td>
-                        <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger j-del"><i class="bi bi-x"></i></button></td>
-                    </tr>
+                    {% endfor %}
                 </tbody>
                 <tfoot>
                     <tr class="table-light fw-bold">
@@ -67,22 +70,23 @@
         </div>
     </div>
 
-    <datalist id="acctList">
-        <option value="Cash"><option value="Bank"><option value="Accounts Receivable">
-        <option value="Accounts Payable"><option value="Inventory"><option value="Owner's Equity">
-        <option value="Sales"><option value="Purchases"><option value="Expenses">
-        <option value="Depreciation"><option value="Fixed Assets"><option value="Tax Payable">
-    </datalist>
+    <div class="alert alert-secondary small">
+        <i class="bi bi-shield-lock me-1"></i>
+        Control accounts (Accounts Receivable, Accounts Payable, Inventory) are not listed —
+        they are maintained by their subledgers. Once posted, an entry cannot be edited or
+        deleted; correct it by reversing it.
+    </div>
 
-    <button type="submit" class="btn btn-primary" id="saveBtn"><i class="bi bi-check-lg"></i> Save Entry</button>
+    <button type="submit" class="btn btn-primary" id="saveBtn"><i class="bi bi-check-lg"></i> Post Entry</button>
 </form>
 
 <script>
 (function () {
   var body = document.getElementById('jBody');
+  var acctOptions = document.querySelector('select[name="account_id[]"]').innerHTML;
   function rowHtml() {
     return '<tr>' +
-      '<td><input type="text" name="account[]" class="form-control form-control-sm" placeholder="Account name" list="acctList"></td>' +
+      '<td><select name="account_id[]" class="form-select form-select-sm">' + acctOptions + '</select></td>' +
       '<td><input type="text" name="debit[]" class="form-control form-control-sm text-end j-amt" placeholder="0.00"></td>' +
       '<td><input type="text" name="credit[]" class="form-control form-control-sm text-end j-amt" placeholder="0.00"></td>' +
       '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger j-del"><i class="bi bi-x"></i></button></td></tr>';

@@ -103,7 +103,7 @@
                 <tr>
                     <th>#</th><th>Date</th><th>Category</th><th>Description</th>
                     <th class="text-end">Amount</th><th>Method</th><th>Ref</th><th>Notes</th>
-                    {% if current_user.is_admin %}<th>Del</th>{% endif %}
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -117,13 +117,9 @@
                     <td>{{ exp.payment_method }}</td>
                     <td>{{ exp.reference_no or '—' }}</td>
                     <td>{{ exp.notes or '—' }}</td>
-                    {% if current_user.is_admin %}
                     <td>
-                        <form method="POST" action="{{ url_for('delete_expense', id=exp.id) }}" class="d-inline">
-                            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this expense?')">Del</button>
-                        </form>
+                        {% with doc = exp, kind = "expense" %}{% include "_reverse_button.html" %}{% endwith %}
                     </td>
-                    {% endif %}
                 </tr>
                 {% else %}
                 <tr><td colspan="9" class="text-center text-muted py-3">No expenses recorded</td></tr>

@@ -104,11 +104,7 @@
                 {% if current_user.is_manager %}
                 <a href="{{ url_for('edit_supplier_payment', id=p.id) }}" class="btn btn-warning btn-sm" title="Edit this payment record">Edit</a>
                 {% endif %}
-                {% if current_user.is_admin %}
-                <form method="POST" action="{{ url_for('delete_supplier_payment', id=p.id) }}" class="d-inline">
-                    <button type="submit" class="btn btn-danger btn-sm" title="Delete this payment — supplier ledger will be recalculated" onclick="return confirm('Delete this payment?')">Delete</button>
-                </form>
-                {% endif %}
+                {% with doc = p, kind = "payment" %}{% include "_reverse_button.html" %}{% endwith %}
             </td>
         </tr>
         {% else %}
