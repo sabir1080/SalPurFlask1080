@@ -126,7 +126,7 @@
         {% set p_due = p_total - p_paid %}
         {% set p_status = get_payment_status(p_total, p_paid) %}
         <tr>
-            <td class="text-nowrap"><span class="fw-semibold">{{ p.invoice_no or p.id }}</span></td>
+            <td class="text-nowrap"><span class="fw-semibold">{{ p.invoice_no or p.id }}</span>{% if p.is_reversed %}<span class="badge bg-danger ms-1">reversed</span>{% endif %}</td>
             <td>{{ p.id_supplier.name }}</td>
             <td>
                 {% if p.line_items | length == 1 %}
