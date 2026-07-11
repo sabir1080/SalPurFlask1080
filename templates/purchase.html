@@ -113,7 +113,7 @@
 <table class="table table-bordered table-sm table-hover">
     <thead class="table-dark">
         <tr>
-            <th>#</th><th>Supplier</th><th>Items</th>
+            <th>Invoice&nbsp;#</th><th>Supplier</th><th>Items</th>
             <th class="text-end">Total Qty</th>
             <th class="text-end">Net Total</th><th class="text-end">Paid</th>
             <th class="text-end">Due</th><th>Status</th><th>Date</th><th>Notes</th><th>Actions</th>
@@ -126,7 +126,7 @@
         {% set p_due = p_total - p_paid %}
         {% set p_status = get_payment_status(p_total, p_paid) %}
         <tr>
-            <td>{{ p.id }}</td>
+            <td class="text-nowrap"><span class="fw-semibold">{{ p.invoice_no or p.id }}</span></td>
             <td>{{ p.id_supplier.name }}</td>
             <td>
                 {% if p.line_items | length == 1 %}

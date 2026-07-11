@@ -396,6 +396,8 @@ class Purchase(db.Model):
     line_items          = db.relationship("PurchaseItem", backref="purchase_header", lazy=True, cascade="all,delete-orphan")
     is_reversed         = db.Column(db.Boolean, nullable=False, default=False)
     reversed_at         = db.Column(db.DateTime, nullable=True)
+    # Gapless, issued once and never reused. See allocate_document_number().
+    invoice_no          = db.Column(db.String(30), nullable=True, unique=True, index=True)
 
 class Sale(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
@@ -414,6 +416,8 @@ class Sale(db.Model):
     line_items          = db.relationship("SaleItem", backref="sale_header", lazy=True, cascade="all,delete-orphan")
     is_reversed         = db.Column(db.Boolean, nullable=False, default=False)
     reversed_at         = db.Column(db.DateTime, nullable=True)
+    # Gapless, issued once and never reused. See allocate_document_number().
+    invoice_no          = db.Column(db.String(30), nullable=True, unique=True, index=True)
 
 class PurchaseItem(db.Model):
     __tablename__   = "purchase_item"
@@ -704,6 +708,25 @@ class AccountingPeriod(db.Model):
     end_date       = db.Column(db.Date, nullable=False)
     is_closed      = db.Column(db.Boolean, nullable=False, default=False)
 
+# ── Gapless document numbering ────────────────────────────────────────────────
+DOCUMENT_PREFIXES = {"purchase": "PUR", "sale": "INV"}
+
+class DocumentSequence(db.Model):
+    """The next invoice number for a document type in a fiscal year.
+
+    This is a table row on purpose, not a database SEQUENCE. A row update is part
+    of the transaction, so if the document is never committed the number goes back
+    and the next one reuses it. A database sequence does not roll back, and every
+    abandoned save would leave a hole in the numbering — which is exactly what a
+    gapless requirement forbids."""
+    __tablename__ = "document_sequence"
+    __table_args__ = (db.UniqueConstraint("doc_type", "year", name="uq_docseq_type_year"),)
+    id          = db.Column(db.Integer, primary_key=True)
+    doc_type    = db.Column(db.String(20), nullable=False)     # purchase / sale
+    year        = db.Column(db.String(40), nullable=False)     # fiscal year name, e.g. "2026"
+    prefix      = db.Column(db.String(10), nullable=False)     # PUR / INV
+    next_number = db.Column(db.Integer, nullable=False, default=1)
+
 # ── Chart of accounts ─────────────────────────────────────────────────────────
 # The posting layer looks accounts up by code, never by name — names are the
 # user's to rename, codes are the contract. Keep these constants in step with
@@ -863,7 +886,7 @@ def account_is_system(acct):
     them, by code for the original chart and by role for anything added later."""
     return acct.code in SYSTEM_ACCOUNT_CODES or bool(acct.role)
 
-def _free_code(preferred, parent):
+def _free_code(preferred):
     """`preferred` if nothing has taken it, else the next free code beside it. A
     chart that is already in use may well have an account on the code we wanted."""
     taken = {c for (c,) in db.session.query(Account.code).all()}
@@ -876,6 +899,21 @@ def _free_code(preferred, parent):
         if str(n) not in taken:
             return str(n)
     raise LookupError(f"No free account code near {preferred}")
+
+def backfill_document_numbers():
+    """Number the purchases and sales that predate numbering, oldest first, so the
+    order they were raised in is the order they are numbered in. Idempotent: only
+    documents with no number are touched, so a numbered invoice never changes."""
+    numbered = 0
+    for doc_type, model in (("purchase", Purchase), ("sale", Sale)):
+        rows = (model.query.filter(model.invoice_no.is_(None))
+                .order_by(model.date.asc(), model.id.asc()).all())
+        for doc in rows:
+            doc.invoice_no = allocate_document_number(doc_type, doc.date)
+            numbered += 1
+    if numbered:
+        db.session.commit()
+    return numbered
 
 def seed_fixed_asset_accounts():
     """Create the accounts the fixed-asset module posts to, once. Idempotent, and
@@ -891,7 +929,7 @@ def seed_fixed_asset_accounts():
                 parent = by_role[parent_ref]
             elif parent_ref:                                # a code from the base chart
                 parent = Account.query.filter_by(code=parent_ref).first()
-            acct = Account(code=_free_code(preferred, parent), name=name, type=type_,
+            acct = Account(code=_free_code(preferred), name=name, type=type_,
                            parent_id=parent.id if parent else None,
                            is_group=(role == "fixed_group"), is_control=False,
                            role=role, cash_flow_section=cf_section)
@@ -990,6 +1028,38 @@ def find_period(when):
     return (AccountingPeriod.query
             .filter(AccountingPeriod.start_date <= d, AccountingPeriod.end_date >= d)
             .first())
+
+def document_year(when):
+    """The fiscal year a document belongs to — numbering restarts each year. Falls
+    back to the calendar year for a date no fiscal year covers (old data)."""
+    period = find_period(when)
+    return period.fiscal_year.name if period else str(when.year)
+
+def allocate_document_number(doc_type, when):
+    """Take the next number for `doc_type` in `when`'s fiscal year, e.g. INV-2026-000123.
+
+    SELECT ... FOR UPDATE holds the counter row for the rest of the transaction, so
+    two people saving an invoice at the same moment queue up and get consecutive
+    numbers instead of the same one. Because the counter is a row and not a database
+    sequence, a save that fails hands its number straight back — no hole.
+
+    Does NOT commit: the number, the document and its journal entry all land in one
+    transaction, or none of them do."""
+    year   = document_year(when)
+    prefix = DOCUMENT_PREFIXES[doc_type]
+
+    seq = (DocumentSequence.query
+           .filter_by(doc_type=doc_type, year=year)
+           .with_for_update()
+           .first())
+    if seq is None:
+        seq = DocumentSequence(doc_type=doc_type, year=year, prefix=prefix, next_number=1)
+        db.session.add(seq)
+        db.session.flush()
+
+    number = seq.next_number
+    seq.next_number = number + 1
+    return f"{prefix}-{year}-{number:06d}"
 
 def post_entry(*, entry_date, description, lines, reference=None,
                source_type="manual", source_id=None, allow_control=False,
@@ -1133,6 +1203,16 @@ def assert_not_posted(source_type, source_id, what):
         raise PostingError(
             f"{what} has already been reversed. It stays in the ledger as a record "
             f"of what happened and cannot be deleted.")
+
+def assert_not_numbered(doc, what):
+    """Guard for delete routes. An issued invoice number can never be withdrawn —
+    deleting the document would take its number out of the sequence and leave a gap,
+    which is the one thing gapless numbering exists to prevent. Reverse it instead:
+    the number stays, marked reversed."""
+    if getattr(doc, "invoice_no", None):
+        raise PostingError(
+            f"{what} {doc.invoice_no} has an issued invoice number and cannot be "
+            f"deleted — that would leave a gap in the numbering. Reverse it instead.")
 
 def _cash_gl(fin_acct):
     if fin_acct is None:
@@ -2961,6 +3041,17 @@ def migrate_database():
             with db.engine.begin() as conn:
                 conn.execute(text("ALTER TABLE account ADD COLUMN role VARCHAR(30)"))
 
+    # Gapless invoice numbers. A plain nullable column only: adding the UNIQUE index
+    # here would be blocking DDL on PostgreSQL, and a zero-downtime deploy would hang
+    # on it. Uniqueness does not depend on the index anyway — one locked counter row
+    # per year hands out each number exactly once (see allocate_document_number).
+    for table in ("purchase", "sale"):
+        if table in inspector.get_table_names():
+            cols = {c["name"] for c in inspector.get_columns(table)}
+            if "invoice_no" not in cols:
+                with db.engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN invoice_no VARCHAR(30)"))
+
     # A document records the cost it moved, so its reversal undoes exactly that.
     for table, col in (("purchase_return", "cost_removed"),
                        ("sale_return", "cost_restored"),
@@ -3003,6 +3094,9 @@ def migrate_database():
 
     # Nothing can be posted until every cash/bank account has a GL counterpart.
     seed_financial_account_links()
+
+    # Documents raised before numbering existed still need their numbers.
+    backfill_document_numbers()
 
 # Create Database
 with app.app_context():
@@ -4219,11 +4313,13 @@ def purchase():
                     item_add_stock(item_obj, qty_i, net - tax_amt)
                 db.session.flush()
                 db.session.refresh(pur)
+                pur.invoice_no = allocate_document_number("purchase", pur.date)
                 sync_supplier_purchase(pur)
                 post_document("purchase", pur)
                 db.session.commit()
-                record_audit("create", "Purchase", pur.id, f"Purchase #{pur.id}, total {purchase_total(pur):,.2f}")
-                flash("Purchase added successfully!", "success")
+                record_audit("create", "Purchase", pur.id,
+                             f"Purchase {pur.invoice_no}, total {purchase_total(pur):,.2f}")
+                flash(f"Purchase {pur.invoice_no} added successfully!", "success")
                 return redirect(url_for("purchase"))
             except ValueError as e:
                 flash(f"Invalid data: {e}", "danger")
@@ -4338,6 +4434,7 @@ def edit_purchase(id):
 def delete_purchase(id):
     pur = db.session.get(Purchase, id) or abort(404)
     assert_not_posted("purchase", pur.id, f"Purchase #{pur.id}")
+    assert_not_numbered(pur, "Purchase")
     if pur.supplier_payments:
         flash("Cannot delete purchase with associated payments! Delete payments first.", "danger")
         return redirect(url_for("purchase"))
@@ -4457,11 +4554,13 @@ def sale():
                         item_remove_stock(item_obj, qty_i, cost_total=unit_cost * Decimal(str(qty_i)))
                     db.session.flush()
                     db.session.refresh(sal)
+                    sal.invoice_no = allocate_document_number("sale", sal.date)
                     sync_customer_sale(sal)
                     post_document("sale", sal)
                     db.session.commit()
-                    record_audit("create", "Sale", sal.id, f"Sale #{sal.id}, total {sale_total(sal):,.2f}")
-                    flash("Sale recorded successfully!", "success")
+                    record_audit("create", "Sale", sal.id,
+                                 f"Sale {sal.invoice_no}, total {sale_total(sal):,.2f}")
+                    flash(f"Sale {sal.invoice_no} recorded successfully!", "success")
                     return redirect(url_for("sale"))
             except ValueError as e:
                 flash(f"Invalid data: {e}", "danger")
@@ -4580,6 +4679,7 @@ def edit_sale(id):
 def delete_sale(id):
     sal = db.session.get(Sale, id) or abort(404)
     assert_not_posted("sale", sal.id, f"Sale #{sal.id}")
+    assert_not_numbered(sal, "Sale")
     if sal.customer_payments:
         flash("Cannot delete sale with associated receipts! Delete receipts first.", "danger")
         return redirect(url_for("sale"))
@@ -6627,12 +6727,13 @@ def convert_po_to_purchase(id):
             item_add_stock(item_obj, poi.quantity, gross)   # PO lines carry no tax
     db.session.flush()
     db.session.refresh(pur)
+    pur.invoice_no = allocate_document_number("purchase", pur.date)
     sync_supplier_purchase(pur)
     post_document("purchase", pur)
     po.status = "Received"
     po.converted_purchase_id = pur.id
     db.session.commit()
-    flash(f"PO #{po.id} converted to Purchase #{pur.id} successfully.", "success")
+    flash(f"PO #{po.id} converted to Purchase {pur.invoice_no} successfully.", "success")
     return redirect(url_for("purchase_order_detail", id=id))
 
 @app.route("/purchase_orders/<int:id>/delete", methods=["POST"])
@@ -6792,12 +6893,13 @@ def convert_quotation_to_sale(id):
                               cost_total=unit_cost * Decimal(str(qi.quantity)))
     db.session.flush()
     db.session.refresh(sal)
+    sal.invoice_no = allocate_document_number("sale", sal.date)
     sync_customer_sale(sal)
     post_document("sale", sal)
     q.status = "Converted"
     q.converted_sale_id = sal.id
     db.session.commit()
-    flash(f"Quotation #{q.id} converted to Sale #{sal.id}.", "success")
+    flash(f"Quotation #{q.id} converted to Sale {sal.invoice_no}.", "success")
     return redirect(url_for("quotation_detail", id=id))
 
 @app.route("/quotations/<int:id>/delete", methods=["POST"])

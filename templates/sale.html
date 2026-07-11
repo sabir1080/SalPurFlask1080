@@ -117,7 +117,7 @@
 <table class="table table-bordered table-sm table-hover">
     <thead class="table-dark">
         <tr>
-            <th>#</th><th>Customer</th><th>Items</th>
+            <th>Invoice&nbsp;#</th><th>Customer</th><th>Items</th>
             <th class="text-end">Total Qty</th>
             <th class="text-end">Net Total</th><th class="text-end">Received</th>
             <th class="text-end">Due</th><th>Status</th><th>Date</th><th>Notes</th><th>Actions</th>
@@ -130,7 +130,7 @@
         {% set s_due = s_total - s_recv %}
         {% set s_status = get_payment_status(s_total, s_recv) %}
         <tr>
-            <td>{{ s.id }}</td>
+            <td class="text-nowrap"><span class="fw-semibold">{{ s.invoice_no or s.id }}</span></td>
             <td>{{ s.id_customer.name }}</td>
             <td>
                 {% if s.line_items | length == 1 %}

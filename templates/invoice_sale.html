@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Sale Invoice #SAL-{{ sale.id }}{% endblock %}
+{% block title %}Sale Invoice {{ sale.invoice_no or ('#SAL-' ~ sale.id) }}{% endblock %}
 {% block extra_head %}
 <style>
 @media print {
@@ -52,7 +52,7 @@
         </div>
         <div class="text-end">
             <div class="inv-type">Sale Invoice</div>
-            <div class="inv-num">#SAL-{{ sale.id }}</div>
+            <div class="inv-num">{{ sale.invoice_no or ('#SAL-' ~ sale.id) }}</div>
             <div class="inv-date">{{ sale.date.strftime('%d %B %Y') }}</div>
         </div>
     </div>

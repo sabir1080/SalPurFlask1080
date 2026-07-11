@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Purchase Invoice #PUR-{{ purchase.id }}{% endblock %}
+{% block title %}Purchase Invoice {{ purchase.invoice_no or ('#PUR-' ~ purchase.id) }}{% endblock %}
 {% block extra_head %}
 <style>
 @media print {
@@ -52,7 +52,7 @@
         </div>
         <div class="text-end">
             <div class="inv-type">Purchase Invoice</div>
-            <div class="inv-num">#PUR-{{ purchase.id }}</div>
+            <div class="inv-num">{{ purchase.invoice_no or ('#PUR-' ~ purchase.id) }}</div>
             <div class="inv-date">{{ purchase.date.strftime('%d %B %Y') }}</div>
         </div>
     </div>
