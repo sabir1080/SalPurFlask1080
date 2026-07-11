@@ -59,6 +59,19 @@
                             <div class="form-text">Changing an account's type would rewrite history.</div>
                         </div>
 
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Cash flow section</label>
+                            <select name="cash_flow_section" class="form-select">
+                                <option value="">Default (Operating; Equity → Financing)</option>
+                                {% for s in cash_flow_sections %}
+                                <option value="{{ s }}" {% if acct.cash_flow_section == s %}selected{% endif %}>{{ s }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Where this account's cash movements appear on the Cash Flow
+                                Statement. Tag fixed assets as <strong>Investing</strong> and loans as
+                                <strong>Financing</strong>.</div>
+                        </div>
+
                         <div class="col-12">
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" name="is_active" value="1"

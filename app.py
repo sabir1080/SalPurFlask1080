@@ -625,6 +625,11 @@ class Account(db.Model):
     is_group    = db.Column(db.Boolean, nullable=False, default=False)
     is_control  = db.Column(db.Boolean, nullable=False, default=False)
     is_active   = db.Column(db.Boolean, nullable=False, default=True)
+    # Which cash-flow-statement section this account's movements belong to. NULL
+    # means "use the default for this type" (see account_cf_section) — so the
+    # seeded chart needs no backfill, and a Fixed Assets or Loan account added
+    # later can be tagged Investing / Financing explicitly.
+    cash_flow_section = db.Column(db.String(12), nullable=True)
     children    = db.relationship("Account", backref=db.backref("parent", remote_side=[id]), lazy=True)
 
     @property
@@ -1254,6 +1259,80 @@ def retained_earnings_to_date(as_of):
     of the *current* year only; the rest will already sit in 3900."""
     income, expense = gl_profit(None, as_of)
     return income - expense
+
+# ── Cash flow statement ───────────────────────────────────────────────────────
+CASH_FLOW_SECTIONS = ("Operating", "Investing", "Financing")
+
+def account_cf_section(acct):
+    """Which cash-flow section this account's movements belong to. An explicit
+    setting on the account wins. Otherwise Equity is Financing and everything else
+    Operating — the right default for the seeded chart, which carries only working
+    capital. A Fixed Assets or Loan account added later should be tagged."""
+    if acct.cash_flow_section in CASH_FLOW_SECTIONS:
+        return acct.cash_flow_section
+    return "Financing" if acct.type == "Equity" else "Operating"
+
+def parse_cf_section(raw):
+    """A blank/unknown choice means 'use the default for this type'."""
+    raw = (raw or "").strip()
+    return raw if raw in CASH_FLOW_SECTIONS else None
+
+def cash_gl_account_ids():
+    """The GL leaves that *are* cash — one per cash/bank account."""
+    return {fa.gl_account_id for fa in FinancialAccount.query.all() if fa.gl_account_id}
+
+def cash_balance_as_of(as_of, cash_ids=None):
+    ids = cash_ids if cash_ids is not None else cash_gl_account_ids()
+    b = gl_balances(as_of=as_of)
+    # cash is debit-natured, so the raw debit-minus-credit already reads positive
+    return sum((b.get(i, Decimal("0")) for i in ids), Decimal("0"))
+
+def cash_flow_statement(start, end):
+    """Cash movements in [start, end], split into Operating/Investing/Financing.
+
+    Every entry balances, so an entry's cash lines move exactly minus what its
+    non-cash lines move. Each non-cash line therefore contributes -(debit-credit)
+    to cash, and is classified by its own account. Summing those gives the sections
+    *and* ties to the real change in cash — the reconciliation is a genuine check,
+    not a balancing plug.
+    """
+    cash_ids = cash_gl_account_ids()
+    opening = cash_balance_as_of(start - timedelta(seconds=1), cash_ids)
+    closing = cash_balance_as_of(end, cash_ids)
+
+    sections = {s: {} for s in CASH_FLOW_SECTIONS}   # section -> {account: amount}
+    entries = (JournalEntry.query
+               .filter(JournalEntry.entry_date >= start, JournalEntry.entry_date <= end)
+               .all())
+    for e in entries:
+        cash_delta = sum(
+            (Decimal(str(l.debit or 0)) - Decimal(str(l.credit or 0)))
+            for l in e.lines if l.account_id in cash_ids
+        )
+        if not cash_delta:
+            continue          # never moved cash (or was a cash-to-cash transfer)
+        for l in e.lines:
+            if l.account_id in cash_ids:
+                continue
+            contrib = -(Decimal(str(l.debit or 0)) - Decimal(str(l.credit or 0)))
+            if not contrib:
+                continue
+            bucket = sections[account_cf_section(l.account)]
+            bucket[l.account] = bucket.get(l.account, Decimal("0")) + contrib
+
+    totals = {s: sum(sections[s].values(), Decimal("0")) for s in CASH_FLOW_SECTIONS}
+    net_change = sum(totals.values(), Decimal("0"))
+    return {
+        "sections": {s: sorted(sections[s].items(), key=lambda kv: kv[0].code)
+                     for s in CASH_FLOW_SECTIONS},
+        "totals": totals,
+        "net_change": net_change,
+        "opening": opening,
+        "closing": closing,
+        # both sides come from the same journal lines; if they ever disagree an
+        # entry was written incompletely, and the report says so instead of hiding it
+        "reconciles": abs((opening + net_change) - closing) < Decimal("0.01"),
+    }
 
 # ── Period and year-end closing ───────────────────────────────────────────────
 def close_fiscal_year(fy, created_by_id=None):
@@ -2613,6 +2692,14 @@ def migrate_database():
                 # Seed from the only figure the old schema had: today's price.
                 conn.execute(text("UPDATE item SET inventory_value = stock * COALESCE(purchase_price, 0)"))
 
+    # Which cash-flow section an account belongs to. Nullable with no default, so
+    # the seeded chart needs no backfill (NULL falls back to account_cf_section).
+    if "account" in inspector.get_table_names():
+        cols = {c["name"] for c in inspector.get_columns("account")}
+        if "cash_flow_section" not in cols:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE account ADD COLUMN cash_flow_section VARCHAR(12)"))
+
     # A document records the cost it moved, so its reversal undoes exactly that.
     for table, col in (("purchase_return", "cost_removed"),
                        ("sale_return", "cost_restored"),
@@ -2874,6 +2961,7 @@ def inject_form_defaults():
         "financial_accounts": active_accounts,
         "item_units": ITEM_UNITS,
         "roles": ROLES,
+        "cash_flow_sections": CASH_FLOW_SECTIONS,
         "company_name": app.config["COMPANY_NAME"],
         "app_name": app.config["APP_NAME"],
         "company_tagline": app.config["COMPANY_TAGLINE"],
@@ -6612,6 +6700,24 @@ def report_profit_loss():
         operating_rows=operating_rows, total_operating=total_operating,
         total_expenses=total_expenses, net_profit=net_profit)
 
+@app.route("/reports/cash_flow")
+@manager_required
+def report_cash_flow():
+    """Where the cash actually came from and went, straight from the GL."""
+    start_str = request.args.get("start", "")
+    end_str   = request.args.get("end", "")
+    today     = datetime.now()
+    try:
+        start = datetime.strptime(start_str, "%Y-%m-%d") if start_str else datetime(today.year, 1, 1)
+        end   = datetime.strptime(end_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59) if end_str else today
+    except ValueError:
+        start = datetime(today.year, 1, 1)
+        end   = today
+
+    cf = cash_flow_statement(start, end)
+    return render_template("report_cash_flow.html", start=start, end=end, cf=cf,
+                           sections=CASH_FLOW_SECTIONS)
+
 @app.route("/reports/cash_book")
 @manager_required
 def report_cash_book():
@@ -7119,7 +7225,8 @@ def new_gl_account():
 
         acct = Account(code=code, name=name, type=type_,
                        parent_id=parent.id if parent else None,
-                       is_group=is_group, is_control=False)
+                       is_group=is_group, is_control=False,
+                       cash_flow_section=parse_cf_section(request.form.get("cash_flow_section")))
         db.session.add(acct)
         db.session.commit()
         record_audit("create", "Account", acct.id,
@@ -7161,6 +7268,7 @@ def edit_gl_account(id):
         acct.code, acct.name = code, name
         acct.parent_id = parent.id if parent else None
         acct.is_active = is_active
+        acct.cash_flow_section = parse_cf_section(request.form.get("cash_flow_section"))
         db.session.commit()
         record_audit("update", "Account", acct.id, f"Account {acct.code} {acct.name} edited")
         flash(f"Account {acct.code} — {acct.name} updated.", "success")

@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+{% block title %}Cash Flow Statement — {{ app_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+    <h2><i class="bi bi-arrow-left-right text-dark"></i> Cash Flow Statement</h2>
+    <button class="btn btn-primary btn-sm d-print-none" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
+</div>
+<p class="text-muted">{{ company_name }} &mdash; {{ start.strftime('%d %b %Y') }} to {{ end.strftime('%d %b %Y') }}</p>
+
+<form method="GET" class="row g-2 align-items-end mb-3 d-print-none">
+    <div class="col-auto">
+        <label class="form-label fw-semibold mb-1">From</label>
+        <input type="date" name="start" class="form-control form-control-sm" value="{{ start.strftime('%Y-%m-%d') }}">
+    </div>
+    <div class="col-auto">
+        <label class="form-label fw-semibold mb-1">To</label>
+        <input type="date" name="end" class="form-control form-control-sm" value="{{ end.strftime('%Y-%m-%d') }}">
+    </div>
+    <div class="col-auto"><button class="btn btn-sm btn-primary">Apply</button></div>
+</form>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body p-0">
+        <table class="table mb-0 align-middle">
+            <tbody>
+                {% for section in sections %}
+                <tr class="table-dark">
+                    <td colspan="2" class="fw-semibold">
+                        Cash flow from {{ section }} activities
+                    </td>
+                </tr>
+                {% for acct, amount in cf.sections[section] %}
+                <tr>
+                    <td class="ps-4">
+                        <span class="text-muted small">{{ acct.code }}</span> {{ acct.name }}
+                    </td>
+                    <td class="text-end {{ 'text-success' if amount > 0 else 'text-danger' }}">
+                        {{ amount | fmt_num }}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td class="ps-4 text-muted fst-italic" colspan="2">No {{ section|lower }} cash movements in this period</td></tr>
+                {% endfor %}
+                <tr class="table-light fw-bold">
+                    <td class="text-end">Net cash from {{ section|lower }} activities</td>
+                    <td class="text-end">{{ cf.totals[section] | fmt_num }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-light fw-semibold"><i class="bi bi-check2-square"></i> Reconciliation</div>
+    <div class="card-body p-0">
+        <table class="table mb-0 align-middle">
+            <tbody>
+                <tr>
+                    <td>Cash &amp; bank at start of period</td>
+                    <td class="text-end">{{ cf.opening | fmt_num }}</td>
+                </tr>
+                <tr class="fw-semibold">
+                    <td>Net increase / (decrease) in cash</td>
+                    <td class="text-end {{ 'text-success' if cf.net_change > 0 else 'text-danger' if cf.net_change < 0 else '' }}">
+                        {{ cf.net_change | fmt_num }}
+                    </td>
+                </tr>
+            </tbody>
+            <tfoot>
+                <tr class="table-light fw-bold fs-6">
+                    <td>Cash &amp; bank at end of period</td>
+                    <td class="text-end">{{ cf.closing | fmt_num }}</td>
+                </tr>
+                <tr>
+                    <td colspan="2" class="text-center py-2">
+                        {% if cf.reconciles %}
+                        <span class="badge bg-success"><i class="bi bi-check-circle"></i> Reconciled — opening + movement = closing</span>
+                        {% else %}
+                        <span class="badge bg-danger">Does not reconcile — a journal entry may be incomplete</span>
+                        {% endif %}
+                    </td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+<div class="alert alert-info mt-4 d-print-none">
+    <i class="bi bi-info-circle"></i>
+    <small>Built from the general ledger. Every entry balances, so each cash movement is
+    classified by the account on the other side of it — and the closing figure is the
+    real cash balance, not a balancing plug. Tag an account as <strong>Investing</strong>
+    or <strong>Financing</strong> in the Chart of Accounts (e.g. fixed assets, loans) to
+    move its movements out of Operating.</small>
+</div>
+{% endblock %}
