@@ -630,6 +630,11 @@ class Account(db.Model):
     # seeded chart needs no backfill, and a Fixed Assets or Loan account added
     # later can be tagged Investing / Financing explicitly.
     cash_flow_section = db.Column(db.String(12), nullable=True)
+    # What the posting layer uses this account FOR ("depreciation", "accum_dep", …).
+    # Accounts added to an existing chart cannot claim a fixed code — the user may
+    # already have used it — so they are seeded on whatever code is free and found
+    # again by role. See account_for_role(). NULL for ordinary accounts.
+    role        = db.Column(db.String(30), nullable=True, index=True)
     children    = db.relationship("Account", backref=db.backref("parent", remote_side=[id]), lazy=True)
 
     @property
@@ -753,8 +758,29 @@ CHART_OF_ACCOUNTS = [
     ("6090", "Other Expenses",            "Expense",   ACC_EXPENSES, False, False),
 ]
 
+# ── Accounts the fixed-asset module needs ─────────────────────────────────────
+# These are added to a chart that is already in use, so they cannot claim a fixed
+# code: the user may already have created an account on it (a real "6050 Internet
+# & Broadband" is what caught this). Each is seeded on its preferred code when that
+# is free and on the next free one under its parent otherwise, then found again by
+# `role` — never by code.
+#   role, preferred code, name, type, parent code, cash-flow section
+FIXED_ASSET_ACCOUNTS = [
+    ("fixed_group",   "1500", "Fixed Assets",                     "Asset",   None,          None),
+    ("fixed_cost",    "1510", "Fixed Assets at Cost",             "Asset",   "fixed_group", "Investing"),
+    # Contra-asset: a credit balance that nets against cost to give net book value.
+    ("accum_dep",     "1590", "Accumulated Depreciation",         "Asset",   "fixed_group", "Investing"),
+    ("disposal_gain", "4200", "Gain on Disposal of Fixed Assets", "Income",  None,          "Investing"),
+    ("disposal_loss", "5200", "Loss on Disposal of Fixed Assets", "Expense", None,          "Investing"),
+    # Depreciation never touches cash, so it can never reach the cash flow statement
+    # — its section is left to the default.
+    ("depreciation",  "6050", "Depreciation",                     "Expense", ACC_EXPENSES,  None),
+]
+FIXED_ASSET_ROLES = tuple(r for r, *_ in FIXED_ASSET_ACCOUNTS)
+
 # Codes the posting layer looks up by name. Renaming one is fine; changing its
 # code or deleting it would break a posting path, so the UI refuses both.
+# (Role-bearing accounts are protected the same way — see account_is_system.)
 SYSTEM_ACCOUNT_CODES = frozenset({
     ACC_CASH_IN_HAND, ACC_AR, ACC_INVENTORY, ACC_TAX_INPUT, ACC_AP, ACC_TAX_OUTPUT,
     ACC_CAPITAL, ACC_DRAWINGS, ACC_OPENING_EQUITY, ACC_RETAINED,
@@ -820,6 +846,59 @@ def seed_chart_of_accounts():
     for code, _, _, parent_code, _, _ in CHART_OF_ACCOUNTS:
         if parent_code:
             existing[code].parent_id = existing[parent_code].id
+    db.session.commit()
+    return created
+
+def account_for_role(role):
+    """The account the posting layer uses for `role`. Raises rather than returning
+    None — a missing one is a seeding bug, and a silently skipped journal line is
+    far worse than a loud failure."""
+    acct = Account.query.filter_by(role=role).first()
+    if acct is None:
+        raise LookupError(f"No account is set up for '{role}'")
+    return acct
+
+def account_is_system(acct):
+    """System accounts cannot be renumbered or deleted: a posting path resolves
+    them, by code for the original chart and by role for anything added later."""
+    return acct.code in SYSTEM_ACCOUNT_CODES or bool(acct.role)
+
+def _free_code(preferred, parent):
+    """`preferred` if nothing has taken it, else the next free code beside it. A
+    chart that is already in use may well have an account on the code we wanted."""
+    taken = {c for (c,) in db.session.query(Account.code).all()}
+    if preferred not in taken:
+        return preferred
+    base = int(preferred) if preferred.isdigit() else None
+    if base is None:
+        raise LookupError(f"Cannot find a free code near {preferred}")
+    for n in range(base + 1, base + 400):
+        if str(n) not in taken:
+            return str(n)
+    raise LookupError(f"No free account code near {preferred}")
+
+def seed_fixed_asset_accounts():
+    """Create the accounts the fixed-asset module posts to, once. Idempotent, and
+    safe on a chart already in use: an account is found by its role, and if its
+    preferred code is taken it is seeded on the next free one instead."""
+    created = 0
+    by_role = {}
+    for role, preferred, name, type_, parent_ref, cf_section in FIXED_ASSET_ACCOUNTS:
+        acct = Account.query.filter_by(role=role).first()
+        if acct is None:
+            parent = None
+            if parent_ref in by_role:                       # a role we just seeded
+                parent = by_role[parent_ref]
+            elif parent_ref:                                # a code from the base chart
+                parent = Account.query.filter_by(code=parent_ref).first()
+            acct = Account(code=_free_code(preferred, parent), name=name, type=type_,
+                           parent_id=parent.id if parent else None,
+                           is_group=(role == "fixed_group"), is_control=False,
+                           role=role, cash_flow_section=cf_section)
+            db.session.add(acct)
+            db.session.flush()
+            created += 1
+        by_role[role] = acct
     db.session.commit()
     return created
 
@@ -1694,6 +1773,185 @@ class JournalLine(db.Model):
     credit     = db.Column(db.Numeric(14, 4), nullable=False, default=0)
     memo       = db.Column(db.String(200), nullable=True)
     account    = db.relationship("Account", lazy="joined")
+
+# ── Fixed assets ──────────────────────────────────────────────────────────────
+DEPRECIATION_METHODS = ("Straight Line", "Reducing Balance")
+ASSET_STATUSES = ("Active", "Fully Depreciated", "Disposed")
+
+class FixedAsset(db.Model):
+    """An item of property, plant or equipment. Its cost sits in the GL at
+    ACC_FIXED_COST and is written down over its life into ACC_ACCUM_DEP; the
+    register below is what tells you *which* asset each of those figures belongs
+    to, which the GL alone cannot.
+
+    Straight Line spreads (cost − salvage) evenly over the life. Reducing Balance
+    charges `rate_percent` a year on the written-down value, so the charge falls
+    each month — the method Pakistani tax depreciation uses."""
+    __tablename__ = "fixed_asset"
+    id                 = db.Column(db.Integer, primary_key=True)
+    name               = db.Column(db.String(120), nullable=False)
+    tag                = db.Column(db.String(40), nullable=True)      # asset tag / serial
+    acquisition_date   = db.Column(db.DateTime, nullable=False)
+    cost               = db.Column(db.Numeric(14, 4), nullable=False)
+    salvage_value      = db.Column(db.Numeric(14, 4), nullable=False, default=0)
+    method             = db.Column(db.String(20), nullable=False, default="Straight Line")
+    useful_life_months = db.Column(db.Integer, nullable=True)         # Straight Line
+    rate_percent       = db.Column(db.Numeric(14, 4), nullable=True)  # Reducing Balance, per year
+    status             = db.Column(db.String(20), nullable=False, default="Active")
+    disposal_date      = db.Column(db.DateTime, nullable=True)
+    disposal_proceeds  = db.Column(db.Numeric(14, 4), nullable=True)
+    notes              = db.Column(db.String(300), nullable=True)
+    charges            = db.relationship("DepreciationCharge", backref="asset", lazy=True,
+                                         cascade="all,delete-orphan")
+
+    @property
+    def accumulated(self):
+        return sum((Decimal(str(c.amount)) for c in self.charges), Decimal("0"))
+
+    @property
+    def net_book_value(self):
+        return Decimal(str(self.cost)) - self.accumulated
+
+    @property
+    def depreciable_base(self):
+        """What may be written off in total — never below salvage value."""
+        return Decimal(str(self.cost)) - Decimal(str(self.salvage_value or 0))
+
+class DepreciationCharge(db.Model):
+    """One month's depreciation on one asset. Unique per (asset, month), so a run
+    can never charge the same month twice however often it is clicked."""
+    __tablename__ = "depreciation_charge"
+    __table_args__ = (db.UniqueConstraint("asset_id", "period_end",
+                                          name="uq_depreciation_asset_period"),)
+    id         = db.Column(db.Integer, primary_key=True)
+    asset_id   = db.Column(db.Integer, db.ForeignKey("fixed_asset.id"), nullable=False)
+    period_end = db.Column(db.DateTime, nullable=False)      # last day of the month charged
+    amount     = db.Column(db.Numeric(14, 4), nullable=False)
+    entry_id   = db.Column(db.Integer, db.ForeignKey("journal_entry.id"), nullable=True)
+    entry      = db.relationship("JournalEntry", lazy=True)
+
+def month_end(when):
+    """The last moment of `when`'s month — the date a month's depreciation is dated."""
+    from calendar import monthrange
+    last = monthrange(when.year, when.month)[1]
+    return datetime(when.year, when.month, last, 23, 59, 59)
+
+def depreciation_for_month(asset, period_end):
+    """This month's charge for one asset, or zero if none is due.
+
+    Nothing is charged before the month it was acquired, after it is disposed, or
+    once it is written down to its salvage value. The last charge is clipped to the
+    remaining depreciable amount, so accumulated depreciation lands exactly on the
+    base and never overshoots it — which is what stops an asset depreciating below
+    salvage after enough runs."""
+    if asset.status == "Disposed" or asset.acquisition_date > period_end:
+        return Decimal("0")
+
+    remaining = asset.depreciable_base - asset.accumulated
+    if remaining <= 0:
+        return Decimal("0")
+
+    if asset.method == "Reducing Balance":
+        yearly = Decimal(str(asset.rate_percent or 0)) / Decimal("100")
+        charge = (asset.net_book_value * yearly / Decimal("12")).quantize(MONEY)
+    else:                                   # Straight Line
+        life = asset.useful_life_months or 0
+        if life <= 0:
+            return Decimal("0")
+        charge = (asset.depreciable_base / Decimal(life)).quantize(MONEY)
+
+    if charge <= 0:
+        return Decimal("0")
+    return min(charge, remaining).quantize(MONEY)
+
+def post_asset_acquisition(asset, credit_account_id, created_by_id=None):
+    """Dr Fixed Assets at Cost / Cr whatever paid for it."""
+    if posted_entry("asset", asset.id):
+        return None
+    cost = Decimal(str(asset.cost)).quantize(MONEY)
+    return post_entry(
+        entry_date=asset.acquisition_date,
+        description=f"Fixed asset acquired: {asset.name}",
+        reference=asset.tag or f"FA-{asset.id}",
+        source_type="asset", source_id=asset.id, created_by_id=created_by_id,
+        lines=[{"account_id": account_for_role("fixed_cost").id,
+                "debit": cost, "credit": 0, "memo": asset.name},
+               {"account_id": credit_account_id, "debit": 0, "credit": cost}])
+
+def run_depreciation(period_end, created_by_id=None):
+    """Charge every eligible asset for the month ending `period_end`, and post the
+    lot as one entry: Dr Depreciation / Cr Accumulated Depreciation.
+
+    Idempotent twice over — the month's entry is written once (source_type +
+    source_id), and the unique (asset, month) constraint is the backstop."""
+    run_id = int(period_end.strftime("%Y%m"))
+    if posted_entry("depreciation", run_id):
+        raise PostingError(f"Depreciation for {period_end:%B %Y} has already been posted.")
+
+    charges = []
+    for asset in FixedAsset.query.filter(FixedAsset.status != "Disposed").all():
+        if DepreciationCharge.query.filter_by(asset_id=asset.id, period_end=period_end).first():
+            continue
+        amount = depreciation_for_month(asset, period_end)
+        if amount > 0:
+            charges.append((asset, amount))
+
+    if not charges:
+        raise PostingError(f"Nothing to depreciate for {period_end:%B %Y}.")
+
+    total = sum((amt for _, amt in charges), Decimal("0"))
+    entry = post_entry(
+        entry_date=period_end,
+        description=f"Depreciation for {period_end:%B %Y}",
+        source_type="depreciation", source_id=run_id, created_by_id=created_by_id,
+        lines=[{"account_id": account_for_role("depreciation").id, "debit": total, "credit": 0},
+               {"account_id": account_for_role("accum_dep").id, "debit": 0, "credit": total}])
+    db.session.flush()
+
+    for asset, amount in charges:
+        db.session.add(DepreciationCharge(asset_id=asset.id, period_end=period_end,
+                                          amount=amount, entry_id=entry.id))
+        if asset.accumulated + amount >= asset.depreciable_base:
+            asset.status = "Fully Depreciated"
+    return entry, total, len(charges)
+
+def post_asset_disposal(asset, disposal_date, proceeds, cash_account_id, created_by_id=None):
+    """Take the asset off the books: its cost out, the depreciation accumulated
+    against it out, the money in, and whatever is left over to gain or loss."""
+    if asset.status == "Disposed":
+        raise PostingError(f"{asset.name} has already been disposed.")
+
+    cost     = Decimal(str(asset.cost)).quantize(MONEY)
+    accum    = asset.accumulated.quantize(MONEY)
+    proceeds = Decimal(str(proceeds or 0)).quantize(MONEY)
+    gain     = proceeds - (cost - accum)      # positive = gain, negative = loss
+
+    lines = []
+    if proceeds > 0:
+        lines.append({"account_id": cash_account_id, "debit": proceeds, "credit": 0})
+    if accum > 0:
+        lines.append({"account_id": account_for_role("accum_dep").id,
+                      "debit": accum, "credit": 0})
+    lines.append({"account_id": account_for_role("fixed_cost").id,
+                  "debit": 0, "credit": cost, "memo": asset.name})
+    if gain > 0:
+        lines.append({"account_id": account_for_role("disposal_gain").id,
+                      "debit": 0, "credit": gain})
+    elif gain < 0:
+        lines.append({"account_id": account_for_role("disposal_loss").id,
+                      "debit": -gain, "credit": 0})
+
+    entry = post_entry(
+        entry_date=disposal_date,
+        description=f"Disposal of fixed asset: {asset.name}",
+        reference=asset.tag or f"FA-{asset.id}",
+        source_type="asset_disposal", source_id=asset.id,
+        created_by_id=created_by_id, lines=lines)
+
+    asset.status = "Disposed"
+    asset.disposal_date = disposal_date
+    asset.disposal_proceeds = proceeds
+    return entry, gain
 
 # ── Purchase Order ────────────────────────────────────────────────────────────
 PO_STATUSES = ("Draft", "Confirmed", "Received", "Cancelled")
@@ -2692,13 +2950,16 @@ def migrate_database():
                 # Seed from the only figure the old schema had: today's price.
                 conn.execute(text("UPDATE item SET inventory_value = stock * COALESCE(purchase_price, 0)"))
 
-    # Which cash-flow section an account belongs to. Nullable with no default, so
-    # the seeded chart needs no backfill (NULL falls back to account_cf_section).
+    # Which cash-flow section an account belongs to, and what the posting layer uses
+    # it for. Both nullable with no default, so the existing chart needs no backfill.
     if "account" in inspector.get_table_names():
         cols = {c["name"] for c in inspector.get_columns("account")}
         if "cash_flow_section" not in cols:
             with db.engine.begin() as conn:
                 conn.execute(text("ALTER TABLE account ADD COLUMN cash_flow_section VARCHAR(12)"))
+        if "role" not in cols:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE account ADD COLUMN role VARCHAR(30)"))
 
     # A document records the cost it moved, so its reversal undoes exactly that.
     for table, col in (("purchase_return", "cost_removed"),
@@ -2728,6 +2989,7 @@ def migrate_database():
     # Seed the GL foundation. All three are idempotent, so a fresh database (local
     # or a new deploy) always boots with a usable chart of accounts.
     seed_chart_of_accounts()
+    seed_fixed_asset_accounts()
     seed_tax_codes()
     seed_fiscal_year(datetime.now().year)
 
@@ -7030,6 +7292,147 @@ def reverse_document_route(kind, id):
           f"stock and ledgers have been corrected.", "success")
     return redirect(request.referrer or url_for(list_endpoint))
 
+# ─── Fixed assets ──────────────────────────────────────────────────────────────
+@app.route("/fixed_assets")
+@manager_required
+def fixed_assets():
+    assets = FixedAsset.query.order_by(FixedAsset.acquisition_date.desc(),
+                                       FixedAsset.id.desc()).all()
+    live = [a for a in assets if a.status != "Disposed"]
+    totals = {
+        "cost":  sum((Decimal(str(a.cost)) for a in live), Decimal("0")),
+        "accum": sum((a.accumulated for a in live), Decimal("0")),
+    }
+    totals["nbv"] = totals["cost"] - totals["accum"]
+    last_run = (JournalEntry.query.filter_by(source_type="depreciation")
+                .order_by(JournalEntry.entry_date.desc()).first())
+    return render_template("fixed_assets.html", assets=assets, totals=totals,
+                           last_run=last_run, today=now_local())
+
+@app.route("/fixed_assets/new", methods=["GET", "POST"])
+@manager_required
+def fixed_asset_new():
+    accounts = postable_accounts()
+    if request.method == "POST":
+        name    = request.form.get("name", "").strip()
+        tag     = request.form.get("tag", "").strip()
+        method  = request.form.get("method", "Straight Line").strip()
+        notes   = request.form.get("notes", "").strip()
+        credit_raw = request.form.get("credit_account_id", "").strip()
+
+        def _num(field, default="0"):
+            return Decimal((request.form.get(field, default) or default).strip().replace(",", "") or default)
+
+        try:
+            acq_date = datetime.strptime(request.form.get("acquisition_date", "").strip(), "%Y-%m-%d")
+            cost     = _num("cost")
+            salvage  = _num("salvage_value")
+            life     = int(request.form.get("useful_life_months", "0") or 0)
+            rate     = _num("rate_percent")
+        except (ValueError, ArithmeticError):
+            flash("Check the date and the amounts — they must be valid numbers.", "danger")
+            return render_template("fixed_asset_new.html", accounts=accounts,
+                                   methods=DEPRECIATION_METHODS, form_data=request.form)
+
+        error = None
+        if not name:
+            error = "The asset needs a name."
+        elif cost <= 0:
+            error = "Cost must be greater than zero."
+        elif salvage < 0 or salvage >= cost:
+            error = "Salvage value must be zero or more, and less than the cost."
+        elif method == "Straight Line" and life <= 0:
+            error = "Straight Line needs a useful life in months."
+        elif method == "Reducing Balance" and rate <= 0:
+            error = "Reducing Balance needs a yearly rate."
+        elif not credit_raw.isdigit():
+            error = "Choose the account that paid for the asset."
+        if error:
+            flash(error, "danger")
+            return render_template("fixed_asset_new.html", accounts=accounts,
+                                   methods=DEPRECIATION_METHODS, form_data=request.form)
+
+        asset = FixedAsset(
+            name=name, tag=tag or None, acquisition_date=acq_date, cost=cost,
+            salvage_value=salvage, method=method,
+            useful_life_months=life if method == "Straight Line" else None,
+            rate_percent=rate if method == "Reducing Balance" else None,
+            notes=notes or None)
+        db.session.add(asset)
+        db.session.flush()
+        post_asset_acquisition(asset, int(credit_raw), created_by_id=current_user.id)
+        db.session.commit()
+
+        record_audit("create", "FixedAsset", asset.id,
+                     f"Fixed asset '{asset.name}' acquired for {float(asset.cost):,.2f}")
+        flash(f"Fixed asset '{asset.name}' recorded and posted.", "success")
+        return redirect(url_for("fixed_assets"))
+
+    return render_template("fixed_asset_new.html", accounts=accounts,
+                           methods=DEPRECIATION_METHODS, form_data={})
+
+@app.route("/fixed_assets/<int:id>")
+@manager_required
+def fixed_asset_view(id):
+    asset = db.session.get(FixedAsset, id) or abort(404)
+    charges = sorted(asset.charges, key=lambda c: c.period_end)
+    fin_accounts = (FinancialAccount.query.filter_by(is_active=True)
+                    .order_by(FinancialAccount.name).all())
+    return render_template("fixed_asset_view.html", asset=asset, charges=charges,
+                           fin_accounts=fin_accounts, today=now_local())
+
+@app.route("/fixed_assets/depreciation", methods=["POST"])
+@manager_required
+def fixed_assets_depreciation():
+    """Post one month's depreciation across every eligible asset."""
+    try:
+        when = datetime.strptime(request.form.get("month", "").strip(), "%Y-%m")
+    except ValueError:
+        flash("Pick the month to depreciate.", "danger")
+        return redirect(url_for("fixed_assets"))
+
+    period_end = month_end(when)
+    entry, total, count = run_depreciation(period_end, created_by_id=current_user.id)
+    db.session.commit()
+
+    record_audit("create", "Depreciation", entry.id,
+                 f"Depreciation for {period_end:%B %Y}: {float(total):,.2f} over {count} asset(s)")
+    flash(f"Depreciation for {period_end:%B %Y} posted — {float(total):,.2f} "
+          f"across {count} asset(s).", "success")
+    return redirect(url_for("fixed_assets"))
+
+@app.route("/fixed_assets/<int:id>/dispose", methods=["POST"])
+@admin_required
+def fixed_asset_dispose(id):
+    asset = db.session.get(FixedAsset, id) or abort(404)
+    fa_raw = request.form.get("financial_account_id", "").strip()
+    try:
+        disposal_date = datetime.strptime(request.form.get("disposal_date", "").strip(), "%Y-%m-%d")
+        proceeds = Decimal((request.form.get("proceeds", "0") or "0").strip().replace(",", "") or "0")
+    except (ValueError, ArithmeticError):
+        flash("Check the disposal date and the proceeds.", "danger")
+        return redirect(url_for("fixed_asset_view", id=id))
+    if proceeds < 0:
+        flash("Proceeds cannot be negative.", "danger")
+        return redirect(url_for("fixed_asset_view", id=id))
+
+    fin = db.session.get(FinancialAccount, int(fa_raw)) if fa_raw.isdigit() else None
+    if proceeds > 0 and fin is None:
+        flash("Choose the account the money was received into.", "danger")
+        return redirect(url_for("fixed_asset_view", id=id))
+
+    entry, gain = post_asset_disposal(asset, disposal_date, proceeds,
+                                      _cash_gl(fin) if fin else None,
+                                      created_by_id=current_user.id)
+    db.session.commit()
+
+    outcome = (f"gain of {float(gain):,.2f}" if gain > 0
+               else f"loss of {float(-gain):,.2f}" if gain < 0 else "no gain or loss")
+    record_audit("update", "FixedAsset", asset.id,
+                 f"Fixed asset '{asset.name}' disposed — {outcome}")
+    flash(f"'{asset.name}' disposed — {outcome}. Journal entry #{entry.id} posted.", "success")
+    return redirect(url_for("fixed_assets"))
+
 # ─── Fiscal years and period close ─────────────────────────────────────────────
 @app.route("/periods")
 @manager_required
@@ -7243,7 +7646,7 @@ def edit_gl_account(id):
     groups = (Account.query.filter(Account.is_group.is_(True), Account.is_active.is_(True),
                                    Account.id != acct.id)
               .order_by(Account.code).all())
-    is_system = acct.code in SYSTEM_ACCOUNT_CODES
+    is_system = account_is_system(acct)
 
     if request.method == "POST":
         name      = request.form.get("name", "").strip()
@@ -7282,7 +7685,7 @@ def delete_gl_account(id):
     """Only an unused account can go. Once a journal line points at it, deleting
     it would orphan a posting that really happened — deactivate it instead."""
     acct = db.session.get(Account, id) or abort(404)
-    if acct.code in SYSTEM_ACCOUNT_CODES:
+    if account_is_system(acct):
         flash(f"{acct.code} {acct.name} is used by the posting layer and cannot be deleted.", "danger")
     elif account_has_activity(acct):
         flash(f"{acct.code} {acct.name} has journal entries. Deactivate it instead.", "danger")

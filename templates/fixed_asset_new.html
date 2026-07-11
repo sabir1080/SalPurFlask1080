@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+{% block title %}New Fixed Asset — {{ app_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h2><i class="bi bi-building-add text-dark"></i> New Fixed Asset</h2>
+    <a href="{{ url_for('fixed_assets') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-lg-9">
+    <form method="POST">
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Asset name <span class="text-danger">*</span></label>
+              <input type="text" name="name" class="form-control" required
+                     value="{{ form_data.get('name', '') }}" placeholder="e.g. Delivery Van">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Tag / Serial</label>
+              <input type="text" name="tag" class="form-control" value="{{ form_data.get('tag', '') }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Acquired on <span class="text-danger">*</span></label>
+              <input type="date" name="acquisition_date" class="form-control" required
+                     value="{{ form_data.get('acquisition_date', '') }}">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Cost <span class="text-danger">*</span></label>
+              <input type="text" name="cost" class="form-control text-end" required
+                     value="{{ form_data.get('cost', '') }}" placeholder="0.00">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Salvage value</label>
+              <input type="text" name="salvage_value" class="form-control text-end"
+                     value="{{ form_data.get('salvage_value', '0') }}" placeholder="0.00">
+              <div class="form-text">What it will still be worth at the end of its life. Never depreciated below this.</div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Paid from <span class="text-danger">*</span></label>
+              <select name="credit_account_id" class="form-select" required>
+                <option value="">— choose account —</option>
+                {% for a in accounts %}
+                <option value="{{ a.id }}" {% if form_data.get('credit_account_id') == a.id|string %}selected{% endif %}>
+                  {{ a.code }} — {{ a.name }}
+                </option>
+                {% endfor %}
+              </select>
+              <div class="form-text">Credited for the cost (cash, bank, or owner's capital).</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-light fw-semibold"><i class="bi bi-graph-down"></i> Depreciation</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Method</label>
+              <select name="method" id="method" class="form-select">
+                {% for m in methods %}
+                <option value="{{ m }}" {% if form_data.get('method') == m %}selected{% endif %}>{{ m }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4" id="slBox">
+              <label class="form-label fw-semibold">Useful life (months)</label>
+              <input type="number" name="useful_life_months" class="form-control" min="1"
+                     value="{{ form_data.get('useful_life_months', '') }}" placeholder="e.g. 60">
+              <div class="form-text">Straight Line: (cost − salvage) spread evenly.</div>
+            </div>
+            <div class="col-md-4 d-none" id="rbBox">
+              <label class="form-label fw-semibold">Rate (% per year)</label>
+              <input type="text" name="rate_percent" class="form-control text-end"
+                     value="{{ form_data.get('rate_percent', '') }}" placeholder="e.g. 15">
+              <div class="form-text">Reducing Balance: charged on the written-down value.</div>
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold">Notes</label>
+              <input type="text" name="notes" class="form-control" value="{{ form_data.get('notes', '') }}">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="alert alert-secondary small">
+        <i class="bi bi-info-circle me-1"></i>
+        Saving posts the acquisition to the ledger — Dr <strong>Fixed Assets at Cost</strong> /
+        Cr the account you chose. Depreciation is charged later, month by month.
+      </div>
+
+      <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Save &amp; Post</button>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  var method = document.getElementById('method');
+  var slBox = document.getElementById('slBox');
+  var rbBox = document.getElementById('rbBox');
+  function sync() {
+    var rb = method.value === 'Reducing Balance';
+    rbBox.classList.toggle('d-none', !rb);
+    slBox.classList.toggle('d-none', rb);
+  }
+  method.addEventListener('change', sync);
+  sync();
+})();
+</script>
+{% endblock %}

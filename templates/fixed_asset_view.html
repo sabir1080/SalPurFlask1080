@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+{% block title %}{{ asset.name }} — {{ app_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h2><i class="bi bi-building-gear text-dark"></i> {{ asset.name }}</h2>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-primary btn-sm d-print-none" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
+        <a href="{{ url_for('fixed_assets') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <dl class="row mb-0">
+            <dt class="col-sm-3">Tag / Serial</dt><dd class="col-sm-3">{{ asset.tag or '—' }}</dd>
+            <dt class="col-sm-3">Acquired</dt><dd class="col-sm-3">{{ asset.acquisition_date | localdt('%d %B %Y') }}</dd>
+
+            <dt class="col-sm-3">Cost</dt><dd class="col-sm-3">{{ asset.cost | fmt_num }}</dd>
+            <dt class="col-sm-3">Salvage value</dt><dd class="col-sm-3">{{ asset.salvage_value | fmt_num }}</dd>
+
+            <dt class="col-sm-3">Method</dt>
+            <dd class="col-sm-3">{{ asset.method }}
+                <span class="text-muted small">
+                    {% if asset.method == 'Straight Line' %}({{ asset.useful_life_months }} months)
+                    {% else %}({{ asset.rate_percent | fmt_num }}% / year){% endif %}
+                </span>
+            </dd>
+            <dt class="col-sm-3">Status</dt>
+            <dd class="col-sm-3">
+                {% set c = {'Active':'success','Fully Depreciated':'warning','Disposed':'secondary'} %}
+                <span class="badge bg-{{ c.get(asset.status, 'secondary') }}">{{ asset.status }}</span>
+            </dd>
+
+            <dt class="col-sm-3">Accumulated depreciation</dt>
+            <dd class="col-sm-3 text-danger">{{ asset.accumulated | fmt_num }}</dd>
+            <dt class="col-sm-3">Net book value</dt>
+            <dd class="col-sm-3 fw-bold">{{ asset.net_book_value | fmt_num }}</dd>
+
+            {% if asset.status == 'Disposed' %}
+            <dt class="col-sm-3">Disposed on</dt><dd class="col-sm-3">{{ asset.disposal_date | localdt('%d %B %Y') }}</dd>
+            <dt class="col-sm-3">Proceeds</dt><dd class="col-sm-3">{{ asset.disposal_proceeds | fmt_num }}</dd>
+            {% endif %}
+            {% if asset.notes %}
+            <dt class="col-sm-3">Notes</dt><dd class="col-sm-9">{{ asset.notes }}</dd>
+            {% endif %}
+        </dl>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-light fw-semibold"><i class="bi bi-list-ol"></i> Depreciation schedule (as posted)</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+        <table class="table table-sm mb-0 align-middle">
+            <thead class="table-dark">
+                <tr><th>Month</th><th class="text-end">Charge</th><th class="text-end">Accumulated</th><th class="text-end">Net book value</th><th>Entry</th></tr>
+            </thead>
+            <tbody>
+                {% set ns = namespace(acc=0) %}
+                {% for ch in charges %}
+                {% set ns.acc = ns.acc + ch.amount %}
+                <tr>
+                    <td>{{ ch.period_end | localdt('%B %Y') }}</td>
+                    <td class="text-end">{{ ch.amount | fmt_num }}</td>
+                    <td class="text-end text-danger">{{ ns.acc | fmt_num }}</td>
+                    <td class="text-end fw-semibold">{{ (asset.cost - ns.acc) | fmt_num }}</td>
+                    <td>
+                        {% if ch.entry_id %}
+                        <a href="{{ url_for('journal_view', id=ch.entry_id) }}" class="small">#{{ ch.entry_id }}</a>
+                        {% else %}—{% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="text-center text-muted py-4">No depreciation posted yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+</div>
+
+{% if current_user.is_admin and asset.status != 'Disposed' %}
+<div class="card border-0 shadow-sm border-danger d-print-none">
+    <div class="card-header bg-danger text-white fw-semibold"><i class="bi bi-box-arrow-right"></i> Dispose of this asset</div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('fixed_asset_dispose', id=asset.id) }}"
+              onsubmit="return confirm('Dispose of this asset? Its cost and accumulated depreciation come off the books and the difference goes to gain or loss.')">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold">Disposal date</label>
+                    <input type="date" name="disposal_date" class="form-control"
+                           value="{{ today.strftime('%Y-%m-%d') }}" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-semibold">Proceeds</label>
+                    <input type="text" name="proceeds" class="form-control text-end" value="0" placeholder="0.00">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Money received into</label>
+                    <select name="financial_account_id" class="form-select">
+                        <option value="">— none (scrapped) —</option>
+                        {% for f in fin_accounts %}
+                        <option value="{{ f.id }}">{{ f.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-danger w-100"><i class="bi bi-box-arrow-right"></i> Dispose</button>
+                </div>
+            </div>
+            <div class="form-text mt-2">
+                Net book value today is <strong>{{ asset.net_book_value | fmt_num }}</strong>.
+                Proceeds above that are a gain; below it, a loss.
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

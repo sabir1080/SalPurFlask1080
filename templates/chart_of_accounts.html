@@ -55,7 +55,7 @@
                     <td>
                         {% if a.is_group %}<span class="badge bg-secondary">group</span>{% endif %}
                         {% if a.is_control %}<span class="badge bg-info text-dark">control</span>{% endif %}
-                        {% if a.code in system_codes %}<span class="badge bg-light text-dark border" title="Used by the posting layer">system</span>{% endif %}
+                        {% if a.code in system_codes or a.role %}<span class="badge bg-light text-dark border" title="Used by the posting layer">system</span>{% endif %}
                         {% if not a.is_active %}<span class="badge bg-light text-dark border">inactive</span>{% endif %}
                     </td>
                     <td class="text-end {{ 'text-danger' if balance < 0 }}">

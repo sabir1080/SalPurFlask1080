@@ -1,15 +1,21 @@
 """Accounting tests: cash/bank balances, the GL-backed balance sheet, journal
-entries, and the cash flow statement."""
+entries, the cash flow statement, and fixed assets."""
 from datetime import datetime
 from decimal import Decimal
+
+import pytest
 
 from app import (
     app as flask_app, db, User, pwd_context,
     FinancialAccount, Supplier, Customer, Category, Item,
     SupplierPayment, CustomerPayment, Expense,
     Account, JournalEntry, JournalLine,
+    FixedAsset, DepreciationCharge,
     ACC_CASH_IN_HAND, ACC_CAPITAL,
-    seed_chart_of_accounts, seed_fiscal_year, get_account,
+    month_end, depreciation_for_month, post_asset_acquisition,
+    run_depreciation, post_asset_disposal, PostingError,
+    seed_chart_of_accounts, seed_fixed_asset_accounts, seed_fiscal_year,
+    get_account, account_for_role,
     get_account_balance, total_cash_bank_balance,
     accounting_position, cash_flow_statement,
 )
@@ -37,6 +43,7 @@ def _setup_gl(year=2026):
     """Seed the chart, an open fiscal year (post_entry refuses a date that falls in
     no open period), and wire a Cash account to its GL leaf."""
     seed_chart_of_accounts()
+    seed_fixed_asset_accounts()
     seed_fiscal_year(year)
     cash_gl = get_account(ACC_CASH_IN_HAND)
     db.session.add(FinancialAccount(name="Cash", method="Cash", account_type="Cash",
@@ -109,12 +116,13 @@ def test_cash_flow_reconciles_and_classifies(appctx):
 
 
 def test_cash_flow_honours_an_investing_tag(appctx):
+    """Fixed Assets at Cost is seeded tagged Investing, so buying an asset must not
+    show up as operating cash."""
     _setup_gl()
-    db.session.add(Account(code="1500", name="Equipment", type="Asset",
-                           is_group=False, cash_flow_section="Investing"))
-    db.session.commit()
+    fixed_cost = account_for_role("fixed_cost")
+    assert fixed_cost.cash_flow_section == "Investing"
     _post(datetime(2026, 2, 1), "buy equipment",
-          [("1500", 500, 0), (ACC_CASH_IN_HAND, 0, 500)])
+          [(fixed_cost.code, 500, 0), (ACC_CASH_IN_HAND, 0, 500)])
 
     cf = cash_flow_statement(datetime(2026, 2, 1), datetime(2026, 2, 28, 23, 59, 59))
     assert cf["totals"]["Investing"] == Decimal("-500")     # not lumped into Operating
@@ -154,3 +162,156 @@ def test_journal_balanced_accepted_unbalanced_rejected(appctx):
         "account_id[]": [str(cash_id), str(capital_id)],
         "debit[]": ["100", "0"], "credit[]": ["0", "50"]})
     assert JournalEntry.query.count() == before + 1
+
+
+# ── fixed assets & depreciation ───────────────────────────────────────────────
+def _asset(cost=12000, salvage=0, life=12, method="Straight Line", rate=None,
+           acq=datetime(2026, 1, 5), name="Van"):
+    a = FixedAsset(name=name, acquisition_date=acq, cost=cost, salvage_value=salvage,
+                   method=method,
+                   useful_life_months=life if method == "Straight Line" else None,
+                   rate_percent=rate)
+    db.session.add(a); db.session.flush()
+    return a
+
+
+def _cash_id():
+    return get_account(ACC_CASH_IN_HAND).id
+
+
+def _lines(entry):
+    """Keyed by role for the accounts the fixed-asset module owns (their codes are
+    assigned at seeding time and are not fixed), and by code for the rest."""
+    return {(l.account.role or l.account.code): (l.debit, l.credit) for l in entry.lines}
+
+
+def test_acquisition_and_straight_line_depreciation_post_to_the_gl(appctx):
+    _setup_gl()
+    a = _asset(cost=12000, life=12)                      # 1,000 a month
+    acq = post_asset_acquisition(a, _cash_id())
+    db.session.commit()
+
+    assert _lines(acq)["fixed_cost"][0] == Decimal("12000")   # Dr cost
+    assert _lines(acq)[ACC_CASH_IN_HAND][1] == Decimal("12000")  # Cr cash
+
+    entry, total, count = run_depreciation(month_end(datetime(2026, 1, 1)))
+    db.session.commit()
+
+    assert (total, count) == (Decimal("1000"), 1)
+    assert a.accumulated == Decimal("1000")
+    assert a.net_book_value == Decimal("11000")
+    assert _lines(entry)["depreciation"][0] == Decimal("1000")   # Dr depreciation
+    assert _lines(entry)["accum_dep"][1] == Decimal("1000")      # Cr accumulated
+
+
+def test_depreciation_stops_at_the_salvage_value(appctx):
+    _setup_gl()
+    a = _asset(cost=1000, salvage=100, life=3)           # only 900 is depreciable
+    post_asset_acquisition(a, _cash_id())
+    db.session.commit()
+
+    for m in range(1, 7):                                # run well past its life
+        try:
+            run_depreciation(month_end(datetime(2026, m, 1)))
+            db.session.commit()
+        except PostingError:
+            db.session.rollback()                        # nothing left to charge
+
+    assert a.accumulated == Decimal("900")               # never past cost − salvage
+    assert a.net_book_value == Decimal("100")            # the salvage floor holds
+    assert a.status == "Fully Depreciated"
+
+
+def test_a_month_cannot_be_depreciated_twice(appctx):
+    _setup_gl()
+    a = _asset(cost=1200, life=12)
+    post_asset_acquisition(a, _cash_id())
+    db.session.commit()
+
+    run_depreciation(month_end(datetime(2026, 1, 1)))
+    db.session.commit()
+    with pytest.raises(PostingError):
+        run_depreciation(month_end(datetime(2026, 1, 1)))
+    db.session.rollback()
+    assert DepreciationCharge.query.filter_by(asset_id=a.id).count() == 1
+
+
+def test_reducing_balance_charge_falls_each_month(appctx):
+    _setup_gl()
+    a = _asset(cost=10000, salvage=0, life=None,
+               method="Reducing Balance", rate=Decimal("24"))     # 24% a year
+    post_asset_acquisition(a, _cash_id())
+    db.session.commit()
+
+    first = depreciation_for_month(a, month_end(datetime(2026, 1, 1)))
+    run_depreciation(month_end(datetime(2026, 1, 1)))
+    db.session.commit()
+    second = depreciation_for_month(a, month_end(datetime(2026, 2, 1)))
+
+    assert first == Decimal("200")        # 10,000 × 24% ÷ 12
+    assert second < first                 # charged on the written-down value
+
+
+def test_disposal_above_book_value_posts_a_gain(appctx):
+    _setup_gl()
+    a = _asset(cost=1000, life=10)                       # 100 a month
+    post_asset_acquisition(a, _cash_id())
+    db.session.commit()
+    run_depreciation(month_end(datetime(2026, 1, 1)))    # accumulated 100, NBV 900
+    db.session.commit()
+
+    entry, gain = post_asset_disposal(a, datetime(2026, 2, 10), Decimal("1000"), _cash_id())
+    db.session.commit()
+
+    assert gain == Decimal("100")                        # sold for 1,000, book value 900
+    ln = _lines(entry)
+    assert ln[ACC_CASH_IN_HAND][0] == Decimal("1000")    # money in
+    assert ln["accum_dep"][0] == Decimal("100")        # accumulated depreciation out
+    assert ln["fixed_cost"][1] == Decimal("1000")      # cost out
+    assert ln["disposal_gain"][1] == Decimal("100")
+    assert a.status == "Disposed"
+
+    # and the books still balance afterwards
+    assert accounting_position(as_of=datetime(2026, 12, 31))["difference"] == Decimal("0")
+
+
+def test_disposal_below_book_value_posts_a_loss(appctx):
+    _setup_gl()
+    a = _asset(cost=1000, life=10)
+    post_asset_acquisition(a, _cash_id())
+    db.session.commit()
+    run_depreciation(month_end(datetime(2026, 1, 1)))    # NBV 900
+    db.session.commit()
+
+    entry, gain = post_asset_disposal(a, datetime(2026, 2, 10), Decimal("500"), _cash_id())
+    db.session.commit()
+
+    assert gain == Decimal("-400")                       # sold for 500, book value 900
+    assert _lines(entry)["disposal_loss"][0] == Decimal("400")
+    assert accounting_position(as_of=datetime(2026, 12, 31))["difference"] == Decimal("0")
+
+
+def test_buying_an_asset_is_investing_cash_not_operating(appctx):
+    _setup_gl()
+    a = _asset(cost=5000, life=10)
+    post_asset_acquisition(a, _cash_id())
+    db.session.commit()
+
+    cf = cash_flow_statement(datetime(2026, 1, 1), datetime(2026, 1, 31, 23, 59, 59))
+    assert cf["totals"]["Investing"] == Decimal("-5000")
+    assert cf["totals"]["Operating"] == Decimal("0")
+    assert cf["reconciles"]
+
+
+def test_depreciation_never_reaches_the_cash_flow_statement(appctx):
+    """It is a non-cash charge — no entry it appears in touches cash."""
+    _setup_gl()
+    a = _asset(cost=1200, life=12)
+    post_asset_acquisition(a, _cash_id())
+    db.session.commit()
+    run_depreciation(month_end(datetime(2026, 2, 1)))
+    db.session.commit()
+
+    cf = cash_flow_statement(datetime(2026, 2, 1), datetime(2026, 2, 28, 23, 59, 59))
+    assert cf["net_change"] == Decimal("0")          # February moved no cash at all
+    assert cf["reconciles"]
