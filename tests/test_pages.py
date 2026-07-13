@@ -30,8 +30,34 @@ def test_the_manual_covers_every_section_it_promises(appctx):
     body = c.get("/manual").get_data(as_text=True)
 
     for n in range(1, 20):
-        assert f'href="#s{n}"' in body, f"contents is missing section {n}"
-        assert f'id="s{n}"' in body, f"section {n} is in the contents but not in the page"
+        assert f'href="#s{n}"' in body, f"English contents is missing section {n}"
+        assert f'id="s{n}"' in body, f"English section {n} is linked but not in the page"
+
+
+def test_the_urdu_manual_does_not_fall_behind_the_english_one(appctx):
+    """Two copies of the same document drift. The Urdu one is the one that will drift,
+    because it is the one nobody writing a new section remembers — and a manual that
+    quietly stops matching the software is worse than no manual, since the reader trusts
+    it and acts on it."""
+    c = _client()
+    body = c.get("/manual").get_data(as_text=True)
+
+    for n in range(1, 20):
+        assert f'href="#u{n}"' in body, f"Urdu contents is missing section {n}"
+        assert f'id="u{n}"' in body, f"Urdu section {n} is linked but not in the page"
+
+
+def test_both_pages_offer_both_languages_and_default_to_english(appctx):
+    c = _client()
+    for path in ("/about", "/manual"):
+        body = c.get(path).get_data(as_text=True)
+        assert 'data-lang-btn="en"' in body, path
+        assert 'data-lang-btn="ur"' in body, path
+        assert 'data-lang-block="en"' in body, path
+        assert 'data-lang-block="ur"' in body, path
+        # English unless the reader has chosen otherwise: it is what the software's own
+        # buttons say, so the manual names the things the reader is looking at.
+        assert "=== 'ur' ? 'ur' : 'en'" in body, f"{path} does not default to English"
 
 
 def test_the_manual_tells_the_truth_about_the_rules(appctx):

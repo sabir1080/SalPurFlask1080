@@ -35,21 +35,18 @@
 /* Body copy is body copy: it gets full contrast.
 
    Bootstrap 5.3's .text-muted is `color: var(--bs-secondary-color) !important`, and its
-   table cells are `.table > :not(caption) > * > *` — both beat any plain override, so a
-   rule like `.ab-wrap .text-muted { color: … }` silently loses and the text stays faint.
-   Redefine Bootstrap's own variables on this page instead of fighting its cascade: the
-   utility then resolves to our colour with no !important war. */
+   table cells are `.table > :not(caption) > * > *`. Both beat a plain override, so a rule
+   like `.ab-wrap .text-muted { color: … }` silently loses and the text stays faint. Only a
+   more specific !important wins — and never a hard-coded colour, which would be wrong in
+   one of the two themes whichever colour was picked. */
 .ab-wrap {
   --bs-body-color: var(--text-dark);
-  --bs-secondary-color: var(--text-dark);   /* what .text-muted resolves to */
-  --bs-emphasis-color: var(--text-dark);    /* what .table cells resolve to */
+  --bs-secondary-color: var(--text-dark);
+  --bs-emphasis-color: var(--text-dark);
   color: var(--text-dark);
 }
 .ab-wrap p, .ab-wrap li { color: var(--text-dark); }
 .ab-wrap .table > :not(caption) > * > * { color: var(--text-dark); }
-/* Bootstrap's .text-muted carries !important, so redefining the variable is not enough on
-   its own — the declaration has to win too, and only a more specific !important does. On
-   this page it is body copy, and body copy is read: full contrast, not caption grey. */
 .ab-wrap .text-muted,
 .ab-wrap td.text-muted,
 .ab-wrap .small.text-muted { color: var(--text-dark) !important; }
@@ -92,7 +89,11 @@
 
 <div class="ab-wrap">
 
-  <!-- Hero -->
+  {% include '_lang_switch.html' %}
+
+  <!-- ══════════════════════════════ ENGLISH ══════════════════════════════ -->
+  <div data-lang-block="en">
+
   <div class="ab-hero">
     <div class="ab-hero-icon"><i class="bi bi-boxes"></i></div>
     <h1>{{ app_name }}</h1>
@@ -106,7 +107,6 @@
     </a>
   </div>
 
-  <!-- One set of books -->
   <div class="row g-4 mb-5">
     <div class="col-lg-7">
       <h4 class="ab-h">One set of books</h4>
@@ -136,12 +136,11 @@
     </div>
   </div>
 
-  <!-- Features -->
   <h4 class="ab-h">What it does</h4>
   <p class="ab-sub">All of this is in the system today.</p>
 
   <div class="row g-3 mb-5">
-    {% set features = [
+    {% set features_en = [
       ("bi-people",         "Suppliers &amp; Customers", "Opening balances, running ledgers, statements, ageing, and payments that can be applied to a specific bill."),
       ("bi-box-seam",       "Inventory",                 "Items, categories, reorder alerts, stock adjustments, and stock valued at weighted-average cost."),
       ("bi-cart",           "Purchases &amp; Sales",     "Multi-line invoices with per-line discount and tax, returns both ways, quotations, purchase orders and delivery challans."),
@@ -152,7 +151,7 @@
       ("bi-shield-check",   "Controls",                  "Roles and permissions, an audit log of every change, rate-limited sign-in, and posted documents that cannot be edited or deleted."),
       ("bi-hdd",            "Backup &amp; Restore",      "One portable file holding every table, restorable on either database engine — plus two levels of reset for handing the system over."),
     ] %}
-    {% for icon, title, text in features %}
+    {% for icon, title, text in features_en %}
     <div class="col-md-6 col-lg-4">
       <div class="ab-card">
         <i class="bi {{ icon }}"></i>
@@ -163,7 +162,6 @@
     {% endfor %}
   </div>
 
-  <!-- Rules + checks -->
   <div class="row g-5 mb-5">
     <div class="col-lg-6">
       <h4 class="ab-h">The rules it will not let you break</h4>
@@ -175,27 +173,23 @@
         Reversed invoices print with a REVERSED watermark, so a cancelled invoice can never be
         handed over as a live one.</span>
       </div>
-
       <div class="ab-rule">
         <strong>Invoice numbers have no gaps.</strong>
         <span>Numbers come from a counter that rolls back with the transaction, so a failed save
         never burns one. They restart each fiscal year, and a numbered document cannot be
         deleted — only reversed, keeping its number.</span>
       </div>
-
       <div class="ab-rule">
         <strong>Stock can never go negative.</strong>
         <span>Not by selling, not by adjusting, and not by reversing a purchase whose goods have
         already been sold — which is the case everybody forgets.</span>
       </div>
-
       <div class="ab-rule">
         <strong>Control accounts belong to their subledgers.</strong>
         <span>Receivables, Payables and Inventory cannot be touched by a manual journal entry.
         They move only when a document moves them, which is precisely why they always agree with
         the customer, supplier and stock ledgers.</span>
       </div>
-
       <div class="ab-rule">
         <strong>Nothing posts into a closed period.</strong>
         <span>Once a month or a year is closed, figures you have already reported cannot quietly
@@ -206,70 +200,249 @@
     <div class="col-lg-6">
       <h4 class="ab-h">How you know the books are right</h4>
       <p class="ab-sub">Four checks. Each compares two records kept independently of each other.</p>
-
       <div class="table-responsive">
         <table class="table table-sm align-middle">
           <thead><tr><th style="width: 34%;">Report</th><th>What must be true</th></tr></thead>
           <tbody>
             <tr>
               <td><a href="{{ url_for('report_balance_sheet') }}">Balance Sheet</a></td>
-              <td class="small text-muted">Assets = Liabilities + Equity. Equity is <em>not</em> a
-                balancing figure — it is added up on its own, so the two sides matching is a
-                result, not an arrangement.</td>
+              <td class="small">Assets = Liabilities + Equity. Equity is <em>not</em> a balancing
+                figure — it is added up on its own, so the two sides matching is a result, not an
+                arrangement.</td>
             </tr>
             <tr>
               <td><a href="{{ url_for('report_trial_balance') }}">Trial Balance</a></td>
-              <td class="small text-muted">Total debits = total credits.</td>
+              <td class="small">Total debits = total credits.</td>
             </tr>
             <tr>
               <td><a href="{{ url_for('report_reconciliation') }}">Reconciliation</a></td>
-              <td class="small text-muted">Receivables, Payables and Inventory in the ledger =
-                the customer, supplier and stock ledgers underneath them.</td>
+              <td class="small">Receivables, Payables and Inventory in the ledger = the customer,
+                supplier and stock ledgers underneath them.</td>
             </tr>
             <tr>
               <td><a href="{{ url_for('report_cash_flow') }}">Cash Flow</a></td>
-              <td class="small text-muted">Opening cash + movement = closing cash — and that
-                closing figure equals the Cash &amp; Bank page and the Balance Sheet.</td>
+              <td class="small">Opening cash + movement = closing cash — and that closing figure
+                equals the Cash &amp; Bank page and the Balance Sheet.</td>
             </tr>
           </tbody>
         </table>
       </div>
-      <p class="small text-muted mb-0">
-        Run them and they either all agree or they do not. There is no third answer, and no
-        report here that can be made to look right on its own.
+      <p class="small mb-0">
+        Run them and they either all agree or they do not. There is no third answer, and no report
+        here that can be made to look right on its own.
       </p>
     </div>
   </div>
 
-  <!-- Worth knowing -->
   <div class="ab-note mb-4">
     <h6 class="fw-bold mb-3"><i class="bi bi-info-circle"></i> Worth knowing before you start</h6>
     <div class="row g-4 small">
       <div class="col-md-4">
         <strong>Stock is valued at weighted average.</strong>
-        <p class="text-muted mb-0">
-          Buy the same item at 100 and again at 140, and from then on every unit is costed at
-          120. Not FIFO, not LIFO. It is the same figure the Inventory account is posted, which
-          is why the stock report and the balance sheet always agree.
+        <p class="mb-0">
+          Buy the same item at 100 and again at 140, and from then on every unit is costed at 120.
+          Not FIFO, not LIFO. It is the same figure the Inventory account is posted, which is why
+          the stock report and the balance sheet always agree.
         </p>
       </div>
       <div class="col-md-4">
         <strong>One company, one currency.</strong>
-        <p class="text-muted mb-0">
-          The books of a single business, in a single currency. Multi-company and
-          multi-currency are not supported.
+        <p class="mb-0">
+          The books of a single business, in a single currency. Multi-company and multi-currency
+          are not supported.
         </p>
       </div>
       <div class="col-md-4">
         <strong>Take backups.</strong>
-        <p class="text-muted mb-0">
-          <em>Admin → System → Download Backup</em> writes every table to one file. It is the
-          only way back from a mistake and the only thing between you and a lost database.
-          Make it a weekly habit.
+        <p class="mb-0">
+          <em>Admin → System → Download Backup</em> writes every table to one file. It is the only
+          way back from a mistake and the only thing between you and a lost database. Make it a
+          weekly habit.
         </p>
       </div>
     </div>
   </div>
+  </div><!-- /english -->
+
+  <!-- ═══════════════════════════ ROMAN URDU ═══════════════════════════ -->
+  <div data-lang-block="ur">
+
+  <div class="ab-hero">
+    <div class="ab-hero-icon"><i class="bi bi-boxes"></i></div>
+    <h1>{{ app_name }}</h1>
+    <p class="lead">
+      Ek mukammal karobari aur accounting system — stock, invoicing, lena-dena, cash aur bank,
+      fixed assets — aur ye sab <strong>ek hi double-entry general ledger</strong> mein post hota
+      hai, taake har report ek hi kitab se nikle.
+    </p>
+    <a href="{{ url_for('manual') }}" class="btn btn-light">
+      <i class="bi bi-book"></i> User Manual parhein
+    </a>
+  </div>
+
+  <div class="row g-4 mb-5">
+    <div class="col-lg-7">
+      <h4 class="ab-h">Ek hi kitab</h4>
+      <p class="text-muted">
+        Chhote karobar ka software aksar stock ek jagah rakhta hai aur accounts doosri jagah — aur
+        chupke se dono ko alag hone deta hai. Ye system aisa nahi karta. Har purchase, sale,
+        return, payment, expense aur depreciation, save karte hi ek
+        <strong>double-entry journal</strong> ban jaati hai. Balance Sheet, Profit &amp; Loss,
+        Trial Balance aur Cash Flow Statement — sab unhi journals se jama hoti hain. In mein se koi
+        bhi alag hisaab nahi jo baqiyon se hat kar chal sake.
+      </p>
+      <p class="text-muted mb-0">
+        Subledgers — customer ka balance, supplier ka balance, godown ka stock — apne apne
+        documents se chalte hain, ledger se bilkul alag.
+        <a href="{{ url_for('report_reconciliation') }}">Reconciliation report</a> dono ko aapas
+        mein milaati hai. Agar dono muttafiq hain, to taqreeban yaqeeni tor par dono durust hain.
+        Aur agar kabhi alag hon, to woh asli ghalti hai — aur system saaf saaf keh dega.
+      </p>
+    </div>
+    <div class="col-lg-5">
+      <div class="row g-3">
+        <div class="col-6"><div class="ab-stat"><div class="n">Double entry</div><div class="l">har document ek journal post karta hai</div></div></div>
+        <div class="col-6"><div class="ab-stat"><div class="n">Gapless</div><div class="l">invoice numbering, har saal naye sire se</div></div></div>
+        <div class="col-6"><div class="ab-stat"><div class="n">Weighted avg</div><div class="l">stock ki costing</div></div></div>
+        <div class="col-6"><div class="ab-stat"><div class="n">Audited</div><div class="l">har tabdeeli record hoti hai</div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <h4 class="ab-h">Ye kya kya karta hai</h4>
+  <p class="ab-sub">Ye sab kuch aaj system mein maujood hai.</p>
+
+  <div class="row g-3 mb-5">
+    {% set features_ur = [
+      ("bi-people",         "Suppliers aur Customers", "Opening balances, chalte hue ledgers, statements, ageing, aur aisi payments jo kisi khaas bill par lagai ja sakein."),
+      ("bi-box-seam",       "Inventory",               "Items, categories, reorder alerts, stock adjustments, aur weighted-average cost par stock ki value."),
+      ("bi-cart",           "Kharid aur Farokht",      "Multi-line invoices, har line par discount aur tax, dono taraf ke returns, quotations, purchase orders aur delivery challans."),
+      ("bi-cash-coin",      "Cash aur Bank",           "Jitne chahein cash aur bank accounts. Har payment, receipt aur expense kisi ek se juda hota hai, aur uska balance seedha ledger se aata hai."),
+      ("bi-journal-text",   "General Ledger",          "Chart of accounts, manual journal entries, accounting periods, fiscal years, aur saal ke ikhtitam par Retained Earnings mein closing."),
+      ("bi-building",       "Fixed Assets",            "Asset register, straight-line aur reducing-balance depreciation jo har mahine post hoti hai, aur disposal par nafa ya nuqsan."),
+      ("bi-bar-chart-line", "Financial Reports",       "Balance Sheet, Profit &amp; Loss, Trial Balance, Cash Flow Statement, Stock Valuation, AP/AR Ageing, Cash Book, GST Summary, Reconciliation."),
+      ("bi-shield-check",   "Controls",                "Roles aur permissions, har tabdeeli ka audit log, sign-in par rate limit, aur posted documents jo na edit hote hain na delete."),
+      ("bi-hdd",            "Backup aur Restore",      "Ek hi file mein poora database, dono database engines par restore ho sakti hai — aur system aage dene ke liye do darje ka reset."),
+    ] %}
+    {% for icon, title, text in features_ur %}
+    <div class="col-md-6 col-lg-4">
+      <div class="ab-card">
+        <i class="bi {{ icon }}"></i>
+        <h6>{{ title | safe }}</h6>
+        <p>{{ text | safe }}</p>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="row g-5 mb-5">
+    <div class="col-lg-6">
+      <h4 class="ab-h">Jo usool ye tootne nahi deta</h4>
+      <p class="ab-sub">
+        Accounting system ki asli qeemat is baat mein hai ke woh <em>kya karne se inkaar</em> karta
+        hai.
+      </p>
+
+      <div class="ab-rule">
+        <strong>Posted document na edit hota hai na delete — reverse hota hai.</strong>
+        <span>Asal document apni jagah rehta hai, uspar "reversed" ka nishaan lag jaata hai, aur
+        saath ek ulti journal entry hoti hai. Reversed invoice par print mein
+        <em>REVERSED</em> ka watermark aata hai — taake cancelled invoice kabhi asli bana kar na
+        di ja sake.</span>
+      </div>
+      <div class="ab-rule">
+        <strong>Invoice numbers mein koi gap nahi.</strong>
+        <span>Numbers ek aise counter se milte hain jo transaction ke saath hi wapas palat jaata
+        hai — yaani nakaam save kisi number ko zaya nahi karta. Har fiscal year naye sire se shuru
+        hote hain, aur numbered document delete nahi hota — sirf reverse, apna number rakhte hue.</span>
+      </div>
+      <div class="ab-rule">
+        <strong>Stock kabhi manfi nahi ho sakta.</strong>
+        <span>Na bechne se, na adjustment se, aur na us purchase ko reverse karne se jiska maal bik
+        chuka ho — aur yehi woh surat hai jo har koi bhool jaata hai.</span>
+      </div>
+      <div class="ab-rule">
+        <strong>Control accounts apne subledgers ki milkiyat hain.</strong>
+        <span>Receivables, Payables aur Inventory par manual journal entry lag hi nahi sakti. Ye
+        sirf tab hilte hain jab koi document inhe hilaye — aur bilkul isi liye ye hamesha customer,
+        supplier aur stock ke ledger se milte hain.</span>
+      </div>
+      <div class="ab-rule">
+        <strong>Band period mein kuch post nahi hota.</strong>
+        <span>Jo mahina ya saal band ho gaya, uske woh numbers jo aap pehle hi report kar chuke
+        hain, ab chupke se badal nahi sakte.</span>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <h4 class="ab-h">Kaise pata chale ke kitaben durust hain</h4>
+      <p class="ab-sub">
+        Chaar check. Har ek do aise records ko milata hai jo ek doosre se bilkul azaad rakhe jaate
+        hain.
+      </p>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th style="width: 34%;">Report</th><th>Kya sach hona chahiye</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><a href="{{ url_for('report_balance_sheet') }}">Balance Sheet</a></td>
+              <td class="small">Assets = Liabilities + Equity. Equity yahan koi <em>balancing
+                figure nahi</em> — woh alag se jama hoti hai. Isi liye dono taraf ka barabar hona
+                <strong>nateeja</strong> hai, bandobast nahi.</td>
+            </tr>
+            <tr>
+              <td><a href="{{ url_for('report_trial_balance') }}">Trial Balance</a></td>
+              <td class="small">Kul Debit = kul Credit.</td>
+            </tr>
+            <tr>
+              <td><a href="{{ url_for('report_reconciliation') }}">Reconciliation</a></td>
+              <td class="small">Ledger ke Receivables, Payables aur Inventory = unke neeche walay
+                customer, supplier aur stock ke ledger.</td>
+            </tr>
+            <tr>
+              <td><a href="{{ url_for('report_cash_flow') }}">Cash Flow</a></td>
+              <td class="small">Shuru ka cash + harkat = aakhir ka cash — aur wohi aakhri number
+                Cash &amp; Bank page aur Balance Sheet ke barabar hona chahiye.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="small mb-0">
+        Inhe chalayein: ya to sab muttafiq honge, ya nahi. Teesra koi jawab hai hi nahi — aur yahan
+        koi report aisi nahi jo akele apne bal par durust dikh sake.
+      </p>
+    </div>
+  </div>
+
+  <div class="ab-note mb-4">
+    <h6 class="fw-bold mb-3"><i class="bi bi-info-circle"></i> Shuru karne se pehle ye jaan lein</h6>
+    <div class="row g-4 small">
+      <div class="col-md-4">
+        <strong>Stock ki value weighted average par hai.</strong>
+        <p class="mb-0">
+          Ek hi item 100 ka khareedein aur phir 140 ka — ab har unit 120 par ginega. Ye FIFO nahi,
+          LIFO bhi nahi. Yehi wohi raqam hai jo Inventory account mein post hoti hai — isi liye
+          stock report aur Balance Sheet hamesha milte hain.
+        </p>
+      </div>
+      <div class="col-md-4">
+        <strong>Ek company, ek currency.</strong>
+        <p class="mb-0">
+          Ye ek hi karobar ki kitaben ek hi currency mein rakhta hai. Multi-company aur
+          multi-currency mein kaam nahi karta.
+        </p>
+      </div>
+      <div class="col-md-4">
+        <strong>Backup lete rahein.</strong>
+        <p class="mb-0">
+          <em>Admin → System → Download Backup</em> poore database ki har table ek file mein likh
+          deta hai. Ghalti se wapas aane ka yehi waahid raasta hai — aur database zaya hone se
+          bachne ka bhi. Isay <strong>haftawar aadat</strong> bana lein.
+        </p>
+      </div>
+    </div>
+  </div>
+  </div><!-- /roman urdu -->
 
   <div class="text-center ab-foot py-3">
     <div class="mb-1"><strong>{{ company_name }}</strong>{% if company_tagline %} — {{ company_tagline }}{% endif %}</div>
