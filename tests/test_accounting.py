@@ -14,7 +14,7 @@ from app import (
     ACC_CASH_IN_HAND, ACC_CAPITAL,
     month_end, depreciation_for_month, post_asset_acquisition,
     run_depreciation, post_asset_disposal, PostingError, post_account_opening,
-    reverse_entry, unwind_asset_entry,
+    post_entry, reverse_entry, unwind_asset_entry, gl_profit,
     seed_chart_of_accounts, seed_fixed_asset_accounts, seed_fiscal_year,
     get_account, account_for_role,
     get_account_balance, total_cash_bank_balance,
@@ -330,6 +330,34 @@ def test_reversing_depreciation_clears_the_register_and_frees_the_month(appctx):
     entry2, total, _ = run_depreciation(month_end(datetime(2026, 1, 1)))
     db.session.commit()
     assert total == Decimal("100")
+
+
+def test_a_reversal_is_never_dated_before_the_entry_it_cancels(appctx):
+    """A reversal defaults to today, but an entry dated ahead of today would then be
+    cancelled before it happened: every report cut between the two dates would show
+    the credit and not the debit, and the expense would read as negative."""
+    _setup_gl()
+    now = datetime.now()
+    future = datetime(now.year, now.month, 28, 0, 0) if now.day < 28 else \
+             datetime(now.year + 1, 1, 28, 0, 0)
+    expense = account_for_role("depreciation")
+
+    entry = post_entry(
+        entry_date=future, description="Accrual dated ahead of today",
+        lines=[{"account_id": expense.id, "debit": Decimal("2000"), "credit": 0},
+               {"account_id": get_account(ACC_CASH_IN_HAND).id,
+                "debit": 0, "credit": Decimal("2000")}],
+    )
+    db.session.commit()
+
+    reversal = reverse_entry(entry)
+    db.session.commit()
+
+    assert reversal.entry_date >= entry.entry_date
+    # and so the two never split across a period boundary: as of today, neither the
+    # charge nor its cancellation has landed, and the expense is not showing negative.
+    income, expenses = gl_profit(datetime(now.year, 1, 1), datetime.now())
+    assert (income, expenses) == (Decimal("0"), Decimal("0"))
 
 
 def test_reversing_a_disposal_puts_the_asset_back(appctx):

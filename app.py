@@ -1166,14 +1166,19 @@ def reverse_entry(entry, on_date=None, created_by_id=None):
 
     The reversal is dated today by default, not on the original's date — a
     correction made in July belongs in July, not backdated into a period whose
-    numbers may already have been reported."""
+    numbers may already have been reported.
+
+    Never earlier than the original, though. An entry dated ahead of today (a
+    month-end accrual, say) would otherwise be cancelled by a reversal that lands
+    before it, and every report cut between the two dates would show the credit
+    without the debit it undoes."""
     if entry.is_reversed:
         raise PostingError(f"Entry #{entry.id} has already been reversed.")
     if entry.is_reversal:
         raise PostingError("A reversal cannot itself be reversed.")
 
     reversal = post_entry(
-        entry_date=on_date or datetime.now(),
+        entry_date=on_date or max(datetime.now(), entry.entry_date),
         description=f"Reversal of #{entry.id}: {entry.description}",
         reference=entry.reference,
         source_type=entry.source_type, source_id=entry.source_id,
