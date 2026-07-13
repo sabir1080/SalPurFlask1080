@@ -534,7 +534,24 @@ class SaleReturn(db.Model):
     item         = db.relationship("Item", backref="sale_returns", lazy=True)
 
 # ── Stock Adjustment ──────────────────────────────────────────────────────────
-ADJUSTMENT_TYPES = ("Stock In", "Stock Out", "Damage Write-off", "Count Correction", "Sample / Free Issue")
+# Each adjustment type carries its own direction. It used to be worked out by matching
+# the label against a list of the outbound ones, so anything not on that list — a typo,
+# a type added here and forgotten there — silently became an *inbound* adjustment and
+# quietly increased stock. And "Count Correction" was inbound-only, so a stocktake that
+# found goods missing could not be entered honestly at all: the only way to reduce stock
+# was to call it damage, which it was not.
+ADJUSTMENT_DIRECTIONS = {
+    "Stock In":                    "in",
+    "Count Correction (Increase)": "in",
+    "Stock Out":                   "out",
+    "Damage Write-off":            "out",
+    "Sample / Free Issue":         "out",
+    "Count Correction (Decrease)": "out",
+    # Written by an older version, which only ever meant "in". Kept so its rows still
+    # read back; not offered on the form any more.
+    "Count Correction":            "in",
+}
+ADJUSTMENT_TYPES = tuple(t for t in ADJUSTMENT_DIRECTIONS if t != "Count Correction")
 
 class StockAdjustment(db.Model):
     __tablename__ = "stock_adjustment"
@@ -1721,11 +1738,35 @@ def item_remove_stock(item, qty, cost_total=None):
     """Goods out. Costed at the current average unless a cost is given (a sale
     return puts goods back at what they left at, not at today's average).
 
+    Refuses to take out more than is there. Every route that sells or issues stock
+    checks first, but the *reversal* paths did not: reversing a purchase whose goods
+    have since been sold took the goods back anyway, and the warehouse ended up holding
+    minus eighty widgets while the Inventory account went negative and parted company
+    with the item it was meant to mirror. The check belongs here, at the one place all
+    of them pass through, rather than in each caller — a new caller gets it for free,
+    which is exactly what the reversal paths never did.
+
     Returns the cost removed, which is what the caller posts as COGS."""
+    value = Decimal(str(item.inventory_value or 0))
     cost = Decimal(str(cost_total)) if cost_total is not None else (item.avg_cost * Decimal(str(qty)))
     cost = cost.quantize(MONEY)
+
+    if qty > (item.stock or 0):
+        raise PostingError(
+            f"Only {item.stock or 0} × {item.name} in stock, so {qty} cannot be taken out. "
+            f"If you are reversing a document, the goods it brought in have already been "
+            f"sold or issued — reverse those first.")
+    if cost > value and qty < (item.stock or 0):
+        # Taking the whole stock out is allowed to take the whole value with it (that is
+        # what a final sale does). Taking out *part* of it must not cost more than the
+        # stock is carrying, or the item would hold goods worth less than nothing.
+        raise PostingError(
+            f"{item.name} carries {value} of value, so {cost} cannot be taken out of it. "
+            f"The cost of these goods has already been absorbed into stock that was sold. "
+            f"Raise a return instead of reversing.")
+
     item.stock -= qty
-    item.inventory_value = Decimal(str(item.inventory_value or 0)) - cost
+    item.inventory_value = value - cost
     if item.stock <= 0:
         # Last unit gone: any rounding residue would otherwise linger as value
         # against zero stock, which the reconciliation would (rightly) flag.
@@ -6613,10 +6654,14 @@ def stock_adjustment():
             flash("Quantity must be a positive integer.", "danger")
         elif not db.session.get(Item, int(item_id)):
             flash("Item not found.", "danger")
+        elif adj_type not in ADJUSTMENT_DIRECTIONS:
+            # Never guess. An unrecognised type used to fall through to "in" and add
+            # stock that nobody asked for.
+            flash("Unknown adjustment type.", "danger")
         else:
             item_obj = db.session.get(Item, int(item_id))
             qty = int(qty_str)
-            direction = "out" if adj_type in ("Stock Out", "Damage Write-off", "Sample / Free Issue") else "in"
+            direction = ADJUSTMENT_DIRECTIONS[adj_type]
             if direction == "out" and item_obj.stock < qty:
                 flash(f"Insufficient stock. Available: {item_obj.stock}", "danger")
             else:
