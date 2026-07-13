@@ -2041,6 +2041,45 @@ def run_depreciation(period_end, created_by_id=None):
             asset.status = "Fully Depreciated"
     return entry, total, len(charges)
 
+def unwind_depreciation(entry):
+    """A depreciation run's charges live in the fixed-asset register, not the GL.
+    Reversing the entry without removing them would leave the register claiming
+    depreciation the ledger has just cancelled — the two would drift — and the month
+    could never be run again, because its charges would still be sitting there."""
+    charges = DepreciationCharge.query.filter_by(entry_id=entry.id).all()
+    assets = {ch.asset for ch in charges if ch.asset}
+    for ch in charges:
+        db.session.delete(ch)
+    db.session.flush()
+    for asset in assets:
+        db.session.refresh(asset)
+        if asset.status == "Fully Depreciated" and asset.accumulated < asset.depreciable_base:
+            asset.status = "Active"          # it no longer is, now the charge is gone
+    return len(charges)
+
+def unwind_asset_disposal(entry):
+    """Reversing a disposal has to put the asset back on the register, or the ledger
+    would hold it again while the register still said it was sold."""
+    asset = db.session.get(FixedAsset, entry.source_id)
+    if asset is None:
+        return
+    asset.status = ("Fully Depreciated"
+                    if asset.accumulated >= asset.depreciable_base else "Active")
+    asset.disposal_date = None
+    asset.disposal_proceeds = None
+
+def unwind_asset_entry(entry):
+    """Keep the fixed-asset register in step with a reversed journal entry."""
+    if entry.source_type == "depreciation":
+        unwind_depreciation(entry)
+    elif entry.source_type == "asset_disposal":
+        unwind_asset_disposal(entry)
+    elif entry.source_type == "asset":
+        raise PostingError(
+            "An asset's acquisition cannot be reversed from the journal — the register "
+            "would still hold an asset the ledger no longer paid for. Dispose of it "
+            "instead, from the Fixed Assets page.")
+
 def post_asset_disposal(asset, disposal_date, proceeds, cash_account_id, created_by_id=None):
     """Take the asset off the books: its cost out, the depreciation accumulated
     against it out, the money in, and whatever is left over to gain or loss."""
@@ -7403,6 +7442,9 @@ def journal_reverse(id):
     entry = db.session.get(JournalEntry, id) or abort(404)
     try:
         reversal = reverse_entry(entry, created_by_id=current_user.id)
+        # The GL is not the whole story for a fixed asset: its register has to be put
+        # back too, or the two drift apart.
+        unwind_asset_entry(entry)
         db.session.commit()
     except PostingError as e:
         db.session.rollback()

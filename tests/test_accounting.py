@@ -14,6 +14,7 @@ from app import (
     ACC_CASH_IN_HAND, ACC_CAPITAL,
     month_end, depreciation_for_month, post_asset_acquisition,
     run_depreciation, post_asset_disposal, PostingError, post_account_opening,
+    reverse_entry, unwind_asset_entry,
     seed_chart_of_accounts, seed_fixed_asset_accounts, seed_fiscal_year,
     get_account, account_for_role,
     get_account_balance, total_cash_bank_balance,
@@ -302,6 +303,63 @@ def test_a_month_that_has_not_started_cannot_be_depreciated(appctx):
 
     with pytest.raises(PostingError, match="not started"):
         run_depreciation(month_end(datetime(now.year + 1, 1, 15)))
+
+
+def test_reversing_depreciation_clears_the_register_and_frees_the_month(appctx):
+    """The charges live in the register, not the GL. Reversing the entry without
+    removing them would leave the register claiming depreciation the ledger had just
+    cancelled, and the month could never be run again."""
+    _setup_gl()
+    a = _asset(cost=1200, life=12)
+    post_asset_acquisition(a, _cash_id())
+    db.session.commit()
+
+    entry, _, _ = run_depreciation(month_end(datetime(2026, 1, 1)))
+    db.session.commit()
+    assert a.accumulated == Decimal("100")
+
+    reverse_entry(entry)
+    unwind_asset_entry(entry)
+    db.session.commit()
+
+    db.session.refresh(a)
+    assert a.accumulated == Decimal("0")            # the register agrees with the GL
+    assert DepreciationCharge.query.count() == 0
+
+    # and the month is free to be posted again
+    entry2, total, _ = run_depreciation(month_end(datetime(2026, 1, 1)))
+    db.session.commit()
+    assert total == Decimal("100")
+
+
+def test_reversing_a_disposal_puts_the_asset_back(appctx):
+    _setup_gl()
+    a = _asset(cost=1000, life=10)
+    post_asset_acquisition(a, _cash_id())
+    db.session.commit()
+
+    entry, _ = post_asset_disposal(a, datetime(2026, 2, 10), Decimal("900"), _cash_id())
+    db.session.commit()
+    assert a.status == "Disposed"
+
+    reverse_entry(entry)
+    unwind_asset_entry(entry)
+    db.session.commit()
+
+    db.session.refresh(a)
+    assert a.status == "Active"                     # back on the register
+    assert a.disposal_date is None
+
+
+def test_an_acquisition_cannot_be_reversed_from_the_journal(appctx):
+    """The register would still hold an asset the ledger no longer paid for."""
+    _setup_gl()
+    a = _asset(cost=1000, life=10)
+    acq = post_asset_acquisition(a, _cash_id())
+    db.session.commit()
+
+    with pytest.raises(PostingError, match="Dispose of it instead"):
+        unwind_asset_entry(acq)
 
 
 def test_reducing_balance_charge_falls_each_month(appctx):
