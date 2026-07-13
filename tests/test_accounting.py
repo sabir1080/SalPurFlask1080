@@ -15,10 +15,12 @@ from app import (
     month_end, depreciation_for_month, post_asset_acquisition,
     run_depreciation, post_asset_disposal, PostingError, post_account_opening,
     post_entry, reverse_entry, unwind_asset_entry, gl_profit,
-    realign_backdated_reversals,
+    realign_backdated_reversals, ensure_gl_account_for_financial,
+    post_customer_receipt, post_supplier_payment, post_expense,
     seed_chart_of_accounts, seed_fixed_asset_accounts, seed_fiscal_year,
     get_account, account_for_role,
-    get_account_balance, total_cash_bank_balance,
+    get_account_balance, total_cash_bank_balance, account_transactions,
+    cash_balance_as_of,
     accounting_position, cash_flow_statement,
 )
 
@@ -65,24 +67,59 @@ def _post(date, desc, lines):
 
 
 # ── cash / bank account balances ──────────────────────────────────────────────
-def test_account_balance_from_movements(appctx):
-    acc = FinancialAccount(name="Cash", method="Cash", account_type="Cash", opening_balance=1000)
-    db.session.add(acc)
-    s, c = _supplier(), _customer()
-    db.session.add(CustomerPayment(customer_id=c.id, amount=500, payment_method="Cash"))   # +500 in
-    db.session.add(SupplierPayment(supplier_id=s.id, amount=200, payment_method="Cash"))    # -200 out
-    db.session.add(Expense(description="rent", amount=100, payment_method="Cash"))          # -100 out
-    db.session.add(CustomerPayment(customer_id=c.id, amount=9999, payment_method="Bank"))   # other account
+# These read the GL, so the movements have to be posted the way the app posts them.
+# A payment row written straight to the table and never posted is not money that
+# moved — no report would see it either.
+def _bank():
+    fa = FinancialAccount(name="Bank", method="Bank", account_type="Bank", opening_balance=0)
+    db.session.add(fa)
+    db.session.flush()
+    ensure_gl_account_for_financial(fa)
     db.session.commit()
-    assert round(get_account_balance(acc), 2) == 1200.0    # 1000 + 500 - 200 - 100
+    return fa
+
+
+def test_account_balance_from_movements(appctx):
+    _setup_gl()
+    when = datetime(2026, 3, 1)
+    cash, bank = FinancialAccount.query.filter_by(name="Cash").first(), _bank()
+    cash.opening_balance = Decimal("1000")
+    post_account_opening(cash)
+
+    s, c = _supplier(), _customer()
+    rcpt = CustomerPayment(customer_id=c.id, amount=500, payment_method="Cash",
+                           payment_date=when, account_id=cash.id)
+    pay = SupplierPayment(supplier_id=s.id, amount=200, payment_method="Cash",
+                          payment_date=when, account_id=cash.id)
+    exp = Expense(description="rent", amount=100, payment_method="Cash",
+                  date=when, account_id=cash.id)
+    other = CustomerPayment(customer_id=c.id, amount=9999, payment_method="Bank",
+                            payment_date=when, account_id=bank.id)   # other account
+    db.session.add_all([rcpt, pay, exp, other])
+    db.session.flush()
+    for r, fn in ((rcpt, post_customer_receipt), (pay, post_supplier_payment),
+                  (exp, post_expense), (other, post_customer_receipt)):
+        fn(r)
+    db.session.commit()
+
+    assert round(get_account_balance(cash), 2) == 1200.0    # 1000 + 500 - 200 - 100
+    assert round(get_account_balance(bank), 2) == 9999.0    # and the other account is its own
 
 
 def test_total_cash_bank_balance(appctx):
-    db.session.add(FinancialAccount(name="Cash", method="Cash", account_type="Cash", opening_balance=300))
-    db.session.add(FinancialAccount(name="Bank", method="Bank", account_type="Bank", opening_balance=700))
+    _setup_gl()
+    cash, bank = FinancialAccount.query.filter_by(name="Cash").first(), _bank()
+    cash.opening_balance, bank.opening_balance = Decimal("300"), Decimal("700")
+    post_account_opening(cash)
+    post_account_opening(bank)
+
     c = _customer()
-    db.session.add(CustomerPayment(customer_id=c.id, amount=50, payment_method="Bank"))
+    rcpt = CustomerPayment(customer_id=c.id, amount=50, payment_method="Bank",
+                           payment_date=datetime(2026, 3, 1), account_id=bank.id)
+    db.session.add(rcpt); db.session.flush()
+    post_customer_receipt(rcpt)
     db.session.commit()
+
     assert round(total_cash_bank_balance(), 2) == 1050.0    # 300 + (700+50)
 
 
@@ -304,6 +341,32 @@ def test_a_month_that_has_not_started_cannot_be_depreciated(appctx):
 
     with pytest.raises(PostingError, match="not started"):
         run_depreciation(month_end(datetime(now.year + 1, 1, 15)))
+
+
+def test_buying_an_asset_moves_the_cash_account_the_page_shows(appctx):
+    """The Cash & Bank page used to add up receipts, payments and expenses. A fixed
+    asset is none of those, so cash spent on one never left the page's balance and it
+    read 120,000 higher than the balance sheet — two numbers for one bank account."""
+    _setup_gl()
+    fa = FinancialAccount.query.filter_by(name="Cash").first()
+    fa.opening_balance = Decimal("500000")
+    post_account_opening(fa)
+    db.session.commit()
+    assert get_account_balance(fa) == 500000
+
+    a = _asset(cost=120000, life=60)
+    post_asset_acquisition(a, _cash_id())
+    db.session.commit()
+
+    assert get_account_balance(fa) == 380000            # the van was paid for in cash
+    assert total_cash_bank_balance() == 380000
+    # and the page agrees with the ledger every report is drawn from
+    assert cash_balance_as_of(datetime.now()) == Decimal("380000")
+
+    # the drill-down lists it too, so the rows still add up to the balance above them
+    rows = account_transactions(fa)
+    assert sum(r["inflow"] - r["outflow"] for r in rows) == 380000
+    assert any(r["outflow"] == 120000 for r in rows)
 
 
 def test_reversing_depreciation_clears_the_register_and_frees_the_month(appctx):

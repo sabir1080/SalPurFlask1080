@@ -2451,28 +2451,45 @@ def _sum_amount(model, account):
                  .filter(account_movement_filter(model, account)).scalar() or 0)
 
 def get_account_balance(account):
-    """opening + customer receipts (in) − supplier payments (out) − expenses (out).
-    Read-only; touches nothing."""
-    inflow  = _sum_amount(CustomerPayment, account)
-    outflow = _sum_amount(SupplierPayment, account) + _sum_amount(Expense, account)
-    return float(account.opening_balance or 0) + inflow - outflow
+    """The balance of the account's GL leaf: debit minus credit, which reads positive
+    for cash.
+
+    Summed from the ledger rather than from receipts, payments and expenses, because
+    those three are no longer the only things that move cash. Buying a fixed asset
+    does, so does a disposal, so does a manual journal entry — and none of them is a
+    payment or an expense. Counting only the three left this page reading a balance
+    the balance sheet disagreed with, and the balance sheet was the one telling the
+    truth: it reads the ledger, where every movement lands.
+
+    The opening balance is in the ledger too (post_account_opening), so it is not
+    added again here. Read-only; touches nothing."""
+    if not account.gl_account_id:
+        return 0.0
+    q = (db.session.query(func.coalesce(func.sum(JournalLine.debit - JournalLine.credit), 0))
+         .filter(JournalLine.account_id == account.gl_account_id))
+    return float(q.scalar() or 0)
 
 def total_cash_bank_balance():
     return sum(get_account_balance(a) for a in FinancialAccount.query.all())
 
 def account_transactions(account):
-    """Chronological list of movements for an account's ledger view."""
+    """Chronological list of movements for an account's ledger view, read off the
+    account's GL leaf — the same place get_account_balance reads, so the rows always
+    add up to the balance shown above them. Listing receipts, payments and expenses
+    instead would silently drop every other thing that moves cash: a fixed asset
+    bought, an asset sold, a journal entry posted straight to the bank."""
+    if not account.gl_account_id:
+        return []
+    lines = (db.session.query(JournalLine, JournalEntry)
+             .join(JournalEntry, JournalLine.entry_id == JournalEntry.id)
+             .filter(JournalLine.account_id == account.gl_account_id)
+             .order_by(JournalEntry.entry_date.asc(), JournalEntry.id.asc()).all())
     rows = []
-    for r in CustomerPayment.query.filter(account_movement_filter(CustomerPayment, account)).all():
-        rows.append({"date": r.payment_date, "desc": f"Receipt #{r.id} — {r.customer.name if r.customer else ''}",
-                     "inflow": float(r.amount), "outflow": 0.0})
-    for p in SupplierPayment.query.filter(account_movement_filter(SupplierPayment, account)).all():
-        rows.append({"date": p.payment_date, "desc": f"Payment #{p.id} — {p.supplier.name if p.supplier else ''}",
-                     "inflow": 0.0, "outflow": float(p.amount)})
-    for e in Expense.query.filter(account_movement_filter(Expense, account)).all():
-        rows.append({"date": e.date, "desc": f"Expense — {e.description}",
-                     "inflow": 0.0, "outflow": float(e.amount)})
-    rows.sort(key=lambda x: (x["date"] or datetime.min))
+    for line, entry in lines:
+        debit, credit = float(line.debit or 0), float(line.credit or 0)
+        rows.append({"date": entry.entry_date,
+                     "desc": entry.description,
+                     "inflow": debit, "outflow": credit})
     return rows
 
 def active_accounts():
