@@ -274,6 +274,36 @@ def test_a_month_cannot_be_depreciated_twice(appctx):
     assert DepreciationCharge.query.filter_by(asset_id=a.id).count() == 1
 
 
+def test_depreciation_is_never_dated_in_the_future(appctx):
+    """Run mid-month and a month-end entry date would sit ahead of today, so every
+    report that runs "as of now" — the P&L, the balance sheet — would post the
+    charge and then fail to show it."""
+    now = datetime.now()
+    _setup_gl(now.year)
+    a = _asset(cost=1200, life=12, acq=datetime(now.year, now.month, 1))
+    post_asset_acquisition(a, _cash_id())
+    db.session.commit()
+
+    entry, _, _ = run_depreciation(month_end(now))
+    db.session.commit()
+
+    assert entry.entry_date <= datetime.now()       # not ahead of today…
+    assert entry.entry_date < month_end(now)        # …because it is not the month-end
+    # and it is still recorded against the month it belongs to
+    assert DepreciationCharge.query.one().period_end == month_end(now)
+
+
+def test_a_month_that_has_not_started_cannot_be_depreciated(appctx):
+    now = datetime.now()
+    _setup_gl(now.year)
+    a = _asset(cost=1200, life=12, acq=datetime(now.year, 1, 1))
+    post_asset_acquisition(a, _cash_id())
+    db.session.commit()
+
+    with pytest.raises(PostingError, match="not started"):
+        run_depreciation(month_end(datetime(now.year + 1, 1, 15)))
+
+
 def test_reducing_balance_charge_falls_each_month(appctx):
     _setup_gl()
     a = _asset(cost=10000, salvage=0, life=None,

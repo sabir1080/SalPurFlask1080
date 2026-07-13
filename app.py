@@ -2005,6 +2005,15 @@ def run_depreciation(period_end, created_by_id=None):
     if posted_entry("depreciation", run_id):
         raise PostingError(f"Depreciation for {period_end:%B %Y} has already been posted.")
 
+    now = datetime.now()
+    if period_end.replace(day=1, hour=0, minute=0, second=0, microsecond=0) > now:
+        raise PostingError(f"{period_end:%B %Y} has not started yet.")
+
+    # Charge the month, but never date the entry in the future. Run mid-month and a
+    # month-end date would sit ahead of today, so every report that runs "as of now"
+    # — the P&L, the balance sheet — would post the depreciation and then not show it.
+    entry_date = min(period_end, now)
+
     charges = []
     for asset in FixedAsset.query.filter(FixedAsset.status != "Disposed").all():
         if DepreciationCharge.query.filter_by(asset_id=asset.id, period_end=period_end).first():
@@ -2018,7 +2027,7 @@ def run_depreciation(period_end, created_by_id=None):
 
     total = sum((amt for _, amt in charges), Decimal("0"))
     entry = post_entry(
-        entry_date=period_end,
+        entry_date=entry_date,
         description=f"Depreciation for {period_end:%B %Y}",
         source_type="depreciation", source_id=run_id, created_by_id=created_by_id,
         lines=[{"account_id": account_for_role("depreciation").id, "debit": total, "credit": 0},
