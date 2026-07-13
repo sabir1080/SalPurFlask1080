@@ -8423,6 +8423,43 @@ def admin_system():
     )
 
 FACTORY_RESET_PHRASE = "DELETE ALL DATA"
+TRANSACTION_RESET_PHRASE = "DELETE ALL TRANSACTIONS"
+
+# Both resets name the tables they *keep* and delete the rest, rather than listing what
+# to delete. A list of things to delete rots: add a model, forget to add it here, and
+# rows of it survive a wipe that claimed to be total — silently, and only noticed when
+# the numbers do not add up. Naming what survives fails the safe way instead.
+_KEEP_ON_FACTORY_RESET = {"user"}
+_KEEP_ON_TRANSACTION_RESET = _KEEP_ON_FACTORY_RESET | {
+    "supplier", "customer", "item", "category", "expense_category",
+    "account", "tax_code", "tax_component",
+    "fiscal_year", "accounting_period", "financial_account",
+}
+
+def _wipe_except(keep):
+    """Delete every table not in `keep`, children first."""
+    for table in reversed(db.metadata.sorted_tables):
+        if table.name not in keep:
+            db.session.execute(table.delete())
+    db.session.commit()
+
+def _seed_fresh_ledger():
+    """The chart, the tax codes, this year's periods, the four cash/bank accounts —
+    everything a first boot puts there so the system is usable the moment it is empty."""
+    seed_chart_of_accounts()
+    seed_fixed_asset_accounts()
+    seed_tax_codes()
+    seed_fiscal_year(datetime.now().year)
+    # Only if there are none — a transaction reset keeps the cash/bank accounts, and
+    # `method` is UNIQUE, so seeding them again unconditionally would fail the whole
+    # reset on the four accounts it was supposed to leave alone.
+    if FinancialAccount.query.count() == 0:
+        types = {"Cash": "Cash", "Bank": "Bank", "Cheque": "Bank", "Online": "Bank"}
+        for m in PAYMENT_METHODS:
+            db.session.add(FinancialAccount(name=m, method=m, account_type=types.get(m, "Bank"),
+                                            opening_balance=0))
+        db.session.commit()
+    seed_financial_account_links()
 
 def factory_reset():
     """Empty the system of every business record and leave it as a fresh install.
@@ -8434,26 +8471,53 @@ def factory_reset():
 
     Users are kept. Wiping them would lock the administrator out of the machine
     half-way through the request that wiped them.
-
-    Everything else is deleted and the chart of accounts, tax codes, fiscal year and
-    the four cash/bank accounts are seeded again, exactly as a first boot would.
     """
-    for table in reversed(db.metadata.sorted_tables):
-        if table.name == "user":
-            continue
-        db.session.execute(table.delete())
+    _wipe_except(_KEEP_ON_FACTORY_RESET)
+    _seed_fresh_ledger()
+
+def reset_transactions():
+    """Clear the trading history but keep who you trade with and what you sell.
+
+    What a client actually asks for at the start of a year, or when a trial period ends:
+    the suppliers, customers and items took real work to enter and are still correct —
+    it is the transactions that have to go.
+
+    Their opening balances go too, and that is the part that is easy to get wrong. An
+    opening balance is not a static field: it is *posted* to the ledger, so leaving it
+    behind would leave a receivable in the accounts with no customer ledger under it.
+    Item stock is the same — the Inventory account is emptied with the journals, so any
+    stock left on an item would immediately contradict it. Everything a party or an item
+    carries is therefore zeroed, not merely the rows around it deleted.
+
+    A closed fiscal year is reopened: its closing entry has just been deleted, so
+    "closed" would only mean "nothing can ever be posted again".
+    """
+    _wipe_except(_KEEP_ON_TRANSACTION_RESET)
+
+    for s in Supplier.query.all():
+        s.opening_balance = 0
+    for c in Customer.query.all():
+        c.opening_balance = 0
+    for i in Item.query.all():
+        i.stock = 0
+        i.inventory_value = 0
+    for fa in FinancialAccount.query.all():
+        fa.opening_balance = 0
+    for fy in FiscalYear.query.all():
+        fy.is_closed = False
+        fy.closed_at = None
+    for p in AccountingPeriod.query.all():
+        p.is_closed = False
     db.session.commit()
 
-    seed_chart_of_accounts()
-    seed_fixed_asset_accounts()
-    seed_tax_codes()
-    seed_fiscal_year(datetime.now().year)
-    types = {"Cash": "Cash", "Bank": "Bank", "Cheque": "Bank", "Online": "Bank"}
-    for m in PAYMENT_METHODS:
-        db.session.add(FinancialAccount(name=m, method=m, account_type=types.get(m, "Bank"),
-                                        opening_balance=0))
-    db.session.commit()
-    seed_financial_account_links()
+    # Idempotent, and it puts back anything a half-set-up system was missing.
+    _seed_fresh_ledger()
+
+def _confirmed(phrase):
+    if request.form.get("confirm", "").strip() == phrase:
+        return True
+    flash(f'Type "{phrase}" exactly to confirm. Nothing was deleted.', "danger")
+    return False
 
 @app.route("/admin/reset", methods=["POST"])
 @admin_required
@@ -8461,9 +8525,7 @@ def admin_reset():
     """Wipe the trial data before the system changes hands. Irreversible, so it asks for
     the phrase to be typed rather than settling for a button someone can hit by
     accident."""
-    if request.form.get("confirm", "").strip() != FACTORY_RESET_PHRASE:
-        flash(f'Type "{FACTORY_RESET_PHRASE}" exactly to confirm. Nothing was deleted.',
-              "danger")
+    if not _confirmed(FACTORY_RESET_PHRASE):
         return redirect(url_for("admin_system"))
     try:
         factory_reset()
@@ -8479,6 +8541,27 @@ def admin_reset():
                  "All business data deleted; chart of accounts and fiscal year re-seeded")
     flash("All business data deleted. The system is empty and ready to be set up.",
           "success")
+    return redirect(url_for("admin_system"))
+
+@app.route("/admin/reset_transactions", methods=["POST"])
+@admin_required
+def admin_reset_transactions():
+    if not _confirmed(TRANSACTION_RESET_PHRASE):
+        return redirect(url_for("admin_system"))
+    try:
+        reset_transactions()
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("Transaction reset failed")
+        flash(f"Reset failed, nothing was changed: {e}", "danger")
+        return redirect(url_for("admin_system"))
+
+    kept = (f"{Supplier.query.count()} suppliers, {Customer.query.count()} customers, "
+            f"{Item.query.count()} items")
+    record_audit("reset", "Database", None,
+                 f"All transactions deleted; opening balances cleared. Kept {kept}.")
+    flash(f"All transactions deleted. {kept} kept, with their opening balances and "
+          f"stock cleared to zero.", "success")
     return redirect(url_for("admin_system"))
 
 @app.route("/admin/backup")

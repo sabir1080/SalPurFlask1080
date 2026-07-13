@@ -8,7 +8,7 @@ from app import (
     Supplier, Customer, Category, Item, Purchase, Sale, FinancialAccount,
     Account, JournalEntry, DocumentSequence, FiscalYear, AccountingPeriod,
     AuditLog, TaxCode, FixedAsset,
-    FACTORY_RESET_PHRASE, factory_reset,
+    FACTORY_RESET_PHRASE, TRANSACTION_RESET_PHRASE, factory_reset, reset_transactions,
     seed_chart_of_accounts, seed_fixed_asset_accounts, seed_fiscal_year,
     seed_financial_account_links, post_account_opening, allocate_document_number,
     accounting_position, total_cash_bank_balance,
@@ -29,11 +29,13 @@ def _traded_system():
     seed_chart_of_accounts()
     seed_fixed_asset_accounts()
     seed_fiscal_year(datetime.now().year)
-    db.session.add(FinancialAccount(name="Cash", method="Cash", account_type="Cash",
-                                    opening_balance=Decimal("500000")))
+    for m, t in (("Cash", "Cash"), ("Bank", "Bank"), ("Cheque", "Bank"), ("Online", "Bank")):
+        db.session.add(FinancialAccount(name=m, method=m, account_type=t, opening_balance=0))
     db.session.commit()
     seed_financial_account_links()
-    post_account_opening(FinancialAccount.query.filter_by(name="Cash").first())
+    cash = FinancialAccount.query.filter_by(name="Cash").first()
+    cash.opening_balance = Decimal("500000")
+    post_account_opening(cash)
 
     sup = Supplier(name="Abc Traders", contact="03000000000", address="x", opening_balance=0)
     cus = Customer(name="Ahmed Brothers", contact="03000000000", address="x", opening_balance=0)
@@ -123,6 +125,116 @@ def test_the_wrong_phrase_deletes_nothing(appctx):
 
     assert (Supplier.query.count(), Sale.query.count(),
             JournalEntry.query.count()) == before
+
+
+def test_transaction_reset_keeps_the_parties_and_items(appctx):
+    c = _traded_system()
+    assert Sale.query.count() == 1
+
+    r = c.post("/admin/reset_transactions",
+               data={"confirm": TRANSACTION_RESET_PHRASE}, follow_redirects=True)
+    assert r.status_code == 200
+
+    # what the client asked to keep
+    assert Supplier.query.one().name == "Abc Traders"
+    assert Customer.query.one().name == "Ahmed Brothers"
+    assert Item.query.one().name == "Widget"
+    assert Category.query.count() == 1
+
+    # and what they asked to go
+    for model in (Purchase, Sale, JournalEntry, FixedAsset, DocumentSequence):
+        assert model.query.count() == 0, model.__name__
+
+
+def test_transaction_reset_clears_the_opening_balances_it_kept_the_parties_for(appctx):
+    """The easy half is deleting the rows. An opening balance is not a static field —
+    it is *posted*, so leaving it on the supplier would leave a payable in the accounts
+    with no supplier ledger underneath it. Item stock is the same: the Inventory account
+    goes with the journals, so any stock left on an item contradicts it at once."""
+    c = _traded_system()
+    sup = Supplier.query.one()
+    sup.opening_balance = Decimal("75000")
+    db.session.commit()
+
+    item = Item.query.one()
+    assert item.stock == 60                      # 100 bought, 40 sold
+
+    c.post("/admin/reset_transactions",
+           data={"confirm": TRANSACTION_RESET_PHRASE}, follow_redirects=True)
+
+    db.session.expire_all()
+    assert Supplier.query.one().opening_balance == 0
+    assert Customer.query.one().opening_balance == 0
+    assert all(fa.opening_balance == 0 for fa in FinancialAccount.query.all())
+
+    item = Item.query.one()
+    assert item.stock == 0
+    assert item.inventory_value == 0
+
+    # and the ledger agrees: nothing owed, nothing owned, nothing owing
+    pos = accounting_position(datetime.now())
+    assert pos["total_assets"] == 0
+    assert pos["total_liabilities"] == 0
+    assert pos["total_equity"] == 0
+    assert total_cash_bank_balance() == 0
+
+
+def test_transaction_reset_leaves_a_system_that_can_still_trade(appctx):
+    """Emptying it is no good if nothing can be posted afterwards."""
+    c = _traded_system()
+    c.post("/admin/reset_transactions",
+           data={"confirm": TRANSACTION_RESET_PHRASE}, follow_redirects=True)
+
+    assert Account.query.count() > 0
+    assert AccountingPeriod.query.count() == 12
+    assert not any(p.is_closed for p in AccountingPeriod.query.all())
+    assert FinancialAccount.query.count() == 4
+    assert allocate_document_number("sale", datetime.now()).endswith("000001")
+
+    # buy and sell again, on the suppliers and items that were kept
+    sup, item, cus = Supplier.query.one(), Item.query.one(), Customer.query.one()
+    today = datetime.now().strftime("%Y-%m-%d")
+    c.post("/purchase", data={
+        "supplier_id": sup.id, "date": today, "notes": "",
+        "item_id[]": item.id, "quantity[]": "10", "purchase_price[]": "100",
+        "discount_type[]": "", "discount_value[]": "0", "tax_percent[]": "0",
+    }, follow_redirects=True)
+
+    db.session.expire_all()
+    assert Item.query.one().stock == 10
+    assert Purchase.query.one().invoice_no.endswith("000001")
+
+
+def test_a_closed_year_is_reopened_or_nothing_could_ever_post_again(appctx):
+    """Closing a year is undone by the reset that deleted its closing entry. Left closed,
+    the books would be sealed against a business that has not traded yet."""
+    c = _traded_system()
+    fy = FiscalYear.query.first()
+    fy.is_closed = True
+    for p in fy.periods:
+        p.is_closed = True
+    db.session.commit()
+
+    c.post("/admin/reset_transactions",
+           data={"confirm": TRANSACTION_RESET_PHRASE}, follow_redirects=True)
+
+    db.session.expire_all()
+    assert not FiscalYear.query.first().is_closed
+    assert not any(p.is_closed for p in AccountingPeriod.query.all())
+
+
+def test_the_wrong_phrase_deletes_no_transactions_either(appctx):
+    c = _traded_system()
+    before = (Sale.query.count(), JournalEntry.query.count(), Item.query.one().stock)
+
+    for phrase in ("", "DELETE ALL DATA", "delete all transactions"):
+        r = c.post("/admin/reset_transactions", data={"confirm": phrase},
+                   follow_redirects=True)
+        assert "Nothing was deleted" in r.get_data(as_text=True)
+
+    db.session.expire_all()
+    assert (Sale.query.count(), JournalEntry.query.count(),
+            Item.query.one().stock) == before
 
 
 def test_only_an_admin_can_reset(appctx):

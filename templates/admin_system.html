@@ -71,41 +71,76 @@
         </div>
     </div>
 
-    <!-- Factory Reset -->
+    <!-- Start Fresh -->
     <div class="col-12">
         <div class="card border-0 shadow-sm border-danger">
             <div class="card-header bg-danger text-white fw-semibold">
-                <i class="bi bi-trash3"></i> Delete All Business Data
+                <i class="bi bi-trash3"></i> Start Fresh
             </div>
             <div class="card-body">
-                <div class="alert alert-danger py-2">
+                <div class="alert alert-danger py-2 mb-4">
                     <i class="bi bi-exclamation-octagon-fill"></i>
-                    <strong>This cannot be undone.</strong> Every supplier, customer, item,
-                    invoice, payment, journal entry, fixed asset and audit record is deleted,
-                    and invoice numbering starts again from 1.
+                    <strong>Neither of these can be undone.</strong>
                     <strong>Download a backup first</strong> — it is the only way back.
                 </div>
-                <p class="small text-muted mb-3">
-                    For handing a tested system over to whoever will use it. Your user accounts
-                    are kept, so you stay signed in. The chart of accounts, tax codes, this
-                    year's periods and the four cash/bank accounts are created fresh, exactly
-                    as on a new installation.
+
+                <div class="row g-4">
+                    <!-- Transactions only -->
+                    <div class="col-lg-6">
+                        <h6 class="fw-bold">Delete All Transactions</h6>
+                        <p class="small text-muted">
+                            Keeps your <strong>suppliers, customers and items</strong> — they took
+                            real work to enter and are still correct. Deletes every purchase, sale,
+                            return, payment, receipt, expense, journal entry and fixed asset, and
+                            <strong>clears their opening balances and stock to zero</strong>.
+                            Invoice numbering starts again from 1.
+                        </p>
+                        <p class="small text-muted">
+                            For the start of a year, or when a trial period ends and real trading
+                            begins.
+                        </p>
+                        <form method="POST" action="{{ url_for('admin_reset_transactions') }}"
+                              onsubmit="return confirm('Delete ALL transactions and clear opening balances? Suppliers, customers and items are kept. This cannot be undone.')">
+                            <label class="form-label fw-semibold small">
+                                Type <code>DELETE ALL TRANSACTIONS</code> to confirm
+                            </label>
+                            <input type="text" name="confirm" class="form-control mb-2"
+                                   autocomplete="off" placeholder="DELETE ALL TRANSACTIONS" required>
+                            <button type="submit" class="btn btn-warning">
+                                <i class="bi bi-eraser"></i> Delete Transactions
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Everything -->
+                    <div class="col-lg-6 border-start">
+                        <h6 class="fw-bold">Delete All Data</h6>
+                        <p class="small text-muted">
+                            Deletes <strong>everything</strong> — suppliers, customers, items and
+                            categories as well as all transactions. The system is left exactly as a
+                            new installation: chart of accounts, tax codes, this year's periods and
+                            the four cash/bank accounts, and nothing else.
+                        </p>
+                        <p class="small text-muted">
+                            For handing the system over to someone who will enter their own data.
+                        </p>
+                        <form method="POST" action="{{ url_for('admin_reset') }}"
+                              onsubmit="return confirm('Delete ALL business data, including suppliers, customers and items? This cannot be undone.')">
+                            <label class="form-label fw-semibold small">
+                                Type <code>DELETE ALL DATA</code> to confirm
+                            </label>
+                            <input type="text" name="confirm" class="form-control mb-2"
+                                   autocomplete="off" placeholder="DELETE ALL DATA" required>
+                            <button type="submit" class="btn btn-danger">
+                                <i class="bi bi-trash3"></i> Delete Everything
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <p class="small text-muted mt-3 mb-0">
+                    Your user accounts are kept either way, so you stay signed in.
                 </p>
-                <form method="POST" action="{{ url_for('admin_reset') }}" class="row g-2 align-items-end"
-                      onsubmit="return confirm('Delete ALL business data? This cannot be undone.')">
-                    <div class="col-sm-6 col-md-4">
-                        <label class="form-label fw-semibold small">
-                            Type <code>DELETE ALL DATA</code> to confirm
-                        </label>
-                        <input type="text" name="confirm" class="form-control"
-                               autocomplete="off" placeholder="DELETE ALL DATA" required>
-                    </div>
-                    <div class="col-auto">
-                        <button type="submit" class="btn btn-danger">
-                            <i class="bi bi-trash3"></i> Delete Everything
-                        </button>
-                    </div>
-                </form>
             </div>
         </div>
     </div>
