@@ -2,7 +2,12 @@
 {% block title %}User Manual — {{ app_name }}{% endblock %}
 {% block content %}
 <style>
-.mn-wrap { max-width: 1140px; margin: 0 auto; }
+/* This is a document people have to read, at length. Body copy therefore gets full
+   contrast — muted grey is for captions, not for paragraphs. Bootstrap's .text-muted is
+   lighter still, so it is overridden here rather than trusted. */
+.mn-wrap { max-width: 1140px; margin: 0 auto; color: var(--text-dark); }
+.mn-wrap p, .mn-wrap li, .mn-wrap td, .mn-wrap th,
+.mn-wrap .text-muted { color: var(--text-dark); }
 
 .mn-toc {
   position: sticky; top: 90px;
@@ -11,20 +16,20 @@
   max-height: calc(100vh - 120px); overflow-y: auto;
 }
 .mn-toc h6 { font-weight: 700; font-size: .8rem; text-transform: uppercase;
-             letter-spacing: .06em; color: var(--muted); margin-bottom: .75rem; }
+             letter-spacing: .06em; color: var(--text-muted); margin-bottom: .75rem; }
 .mn-toc a { display: block; padding: .3rem 0; font-size: .875rem;
-            color: var(--body-color, inherit); text-decoration: none; border-radius: 6px; }
+            color: var(--text-dark); text-decoration: none; border-radius: 6px; }
 .mn-toc a:hover { color: var(--primary); }
 
 .mn-sec { scroll-margin-top: 90px; margin-bottom: 3rem; }
 .mn-sec > h3 {
-  font-weight: 800; letter-spacing: -.01em;
+  font-weight: 800; letter-spacing: -.01em; color: var(--text-dark);
   padding-bottom: .5rem; margin-bottom: 1rem;
   border-bottom: 2px solid var(--border);
 }
-.mn-sec h5 { font-weight: 700; margin-top: 1.75rem; margin-bottom: .6rem; }
-.mn-sec p, .mn-sec li { color: var(--muted); }
-.mn-sec strong, .mn-sec th { color: var(--body-color, inherit); }
+.mn-sec h5 { font-weight: 700; margin-top: 1.75rem; margin-bottom: .6rem; color: var(--text-dark); }
+.mn-sec p, .mn-sec li { color: var(--text-dark); }
+.mn-sec strong, .mn-sec th { color: var(--text-dark); }
 
 .mn-step { counter-reset: none; padding-left: 0; list-style: none; }
 .mn-step > li {
@@ -44,15 +49,17 @@
   border-left: 3px solid var(--primary);
   background: var(--card-bg);
   padding: .85rem 1rem; border-radius: 0 10px 10px 0;
-  margin: 1rem 0; font-size: .9rem;
+  margin: 1rem 0; font-size: .92rem;
+  color: var(--text-dark);
 }
-.mn-why strong { display: block; margin-bottom: .2rem; }
+.mn-why strong { display: block; margin-bottom: .2rem; color: var(--primary); }
 
 .mn-warn {
   border-left: 3px solid #dc3545;
   background: var(--card-bg);
   padding: .85rem 1rem; border-radius: 0 10px 10px 0;
-  margin: 1rem 0; font-size: .9rem;
+  margin: 1rem 0; font-size: .92rem;
+  color: var(--text-dark);
 }
 .mn-warn strong { display: block; margin-bottom: .2rem; color: #dc3545; }
 
@@ -60,10 +67,17 @@
   font-family: var(--bs-font-monospace, monospace);
   font-size: .85em; padding: .1rem .4rem;
   background: var(--surface); border: 1px solid var(--border); border-radius: 5px;
-  white-space: nowrap;
+  color: var(--text-dark); white-space: nowrap;
+}
+.mn-sec code {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 5px; padding: .1rem .35rem; color: var(--text-dark);
 }
 @media print {
-  .mn-toc, .navbar, footer { display: none !important; }
+  /* Printed on white: force dark ink whatever theme the screen was in. */
+  .mn-toc, .navbar, footer, .btn { display: none !important; }
+  .mn-wrap, .mn-wrap * { color: #000 !important; background: #fff !important; }
+  .mn-why, .mn-warn, .mn-path { border: 1px solid #999 !important; }
   .mn-sec { page-break-inside: avoid; }
 }
 </style>

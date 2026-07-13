@@ -53,3 +53,29 @@ def test_the_manual_tells_the_truth_about_the_rules(appctx):
 def test_about_links_to_the_manual(appctx):
     c = flask_app.test_client()
     assert "/manual" in c.get("/about").get_data(as_text=True)
+
+
+def test_no_template_uses_a_css_variable_that_does_not_exist():
+    """A misspelt CSS variable fails silently. `color: var(--muted)` — when the variable
+    is actually `--text-muted` — is not an error: the browser simply has no colour to
+    apply, and the text renders in whatever it inherits. It looks washed out, and nothing
+    anywhere says why. That is exactly how the About page and the manual shipped
+    unreadable.
+    """
+    import re
+    from pathlib import Path
+
+    css = Path(flask_app.static_folder, "css", "style.css").read_text(encoding="utf-8")
+    defined = set(re.findall(r"^\s*(--[\w-]+)\s*:", css, re.MULTILINE))
+    assert defined, "no CSS variables found — has style.css moved?"
+
+    bad = []
+    for tpl in Path(flask_app.template_folder).rglob("*.html"):
+        text = tpl.read_text(encoding="utf-8")
+        for used in re.findall(r"var\(\s*(--[\w-]+)", text):
+            # Bootstrap defines its own (--bs-*); we only own ours.
+            if used.startswith("--bs-") or used in defined:
+                continue
+            bad.append(f"{tpl.name}: var({used})")
+
+    assert not bad, "CSS variables used but never defined:\n  " + "\n  ".join(sorted(set(bad)))

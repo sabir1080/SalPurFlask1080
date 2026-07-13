@@ -32,12 +32,23 @@
 .ab-hero p  { max-width: 46rem; opacity: .93; margin-bottom: 1.5rem; }
 .ab-hero .btn-light { font-weight: 600; }
 
-.ab-h { font-weight: 700; margin-bottom: .35rem; }
-.ab-sub { color: var(--muted); margin-bottom: 1.5rem; }
+/* Body copy is body copy: it gets full contrast. Only genuinely secondary lines —
+   captions, labels — are muted. Bootstrap's .text-muted is lighter still, so this page
+   overrides it rather than relying on it for anything anyone has to read. */
+.ab-wrap { color: var(--text-dark); }
+.ab-wrap p,
+.ab-wrap li,
+.ab-wrap td,
+.ab-wrap .text-muted { color: var(--text-dark); }
+.ab-wrap .small,
+.ab-wrap small { color: var(--text-muted); }
+
+.ab-h { font-weight: 700; margin-bottom: .35rem; color: var(--text-dark); }
+.ab-sub { color: var(--text-muted); margin-bottom: 1.5rem; }
 
 .ab-stat { border-left: 3px solid var(--primary); padding-left: .9rem; }
-.ab-stat .n { font-size: 1.35rem; font-weight: 800; line-height: 1.15; }
-.ab-stat .l { font-size: .78rem; color: var(--muted); }
+.ab-stat .n { font-size: 1.35rem; font-weight: 800; line-height: 1.15; color: var(--text-dark); }
+.ab-stat .l { font-size: .78rem; color: var(--text-muted); }
 
 .ab-card {
   height: 100%;
@@ -49,12 +60,12 @@
 }
 .ab-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
 .ab-card .bi { font-size: 1.5rem; color: var(--primary); }
-.ab-card h6 { font-weight: 700; margin: .7rem 0 .4rem; }
-.ab-card p  { font-size: .9rem; color: var(--muted); margin: 0; }
+.ab-card h6 { font-weight: 700; margin: .7rem 0 .4rem; color: var(--text-dark); }
+.ab-card p  { font-size: .9rem; color: var(--text-dark); margin: 0; }
 
-.ab-rule { border-left: 3px solid var(--bs-warning, #f0ad4e); padding-left: 1rem; margin-bottom: 1.35rem; }
-.ab-rule strong { display: block; margin-bottom: .15rem; }
-.ab-rule span   { font-size: .9rem; color: var(--muted); }
+.ab-rule { border-left: 3px solid #f59e0b; padding-left: 1rem; margin-bottom: 1.35rem; }
+.ab-rule strong { display: block; margin-bottom: .15rem; color: var(--text-dark); }
+.ab-rule span   { font-size: .9rem; color: var(--text-dark); }
 
 .ab-note {
   background: var(--card-bg);
@@ -62,7 +73,10 @@
   border-radius: 14px;
   padding: 1.5rem;
 }
-.ab-foot { color: var(--muted); font-size: .875rem; }
+.ab-note p { color: var(--text-dark); }
+.ab-wrap .table th { color: var(--text-dark); }
+.ab-foot { color: var(--text-muted); font-size: .875rem; }
+.ab-foot strong { color: var(--text-dark); }
 </style>
 
 <div class="ab-wrap">
