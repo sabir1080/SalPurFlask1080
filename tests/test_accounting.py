@@ -15,6 +15,7 @@ from app import (
     month_end, depreciation_for_month, post_asset_acquisition,
     run_depreciation, post_asset_disposal, PostingError, post_account_opening,
     post_entry, reverse_entry, unwind_asset_entry, gl_profit,
+    realign_backdated_reversals,
     seed_chart_of_accounts, seed_fixed_asset_accounts, seed_fiscal_year,
     get_account, account_for_role,
     get_account_balance, total_cash_bank_balance,
@@ -358,6 +359,39 @@ def test_a_reversal_is_never_dated_before_the_entry_it_cancels(appctx):
     # charge nor its cancellation has landed, and the expense is not showing negative.
     income, expenses = gl_profit(datetime(now.year, 1, 1), datetime.now())
     assert (income, expenses) == (Decimal("0"), Decimal("0"))
+
+
+def test_a_reversal_written_before_the_fix_is_pulled_back_onto_its_original(appctx):
+    """Rows already in the database still carry the split. Reproduce one the way the
+    old code wrote it — a reversal dated before the entry it cancels — and the backfill
+    must close the gap, or the expense goes on reading negative in production."""
+    _setup_gl()
+    now = datetime.now()
+    future = datetime(now.year, now.month, 28, 0, 0) if now.day < 28 else \
+             datetime(now.year + 1, 1, 28, 0, 0)
+    expense = account_for_role("depreciation")
+
+    entry = post_entry(
+        entry_date=future, description="Charge dated ahead of today",
+        lines=[{"account_id": expense.id, "debit": Decimal("2000"), "credit": 0},
+               {"account_id": get_account(ACC_CASH_IN_HAND).id,
+                "debit": 0, "credit": Decimal("2000")}],
+    )
+    reversal = reverse_entry(entry, on_date=now)      # what the old code did
+    db.session.commit()
+
+    # the damage: as of today the credit has landed and the debit has not
+    _, expenses = gl_profit(datetime(now.year, 1, 1), datetime.now())
+    assert expenses == Decimal("-2000")
+
+    assert realign_backdated_reversals() == 1
+
+    db.session.refresh(reversal)
+    assert reversal.entry_date == entry.entry_date
+    _, expenses = gl_profit(datetime(now.year, 1, 1), datetime.now())
+    assert expenses == Decimal("0")
+
+    assert realign_backdated_reversals() == 0        # idempotent
 
 
 def test_reversing_a_disposal_puts_the_asset_back(appctx):

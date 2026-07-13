@@ -918,6 +918,34 @@ def backfill_account_openings():
             app.logger.warning("Could not post opening balance for %s: %s", fa.name, e)
     return posted
 
+def realign_backdated_reversals():
+    """Pull any reversal dated before the entry it cancels onto that entry's date.
+
+    reverse_entry used to date every reversal today. Reverse an entry dated ahead of
+    today and the cancelling credit landed before the debit it undoes, so a report cut
+    between the two showed the credit alone — an expense reading negative, and a profit
+    inflated by the very charge that had just been taken off. reverse_entry now refuses
+    to backdate, but rows written before that fix are still split. Move them; the pair
+    then nets to zero in any period containing either.
+
+    Idempotent — a reversal already on or after its original is left alone. Never
+    allowed to break boot."""
+    moved = 0
+    try:
+        reversals = JournalEntry.query.filter(JournalEntry.reversal_of_id.isnot(None)).all()
+        for rev in reversals:
+            original = db.session.get(JournalEntry, rev.reversal_of_id)
+            if original is None or rev.entry_date >= original.entry_date:
+                continue
+            rev.entry_date = original.entry_date
+            moved += 1
+        if moved:
+            db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        app.logger.warning("Could not realign backdated reversals: %s", e)
+    return moved
+
 def backfill_document_numbers():
     """Number the purchases and sales that predate numbering, oldest first, so the
     order they were raised in is the order they are numbered in. Idempotent: only
@@ -3190,6 +3218,9 @@ def migrate_database():
 
     # Documents raised before numbering existed still need their numbers.
     backfill_document_numbers()
+
+    # Reversals written before reverse_entry refused to backdate.
+    realign_backdated_reversals()
 
 # Create Database
 with app.app_context():
