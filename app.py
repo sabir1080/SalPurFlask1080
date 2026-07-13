@@ -8422,6 +8422,65 @@ def admin_system():
         backup_name=f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
     )
 
+FACTORY_RESET_PHRASE = "DELETE ALL DATA"
+
+def factory_reset():
+    """Empty the system of every business record and leave it as a fresh install.
+
+    For handing a tested system to whoever will actually use it: the trial suppliers,
+    invoices and journal entries have to go, and they have to go *completely* — an
+    invoice sequence left mid-count would hand the new owner INV-2026-000007 as their
+    first invoice, and a stale opening balance would sit in the ledger for ever.
+
+    Users are kept. Wiping them would lock the administrator out of the machine
+    half-way through the request that wiped them.
+
+    Everything else is deleted and the chart of accounts, tax codes, fiscal year and
+    the four cash/bank accounts are seeded again, exactly as a first boot would.
+    """
+    for table in reversed(db.metadata.sorted_tables):
+        if table.name == "user":
+            continue
+        db.session.execute(table.delete())
+    db.session.commit()
+
+    seed_chart_of_accounts()
+    seed_fixed_asset_accounts()
+    seed_tax_codes()
+    seed_fiscal_year(datetime.now().year)
+    types = {"Cash": "Cash", "Bank": "Bank", "Cheque": "Bank", "Online": "Bank"}
+    for m in PAYMENT_METHODS:
+        db.session.add(FinancialAccount(name=m, method=m, account_type=types.get(m, "Bank"),
+                                        opening_balance=0))
+    db.session.commit()
+    seed_financial_account_links()
+
+@app.route("/admin/reset", methods=["POST"])
+@admin_required
+def admin_reset():
+    """Wipe the trial data before the system changes hands. Irreversible, so it asks for
+    the phrase to be typed rather than settling for a button someone can hit by
+    accident."""
+    if request.form.get("confirm", "").strip() != FACTORY_RESET_PHRASE:
+        flash(f'Type "{FACTORY_RESET_PHRASE}" exactly to confirm. Nothing was deleted.',
+              "danger")
+        return redirect(url_for("admin_system"))
+    try:
+        factory_reset()
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("Factory reset failed")
+        flash(f"Reset failed, nothing was changed: {e}", "danger")
+        return redirect(url_for("admin_system"))
+
+    # The audit log was wiped with everything else, so this becomes its first entry —
+    # which is the right first thing for it to say.
+    record_audit("reset", "Database", None,
+                 "All business data deleted; chart of accounts and fiscal year re-seeded")
+    flash("All business data deleted. The system is empty and ready to be set up.",
+          "success")
+    return redirect(url_for("admin_system"))
+
 @app.route("/admin/backup")
 @admin_required
 def admin_backup():

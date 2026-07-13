@@ -71,6 +71,45 @@
         </div>
     </div>
 
+    <!-- Factory Reset -->
+    <div class="col-12">
+        <div class="card border-0 shadow-sm border-danger">
+            <div class="card-header bg-danger text-white fw-semibold">
+                <i class="bi bi-trash3"></i> Delete All Business Data
+            </div>
+            <div class="card-body">
+                <div class="alert alert-danger py-2">
+                    <i class="bi bi-exclamation-octagon-fill"></i>
+                    <strong>This cannot be undone.</strong> Every supplier, customer, item,
+                    invoice, payment, journal entry, fixed asset and audit record is deleted,
+                    and invoice numbering starts again from 1.
+                    <strong>Download a backup first</strong> — it is the only way back.
+                </div>
+                <p class="small text-muted mb-3">
+                    For handing a tested system over to whoever will use it. Your user accounts
+                    are kept, so you stay signed in. The chart of accounts, tax codes, this
+                    year's periods and the four cash/bank accounts are created fresh, exactly
+                    as on a new installation.
+                </p>
+                <form method="POST" action="{{ url_for('admin_reset') }}" class="row g-2 align-items-end"
+                      onsubmit="return confirm('Delete ALL business data? This cannot be undone.')">
+                    <div class="col-sm-6 col-md-4">
+                        <label class="form-label fw-semibold small">
+                            Type <code>DELETE ALL DATA</code> to confirm
+                        </label>
+                        <input type="text" name="confirm" class="form-control"
+                               autocomplete="off" placeholder="DELETE ALL DATA" required>
+                    </div>
+                    <div class="col-auto">
+                        <button type="submit" class="btn btn-danger">
+                            <i class="bi bi-trash3"></i> Delete Everything
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- Table Stats -->
     <div class="col-12">
         <div class="card border-0 shadow-sm">
