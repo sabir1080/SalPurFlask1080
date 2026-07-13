@@ -22,7 +22,7 @@
                 {% set amt = e.lines | sum(attribute='debit') %}
                 <tr {% if e.is_reversed %}class="table-warning"{% elif e.is_reversal %}class="table-secondary"{% endif %}>
                     <td>{{ e.id }}</td>
-                    <td class="text-nowrap small">{{ e.entry_date | localdt('%Y-%m-%d') }}</td>
+                    <td class="text-nowrap small">{{ e.entry_date | bizdate }}</td>
                     <td><span class="badge bg-light text-dark border">{{ e.source_type }}</span></td>
                     <td>{{ e.reference or '—' }}</td>
                     <td>

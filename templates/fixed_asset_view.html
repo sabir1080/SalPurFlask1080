@@ -13,7 +13,7 @@
     <div class="card-body">
         <dl class="row mb-0">
             <dt class="col-sm-3">Tag / Serial</dt><dd class="col-sm-3">{{ asset.tag or '—' }}</dd>
-            <dt class="col-sm-3">Acquired</dt><dd class="col-sm-3">{{ asset.acquisition_date | localdt('%d %B %Y') }}</dd>
+            <dt class="col-sm-3">Acquired</dt><dd class="col-sm-3">{{ asset.acquisition_date | bizdate('%d %B %Y') }}</dd>
 
             <dt class="col-sm-3">Cost</dt><dd class="col-sm-3">{{ asset.cost | fmt_num }}</dd>
             <dt class="col-sm-3">Salvage value</dt><dd class="col-sm-3">{{ asset.salvage_value | fmt_num }}</dd>
@@ -37,7 +37,7 @@
             <dd class="col-sm-3 fw-bold">{{ asset.net_book_value | fmt_num }}</dd>
 
             {% if asset.status == 'Disposed' %}
-            <dt class="col-sm-3">Disposed on</dt><dd class="col-sm-3">{{ asset.disposal_date | localdt('%d %B %Y') }}</dd>
+            <dt class="col-sm-3">Disposed on</dt><dd class="col-sm-3">{{ asset.disposal_date | bizdate('%d %B %Y') }}</dd>
             <dt class="col-sm-3">Proceeds</dt><dd class="col-sm-3">{{ asset.disposal_proceeds | fmt_num }}</dd>
             {% endif %}
             {% if asset.notes %}
@@ -60,7 +60,7 @@
                 {% for ch in charges %}
                 {% set ns.acc = ns.acc + ch.amount %}
                 <tr>
-                    <td>{{ ch.period_end | localdt('%B %Y') }}</td>
+                    <td>{{ ch.period_end | bizdate('%B %Y') }}</td>
                     <td class="text-end">{{ ch.amount | fmt_num }}</td>
                     <td class="text-end text-danger">{{ ns.acc | fmt_num }}</td>
                     <td class="text-end fw-semibold">{{ (asset.cost - ns.acc) | fmt_num }}</td>

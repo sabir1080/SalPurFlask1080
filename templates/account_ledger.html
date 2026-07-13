@@ -43,7 +43,7 @@
                 </tr>
                 {% for t in ledger %}
                 <tr>
-                    <td class="text-nowrap small">{{ t.date | localdt('%Y-%m-%d') }}</td>
+                    <td class="text-nowrap small">{{ t.date | bizdate }}</td>
                     <td>{{ t.desc }}</td>
                     <td class="text-end text-success">{{ (t.inflow | fmt_num) if t.inflow else '' }}</td>
                     <td class="text-end text-danger">{{ (t.outflow | fmt_num) if t.outflow else '' }}</td>

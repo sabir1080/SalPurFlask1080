@@ -164,8 +164,21 @@ def now_local():
 
 @app.template_filter("localdt")
 def localdt_filter(dt, fmt="%Y-%m-%d %H:%M"):
+    """For a *moment*: when a row was created, when a document was reversed. These are
+    instants, so they are worth showing in the reader's own time zone."""
     local = to_local(dt)
     return local.strftime(fmt) if local else ""
+
+@app.template_filter("bizdate")
+def bizdate_filter(dt, fmt="%Y-%m-%d"):
+    """For a *business date*: the date a document bears. An invoice dated 31 July is
+    dated 31 July in every office on earth — it is not an instant and must never be
+    shifted between time zones.
+
+    Depreciation for July is dated the last moment of July. Run it through the local
+    shift and 31 July 23:59 becomes 1 August, so a July charge printed as August and
+    the ledger appeared to disagree with itself."""
+    return dt.strftime(fmt) if dt else ""
 
 
 db = SQLAlchemy(app)  # iska matlab sqlite se connect ho raha ha

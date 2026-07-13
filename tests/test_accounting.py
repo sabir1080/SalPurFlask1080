@@ -16,7 +16,7 @@ from app import (
     run_depreciation, post_asset_disposal, PostingError, post_account_opening,
     post_entry, reverse_entry, unwind_asset_entry, gl_profit,
     realign_backdated_reversals, ensure_gl_account_for_financial,
-    post_customer_receipt, post_supplier_payment, post_expense,
+    post_customer_receipt, post_supplier_payment, post_expense, bizdate_filter,
     seed_chart_of_accounts, seed_fixed_asset_accounts, seed_fiscal_year,
     get_account, account_for_role,
     get_account_balance, total_cash_bank_balance, account_transactions,
@@ -341,6 +341,40 @@ def test_a_month_that_has_not_started_cannot_be_depreciated(appctx):
 
     with pytest.raises(PostingError, match="not started"):
         run_depreciation(month_end(datetime(now.year + 1, 1, 15)))
+
+
+BUSINESS_DATE_FIELDS = ("entry_date", "acquisition_date", "disposal_date",
+                        "period_end", "payment_date")
+
+
+def test_no_template_time_shifts_a_business_date():
+    """A business date is the date a document *bears*: 31 July is 31 July in every
+    office on earth. Only a timestamp — when a row was saved, when it was reversed —
+    is an instant worth showing in the reader's own time zone.
+
+    Mix the two and July's depreciation, dated 31 July 23:59, prints as August: the
+    date is nudged five hours into the next month and the ledger contradicts itself.
+    So business dates take `bizdate`, never `localdt`."""
+    from pathlib import Path
+    import re
+
+    offenders = []
+    pattern = re.compile(r"(\w+)\s*\|\s*localdt")
+    for tpl in Path(flask_app.template_folder).rglob("*.html"):
+        for n, line in enumerate(tpl.read_text(encoding="utf-8").splitlines(), 1):
+            for field in pattern.findall(line):
+                if field in BUSINESS_DATE_FIELDS:
+                    offenders.append(f"{tpl.name}:{n} — {field} | localdt")
+    assert not offenders, "business dates must use `bizdate`:\n  " + "\n  ".join(offenders)
+
+
+def test_a_business_date_is_not_shifted_into_the_next_month(appctx):
+    july_end = month_end(datetime(2026, 7, 1))
+    assert july_end == datetime(2026, 7, 31, 23, 59, 59)
+
+    assert bizdate_filter(july_end, "%B %Y") == "July 2026"
+    assert bizdate_filter(july_end) == "2026-07-31"
+    assert bizdate_filter(None) == ""
 
 
 def test_buying_an_asset_moves_the_cash_account_the_page_shows(appctx):
