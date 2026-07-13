@@ -88,9 +88,11 @@ Defined as a module-level tuple: `PAYMENT_METHODS = ("Cash", "Bank", "Cheque", "
 It has a second job: it decides which `FinancialAccount` rows absorb legacy movements (see below). Adding or removing a member changes which cash/bank account untagged records fall into — don't edit it casually.
 
 ### Cash / bank accounts
-`FinancialAccount` rows are cash or bank accounts. Balances are never stored; `get_account_balance()` derives them from `opening_balance` plus customer receipts, minus supplier payments and expenses.
+`FinancialAccount` rows are cash or bank accounts. Each one has its own GL leaf (`gl_account_id`). Balances are never stored: `get_account_balance()` sums the journal lines on that leaf — the same place every report reads.
 
-A movement (`SupplierPayment` / `CustomerPayment` / `Expense`) belongs to an account in one of two ways, both encoded in `account_movement_filter()`:
+**Do not compute a cash balance any other way.** It used to be derived from the account's receipts, payments and expenses, which was true once and then quietly stopped being true: buying a fixed asset spends cash, selling one brings it in, and a manual journal entry can be posted straight to the bank, and none of those three is a receipt, a payment or an expense. The page read 420,000 while the balance sheet read 300,000 — one bank account, two numbers.
+
+A movement (`SupplierPayment` / `CustomerPayment` / `Expense`) is *posted* to an account's leaf by `_resolve_financial_account()`, in one of two ways:
 
 1. **Explicitly** — its nullable `account_id` FK points at the account. Every movement created through the UI is tagged this way (the `_account_select.html` partial renders the dropdown).
 2. **Implicitly (legacy)** — `account_id IS NULL` and `payment_method == account.method`. This is how rows created before `account_id` existed keep counting, with no backfill.

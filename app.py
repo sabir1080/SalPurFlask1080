@@ -2487,22 +2487,15 @@ def total_customer_ledger_balance():
     return _total_ledger_balance("customer_ledger_entry", "customer_id", "customer")
 
 # ── Cash / Bank accounts (derived balances) ───────────────────────────────────
-def account_movement_filter(model, account):
-    """Rows of `model` belonging to `account`: those tagged with its account_id,
-    plus — for the seeded accounts only — untagged legacy rows carrying its
-    payment_method. See FinancialAccount's docstring for why.
-
-    Reversed movements are excluded. A reversed payment never left the bank, so
-    it must not move the bank balance — the document stays only as a record."""
-    owns = [model.account_id == account.id]
-    if account.method in PAYMENT_METHODS:
-        owns.append(and_(model.account_id.is_(None),
-                         model.payment_method == account.method))
-    return and_(model.is_reversed.is_(False), or_(*owns))
-
-def _sum_amount(model, account):
-    return float(db.session.query(func.sum(model.amount))
-                 .filter(account_movement_filter(model, account)).scalar() or 0)
+# Balances come off the account's GL leaf. There used to be a second way — summing an
+# account's receipts, payments and expenses directly — and it is gone rather than left
+# lying around, because it looked authoritative and was not: it could not see a fixed
+# asset bought with cash, or a journal entry posted to the bank, and anything built on
+# it would quietly disagree with the balance sheet all over again.
+#
+# The rule for which movements belong to which account still exists, but only where it
+# is actually needed: _resolve_financial_account(), which decides the GL leaf a movement
+# posts to (explicit account_id, or the legacy payment_method match).
 
 def get_account_balance(account):
     """The balance of the account's GL leaf: debit minus credit, which reads positive

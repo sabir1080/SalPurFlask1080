@@ -7,7 +7,7 @@ import pytest
 
 from app import (
     app as flask_app, db, User, pwd_context,
-    Supplier, Customer, Category, Item, Purchase, FinancialAccount,
+    Supplier, Customer, Category, Item, Purchase, Sale, FinancialAccount,
     Account, PostingError,
     ADJUSTMENT_DIRECTIONS, ADJUSTMENT_TYPES,
     item_add_stock, item_remove_stock,
@@ -88,6 +88,20 @@ def test_reversing_a_purchase_whose_goods_were_sold_is_refused(appctx):
     inv = get_account(ACC_INVENTORY)
     gl_inv = natural_balance(inv, gl_balances().get(inv.id, Decimal("0")))
     assert Decimal(str(gl_inv)) == Decimal("2000.0000")
+
+
+def test_a_sale_cannot_exceed_the_stock_on_hand(appctx):
+    sup, cus, item = _world()
+    c = _admin()
+    _line(c, "/purchase", "supplier_id", sup.id, item.id, 10, 100)
+
+    r = _line(c, "/sale", "customer_id", cus.id, item.id, 11, 250)
+    assert "alert-danger" in r.get_data(as_text=True)
+
+    db.session.expire_all()
+    item = db.session.get(Item, item.id)
+    assert item.stock == 10                               # nothing sold, nothing moved
+    assert Sale.query.count() == 0
 
 
 def test_stock_can_never_be_taken_below_zero(appctx):
