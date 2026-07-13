@@ -32,16 +32,21 @@
 .ab-hero p  { max-width: 46rem; opacity: .93; margin-bottom: 1.5rem; }
 .ab-hero .btn-light { font-weight: 600; }
 
-/* Body copy is body copy: it gets full contrast. Only genuinely secondary lines —
-   captions, labels — are muted. Bootstrap's .text-muted is lighter still, so this page
-   overrides it rather than relying on it for anything anyone has to read. */
-.ab-wrap { color: var(--text-dark); }
-.ab-wrap p,
-.ab-wrap li,
-.ab-wrap td,
-.ab-wrap .text-muted { color: var(--text-dark); }
-.ab-wrap .small,
-.ab-wrap small { color: var(--text-muted); }
+/* Body copy is body copy: it gets full contrast.
+
+   Bootstrap 5.3's .text-muted is `color: var(--bs-secondary-color) !important`, and its
+   table cells are `.table > :not(caption) > * > *` — both beat any plain override, so a
+   rule like `.ab-wrap .text-muted { color: … }` silently loses and the text stays faint.
+   Redefine Bootstrap's own variables on this page instead of fighting its cascade: the
+   utility then resolves to our colour with no !important war. */
+.ab-wrap {
+  --bs-body-color: var(--text-dark);
+  --bs-secondary-color: var(--text-dark);   /* what .text-muted resolves to */
+  --bs-emphasis-color: var(--text-dark);    /* what .table cells resolve to */
+  color: var(--text-dark);
+}
+.ab-wrap p, .ab-wrap li { color: var(--text-dark); }
+.ab-wrap .table > :not(caption) > * > * { color: var(--text-dark); }
 
 .ab-h { font-weight: 700; margin-bottom: .35rem; color: var(--text-dark); }
 .ab-sub { color: var(--text-muted); margin-bottom: 1.5rem; }

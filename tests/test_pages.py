@@ -55,6 +55,29 @@ def test_about_links_to_the_manual(appctx):
     assert "/manual" in c.get("/about").get_data(as_text=True)
 
 
+def test_dark_mode_repoints_the_bootstrap_text_colours():
+    """Bootstrap keys its dark mode off [data-bs-theme]. This app has its own [data-theme]
+    switch and never sets Bootstrap's, so Bootstrap stays in light mode for ever and keeps
+    handing out light-mode colours: .text-muted resolves to a near-black grey, which then
+    gets painted onto a near-black background. It is used ~250 times in these templates.
+
+    Nothing errors. The text is simply almost invisible, and only in dark mode — which is
+    why it survived this long.
+    """
+    import re
+    from pathlib import Path
+
+    css = Path(flask_app.static_folder, "css", "style.css").read_text(encoding="utf-8")
+    dark = re.search(r'\[data-theme="dark"\]\s*\{(.*?)\}', css, re.DOTALL)
+    assert dark, 'no [data-theme="dark"] block in style.css'
+    block = dark.group(1)
+
+    for var in ("--bs-body-color", "--bs-secondary-color", "--bs-emphasis-color"):
+        assert var in block, (
+            f"{var} is not repointed in dark mode — every Bootstrap utility that uses it "
+            f"will render a light-mode colour on a dark background")
+
+
 def test_no_template_uses_a_css_variable_that_does_not_exist():
     """A misspelt CSS variable fails silently. `color: var(--muted)` — when the variable
     is actually `--text-muted` — is not an error: the browser simply has no colour to

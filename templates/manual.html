@@ -2,12 +2,22 @@
 {% block title %}User Manual — {{ app_name }}{% endblock %}
 {% block content %}
 <style>
-/* This is a document people have to read, at length. Body copy therefore gets full
-   contrast — muted grey is for captions, not for paragraphs. Bootstrap's .text-muted is
-   lighter still, so it is overridden here rather than trusted. */
-.mn-wrap { max-width: 1140px; margin: 0 auto; color: var(--text-dark); }
-.mn-wrap p, .mn-wrap li, .mn-wrap td, .mn-wrap th,
-.mn-wrap .text-muted { color: var(--text-dark); }
+/* This is a document people have to sit down and read. Body copy gets full contrast —
+   muted grey is for captions, not for paragraphs.
+
+   Bootstrap 5.3's .text-muted is `color: var(--bs-secondary-color) !important`, and its
+   table cells are `.table > :not(caption) > * > *` — both beat any plain override, so a
+   rule like `.mn-wrap .text-muted { color: … }` silently loses and the text stays faint.
+   Redefine Bootstrap's own variables here instead of fighting its cascade. */
+.mn-wrap {
+  max-width: 1140px; margin: 0 auto;
+  --bs-body-color: var(--text-dark);
+  --bs-secondary-color: var(--text-dark);   /* what .text-muted resolves to */
+  --bs-emphasis-color: var(--text-dark);    /* what .table cells resolve to */
+  color: var(--text-dark);
+}
+.mn-wrap p, .mn-wrap li { color: var(--text-dark); }
+.mn-wrap .table > :not(caption) > * > * { color: var(--text-dark); }
 
 .mn-toc {
   position: sticky; top: 90px;

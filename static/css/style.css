@@ -27,6 +27,22 @@
     --card-bg: #1e293b;
     --shadow-sm: 0 4px 20px rgba(0, 0, 0, 0.4);
     --shadow-md: 0 12px 40px rgba(0, 0, 0, 0.6);
+
+    /* Bootstrap keys its own dark mode off [data-bs-theme], which this app never sets —
+       it has its own [data-theme] switch. So Bootstrap stays in light mode for ever, and
+       every one of its utilities keeps handing out light-mode colours: .text-muted comes
+       out as rgba(33,37,41,.75), a near-black grey, and it is painted onto a near-black
+       background. There are ~250 uses of .text-muted in the templates, and in dark mode
+       they were all but invisible — most legibly on the pages that are mostly prose.
+
+       Point Bootstrap's *text* variables at ours rather than switching its theme on:
+       [data-bs-theme="dark"] would repaint every card, table, dropdown and form control,
+       and this app already styles those itself. Only the colours that are actually broken
+       are touched — backgrounds and borders are left exactly as they are. */
+    --bs-body-color: var(--text-dark);
+    --bs-secondary-color: var(--text-muted);   /* .text-muted, .text-secondary */
+    --bs-emphasis-color: var(--text-dark);     /* .table cells, .text-emphasis */
+    --bs-heading-color: var(--text-dark);
 }
 
 * {
