@@ -8108,7 +8108,11 @@ BACKUP_FORMAT_VERSION = 1
 def _json_default(v):
     if isinstance(v, Decimal):
         return str(v)               # preserve exact precision
+    # datetime is a subclass of date, so it has to be tested first or a timestamp
+    # would be flattened to its day. Fiscal years and periods use plain dates.
     if isinstance(v, datetime):
+        return v.isoformat()
+    if isinstance(v, date):
         return v.isoformat()
     if isinstance(v, bytes):
         return v.decode("latin1")
@@ -8118,10 +8122,14 @@ def _coerce_value(value, column):
     """Convert a JSON-decoded value back to the Python type the column expects."""
     if value is None:
         return None
-    from sqlalchemy import DateTime, Numeric, Float, Boolean, Integer
+    from sqlalchemy import DateTime, Date, Numeric, Float, Boolean, Integer
     coltype = column.type
     if isinstance(coltype, DateTime):
         return datetime.fromisoformat(value) if isinstance(value, str) else value
+    if isinstance(coltype, Date):
+        # A Date column must get a date, not a string, or the restore writes junk
+        # that the next query cannot compare against.
+        return date.fromisoformat(value) if isinstance(value, str) else value
     if isinstance(coltype, Float):
         return float(value)
     if isinstance(coltype, Numeric):
