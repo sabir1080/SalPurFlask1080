@@ -47,6 +47,12 @@
 }
 .ab-wrap p, .ab-wrap li { color: var(--text-dark); }
 .ab-wrap .table > :not(caption) > * > * { color: var(--text-dark); }
+/* Bootstrap's .text-muted carries !important, so redefining the variable is not enough on
+   its own — the declaration has to win too, and only a more specific !important does. On
+   this page it is body copy, and body copy is read: full contrast, not caption grey. */
+.ab-wrap .text-muted,
+.ab-wrap td.text-muted,
+.ab-wrap .small.text-muted { color: var(--text-dark) !important; }
 
 .ab-h { font-weight: 700; margin-bottom: .35rem; color: var(--text-dark); }
 .ab-sub { color: var(--text-muted); margin-bottom: 1.5rem; }

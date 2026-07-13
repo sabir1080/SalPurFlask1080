@@ -77,6 +77,16 @@ def test_dark_mode_repoints_the_bootstrap_text_colours():
             f"{var} is not repointed in dark mode — every Bootstrap utility that uses it "
             f"will render a light-mode colour on a dark background")
 
+    # Repointing the variable is not enough by itself. Bootstrap writes
+    # `.text-muted { color: var(--bs-secondary-color) !important }`, and an !important
+    # declaration is beaten only by a more specific !important — not by changing what its
+    # variable resolves to, wherever anything else also declares a colour there.
+    override = re.search(
+        r'\[data-theme="dark"\][^{]*\.text-muted[^{]*\{([^}]*)\}', css, re.DOTALL)
+    assert override and "!important" in override.group(1), (
+        'style.css must override .text-muted under [data-theme="dark"] with !important — '
+        "repointing --bs-secondary-color alone does not beat Bootstrap's own !important")
+
 
 def test_no_template_uses_a_css_variable_that_does_not_exist():
     """A misspelt CSS variable fails silently. `color: var(--muted)` — when the variable

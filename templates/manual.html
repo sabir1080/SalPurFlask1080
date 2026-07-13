@@ -18,6 +18,12 @@
 }
 .mn-wrap p, .mn-wrap li { color: var(--text-dark); }
 .mn-wrap .table > :not(caption) > * > * { color: var(--text-dark); }
+/* Bootstrap's .text-muted carries !important, so redefining the variable is not enough on
+   its own — the declaration has to win too, and only a more specific !important does. In a
+   manual every line is meant to be read: full contrast, not caption grey. */
+.mn-wrap .text-muted,
+.mn-wrap td.text-muted,
+.mn-wrap .small.text-muted { color: var(--text-dark) !important; }
 
 .mn-toc {
   position: sticky; top: 90px;

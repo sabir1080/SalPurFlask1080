@@ -1621,6 +1621,21 @@ body {
 
 [data-theme="dark"] .table tbody td {
     border-color: var(--border);
+    color: var(--text-dark);
+}
+
+/* Bootstrap writes `.text-muted { color: var(--bs-secondary-color) !important }`. Because
+   of the !important, repointing the variable is not enough on its own where anything else
+   also declares a colour — the declaration still has to win, and only a more specific
+   !important beats it. `[data-theme="dark"] .text-muted` does.
+
+   Without this, muted text in dark mode is Bootstrap's light-mode grey — rgba(33,37,41,.75),
+   nearly black — printed onto a nearly black background. It is used ~250 times across the
+   templates, so a great deal of the app was simply not there in dark mode. */
+[data-theme="dark"] .text-muted,
+[data-theme="dark"] .text-secondary,
+[data-theme="dark"] .text-body-secondary {
+    color: var(--text-muted) !important;
 }
 
 [data-theme="dark"] .form-control,
