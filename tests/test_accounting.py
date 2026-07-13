@@ -380,9 +380,10 @@ def test_stock_value_is_what_the_goods_cost_not_the_catalogue_price(appctx):
 
 
 def test_the_stock_report_renders_and_totals_what_the_balance_sheet_says(appctx):
-    """reports.html is a big template and a bad expression there is a 500 in
-    production, not a wrong number. Render it for real, and check the total it prints
-    is the one the Inventory account carries."""
+    """A bad expression in a template is a 500 in production, not a wrong number, so
+    render it for real. And the total it prints has to be the one the Inventory account
+    carries — the whole point of the page is that it can be read across to the balance
+    sheet."""
     _setup_gl()
     cat = Category(name="Parts"); db.session.add(cat); db.session.flush()
     item = Item(name="Widget", category_id=cat.id, unit="Pcs",
@@ -394,12 +395,19 @@ def test_the_stock_report_renders_and_totals_what_the_balance_sheet_says(appctx)
     db.session.commit()
 
     c = _login_manager()
-    r = c.post("/reports", data={"start_date": "2026-01-01", "end_date": "2026-12-31"})
+    # Stock on hand is a snapshot of now. It takes no date range and must not be behind
+    # a form submission — it used to be, on the sixth tab of another report, which is
+    # why nobody could find it.
+    r = c.get("/reports/stock")
     assert r.status_code == 200
     body = r.get_data(as_text=True)
     assert "Total Stock Value" in body
-    assert "3,000.00" in body                     # not 20 × 120 = 2,400.00
-    assert "150.00" in body                       # the average it was actually bought at
+    assert "3,000.00" in body                    # not 20 × 120 = 2,400.00
+    assert "150.00" in body                      # the average it was actually bought at
+
+    # and the report the user reaches from the menu still renders
+    assert c.post("/reports", data={"start_date": "2026-01-01",
+                                    "end_date": "2026-12-31"}).status_code == 200
 
 
 def test_no_template_time_shifts_a_business_date():

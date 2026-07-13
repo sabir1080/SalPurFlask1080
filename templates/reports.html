@@ -195,7 +195,6 @@ ${tblClone.outerHTML}
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-sales">Sales</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-returns">Returns</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-parties">Parties</button></li>
-    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-stock">Stock</button></li>
 </ul>
 
 <div class="tab-content">
@@ -713,84 +712,6 @@ ${tblClone.outerHTML}
                     </tr>
                     {% else %}
                     <tr><td colspan="6" class="text-center text-muted">No customer data</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-
-<!-- ===== TAB: STOCK ===== -->
-<div class="tab-pane fade" id="tab-stock">
-
-    <!-- Stock / Inventory Report -->
-    <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header bg-transparent fw-semibold d-flex justify-content-between">
-            <span><i class="bi bi-boxes"></i> Stock / Inventory Report</span>
-            <div class="d-flex gap-1">
-                <button type="button" class="btn btn-outline-primary btn-sm" onclick="printReport('Stock / Inventory Report', 'tbl-stock')"><i class="bi bi-printer"></i> Print</button>
-                <a href="{{ url_for('export_stock_report') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-download"></i> CSV</a>
-                <a href="{{ url_for('export_stock_report') }}?format=xlsx" class="btn btn-outline-success btn-sm"><i class="bi bi-file-earmark-excel"></i> Excel</a>
-            </div>
-        </div>
-        <div class="table-responsive">
-            <table class="table table-sm table-hover mb-0" id="tbl-stock">
-                <thead class="table-light"><tr><th>Item</th><th>Category</th><th class="text-end">Stock</th><th class="text-end">Reorder</th><th class="text-end">Avg Cost</th><th class="text-end">Sale Price</th><th class="text-end">Stock Value</th><th>Status</th></tr></thead>
-                <tbody>
-                    {% for item in stock_report %}
-                    <tr class="{% if item.stock <= item.reorder_level %}table-warning{% endif %}">
-                        <td>{{ item.name }}</td>
-                        <td>{{ item.id_category.name if item.id_category else 'N/A' }}</td>
-                        <td class="text-end fw-semibold {% if item.stock <= item.reorder_level %}text-danger{% endif %}">{{ item.stock | fmt_num }}</td>
-                        <td class="text-end">{{ item.reorder_level | fmt_num }}</td>
-                        <td class="text-end">{{ item.avg_cost | fmt_num if item.stock else '—' }}</td>
-                        <td class="text-end">{{ item.sale_price | fmt_num if item.sale_price else '—' }}</td>
-                        <td class="text-end">{{ item.inventory_value | fmt_num }}</td>
-                        <td>
-                            {% if item.stock <= item.reorder_level %}
-                            <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> Low</span>
-                            {% else %}
-                            <span class="badge bg-success">OK</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% else %}
-                    <tr><td colspan="8" class="text-center text-muted">No items found</td></tr>
-                    {% endfor %}
-                </tbody>
-                {% if stock_report %}
-                <tfoot class="table-light fw-bold">
-                    <tr>
-                        <td colspan="6" class="text-end">Total Stock Value</td>
-                        <td class="text-end">{{ stock_value_total | fmt_num }}</td>
-                        <td></td>
-                    </tr>
-                </tfoot>
-                {% endif %}
-            </table>
-        </div>
-        <div class="card-footer bg-transparent small text-muted">
-            Valued at weighted-average cost — the same amount the Inventory account was
-            debited when the goods came in, so this total is the Inventory line on the
-            balance sheet. The catalogue buy price is what a new purchase is prefilled
-            with; it is not what the stock on hand cost.
-        </div>
-    </div>
-
-    <!-- Reorder Alert -->
-    <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header bg-transparent fw-semibold d-flex justify-content-between align-items-center">
-            <span class="text-warning"><i class="bi bi-exclamation-triangle"></i> Items Below Reorder Level</span>
-            <button type="button" class="btn btn-outline-primary btn-sm" onclick="printReport('Low Stock Alert', 'tbl-reorder')"><i class="bi bi-printer"></i> Print</button>
-        </div>
-        <div class="table-responsive">
-            <table class="table table-sm table-hover mb-0" id="tbl-reorder">
-                <thead class="table-light"><tr><th>Item</th><th>Category</th><th class="text-end">Stock</th><th class="text-end">Reorder Level</th></tr></thead>
-                <tbody>
-                    {% for item in reorder_report %}
-                    <tr><td>{{ item.name }}</td><td>{{ item.id_category.name if item.id_category else 'N/A' }}</td><td class="text-end text-danger fw-semibold">{{ item.stock | fmt_num }}</td><td class="text-end">{{ item.reorder_level | fmt_num }}</td></tr>
-                    {% else %}
-                    <tr><td colspan="4" class="text-center text-success"><i class="bi bi-check-circle"></i> All items are adequately stocked</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

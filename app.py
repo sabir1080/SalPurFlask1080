@@ -5724,11 +5724,12 @@ def api_search():
 @app.route("/reports", methods=["GET", "POST"])
 @manager_required
 def reports():
-    purchase_report = sale_report = reorder_report = date_profit_report = item_profit = customer_profit = category_profit = []
+    purchase_report = sale_report = date_profit_report = item_profit = customer_profit = category_profit = []
     supplier_balances = customer_balances = supplier_payment_history = customer_receipt_history = []
-    purchase_return_report = sale_return_report = supplier_purchase_report = stock_report = []
-    stock_value_total = 0
+    purchase_return_report = sale_return_report = supplier_purchase_report = []
     total_sale_amt = total_profit_amt = total_purchase_cost = 0
+    # Stock lives on its own page now — see report_stock(). It is a snapshot of what is
+    # in the warehouse right now, so it never belonged behind a date range.
     total_purchase_return_amt = total_sale_return_amt = 0
     gross_profit = net_sale_amt = net_purchase_cost = 0
     purchase_qty_total = purchase_amt_total = sale_qty_total = sale_amt_total = 0
@@ -5745,13 +5746,8 @@ def reports():
                 end_date           = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59, microsecond=999999)
                 purchase_report    = Purchase.query.filter(Purchase.date.between(start_date, end_date)).order_by(Purchase.date.desc()).all()
                 sale_report        = Sale.query.filter(Sale.date.between(start_date, end_date)).order_by(Sale.date.desc()).all()
-                reorder_report     = Item.query.filter(Item.stock <= Item.reorder_level).all()
                 purchase_return_report = PurchaseReturn.query.filter(PurchaseReturn.date.between(start_date, end_date)).order_by(PurchaseReturn.date.desc()).all()
                 sale_return_report = SaleReturn.query.filter(SaleReturn.date.between(start_date, end_date)).order_by(SaleReturn.date.desc()).all()
-                stock_report       = Item.query.outerjoin(Category, Item.category_id == Category.id).order_by(Category.name, Item.name).all()
-                # Weighted-average, not the catalogue price: this total is the Inventory
-                # line on the balance sheet, and it has to agree with it.
-                stock_value_total  = sum(Decimal(str(i.inventory_value or 0)) for i in stock_report)
                 # sale_amt  = gross - discount + tax  (what customer pays = net total) = SaleItem.amount
                 # profit    = gross - discount - cogs (tax excluded from profit)
                 _sale_net  = SaleItem.amount
@@ -5895,12 +5891,9 @@ def reports():
         "reports.html",
         purchase_report=purchase_report,
         sale_report=sale_report,
-        reorder_report=reorder_report,
         purchase_return_report=purchase_return_report,
         sale_return_report=sale_return_report,
         supplier_purchase_report=supplier_purchase_report,
-        stock_report=stock_report,
-        stock_value_total=stock_value_total,
         date_profit_report=date_profit_report,
         item_profit=item_profit,
         customer_profit=customer_profit,
@@ -7417,6 +7410,27 @@ def accounting_position(as_of=None):
         total_assets=total_assets, total_liabilities=total_liabilities,
         equity_posted=equity_posted, profit=profit, total_equity=total_equity,
         difference=total_assets - (total_liabilities + total_equity),
+    )
+
+@app.route("/reports/stock")
+@manager_required
+def report_stock():
+    """What is in the warehouse right now, and what it cost.
+
+    A snapshot, not a period — so unlike the sales and purchase reports it takes no
+    date range. It is an accounting report, not just a stock list: the total is valued
+    at weighted-average cost, which is the amount the Inventory account was debited
+    when the goods came in, so it is the Inventory line on the balance sheet and can
+    be read straight across."""
+    items = (Item.query.outerjoin(Category, Item.category_id == Category.id)
+             .order_by(Category.name, Item.name).all())
+    return render_template(
+        "report_stock.html",
+        stock_report=items,
+        stock_value_total=sum(Decimal(str(i.inventory_value or 0)) for i in items),
+        items_in_stock=sum(1 for i in items if i.stock and i.stock > 0),
+        reorder_report=[i for i in items if i.stock <= i.reorder_level],
+        as_of=now_local().strftime("%d %B %Y"),
     )
 
 @app.route("/reports/balance_sheet")
