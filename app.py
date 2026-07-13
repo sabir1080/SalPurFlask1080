@@ -5727,6 +5727,7 @@ def reports():
     purchase_report = sale_report = reorder_report = date_profit_report = item_profit = customer_profit = category_profit = []
     supplier_balances = customer_balances = supplier_payment_history = customer_receipt_history = []
     purchase_return_report = sale_return_report = supplier_purchase_report = stock_report = []
+    stock_value_total = 0
     total_sale_amt = total_profit_amt = total_purchase_cost = 0
     total_purchase_return_amt = total_sale_return_amt = 0
     gross_profit = net_sale_amt = net_purchase_cost = 0
@@ -5748,6 +5749,9 @@ def reports():
                 purchase_return_report = PurchaseReturn.query.filter(PurchaseReturn.date.between(start_date, end_date)).order_by(PurchaseReturn.date.desc()).all()
                 sale_return_report = SaleReturn.query.filter(SaleReturn.date.between(start_date, end_date)).order_by(SaleReturn.date.desc()).all()
                 stock_report       = Item.query.outerjoin(Category, Item.category_id == Category.id).order_by(Category.name, Item.name).all()
+                # Weighted-average, not the catalogue price: this total is the Inventory
+                # line on the balance sheet, and it has to agree with it.
+                stock_value_total  = sum(Decimal(str(i.inventory_value or 0)) for i in stock_report)
                 # sale_amt  = gross - discount + tax  (what customer pays = net total) = SaleItem.amount
                 # profit    = gross - discount - cogs (tax excluded from profit)
                 _sale_net  = SaleItem.amount
@@ -5896,6 +5900,7 @@ def reports():
         sale_return_report=sale_return_report,
         supplier_purchase_report=supplier_purchase_report,
         stock_report=stock_report,
+        stock_value_total=stock_value_total,
         date_profit_report=date_profit_report,
         item_profit=item_profit,
         customer_profit=customer_profit,
@@ -6243,14 +6248,14 @@ def export_supplier_purchase_report():
 @manager_required
 def export_stock_report():
     items = Item.query.outerjoin(Category, Item.category_id == Category.id).order_by(Category.name, Item.name).all()
-    col_headers = ["Item", "Category", "Stock", "Reorder Level", "Purchase Price", "Sale Price", "Stock Value", "Status"]
+    col_headers = ["Item", "Category", "Stock", "Reorder Level", "Avg Cost", "Sale Price", "Stock Value", "Status"]
     rows = []
     for item in items:
         rows.append([
             item.name, item.id_category.name if item.id_category else "N/A",
             item.stock, item.reorder_level,
-            round(item.purchase_price or 0, 2), round(item.sale_price or 0, 2),
-            round((item.stock or 0) * (item.purchase_price or 0), 2),
+            round(item.avg_cost, 2) if item.stock else 0, round(item.sale_price or 0, 2),
+            round(item.inventory_value or 0, 2),
             "Low Stock" if item.stock <= item.reorder_level else "OK",
         ])
     if request.args.get("format") == "xlsx":

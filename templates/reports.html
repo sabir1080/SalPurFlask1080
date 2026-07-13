@@ -735,7 +735,7 @@ ${tblClone.outerHTML}
         </div>
         <div class="table-responsive">
             <table class="table table-sm table-hover mb-0" id="tbl-stock">
-                <thead class="table-light"><tr><th>Item</th><th>Category</th><th class="text-end">Stock</th><th class="text-end">Reorder</th><th class="text-end">Buy Price</th><th class="text-end">Sale Price</th><th class="text-end">Stock Value</th><th>Status</th></tr></thead>
+                <thead class="table-light"><tr><th>Item</th><th>Category</th><th class="text-end">Stock</th><th class="text-end">Reorder</th><th class="text-end">Avg Cost</th><th class="text-end">Sale Price</th><th class="text-end">Stock Value</th><th>Status</th></tr></thead>
                 <tbody>
                     {% for item in stock_report %}
                     <tr class="{% if item.stock <= item.reorder_level %}table-warning{% endif %}">
@@ -743,9 +743,9 @@ ${tblClone.outerHTML}
                         <td>{{ item.id_category.name if item.id_category else 'N/A' }}</td>
                         <td class="text-end fw-semibold {% if item.stock <= item.reorder_level %}text-danger{% endif %}">{{ item.stock | fmt_num }}</td>
                         <td class="text-end">{{ item.reorder_level | fmt_num }}</td>
-                        <td class="text-end">{{ item.purchase_price | fmt_num if item.purchase_price else '—' }}</td>
+                        <td class="text-end">{{ item.avg_cost | fmt_num if item.stock else '—' }}</td>
                         <td class="text-end">{{ item.sale_price | fmt_num if item.sale_price else '—' }}</td>
-                        <td class="text-end">{{ ((item.stock or 0) * (item.purchase_price or 0)) | fmt_num }}</td>
+                        <td class="text-end">{{ item.inventory_value | fmt_num }}</td>
                         <td>
                             {% if item.stock <= item.reorder_level %}
                             <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> Low</span>
@@ -758,7 +758,22 @@ ${tblClone.outerHTML}
                     <tr><td colspan="8" class="text-center text-muted">No items found</td></tr>
                     {% endfor %}
                 </tbody>
+                {% if stock_report %}
+                <tfoot class="table-light fw-bold">
+                    <tr>
+                        <td colspan="6" class="text-end">Total Stock Value</td>
+                        <td class="text-end">{{ stock_value_total | fmt_num }}</td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+                {% endif %}
             </table>
+        </div>
+        <div class="card-footer bg-transparent small text-muted">
+            Valued at weighted-average cost — the same amount the Inventory account was
+            debited when the goods came in, so this total is the Inventory line on the
+            balance sheet. The catalogue buy price is what a new purchase is prefilled
+            with; it is not what the stock on hand cost.
         </div>
     </div>
 

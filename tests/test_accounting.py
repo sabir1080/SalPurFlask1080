@@ -17,6 +17,7 @@ from app import (
     post_entry, reverse_entry, unwind_asset_entry, gl_profit,
     realign_backdated_reversals, ensure_gl_account_for_financial,
     post_customer_receipt, post_supplier_payment, post_expense, bizdate_filter,
+    item_add_stock,
     seed_chart_of_accounts, seed_fixed_asset_accounts, seed_fiscal_year,
     get_account, account_for_role,
     get_account_balance, total_cash_bank_balance, account_transactions,
@@ -345,6 +346,60 @@ def test_a_month_that_has_not_started_cannot_be_depreciated(appctx):
 
 BUSINESS_DATE_FIELDS = ("entry_date", "acquisition_date", "disposal_date",
                         "period_end", "payment_date")
+
+
+def test_stock_value_is_what_the_goods_cost_not_the_catalogue_price(appctx):
+    """The stock report used to value stock at the item's catalogue buy price. That
+    is the price a *new* purchase is prefilled with, not what the stock on hand cost.
+    Buy the same item twice at different prices and the report parted company with the
+    Inventory account on the balance sheet — and only the balance sheet was right."""
+    cat = Category(name="Parts"); db.session.add(cat); db.session.flush()
+    item = Item(name="Widget", category_id=cat.id, unit="Pcs",
+                purchase_price=Decimal("120"), sale_price=Decimal("200"),
+                stock=0, reorder_level=0, inventory_value=0)
+    db.session.add(item); db.session.flush()
+
+    item_add_stock(item, 10, Decimal("1000"))     # 10 @ 100
+    item_add_stock(item, 10, Decimal("1400"))     # 10 @ 140 — the price went up
+    db.session.commit()
+
+    # the catalogue price now says 120, and 20 × 120 = 2,400 — which is not what we paid
+    assert item.purchase_price == 120
+    assert item.stock == 20
+    assert item.inventory_value == Decimal("2400.0000")   # coincidence at these numbers
+
+    # so make the prices disagree, the way a real second purchase would
+    item_add_stock(item, 10, Decimal("2000"))     # 10 @ 200
+    db.session.commit()
+
+    assert item.stock == 30
+    assert item.inventory_value == Decimal("4400.0000")   # 1000 + 1400 + 2000
+    assert item.avg_cost == Decimal("146.6667")
+    # the old formula would have said 30 × 120 = 3,600, and the balance sheet 4,400
+    assert item.stock * item.purchase_price == 3600
+
+
+def test_the_stock_report_renders_and_totals_what_the_balance_sheet_says(appctx):
+    """reports.html is a big template and a bad expression there is a 500 in
+    production, not a wrong number. Render it for real, and check the total it prints
+    is the one the Inventory account carries."""
+    _setup_gl()
+    cat = Category(name="Parts"); db.session.add(cat); db.session.flush()
+    item = Item(name="Widget", category_id=cat.id, unit="Pcs",
+                purchase_price=Decimal("120"), sale_price=Decimal("200"),
+                stock=0, reorder_level=0, inventory_value=0)
+    db.session.add(item); db.session.flush()
+    item_add_stock(item, 10, Decimal("1000"))
+    item_add_stock(item, 10, Decimal("2000"))     # 20 on hand, 3,000 paid, avg 150
+    db.session.commit()
+
+    c = _login_manager()
+    r = c.post("/reports", data={"start_date": "2026-01-01", "end_date": "2026-12-31"})
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert "Total Stock Value" in body
+    assert "3,000.00" in body                     # not 20 × 120 = 2,400.00
+    assert "150.00" in body                       # the average it was actually bought at
 
 
 def test_no_template_time_shifts_a_business_date():
