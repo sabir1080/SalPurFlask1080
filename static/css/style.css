@@ -1613,6 +1613,23 @@ body {
     color: var(--text-dark);
 }
 
+/* Bootstrap paints every table cell: `.table > :not(caption) > * > *` sets
+   `background-color: var(--bs-table-bg)`, and `.table` declares
+   `--bs-table-bg: var(--bs-body-bg)` — which is #fff, because Bootstrap is stuck in light
+   mode (it keys off [data-bs-theme], which this app never sets).
+
+   So in dark mode every table cell has a *white* background. That was survivable while the
+   text was Bootstrap's near-black default. It stopped being survivable the moment the text
+   was made light to match the theme: white on white, and the data simply vanished.
+
+   Set the variable on `.table` itself, not on the theme block — `.table` re-declares it on
+   itself, so a value inherited from :root would be thrown away. Transparent, so a cell
+   takes whatever surface it is sitting on. */
+[data-theme="dark"] .table {
+    --bs-table-bg: transparent;
+    --bs-table-color: var(--text-dark);
+}
+
 [data-theme="dark"] .table thead th {
     background: var(--surface);
     border-color: var(--border);

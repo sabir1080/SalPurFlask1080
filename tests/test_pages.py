@@ -113,6 +113,17 @@ def test_dark_mode_repoints_the_bootstrap_text_colours():
         'style.css must override .text-muted under [data-theme="dark"] with !important — '
         "repointing --bs-secondary-color alone does not beat Bootstrap's own !important")
 
+    # And the cell *background*. Bootstrap paints every cell `var(--bs-table-bg)`, which it
+    # declares as `var(--bs-body-bg)` — white, since it is stuck in light mode. Light text on
+    # a white cell is not faint, it is gone. The variable has to be set on `.table` itself:
+    # `.table` re-declares it on itself, so a value inherited from the theme block is thrown
+    # away before it is ever read.
+    table = re.search(r'\[data-theme="dark"\]\s+\.table\s*\{([^}]*)\}', css)
+    assert table and "--bs-table-bg" in table.group(1), (
+        'style.css must set --bs-table-bg on `[data-theme="dark"] .table` — otherwise every '
+        "table cell keeps Bootstrap's white background and the dark-theme text disappears "
+        "into it")
+
 
 def test_no_template_uses_a_css_variable_that_does_not_exist():
     """A misspelt CSS variable fails silently. `color: var(--muted)` — when the variable
