@@ -1,0 +1,703 @@
+{% extends 'base.html' %}
+{% block title %}User Manual — {{ app_name }}{% endblock %}
+{% block content %}
+<style>
+.mn-wrap { max-width: 1140px; margin: 0 auto; }
+
+.mn-toc {
+  position: sticky; top: 90px;
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 14px; padding: 1rem 1.1rem;
+  max-height: calc(100vh - 120px); overflow-y: auto;
+}
+.mn-toc h6 { font-weight: 700; font-size: .8rem; text-transform: uppercase;
+             letter-spacing: .06em; color: var(--muted); margin-bottom: .75rem; }
+.mn-toc a { display: block; padding: .3rem 0; font-size: .875rem;
+            color: var(--body-color, inherit); text-decoration: none; border-radius: 6px; }
+.mn-toc a:hover { color: var(--primary); }
+
+.mn-sec { scroll-margin-top: 90px; margin-bottom: 3rem; }
+.mn-sec > h3 {
+  font-weight: 800; letter-spacing: -.01em;
+  padding-bottom: .5rem; margin-bottom: 1rem;
+  border-bottom: 2px solid var(--border);
+}
+.mn-sec h5 { font-weight: 700; margin-top: 1.75rem; margin-bottom: .6rem; }
+.mn-sec p, .mn-sec li { color: var(--muted); }
+.mn-sec strong, .mn-sec th { color: var(--body-color, inherit); }
+
+.mn-step { counter-reset: none; padding-left: 0; list-style: none; }
+.mn-step > li {
+  position: relative; padding-left: 2.25rem; margin-bottom: .9rem;
+}
+.mn-step > li::before {
+  content: counter(mn) ; counter-increment: mn;
+  position: absolute; left: 0; top: .05rem;
+  width: 1.6rem; height: 1.6rem; border-radius: 50%;
+  background: var(--primary); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .78rem; font-weight: 700;
+}
+.mn-step { counter-reset: mn; }
+
+.mn-why {
+  border-left: 3px solid var(--primary);
+  background: var(--card-bg);
+  padding: .85rem 1rem; border-radius: 0 10px 10px 0;
+  margin: 1rem 0; font-size: .9rem;
+}
+.mn-why strong { display: block; margin-bottom: .2rem; }
+
+.mn-warn {
+  border-left: 3px solid #dc3545;
+  background: var(--card-bg);
+  padding: .85rem 1rem; border-radius: 0 10px 10px 0;
+  margin: 1rem 0; font-size: .9rem;
+}
+.mn-warn strong { display: block; margin-bottom: .2rem; color: #dc3545; }
+
+.mn-path {
+  font-family: var(--bs-font-monospace, monospace);
+  font-size: .85em; padding: .1rem .4rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 5px;
+  white-space: nowrap;
+}
+@media print {
+  .mn-toc, .navbar, footer { display: none !important; }
+  .mn-sec { page-break-inside: avoid; }
+}
+</style>
+
+<div class="mn-wrap">
+
+  <div class="d-flex justify-content-between align-items-center mb-1">
+    <h2 class="mb-0"><i class="bi bi-book"></i> User Manual</h2>
+    <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+      <i class="bi bi-printer"></i> Print
+    </button>
+  </div>
+  <p class="text-muted mb-4">
+    {{ app_name }} — everything the system does, why it does it that way, and the order to do
+    it in.
+  </p>
+
+  <div class="row g-4">
+    <!-- ── Contents ─────────────────────────────────────────────────────── -->
+    <div class="col-lg-3 d-none d-lg-block">
+      <nav class="mn-toc">
+        <h6>Contents</h6>
+        <a href="#s1">1. Before you begin</a>
+        <a href="#s2">2. First-time setup</a>
+        <a href="#s3">3. Opening balances</a>
+        <a href="#s4">4. Buying</a>
+        <a href="#s5">5. Selling</a>
+        <a href="#s6">6. Money in and out</a>
+        <a href="#s7">7. Returns</a>
+        <a href="#s8">8. Inventory</a>
+        <a href="#s9">9. Fixed assets</a>
+        <a href="#s10">10. The general ledger</a>
+        <a href="#s11">11. Reports</a>
+        <a href="#s12">12. Month end</a>
+        <a href="#s13">13. Year end</a>
+        <a href="#s14">14. Fixing mistakes</a>
+        <a href="#s15">15. Users &amp; permissions</a>
+        <a href="#s16">16. Backup &amp; restore</a>
+        <a href="#s17">17. Starting fresh</a>
+        <a href="#s18">18. Rules &amp; limits</a>
+        <a href="#s19">19. Troubleshooting</a>
+      </nav>
+    </div>
+
+    <!-- ── Body ─────────────────────────────────────────────────────────── -->
+    <div class="col-lg-9">
+
+      <!-- 1 -->
+      <section id="s1" class="mn-sec">
+        <h3>1. Before you begin</h3>
+        <p>
+          Three ideas explain almost everything about how this system behaves. Understanding
+          them now will save you a great deal of confusion later.
+        </p>
+
+        <h5>Everything posts to one ledger</h5>
+        <p>
+          Every purchase, sale, return, payment, receipt, expense and depreciation charge is
+          written into a <strong>double-entry general ledger</strong> at the moment you save it.
+          Every report — Balance Sheet, Profit &amp; Loss, Trial Balance, Cash Flow — is added
+          up from that ledger and nowhere else.
+        </p>
+        <div class="mn-why">
+          <strong>Why this matters to you</strong>
+          If something has not been posted, it does not exist as far as the reports are
+          concerned. This is the single most common source of "the numbers look wrong" — and
+          the answer is almost always that a document was never saved, or was reversed.
+        </div>
+
+        <h5>Posted documents are reversed, never deleted</h5>
+        <p>
+          Once an invoice is saved it cannot be edited or deleted. If it is wrong, you
+          <strong>reverse</strong> it: the original stays where it is, marked reversed, and the
+          system posts a cancelling entry next to it. Both remain in the books for ever.
+        </p>
+        <div class="mn-why">
+          <strong>Why</strong>
+          This is what an audit trail <em>is</em>. A system that lets you quietly delete an
+          invoice you have already given to a customer is not keeping books — it is keeping a
+          rough draft.
+        </div>
+
+        <h5>Stock is valued at weighted average</h5>
+        <p>
+          Buy 10 units at 100 and later 10 at 140, and you now hold 20 units worth 2,400 — an
+          average of <strong>120 each</strong>. Sell one and its cost is 120: not 100, not 140.
+          Once goods enter the warehouse they lose their individual identity.
+        </p>
+        <p class="mb-0">
+          This is not FIFO and not LIFO. It is the same figure the Inventory account in the
+          ledger is posted, which is exactly why the stock report and the balance sheet always
+          agree.
+        </p>
+      </section>
+
+      <!-- 2 -->
+      <section id="s2" class="mn-sec">
+        <h3>2. First-time setup</h3>
+        <p>Do these in order. Each step depends on the one before it.</p>
+        <ol class="mn-step">
+          <li>
+            <strong>Check the chart of accounts.</strong>
+            <span class="mn-path">Accounting → Chart of Accounts</span><br>
+            It is created for you on first run. You may add your own expense accounts (Rent,
+            Salaries, Utilities and so on). You cannot delete the accounts the system posts to.
+          </li>
+          <li>
+            <strong>Check the fiscal year.</strong>
+            <span class="mn-path">Accounting → Periods</span><br>
+            The current calendar year and its twelve months are created for you. Nothing can be
+            posted on a date that falls outside an open period.
+          </li>
+          <li>
+            <strong>Set up your cash and bank accounts.</strong>
+            <span class="mn-path">Accounting → Cash &amp; Bank Accounts</span><br>
+            Four are provided (Cash, Bank, Cheque, Online). Rename them or add your own — one
+            per real bank account you hold.
+          </li>
+          <li>
+            <strong>Enter your categories and items.</strong>
+            <span class="mn-path">Inventory → Categories, then Items</span><br>
+            Set a <em>reorder level</em> on each item so the system can warn you before you run
+            out.
+          </li>
+          <li>
+            <strong>Enter your suppliers and customers.</strong>
+            <span class="mn-path">Parties → Suppliers / Customers</span>
+          </li>
+          <li>
+            <strong>Enter opening balances</strong> — see the next section. Do this before you
+            record a single transaction.
+          </li>
+        </ol>
+      </section>
+
+      <!-- 3 -->
+      <section id="s3" class="mn-sec">
+        <h3>3. Opening balances</h3>
+        <p>
+          An opening balance is what you already owned or owed on the day you started using this
+          system. There are four kinds, and each is entered in a different place.
+        </p>
+
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead><tr><th>What</th><th>Where</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td>Cash / bank</td><td><span class="mn-path">Cash &amp; Bank Accounts → edit</span></td><td class="small text-muted">Money already in the till or the bank.</td></tr>
+              <tr><td>Supplier</td><td><span class="mn-path">Parties → Suppliers → edit</span></td><td class="small text-muted">What you already owed them.</td></tr>
+              <tr><td>Customer</td><td><span class="mn-path">Parties → Customers → edit</span></td><td class="small text-muted">What they already owed you.</td></tr>
+              <tr><td>Stock</td><td><span class="mn-path">Inventory → Items → edit</span></td><td class="small text-muted">Goods already on the shelf, and what they cost you.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="mn-why">
+          <strong>These are real accounting entries, not just numbers on a form</strong>
+          Each one is posted to the ledger against <em>Opening Balance Equity</em>. That is why
+          they show up on the Balance Sheet, and why correcting one later does not double it —
+          the system reverses the old entry and posts a fresh one.
+        </div>
+
+        <div class="mn-warn">
+          <strong>Enter these first</strong>
+          Enter opening balances <em>before</em> you record any trading. They can be corrected
+          afterwards, but it is far easier to start from a true picture than to reconcile back
+          to one.
+        </div>
+
+        <p class="mb-0">
+          When you are done, open the <a href="{{ url_for('report_balance_sheet') }}">Balance
+          Sheet</a>. It should show exactly what you own and owe, and it must say
+          <strong>Balanced</strong>.
+        </p>
+      </section>
+
+      <!-- 4 -->
+      <section id="s4" class="mn-sec">
+        <h3>4. Buying</h3>
+        <h5>Purchase invoice</h5>
+        <p><span class="mn-path">Transactions → Purchase → New</span></p>
+        <p>
+          Choose the supplier and the date, then add one line per item: quantity, price, and
+          optionally a discount and a tax rate. Save.
+        </p>
+        <p>What happens the moment you save:</p>
+        <ul>
+          <li>Stock goes up, and the item's value goes up by what you actually paid.</li>
+          <li>The supplier's ledger shows a new payable.</li>
+          <li>A journal entry is posted: <em>Dr Inventory, Cr Accounts Payable</em>.</li>
+          <li>The invoice gets its number — <span class="mn-path">PUR-2026-000001</span> — and
+            that number is now permanent.</li>
+        </ul>
+
+        <h5>Purchase orders and quotations</h5>
+        <p class="mb-0">
+          <span class="mn-path">Transactions → Purchase Orders / Quotations</span> — these are
+          <em>not</em> accounting documents. They move no stock and post nothing. They are
+          intentions, and they become real only when converted into a purchase or a sale.
+        </p>
+      </section>
+
+      <!-- 5 -->
+      <section id="s5" class="mn-sec">
+        <h3>5. Selling</h3>
+        <p><span class="mn-path">Transactions → Sale → New</span></p>
+        <p>Same shape as a purchase. On save:</p>
+        <ul>
+          <li>Stock goes down. The cost of what left is <strong>the weighted average</strong>,
+            and that becomes Cost of Goods Sold.</li>
+          <li>The customer's ledger shows a new receivable.</li>
+          <li>Two journal entries are posted: <em>Dr Receivable, Cr Sales</em> — and
+            <em>Dr Cost of Goods Sold, Cr Inventory</em>.</li>
+          <li>The invoice is numbered <span class="mn-path">INV-2026-000001</span>.</li>
+        </ul>
+
+        <div class="mn-why">
+          <strong>Your profit is calculated at the moment of sale</strong>
+          Not at month end, not by a report. The sale itself records what the goods cost, so the
+          Profit &amp; Loss is right the second the invoice is saved.
+        </div>
+
+        <p class="mb-0">
+          <strong>You cannot sell stock you do not have.</strong> The system will refuse and tell
+          you how many are on hand.
+        </p>
+      </section>
+
+      <!-- 6 -->
+      <section id="s6" class="mn-sec">
+        <h3>6. Money in and out</h3>
+
+        <h5>Paying a supplier</h5>
+        <p>
+          <span class="mn-path">Transactions → Supplier Payments</span> — choose the supplier,
+          the amount, and <strong>which cash or bank account the money came out of</strong>. You
+          may link the payment to a specific bill, or leave it against the account generally.
+        </p>
+
+        <h5>Receiving from a customer</h5>
+        <p><span class="mn-path">Transactions → Customer Receipts</span> — the mirror image.</p>
+
+        <h5>Expenses</h5>
+        <p>
+          <span class="mn-path">Transactions → Expenses</span> — rent, salaries, electricity.
+          Choose an <strong>expense category</strong>; that is what decides which account it
+          lands in on the Profit &amp; Loss.
+        </p>
+
+        <div class="mn-warn">
+          <strong>Always pick the right cash or bank account</strong>
+          It is what makes the Cash &amp; Bank page, the Cash Flow Statement and the Balance
+          Sheet agree with your actual bank statement. Getting it wrong is not a display problem
+          — the money is recorded as leaving the wrong place.
+        </div>
+      </section>
+
+      <!-- 7 -->
+      <section id="s7" class="mn-sec">
+        <h3>7. Returns</h3>
+        <p>
+          <span class="mn-path">Transactions → Purchase Return</span> — goods you send back to a
+          supplier.<br>
+          <span class="mn-path">Transactions → Sale Return</span> — goods a customer sends back
+          to you.
+        </p>
+        <p>
+          A return is always made <strong>against the original invoice line</strong>, and you can
+          never return more than was bought or sold on it.
+        </p>
+        <div class="mn-why">
+          <strong>A sale return comes back in at the cost it left at</strong>
+          Not at today's average. If it went out costing 120 it comes back in at 120, even if the
+          average has since moved. Anything else would invent or destroy profit that never
+          existed.
+        </div>
+        <p class="mb-0">
+          Use a return when goods physically moved. Use a <strong>reversal</strong> (section 14)
+          when the document itself was a mistake.
+        </p>
+      </section>
+
+      <!-- 8 -->
+      <section id="s8" class="mn-sec">
+        <h3>8. Inventory</h3>
+
+        <h5>Stock Valuation</h5>
+        <p>
+          <span class="mn-path">Reports → Stock Valuation</span> — what is in the warehouse right
+          now and what it cost. It takes no date range, because stock on hand is a snapshot, not
+          a period.
+        </p>
+        <div class="mn-why">
+          <strong>This total is the Inventory line on the Balance Sheet</strong>
+          The two are drawn from different places and must agree. If they ever do not, something
+          is genuinely wrong.
+        </div>
+
+        <h5>Stock adjustments</h5>
+        <p>
+          <span class="mn-path">Inventory → Stock Adjustment</span> — for stock that changed
+          without a purchase or a sale.
+        </p>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead><tr><th>Type</th><th>Direction</th><th>When</th></tr></thead>
+            <tbody>
+              <tr><td>Stock In</td><td><span class="badge bg-success">In</span></td><td class="small text-muted">Goods found or received outside a purchase.</td></tr>
+              <tr><td>Count Correction (Increase)</td><td><span class="badge bg-success">In</span></td><td class="small text-muted">A stocktake found <em>more</em> than the system said.</td></tr>
+              <tr><td>Count Correction (Decrease)</td><td><span class="badge bg-secondary">Out</span></td><td class="small text-muted">A stocktake found <em>less</em> than the system said.</td></tr>
+              <tr><td>Damage Write-off</td><td><span class="badge bg-secondary">Out</span></td><td class="small text-muted">Goods broken or spoiled.</td></tr>
+              <tr><td>Sample / Free Issue</td><td><span class="badge bg-secondary">Out</span></td><td class="small text-muted">Given away.</td></tr>
+              <tr><td>Stock Out</td><td><span class="badge bg-secondary">Out</span></td><td class="small text-muted">Anything else that left.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="mb-0 small text-muted">
+          Every adjustment is valued at the weighted average and posted to the ledger, so it
+          shows in your profit. Choose the type honestly — a shortfall found at stocktake is a
+          count correction, not damage.
+        </p>
+      </section>
+
+      <!-- 9 -->
+      <section id="s9" class="mn-sec">
+        <h3>9. Fixed assets</h3>
+        <p>
+          A fixed asset is something you bought to <em>use</em>, not to sell — a van, a computer,
+          furniture. It is not an expense; it is an asset that wears out slowly, and
+          <strong>depreciation</strong> is how that wear reaches your profit.
+        </p>
+
+        <h5>Adding an asset</h5>
+        <p><span class="mn-path">Accounting → Fixed Assets → New Asset</span></p>
+        <ul>
+          <li><strong>Cost</strong> — what you paid.</li>
+          <li><strong>Salvage value</strong> — what it will be worth when finished with. Often 0.</li>
+          <li><strong>Method</strong> — <em>Straight Line</em> (the same amount every month) or
+            <em>Reducing Balance</em> (a percentage of what is left).</li>
+          <li><strong>Useful life</strong> — in months, for straight line.</li>
+          <li><strong>Paid from</strong> — the cash or bank account the money left.</li>
+        </ul>
+        <p>Posts <em>Dr Fixed Assets, Cr Cash</em>. Cash goes down; it is not an expense.</p>
+
+        <h5>Running depreciation</h5>
+        <p>
+          <span class="mn-path">Accounting → Fixed Assets → Run monthly depreciation</span> —
+          choose the month and post. Every eligible asset is charged in one entry:
+          <em>Dr Depreciation, Cr Accumulated Depreciation</em>.
+        </p>
+        <p>
+          <strong>A month can only be posted once.</strong> Run it again and the system will tell
+          you there is nothing to depreciate. Do it once a month, at month end.
+        </p>
+
+        <h5>Disposal</h5>
+        <p class="mb-0">
+          When you sell or scrap an asset, record the disposal and what you got for it. The
+          system works out the gain or loss against its book value and posts it.
+        </p>
+      </section>
+
+      <!-- 10 -->
+      <section id="s10" class="mn-sec">
+        <h3>10. The general ledger</h3>
+
+        <h5>Manual journal entries</h5>
+        <p>
+          <span class="mn-path">Accounting → Journal Entries → New Entry</span> — for things no
+          document covers: an owner putting money in, a bank charge, an accrual.
+        </p>
+        <p>Debits must equal credits. The system will not accept an entry that does not balance.</p>
+
+        <div class="mn-warn">
+          <strong>Some accounts are missing from the dropdown, deliberately</strong>
+          <strong style="color:inherit; font-weight:600;">Accounts Receivable, Accounts Payable
+          and Inventory</strong> cannot be chosen. They are <em>control accounts</em>: they
+          belong to the customer, supplier and stock ledgers, and they move only when a document
+          moves them. If you could post to them by hand, the ledger and the customer's statement
+          would stop agreeing and there would be no way to tell which was right.
+        </div>
+
+        <h5>Reversing a journal entry</h5>
+        <p class="mb-0">
+          Open it and press <strong>Reverse</strong>. A mirror entry is posted; both stay in the
+          books. A reversal cannot itself be reversed, and an entry cannot be reversed twice.
+        </p>
+      </section>
+
+      <!-- 11 -->
+      <section id="s11" class="mn-sec">
+        <h3>11. Reports</h3>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead><tr><th style="width:30%;">Report</th><th>What it tells you</th></tr></thead>
+            <tbody>
+              <tr><td><a href="{{ url_for('report_profit_loss') }}">Profit &amp; Loss</a></td>
+                  <td class="small text-muted">Did you make money over a period. Revenue, less cost of goods sold, less expenses.</td></tr>
+              <tr><td><a href="{{ url_for('report_balance_sheet') }}">Balance Sheet</a></td>
+                  <td class="small text-muted">What you own and owe on a given day. Must say <strong>Balanced</strong>.</td></tr>
+              <tr><td><a href="{{ url_for('report_trial_balance') }}">Trial Balance</a></td>
+                  <td class="small text-muted">Every account with its balance. Debits must equal credits.</td></tr>
+              <tr><td><a href="{{ url_for('report_cash_flow') }}">Cash Flow</a></td>
+                  <td class="small text-muted">Where cash actually came from and went — split into Operating, Investing and Financing. Profit is not cash; this is the report that shows the difference.</td></tr>
+              <tr><td><a href="{{ url_for('report_stock') }}">Stock Valuation</a></td>
+                  <td class="small text-muted">Stock on hand and what it cost.</td></tr>
+              <tr><td><a href="{{ url_for('report_aging') }}">AP/AR Ageing</a></td>
+                  <td class="small text-muted">Who owes you, who you owe, and for how long.</td></tr>
+              <tr><td><a href="{{ url_for('report_cash_book') }}">Cash Book</a></td>
+                  <td class="small text-muted">Every movement through a cash or bank account.</td></tr>
+              <tr><td><a href="{{ url_for('report_reconciliation') }}">Reconciliation</a></td>
+                  <td class="small text-muted"><strong>The most important report in the system.</strong> It compares the ledger against the subledgers underneath it. If it is green, your books are sound.</td></tr>
+              <tr><td><a href="{{ url_for('reports') }}">Sales &amp; Inventory</a></td>
+                  <td class="small text-muted">Operational reports — profit by item, by customer, by day; purchase and sales history.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 12 -->
+      <section id="s12" class="mn-sec">
+        <h3>12. Month end</h3>
+        <ol class="mn-step">
+          <li>Enter every invoice, payment and expense for the month.</li>
+          <li><strong>Run depreciation</strong> for the month —
+            <span class="mn-path">Accounting → Fixed Assets</span>.</li>
+          <li>Open the <a href="{{ url_for('report_reconciliation') }}">Reconciliation report</a>.
+            It must be green. If it is not, stop and find out why before doing anything else.</li>
+          <li>Check the <a href="{{ url_for('report_balance_sheet') }}">Balance Sheet</a> says
+            Balanced, and read the <a href="{{ url_for('report_profit_loss') }}">Profit &amp;
+            Loss</a>.</li>
+          <li><strong>Download a backup.</strong></li>
+          <li>Optionally <strong>close the period</strong>
+            (<span class="mn-path">Accounting → Periods</span>) so the month's figures can no
+            longer change.</li>
+        </ol>
+      </section>
+
+      <!-- 13 -->
+      <section id="s13" class="mn-sec">
+        <h3>13. Year end</h3>
+        <p>
+          Do everything in the month-end list, then
+          <span class="mn-path">Accounting → Periods → Close Year</span>.
+        </p>
+        <p>Closing a year does two things:</p>
+        <ul>
+          <li>Income and expense accounts are emptied into <strong>Retained Earnings</strong>, so
+            the new year's Profit &amp; Loss starts from zero.</li>
+          <li>The year is locked. Nothing more can be posted into it.</li>
+        </ul>
+        <div class="mn-why">
+          <strong>The Balance Sheet carries forward untouched</strong>
+          That is the point of closing. Your profit stops being "this year's profit" and becomes
+          part of the accumulated worth of the business.
+        </div>
+        <p class="mb-0">
+          Invoice numbering restarts at 1 for the new year:
+          <span class="mn-path">INV-2027-000001</span>.
+        </p>
+      </section>
+
+      <!-- 14 -->
+      <section id="s14" class="mn-sec">
+        <h3>14. Fixing mistakes</h3>
+        <p>
+          You cannot edit or delete a posted document. You <strong>reverse</strong> it — open it
+          and press <strong>Reverse</strong> — and then enter it again correctly.
+        </p>
+        <p>Reversing undoes everything the document did:</p>
+        <ul>
+          <li>a cancelling journal entry is posted;</li>
+          <li>stock goes back to where it was;</li>
+          <li>the customer's or supplier's ledger is corrected;</li>
+          <li>the document is marked <strong>Reversed</strong> and its invoice prints with a
+            <strong>REVERSED</strong> watermark.</li>
+        </ul>
+
+        <div class="mn-warn">
+          <strong>Some reversals are refused, and rightly</strong>
+          You cannot reverse a purchase whose goods have already been sold — they are with the
+          customer and cannot be handed back to the supplier. Reverse the sale first, or raise a
+          purchase return instead. Likewise, an asset's purchase cannot be reversed once it has
+          been depreciated; dispose of it instead.
+        </div>
+
+        <p class="mb-0">
+          <strong>Return or reverse?</strong> If the goods physically moved, it is a
+          <em>return</em>. If the document should never have existed, it is a
+          <em>reversal</em>.
+        </p>
+      </section>
+
+      <!-- 15 -->
+      <section id="s15" class="mn-sec">
+        <h3>15. Users &amp; permissions</h3>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead><tr><th>Role</th><th>Can do</th></tr></thead>
+            <tbody>
+              <tr><td><span class="badge bg-secondary">Staff</span></td>
+                  <td class="small text-muted">Day-to-day entry: purchases, sales, payments, receipts, expenses.</td></tr>
+              <tr><td><span class="badge bg-primary">Manager</span></td>
+                  <td class="small text-muted">Everything staff can do, plus all reports, the chart of accounts, and stock adjustments.</td></tr>
+              <tr><td><span class="badge bg-danger">Admin</span></td>
+                  <td class="small text-muted">Everything. Only an admin can reverse a document, close a year, manage users, take backups or reset the system.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="mb-0">
+          <span class="mn-path">Admin → Audit Log</span> records every change: who, what, when.
+          It cannot be edited.
+        </p>
+      </section>
+
+      <!-- 16 -->
+      <section id="s16" class="mn-sec">
+        <h3>16. Backup &amp; restore</h3>
+        <p><span class="mn-path">Admin → System</span></p>
+        <p>
+          <strong>Download Backup</strong> writes every table in the database to a single file.
+          Keep it somewhere that is not the same computer.
+        </p>
+        <p>
+          <strong>Restore</strong> replaces everything currently in the system with the contents
+          of a backup file.
+        </p>
+        <div class="mn-warn">
+          <strong>Take a backup every week, and before anything irreversible</strong>
+          It is the only way back from a mistake. If the database is ever lost, an old backup is
+          the difference between a bad afternoon and a destroyed business.
+        </div>
+      </section>
+
+      <!-- 17 -->
+      <section id="s17" class="mn-sec">
+        <h3>17. Starting fresh</h3>
+        <p><span class="mn-path">Admin → System → Start Fresh</span> — two options.</p>
+
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead><tr><th></th><th>Delete All Transactions</th><th>Delete All Data</th></tr></thead>
+            <tbody>
+              <tr><td class="small">Suppliers, customers, items</td><td class="text-success fw-semibold">Kept</td><td class="text-danger">Deleted</td></tr>
+              <tr><td class="small">Invoices, payments, journals, assets</td><td class="text-danger">Deleted</td><td class="text-danger">Deleted</td></tr>
+              <tr><td class="small">Opening balances &amp; stock</td><td class="text-warning fw-semibold">Cleared to zero</td><td class="text-danger">Deleted</td></tr>
+              <tr><td class="small">Invoice numbering</td><td>Restarts at 1</td><td>Restarts at 1</td></tr>
+              <tr><td class="small">Your login</td><td class="text-success fw-semibold">Kept</td><td class="text-success fw-semibold">Kept</td></tr>
+              <tr><td class="small">Use it when</td><td class="small text-muted">A trial period ends and real trading begins — you keep the master data you spent time entering.</td><td class="small text-muted">Handing the system to someone who will enter their own data.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="mn-warn">
+          <strong>Neither can be undone. Download a backup first.</strong>
+          Both ask you to type a confirmation phrase, because a button alone can be pressed by
+          accident.
+        </div>
+      </section>
+
+      <!-- 18 -->
+      <section id="s18" class="mn-sec">
+        <h3>18. Rules &amp; limits</h3>
+
+        <h5>What the system will not let you do</h5>
+        <ul>
+          <li>Edit or delete a posted document.</li>
+          <li>Sell, issue or write off stock you do not have.</li>
+          <li>Reverse a purchase whose goods have already been sold.</li>
+          <li>Post a journal entry that does not balance.</li>
+          <li>Post by hand to Receivables, Payables or Inventory.</li>
+          <li>Post into a closed period or a closed year.</li>
+          <li>Delete a numbered invoice — that would leave a gap in the sequence.</li>
+          <li>Depreciate the same month twice.</li>
+        </ul>
+
+        <h5>What it does not do</h5>
+        <ul class="mb-0">
+          <li><strong>FIFO or LIFO costing</strong> — stock is weighted average.</li>
+          <li><strong>Multiple currencies.</strong></li>
+          <li><strong>Multiple companies</strong> — one set of books per installation.</li>
+          <li><strong>Budgets, cost centres, or recurring entries.</strong></li>
+        </ul>
+      </section>
+
+      <!-- 19 -->
+      <section id="s19" class="mn-sec">
+        <h3>19. Troubleshooting</h3>
+
+        <h5>"The Profit &amp; Loss shows nothing"</h5>
+        <p>
+          Check the date range. It defaults to 1 January until today, so anything dated in the
+          future — or in a previous year — falls outside it.
+        </p>
+
+        <h5>"An expense I entered is not in the Profit &amp; Loss"</h5>
+        <p>
+          Check it was not reversed, and check its date is inside the range you are looking at.
+        </p>
+
+        <h5>"The Balance Sheet does not balance"</h5>
+        <p>
+          This should be impossible. If it happens, run the
+          <a href="{{ url_for('report_reconciliation') }}">Reconciliation report</a>, take a
+          backup, and report it — it means something is genuinely wrong, not merely displayed
+          oddly.
+        </p>
+
+        <h5>"Reconciliation shows a difference"</h5>
+        <p>
+          The ledger and a subledger disagree. Do not post anything else. Take a backup and
+          report it with a screenshot of that page.
+        </p>
+
+        <h5>"It says I cannot reverse this"</h5>
+        <p>
+          Read the message — it tells you why. Usually the goods have already been sold, or the
+          document is already reversed. See section 14.
+        </p>
+
+        <h5>"Stock is right but the value looks wrong"</h5>
+        <p class="mb-0">
+          Remember it is a weighted average, not the last price you paid. Open
+          <a href="{{ url_for('report_stock') }}">Stock Valuation</a> and compare the Avg Cost
+          column with your purchases.
+        </p>
+      </section>
+
+      <div class="text-center text-muted small py-4 border-top">
+        <div class="mb-1"><strong>{{ company_name }}</strong>{% if company_tagline %} — {{ company_tagline }}{% endif %}</div>
+        <div>Designed &amp; Developed by {{ designed_developed }}</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}

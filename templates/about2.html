@@ -2,14 +2,14 @@
 {% block title %}About — {{ app_name }}{% endblock %}
 {% block content %}
 <style>
-/* ── About page (theme-aware, matches the app's light/dark surfaces) ── */
+/* ── About page (theme-aware, uses the app's own surfaces) ── */
 .ab-wrap { max-width: 1080px; margin: 0 auto; }
 
 .ab-hero {
   position: relative; overflow: hidden;
   border-radius: 20px;
   padding: 3rem 2rem;
-  margin-bottom: 2rem;
+  margin-bottom: 2.5rem;
   background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
   color: #fff;
   box-shadow: var(--shadow-md);
@@ -25,195 +25,230 @@
 .ab-hero-icon {
   width: 64px; height: 64px; border-radius: 18px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: rgba(255,255,255,0.18); backdrop-filter: blur(6px);
+  background: rgba(255,255,255,0.18);
   font-size: 2rem; margin-bottom: 1rem;
 }
-.ab-hero h1 { font-weight: 800; letter-spacing: -0.02em; margin: 0; font-size: clamp(1.8rem, 4vw, 2.6rem); }
-.ab-hero .ab-sub { font-size: 1.05rem; opacity: 0.92; margin-top: 0.4rem; }
-.ab-hero .ab-desc { max-width: 640px; margin-top: 1rem; opacity: 0.9; line-height: 1.6; }
-.ab-badges { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1.4rem; }
-.ab-badge {
-  display: inline-flex; align-items: center; gap: 0.4rem;
-  background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.25);
-  padding: 0.35rem 0.8rem; border-radius: 999px; font-size: 0.82rem; font-weight: 600;
-}
+.ab-hero h1 { font-weight: 800; letter-spacing: -.02em; margin-bottom: .5rem; }
+.ab-hero p  { max-width: 46rem; opacity: .93; margin-bottom: 1.5rem; }
+.ab-hero .btn-light { font-weight: 600; }
 
-.ab-stats {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2.5rem;
-}
-.ab-stat {
-  background: var(--card-bg); border: 1px solid var(--border);
-  border-radius: 14px; padding: 1.1rem 1rem; text-align: center;
-  box-shadow: var(--shadow-sm);
-}
-.ab-stat .n { font-size: 1.6rem; font-weight: 800; color: var(--primary); line-height: 1; }
-.ab-stat .l { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.3rem; font-weight: 600; }
+.ab-h { font-weight: 700; margin-bottom: .35rem; }
+.ab-sub { color: var(--muted); margin-bottom: 1.5rem; }
 
-.ab-section-head { text-align: center; margin: 2.5rem 0 1.5rem; }
-.ab-section-head h2 { font-weight: 800; letter-spacing: -0.02em; font-size: 1.5rem; }
-.ab-section-head p { color: var(--text-muted); margin-top: 0.3rem; }
+.ab-stat { border-left: 3px solid var(--primary); padding-left: .9rem; }
+.ab-stat .n { font-size: 1.35rem; font-weight: 800; line-height: 1.15; }
+.ab-stat .l { font-size: .78rem; color: var(--muted); }
 
-.ab-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.1rem; }
 .ab-card {
-  background: var(--card-bg); border: 1px solid var(--border);
-  border-radius: 16px; padding: 1.3rem; box-shadow: var(--shadow-sm);
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  height: 100%;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.25rem;
+  transition: transform .15s ease, box-shadow .15s ease;
 }
-.ab-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); }
-.ab-card .ico {
-  width: 44px; height: 44px; border-radius: 12px;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 1.25rem; color: #fff; margin-bottom: 0.8rem;
-  background: linear-gradient(135deg, var(--primary), var(--accent));
-}
-.ab-card h3 { font-size: 1.05rem; font-weight: 700; margin: 0 0 0.4rem; }
-.ab-card ul { margin: 0; padding-left: 1.1rem; color: var(--text-muted); font-size: 0.9rem; line-height: 1.7; }
+.ab-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.ab-card .bi { font-size: 1.5rem; color: var(--primary); }
+.ab-card h6 { font-weight: 700; margin: .7rem 0 .4rem; }
+.ab-card p  { font-size: .9rem; color: var(--muted); margin: 0; }
 
-.ab-quality { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.9rem; }
-.ab-q {
-  display: flex; gap: 0.9rem; align-items: flex-start;
-  background: var(--card-bg); border: 1px solid var(--border);
-  border-radius: 14px; padding: 1rem 1.1rem;
-}
-.ab-q i { color: var(--success); font-size: 1.2rem; margin-top: 2px; }
-.ab-q .t { font-weight: 700; font-size: 0.95rem; }
-.ab-q .d { color: var(--text-muted); font-size: 0.86rem; margin-top: 0.15rem; }
+.ab-rule { border-left: 3px solid var(--bs-warning, #f0ad4e); padding-left: 1rem; margin-bottom: 1.35rem; }
+.ab-rule strong { display: block; margin-bottom: .15rem; }
+.ab-rule span   { font-size: .9rem; color: var(--muted); }
 
-.ab-dev {
-  margin-top: 2.5rem; text-align: center;
-  background: var(--card-bg); border: 1px solid var(--border);
-  border-radius: 18px; padding: 2rem; box-shadow: var(--shadow-sm);
+.ab-note {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.5rem;
 }
-.ab-dev .avatar {
-  width: 60px; height: 60px; border-radius: 50%;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, var(--primary), var(--accent));
-  color: #fff; font-size: 1.6rem; margin-bottom: 0.8rem;
-}
-.ab-dev .label { color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; }
-.ab-dev .name { font-size: 1.15rem; font-weight: 800; margin-top: 0.25rem; }
-
-@media (max-width: 860px) {
-  .ab-stats { grid-template-columns: repeat(2, 1fr); }
-  .ab-grid, .ab-quality { grid-template-columns: 1fr; }
-}
+.ab-foot { color: var(--muted); font-size: .875rem; }
 </style>
 
 <div class="ab-wrap">
 
   <!-- Hero -->
   <div class="ab-hero">
-    <div class="ab-hero-icon"><i class="bi bi-box-seam-fill"></i></div>
+    <div class="ab-hero-icon"><i class="bi bi-boxes"></i></div>
     <h1>{{ app_name }}</h1>
-    <div class="ab-sub">{{ company_tagline }}</div>
-    <p class="ab-desc">
-      A complete inventory &amp; accounts management system for {{ company_name }} — track stock,
-      run purchases and sales, manage supplier &amp; customer ledgers, and see exactly where your
-      money stands, all from one secure place.
+    <p class="lead">
+      A complete trading and accounting system — stock, invoicing, receivables and payables,
+      cash and bank, fixed assets — all posting to <strong>one double-entry general ledger</strong>,
+      so every report is drawn from the same set of books.
     </p>
-    <div class="ab-badges">
-      <span class="ab-badge"><i class="bi bi-shield-check"></i> Secure &amp; role-based</span>
-      <span class="ab-badge"><i class="bi bi-clock-history"></i> Full audit trail</span>
-      <span class="ab-badge"><i class="bi bi-cloud-arrow-down"></i> Backup &amp; restore</span>
-      <span class="ab-badge"><i class="bi bi-calculator"></i> Exact-decimal accounting</span>
+    <a href="{{ url_for('manual') }}" class="btn btn-light">
+      <i class="bi bi-book"></i> Read the User Manual
+    </a>
+  </div>
+
+  <!-- One set of books -->
+  <div class="row g-4 mb-5">
+    <div class="col-lg-7">
+      <h4 class="ab-h">One set of books</h4>
+      <p class="text-muted">
+        Small business software usually keeps stock in one place and accounts in another, and
+        quietly lets them disagree. This does not. Every purchase, sale, return, payment,
+        expense and depreciation charge becomes a <strong>double-entry journal</strong> the
+        moment it is saved. The Balance Sheet, Profit &amp; Loss, Trial Balance and Cash Flow
+        Statement are all summed from those journals — not one of them is a separate
+        calculation that can drift away from the others.
+      </p>
+      <p class="text-muted mb-0">
+        The subledgers — customer balances, supplier balances, stock on hand — are kept by
+        their own documents, independently of the ledger. The
+        <a href="{{ url_for('report_reconciliation') }}">Reconciliation report</a> compares the
+        two. If they agree, both are almost certainly right. If they ever differ, that is a real
+        error and the system says so plainly.
+      </p>
+    </div>
+    <div class="col-lg-5">
+      <div class="row g-3">
+        <div class="col-6"><div class="ab-stat"><div class="n">Double entry</div><div class="l">every document posts a journal</div></div></div>
+        <div class="col-6"><div class="ab-stat"><div class="n">Gapless</div><div class="l">invoice numbering, yearly reset</div></div></div>
+        <div class="col-6"><div class="ab-stat"><div class="n">Weighted avg</div><div class="l">stock costing</div></div></div>
+        <div class="col-6"><div class="ab-stat"><div class="n">Audited</div><div class="l">every change recorded</div></div></div>
+      </div>
     </div>
   </div>
 
-  <!-- Stats -->
-  <div class="ab-stats">
-    <div class="ab-stat"><div class="n">6</div><div class="l">Core Modules</div></div>
-    <div class="ab-stat"><div class="n">15+</div><div class="l">Transaction Types</div></div>
-    <div class="ab-stat"><div class="n">5</div><div class="l">Report Types</div></div>
-    <div class="ab-stat"><div class="n">3</div><div class="l">Access Roles</div></div>
+  <!-- Features -->
+  <h4 class="ab-h">What it does</h4>
+  <p class="ab-sub">All of this is in the system today.</p>
+
+  <div class="row g-3 mb-5">
+    {% set features = [
+      ("bi-people",         "Suppliers &amp; Customers", "Opening balances, running ledgers, statements, ageing, and payments that can be applied to a specific bill."),
+      ("bi-box-seam",       "Inventory",                 "Items, categories, reorder alerts, stock adjustments, and stock valued at weighted-average cost."),
+      ("bi-cart",           "Purchases &amp; Sales",     "Multi-line invoices with per-line discount and tax, returns both ways, quotations, purchase orders and delivery challans."),
+      ("bi-cash-coin",      "Cash &amp; Bank",           "Any number of cash and bank accounts. Every payment, receipt and expense belongs to one, and its balance comes straight from the ledger."),
+      ("bi-journal-text",   "General Ledger",            "Chart of accounts, manual journal entries, accounting periods, fiscal years, and year-end closing into Retained Earnings."),
+      ("bi-building",       "Fixed Assets",              "An asset register with straight-line and reducing-balance depreciation, posted monthly, and disposal with gain or loss."),
+      ("bi-bar-chart-line", "Financial Reports",         "Balance Sheet, Profit &amp; Loss, Trial Balance, Cash Flow Statement, Stock Valuation, AP/AR Ageing, Cash Book, GST Summary, Reconciliation."),
+      ("bi-shield-check",   "Controls",                  "Roles and permissions, an audit log of every change, rate-limited sign-in, and posted documents that cannot be edited or deleted."),
+      ("bi-hdd",            "Backup &amp; Restore",      "One portable file holding every table, restorable on either database engine — plus two levels of reset for handing the system over."),
+    ] %}
+    {% for icon, title, text in features %}
+    <div class="col-md-6 col-lg-4">
+      <div class="ab-card">
+        <i class="bi {{ icon }}"></i>
+        <h6>{{ title | safe }}</h6>
+        <p>{{ text | safe }}</p>
+      </div>
+    </div>
+    {% endfor %}
   </div>
 
-  <!-- Modules -->
-  <div class="ab-section-head">
-    <h2>What it does</h2>
-    <p>Everything a growing business needs to run inventory and accounts</p>
-  </div>
-  <div class="ab-grid">
-    <div class="ab-card">
-      <div class="ico"><i class="bi bi-people"></i></div>
-      <h3>Parties &amp; Ledgers</h3>
-      <ul>
-        <li>Suppliers &amp; customers</li>
-        <li>Opening balances</li>
-        <li>Running ledger &amp; balances</li>
-        <li>Payables &amp; receivables</li>
-      </ul>
+  <!-- Rules + checks -->
+  <div class="row g-5 mb-5">
+    <div class="col-lg-6">
+      <h4 class="ab-h">The rules it will not let you break</h4>
+      <p class="ab-sub">An accounting system earns its keep by what it refuses to do.</p>
+
+      <div class="ab-rule">
+        <strong>A posted document is never edited or deleted — it is reversed.</strong>
+        <span>The original stays, marked reversed, with a cancelling journal entry beside it.
+        Reversed invoices print with a REVERSED watermark, so a cancelled invoice can never be
+        handed over as a live one.</span>
+      </div>
+
+      <div class="ab-rule">
+        <strong>Invoice numbers have no gaps.</strong>
+        <span>Numbers come from a counter that rolls back with the transaction, so a failed save
+        never burns one. They restart each fiscal year, and a numbered document cannot be
+        deleted — only reversed, keeping its number.</span>
+      </div>
+
+      <div class="ab-rule">
+        <strong>Stock can never go negative.</strong>
+        <span>Not by selling, not by adjusting, and not by reversing a purchase whose goods have
+        already been sold — which is the case everybody forgets.</span>
+      </div>
+
+      <div class="ab-rule">
+        <strong>Control accounts belong to their subledgers.</strong>
+        <span>Receivables, Payables and Inventory cannot be touched by a manual journal entry.
+        They move only when a document moves them, which is precisely why they always agree with
+        the customer, supplier and stock ledgers.</span>
+      </div>
+
+      <div class="ab-rule">
+        <strong>Nothing posts into a closed period.</strong>
+        <span>Once a month or a year is closed, figures you have already reported cannot quietly
+        change underneath you.</span>
+      </div>
     </div>
-    <div class="ab-card">
-      <div class="ico"><i class="bi bi-boxes"></i></div>
-      <h3>Inventory</h3>
-      <ul>
-        <li>Items &amp; categories</li>
-        <li>Live stock levels</li>
-        <li>Reorder-level alerts</li>
-        <li>Stock adjustments</li>
-      </ul>
-    </div>
-    <div class="ab-card">
-      <div class="ico"><i class="bi bi-cart"></i></div>
-      <h3>Transactions</h3>
-      <ul>
-        <li>Purchases &amp; sales (multi-item)</li>
-        <li>Discounts &amp; tax</li>
-        <li>Payments &amp; receipts</li>
-        <li>Returns, POs, quotations, challans</li>
-      </ul>
-    </div>
-    <div class="ab-card">
-      <div class="ico"><i class="bi bi-bar-chart-line"></i></div>
-      <h3>Reports</h3>
-      <ul>
-        <li>Sales &amp; inventory</li>
-        <li>Profit &amp; Loss</li>
-        <li>AP/AR aging &amp; cash book</li>
-        <li>GST summary · CSV export</li>
-      </ul>
-    </div>
-    <div class="ab-card">
-      <div class="ico"><i class="bi bi-receipt"></i></div>
-      <h3>Invoicing</h3>
-      <ul>
-        <li>Print-ready purchase &amp; sale invoices</li>
-        <li>Save as PDF</li>
-        <li>Delivery challans</li>
-        <li>Expense tracking</li>
-      </ul>
-    </div>
-    <div class="ab-card">
-      <div class="ico"><i class="bi bi-shield-person"></i></div>
-      <h3>Administration</h3>
-      <ul>
-        <li>Users &amp; roles (Admin/Manager/User)</li>
-        <li>Activity audit log</li>
-        <li>Backup &amp; restore</li>
-        <li>Global search</li>
-      </ul>
+
+    <div class="col-lg-6">
+      <h4 class="ab-h">How you know the books are right</h4>
+      <p class="ab-sub">Four checks. Each compares two records kept independently of each other.</p>
+
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th style="width: 34%;">Report</th><th>What must be true</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><a href="{{ url_for('report_balance_sheet') }}">Balance Sheet</a></td>
+              <td class="small text-muted">Assets = Liabilities + Equity. Equity is <em>not</em> a
+                balancing figure — it is added up on its own, so the two sides matching is a
+                result, not an arrangement.</td>
+            </tr>
+            <tr>
+              <td><a href="{{ url_for('report_trial_balance') }}">Trial Balance</a></td>
+              <td class="small text-muted">Total debits = total credits.</td>
+            </tr>
+            <tr>
+              <td><a href="{{ url_for('report_reconciliation') }}">Reconciliation</a></td>
+              <td class="small text-muted">Receivables, Payables and Inventory in the ledger =
+                the customer, supplier and stock ledgers underneath them.</td>
+            </tr>
+            <tr>
+              <td><a href="{{ url_for('report_cash_flow') }}">Cash Flow</a></td>
+              <td class="small text-muted">Opening cash + movement = closing cash — and that
+                closing figure equals the Cash &amp; Bank page and the Balance Sheet.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="small text-muted mb-0">
+        Run them and they either all agree or they do not. There is no third answer, and no
+        report here that can be made to look right on its own.
+      </p>
     </div>
   </div>
 
-  <!-- Quality / reliability -->
-  <div class="ab-section-head">
-    <h2>Built for reliability</h2>
-    <p>The details that make it safe to run a real business on</p>
-  </div>
-  <div class="ab-quality">
-    <div class="ab-q"><i class="bi bi-check-circle-fill"></i><div><div class="t">Exact-decimal money</div><div class="d">Balances are stored as fixed-point decimals — no floating-point rounding drift.</div></div></div>
-    <div class="ab-q"><i class="bi bi-check-circle-fill"></i><div><div class="t">Complete audit trail</div><div class="d">Every create, edit and delete is logged with who did it and when.</div></div></div>
-    <div class="ab-q"><i class="bi bi-check-circle-fill"></i><div><div class="t">Role-based access</div><div class="d">Sensitive actions are limited to the right roles; verified email required.</div></div></div>
-    <div class="ab-q"><i class="bi bi-check-circle-fill"></i><div><div class="t">Secure by default</div><div class="d">HTTPS, hashed passwords, CSRF protection, security headers and login throttling.</div></div></div>
-    <div class="ab-q"><i class="bi bi-check-circle-fill"></i><div><div class="t">Portable backups</div><div class="d">One-click JSON backup &amp; restore that works on both SQLite and PostgreSQL.</div></div></div>
-    <div class="ab-q"><i class="bi bi-check-circle-fill"></i><div><div class="t">Tested &amp; monitored</div><div class="d">An automated test suite guards the accounting core, with health checks and logging.</div></div></div>
+  <!-- Worth knowing -->
+  <div class="ab-note mb-4">
+    <h6 class="fw-bold mb-3"><i class="bi bi-info-circle"></i> Worth knowing before you start</h6>
+    <div class="row g-4 small">
+      <div class="col-md-4">
+        <strong>Stock is valued at weighted average.</strong>
+        <p class="text-muted mb-0">
+          Buy the same item at 100 and again at 140, and from then on every unit is costed at
+          120. Not FIFO, not LIFO. It is the same figure the Inventory account is posted, which
+          is why the stock report and the balance sheet always agree.
+        </p>
+      </div>
+      <div class="col-md-4">
+        <strong>One company, one currency.</strong>
+        <p class="text-muted mb-0">
+          The books of a single business, in a single currency. Multi-company and
+          multi-currency are not supported.
+        </p>
+      </div>
+      <div class="col-md-4">
+        <strong>Take backups.</strong>
+        <p class="text-muted mb-0">
+          <em>Admin → System → Download Backup</em> writes every table to one file. It is the
+          only way back from a mistake and the only thing between you and a lost database.
+          Make it a weekly habit.
+        </p>
+      </div>
+    </div>
   </div>
 
-  <!-- Developer credit -->
-  <div class="ab-dev">
-    <div class="avatar"><i class="bi bi-code-slash"></i></div>
-    <div class="label">Designed &amp; Developed by</div>
-    <div class="name">{{ designed_developed }}</div>
+  <div class="text-center ab-foot py-3">
+    <div class="mb-1"><strong>{{ company_name }}</strong>{% if company_tagline %} — {{ company_tagline }}{% endif %}</div>
+    <div>Designed &amp; Developed by {{ designed_developed }}</div>
   </div>
 
 </div>

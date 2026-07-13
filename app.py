@@ -3773,6 +3773,12 @@ def index():
 def about():
     return render_template("about2.html")
 
+@app.route("/manual")
+def manual():
+    """The user manual. Public, like About — someone evaluating the system should be able
+    to read what it does and what it refuses to do before they have an account."""
+    return render_template("manual.html")
+
 @app.route('/dashboard')
 @manager_required
 def dashboard():
