@@ -900,6 +900,24 @@ def _free_code(preferred):
             return str(n)
     raise LookupError(f"No free account code near {preferred}")
 
+def backfill_account_openings():
+    """Post cash/bank opening balances that were entered before they were posted at
+    all. The money sat on the FinancialAccount row while every report read the GL,
+    so it was invisible. Idempotent — an account that already has its opening entry
+    is skipped. Never allowed to break boot: a failure is logged and the app starts."""
+    posted = 0
+    for fa in FinancialAccount.query.all():
+        if not fa.opening_balance or posted_entry("account_opening", fa.id):
+            continue
+        try:
+            post_account_opening(fa)
+            db.session.commit()
+            posted += 1
+        except Exception as e:
+            db.session.rollback()
+            app.logger.warning("Could not post opening balance for %s: %s", fa.name, e)
+    return posted
+
 def backfill_document_numbers():
     """Number the purchases and sales that predate numbering, oldest first, so the
     order they were raised in is the order they are numbered in. Idempotent: only
@@ -1727,6 +1745,25 @@ def post_customer_opening(customer):
                  {"code": ACC_AR, "debit": 0, "credit": -ob, "memo": customer.name}]
     return _repost_opening("customer_opening", customer.id, _opening_date(),
                            f"Opening balance — {customer.name}", lines)
+
+def post_account_opening(fin_acct):
+    """Cash or bank already in hand on the day the system started: Dr the account,
+    Cr Opening Balance Equity.
+
+    Without this the money exists on the FinancialAccount row but not in the GL, and
+    since every report is summed from the GL, the balance sheet simply would not see
+    it — which is exactly what happened."""
+    ob = Decimal(str(fin_acct.opening_balance or 0)).quantize(MONEY)
+    gl = ensure_gl_account_for_financial(fin_acct)
+    lines = []
+    if ob > 0:
+        lines = [{"account_id": gl.id, "debit": ob, "credit": 0, "memo": fin_acct.name},
+                 {"code": ACC_OPENING_EQUITY, "debit": 0, "credit": ob}]
+    elif ob < 0:                        # started overdrawn
+        lines = [{"code": ACC_OPENING_EQUITY, "debit": -ob, "credit": 0},
+                 {"account_id": gl.id, "debit": 0, "credit": -ob, "memo": fin_acct.name}]
+    return _repost_opening("account_opening", fin_acct.id, _opening_date(),
+                           f"Opening balance — {fin_acct.name}", lines)
 
 def post_item_opening(item):
     """Stock on hand before the system existed, valued at the item's cost. This is
@@ -3094,6 +3131,9 @@ def migrate_database():
 
     # Nothing can be posted until every cash/bank account has a GL counterpart.
     seed_financial_account_links()
+
+    # Cash/bank opening balances entered before they were ever posted to the GL.
+    backfill_account_openings()
 
     # Documents raised before numbering existed still need their numbers.
     backfill_document_numbers()
@@ -7177,6 +7217,7 @@ def new_account():
             db.session.add(acct)
             db.session.flush()
             ensure_gl_account_for_financial(acct)     # its GL leaf, so payments can post
+            post_account_opening(acct)                # and its opening money into the GL
             db.session.commit()
             record_audit("create", "Account", acct.id, f"Account '{acct.name}' created ({acct.account_type})")
             flash(f"Account '{acct.name}' created. Select it when recording payments, receipts or expenses.", "success")
@@ -7201,6 +7242,8 @@ def edit_account(id):
             acct.name = name
             acct.opening_balance = float(ob_str or 0)
             acct.account_type = acc_type if acc_type in ("Cash", "Bank") else "Cash"
+            db.session.flush()
+            post_account_opening(acct)      # the GL is what every report reads
             db.session.commit()
             record_audit("update", "Account", acct.id, f"Account '{acct.name}' opening balance set to {float(acct.opening_balance):,.2f}")
             flash("Account updated successfully!", "success")

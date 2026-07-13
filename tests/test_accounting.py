@@ -13,7 +13,7 @@ from app import (
     FixedAsset, DepreciationCharge,
     ACC_CASH_IN_HAND, ACC_CAPITAL,
     month_end, depreciation_for_month, post_asset_acquisition,
-    run_depreciation, post_asset_disposal, PostingError,
+    run_depreciation, post_asset_disposal, PostingError, post_account_opening,
     seed_chart_of_accounts, seed_fixed_asset_accounts, seed_fiscal_year,
     get_account, account_for_role,
     get_account_balance, total_cash_bank_balance,
@@ -82,6 +82,44 @@ def test_total_cash_bank_balance(appctx):
     db.session.add(CustomerPayment(customer_id=c.id, amount=50, payment_method="Bank"))
     db.session.commit()
     assert round(total_cash_bank_balance(), 2) == 1050.0    # 300 + (700+50)
+
+
+def test_cash_opening_balance_reaches_the_balance_sheet(appctx):
+    """The money used to sit on the FinancialAccount row and never reach the GL, so
+    every report — which reads only the GL — showed zero."""
+    seed_chart_of_accounts()
+    seed_fixed_asset_accounts()
+    seed_fiscal_year(2026)
+    cash = FinancialAccount(name="Cash", method="Cash", account_type="Cash",
+                            opening_balance=500000)
+    db.session.add(cash)
+    db.session.flush()
+    post_account_opening(cash)
+    db.session.commit()
+
+    p = accounting_position(as_of=datetime(2026, 12, 31))
+    assert p["total_assets"] == Decimal("500000")     # the cash is visible
+    assert p["total_equity"] == Decimal("500000")     # against Opening Balance Equity
+    assert p["difference"] == Decimal("0")            # and the sheet balances
+
+
+def test_editing_the_opening_balance_reposts_it(appctx):
+    """Opening balances are the one figure a user legitimately corrects. The old
+    entry is reversed and a fresh one posted, so the GL never drifts."""
+    seed_chart_of_accounts()
+    seed_fixed_asset_accounts()
+    seed_fiscal_year(2026)
+    cash = FinancialAccount(name="Cash", method="Cash", account_type="Cash",
+                            opening_balance=500000)
+    db.session.add(cash); db.session.flush()
+    post_account_opening(cash); db.session.commit()
+
+    cash.opening_balance = 300000                     # the user corrects it
+    post_account_opening(cash); db.session.commit()
+
+    p = accounting_position(as_of=datetime(2026, 12, 31))
+    assert p["total_assets"] == Decimal("300000")     # the correction, not 800,000
+    assert p["difference"] == Decimal("0")
 
 
 # ── the GL-backed balance sheet ───────────────────────────────────────────────

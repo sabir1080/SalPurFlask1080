@@ -1,0 +1,625 @@
+{
+ "_meta": {
+  "app": "TradeFlow",
+  "format_version": 1,
+  "created": "2026-07-13T05:06:00.968767+00:00",
+  "dialect": "sqlite"
+ },
+ "tables": {
+  "account": [
+   {
+    "id": 1,
+    "code": "1000",
+    "name": "Current Assets",
+    "type": "Asset",
+    "parent_id": null,
+    "is_group": true,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 2,
+    "code": "1010",
+    "name": "Cash in Hand",
+    "type": "Asset",
+    "parent_id": 1,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 3,
+    "code": "1020",
+    "name": "Bank Accounts",
+    "type": "Asset",
+    "parent_id": 1,
+    "is_group": true,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 4,
+    "code": "1100",
+    "name": "Accounts Receivable",
+    "type": "Asset",
+    "parent_id": 1,
+    "is_group": false,
+    "is_control": true,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 5,
+    "code": "1200",
+    "name": "Inventory",
+    "type": "Asset",
+    "parent_id": 1,
+    "is_group": false,
+    "is_control": true,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 6,
+    "code": "1300",
+    "name": "Tax Input (Recoverable)",
+    "type": "Asset",
+    "parent_id": 1,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 7,
+    "code": "2000",
+    "name": "Current Liabilities",
+    "type": "Liability",
+    "parent_id": null,
+    "is_group": true,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 8,
+    "code": "2100",
+    "name": "Accounts Payable",
+    "type": "Liability",
+    "parent_id": 7,
+    "is_group": false,
+    "is_control": true,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 9,
+    "code": "2300",
+    "name": "Tax Output (Payable)",
+    "type": "Liability",
+    "parent_id": 7,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 10,
+    "code": "3000",
+    "name": "Equity",
+    "type": "Equity",
+    "parent_id": null,
+    "is_group": true,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 11,
+    "code": "3100",
+    "name": "Owner's Capital",
+    "type": "Equity",
+    "parent_id": 10,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 12,
+    "code": "3200",
+    "name": "Owner's Drawings",
+    "type": "Equity",
+    "parent_id": 10,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 13,
+    "code": "3300",
+    "name": "Opening Balance Equity",
+    "type": "Equity",
+    "parent_id": 10,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 14,
+    "code": "3900",
+    "name": "Retained Earnings",
+    "type": "Equity",
+    "parent_id": 10,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 15,
+    "code": "4000",
+    "name": "Sales Revenue",
+    "type": "Income",
+    "parent_id": null,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 16,
+    "code": "4100",
+    "name": "Sales Returns",
+    "type": "Income",
+    "parent_id": null,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 17,
+    "code": "5000",
+    "name": "Cost of Goods Sold",
+    "type": "Expense",
+    "parent_id": null,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 18,
+    "code": "5100",
+    "name": "Inventory Adjustment",
+    "type": "Expense",
+    "parent_id": null,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 19,
+    "code": "6000",
+    "name": "Operating Expenses",
+    "type": "Expense",
+    "parent_id": null,
+    "is_group": true,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 20,
+    "code": "6010",
+    "name": "Rent",
+    "type": "Expense",
+    "parent_id": 19,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 21,
+    "code": "6020",
+    "name": "Salaries & Wages",
+    "type": "Expense",
+    "parent_id": 19,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 22,
+    "code": "6030",
+    "name": "Utilities",
+    "type": "Expense",
+    "parent_id": 19,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 23,
+    "code": "6040",
+    "name": "Freight & Carriage",
+    "type": "Expense",
+    "parent_id": 19,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 24,
+    "code": "6090",
+    "name": "Other Expenses",
+    "type": "Expense",
+    "parent_id": 19,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 25,
+    "code": "1021",
+    "name": "Bank",
+    "type": "Asset",
+    "parent_id": 3,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 26,
+    "code": "1022",
+    "name": "Cheque",
+    "type": "Asset",
+    "parent_id": 3,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 27,
+    "code": "1023",
+    "name": "Online",
+    "type": "Asset",
+    "parent_id": 3,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": null
+   },
+   {
+    "id": 28,
+    "code": "1500",
+    "name": "Fixed Assets",
+    "type": "Asset",
+    "parent_id": null,
+    "is_group": true,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": "fixed_group"
+   },
+   {
+    "id": 29,
+    "code": "1510",
+    "name": "Fixed Assets at Cost",
+    "type": "Asset",
+    "parent_id": 28,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": "Investing",
+    "role": "fixed_cost"
+   },
+   {
+    "id": 30,
+    "code": "1590",
+    "name": "Accumulated Depreciation",
+    "type": "Asset",
+    "parent_id": 28,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": "Investing",
+    "role": "accum_dep"
+   },
+   {
+    "id": 31,
+    "code": "4200",
+    "name": "Gain on Disposal of Fixed Assets",
+    "type": "Income",
+    "parent_id": null,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": "Investing",
+    "role": "disposal_gain"
+   },
+   {
+    "id": 32,
+    "code": "5200",
+    "name": "Loss on Disposal of Fixed Assets",
+    "type": "Expense",
+    "parent_id": null,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": "Investing",
+    "role": "disposal_loss"
+   },
+   {
+    "id": 33,
+    "code": "6050",
+    "name": "Depreciation",
+    "type": "Expense",
+    "parent_id": 19,
+    "is_group": false,
+    "is_control": false,
+    "is_active": true,
+    "cash_flow_section": null,
+    "role": "depreciation"
+   }
+  ],
+  "audit_log": [],
+  "category": [],
+  "customer": [],
+  "document_sequence": [],
+  "fiscal_year": [
+   {
+    "id": 1,
+    "name": "2026",
+    "start_date": "2026-01-01",
+    "end_date": "2026-12-31",
+    "is_closed": false,
+    "closed_at": null
+   }
+  ],
+  "fixed_asset": [],
+  "rate_limit_hit": [],
+  "supplier": [],
+  "tax_code": [
+   {
+    "id": 1,
+    "name": "Zero-rated",
+    "is_active": true
+   },
+   {
+    "id": 2,
+    "name": "Standard",
+    "is_active": true
+   }
+  ],
+  "user": [
+   {
+    "id": 1,
+    "name": "sabir",
+    "email": "sabir1212@yahoo.com",
+    "password": "$argon2id$v=19$m=65536,t=3,p=4$mFPKeY+x1jqn1DrH+H8vxQ$Pg6R8Cm5PiHOqq/uOSi6/0ZGUA3uc2X14I+1bA03tfg",
+    "verified": true,
+    "role": "admin",
+    "reset_token": null,
+    "reset_token_expiry": null
+   }
+  ],
+  "accounting_period": [
+   {
+    "id": 1,
+    "fiscal_year_id": 1,
+    "name": "Jan 2026",
+    "start_date": "2026-01-01",
+    "end_date": "2026-01-31",
+    "is_closed": false
+   },
+   {
+    "id": 2,
+    "fiscal_year_id": 1,
+    "name": "Feb 2026",
+    "start_date": "2026-02-01",
+    "end_date": "2026-02-28",
+    "is_closed": false
+   },
+   {
+    "id": 3,
+    "fiscal_year_id": 1,
+    "name": "Mar 2026",
+    "start_date": "2026-03-01",
+    "end_date": "2026-03-31",
+    "is_closed": false
+   },
+   {
+    "id": 4,
+    "fiscal_year_id": 1,
+    "name": "Apr 2026",
+    "start_date": "2026-04-01",
+    "end_date": "2026-04-30",
+    "is_closed": false
+   },
+   {
+    "id": 5,
+    "fiscal_year_id": 1,
+    "name": "May 2026",
+    "start_date": "2026-05-01",
+    "end_date": "2026-05-31",
+    "is_closed": false
+   },
+   {
+    "id": 6,
+    "fiscal_year_id": 1,
+    "name": "Jun 2026",
+    "start_date": "2026-06-01",
+    "end_date": "2026-06-30",
+    "is_closed": false
+   },
+   {
+    "id": 7,
+    "fiscal_year_id": 1,
+    "name": "Jul 2026",
+    "start_date": "2026-07-01",
+    "end_date": "2026-07-31",
+    "is_closed": false
+   },
+   {
+    "id": 8,
+    "fiscal_year_id": 1,
+    "name": "Aug 2026",
+    "start_date": "2026-08-01",
+    "end_date": "2026-08-31",
+    "is_closed": false
+   },
+   {
+    "id": 9,
+    "fiscal_year_id": 1,
+    "name": "Sep 2026",
+    "start_date": "2026-09-01",
+    "end_date": "2026-09-30",
+    "is_closed": false
+   },
+   {
+    "id": 10,
+    "fiscal_year_id": 1,
+    "name": "Oct 2026",
+    "start_date": "2026-10-01",
+    "end_date": "2026-10-31",
+    "is_closed": false
+   },
+   {
+    "id": 11,
+    "fiscal_year_id": 1,
+    "name": "Nov 2026",
+    "start_date": "2026-11-01",
+    "end_date": "2026-11-30",
+    "is_closed": false
+   },
+   {
+    "id": 12,
+    "fiscal_year_id": 1,
+    "name": "Dec 2026",
+    "start_date": "2026-12-01",
+    "end_date": "2026-12-31",
+    "is_closed": false
+   }
+  ],
+  "customer_ledger_entry": [],
+  "expense_category": [],
+  "financial_account": [
+   {
+    "id": 1,
+    "name": "Cash",
+    "method": "Cash",
+    "account_type": "Cash",
+    "opening_balance": "0.0000",
+    "is_active": true,
+    "gl_account_id": 2
+   },
+   {
+    "id": 2,
+    "name": "Bank",
+    "method": "Bank",
+    "account_type": "Bank",
+    "opening_balance": "0.0000",
+    "is_active": true,
+    "gl_account_id": 25
+   },
+   {
+    "id": 3,
+    "name": "Cheque",
+    "method": "Cheque",
+    "account_type": "Bank",
+    "opening_balance": "0.0000",
+    "is_active": true,
+    "gl_account_id": 26
+   },
+   {
+    "id": 4,
+    "name": "Online",
+    "method": "Online",
+    "account_type": "Bank",
+    "opening_balance": "0.0000",
+    "is_active": true,
+    "gl_account_id": 27
+   }
+  ],
+  "item": [],
+  "supplier_ledger_entry": [],
+  "tax_component": [
+   {
+    "id": 1,
+    "tax_code_id": 1,
+    "name": "Tax",
+    "rate": "0.0000",
+    "input_account_id": 6,
+    "output_account_id": 9
+   },
+   {
+    "id": 2,
+    "tax_code_id": 2,
+    "name": "Tax",
+    "rate": "0.0000",
+    "input_account_id": 6,
+    "output_account_id": 9
+   }
+  ],
+  "expense": [],
+  "journal_entry": [],
+  "purchase": [],
+  "sale": [],
+  "stock_adjustment": [],
+  "customer_payment": [],
+  "delivery_challan": [],
+  "depreciation_charge": [],
+  "journal_line": [],
+  "purchase_item": [],
+  "purchase_order": [],
+  "purchase_return": [],
+  "quotation": [],
+  "sale_item": [],
+  "sale_return": [],
+  "supplier_payment": [],
+  "purchase_order_item": [],
+  "quotation_item": []
+ }
+}
