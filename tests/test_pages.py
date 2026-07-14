@@ -59,6 +59,21 @@ def test_both_pages_offer_both_languages_and_default_to_english(appctx):
         # Every visit opens in English.
         assert "apply('en')" in body, f"{path} does not open in English"
 
+    # The English text must be visible from the stylesheet, not from a script.
+    #
+    # The switch is included *above* the language blocks, so its script runs before those
+    # blocks are parsed: querySelectorAll finds nothing, nothing is shown, and the page is
+    # two buttons and no content until the reader clicks one. It renders 200, it looks fine
+    # to a test that only checks the status code, and it is completely useless.
+    import re
+    from pathlib import Path
+    switch = Path(flask_app.template_folder, "_lang_switch.html").read_text(encoding="utf-8")
+    assert re.search(r'\[data-lang-block="en"\]\s*\{[^}]*display:\s*block', switch), (
+        "English must be shown by the CSS, or the page is blank until JavaScript has run "
+        "against elements that exist below the script that looks for them")
+    assert "DOMContentLoaded" in switch, (
+        "the switch script runs before the language blocks exist — it has to wait for them")
+
     # And the choice is deliberately not remembered. These pages are the first thing a
     # stranger sees — a prospective client, an employer — and they must not arrive in a
     # language someone else picked once on this browser. (Checked against the partial, not

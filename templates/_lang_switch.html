@@ -16,12 +16,22 @@
 </div>
 
 <style>
-  [data-lang-block] { display: none; }
-  [data-lang-block].lang-on { display: block; }
+  /* English is visible from the stylesheet, not from a script.
+
+     This partial is included *above* the language blocks, so its script runs before those
+     blocks have been parsed: querySelectorAll finds nothing, nothing is shown, and the
+     page sits there as two buttons and no content until the reader clicks one. Which is
+     exactly what it did.
+
+     So the CSS decides the starting state — English shown, Urdu hidden — and the script
+     only ever changes it. The page is readable before a line of JavaScript runs, and stays
+     readable if none ever does. */
+  [data-lang-block="en"] { display: block; }
+  [data-lang-block="ur"] { display: none; line-height: 1.75; }  /* Roman Urdu: no RTL, just
+                                                                   a little more air */
+  [data-lang-block].lang-on  { display: block; }
+  [data-lang-block].lang-off { display: none; }
   .lang-switch .btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
-  /* Roman Urdu, not Urdu script — so no RTL. Just a touch more line height: it is read
-     more slowly than English by most of the people who will read it. */
-  [data-lang-block="ur"] { line-height: 1.75; }
 </style>
 
 <script>
@@ -29,17 +39,22 @@
   // Nothing is stored. Every load starts in English; switching lasts only for this visit.
   function apply(next) {
     document.querySelectorAll('[data-lang-block]').forEach(function (el) {
-      el.classList.toggle('lang-on', el.getAttribute('data-lang-block') === next);
+      var on = el.getAttribute('data-lang-block') === next;
+      el.classList.toggle('lang-on', on);
+      el.classList.toggle('lang-off', !on);
     });
     document.querySelectorAll('[data-lang-btn]').forEach(function (b) {
       b.classList.toggle('active', b.getAttribute('data-lang-btn') === next);
     });
   }
 
-  document.querySelectorAll('[data-lang-btn]').forEach(function (b) {
-    b.addEventListener('click', function () { apply(b.getAttribute('data-lang-btn')); });
+  // Wait for the blocks below to exist. Without this the script runs against a page that
+  // does not have them yet.
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('[data-lang-btn]').forEach(function (b) {
+      b.addEventListener('click', function () { apply(b.getAttribute('data-lang-btn')); });
+    });
+    apply('en');
   });
-
-  apply('en');
 })();
 </script>
