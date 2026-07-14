@@ -55,9 +55,19 @@ def test_both_pages_offer_both_languages_and_default_to_english(appctx):
         assert 'data-lang-btn="ur"' in body, path
         assert 'data-lang-block="en"' in body, path
         assert 'data-lang-block="ur"' in body, path
-        # English unless the reader has chosen otherwise: it is what the software's own
-        # buttons say, so the manual names the things the reader is looking at.
-        assert "=== 'ur' ? 'ur' : 'en'" in body, f"{path} does not default to English"
+
+        # Every visit opens in English.
+        assert "apply('en')" in body, f"{path} does not open in English"
+
+    # And the choice is deliberately not remembered. These pages are the first thing a
+    # stranger sees — a prospective client, an employer — and they must not arrive in a
+    # language someone else picked once on this browser. (Checked against the partial, not
+    # the rendered page: the theme toggle in base.html legitimately uses localStorage.)
+    from pathlib import Path
+    switch = Path(flask_app.template_folder, "_lang_switch.html").read_text(encoding="utf-8")
+    assert "localStorage" not in switch, (
+        "the language switch remembers the choice — a visitor would land in whatever was "
+        "chosen last on this browser")
 
 
 def test_the_manual_tells_the_truth_about_the_rules(appctx):

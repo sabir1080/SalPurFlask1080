@@ -2,11 +2,12 @@
 
    Both languages are in the page and one is hidden, rather than fetched from the server.
    These are static documents — a round trip to swap the words a reader is already looking
-   at would be slower and could fail. The choice is remembered, so a reader who picks Urdu
-   on the manual does not meet English again on About.
+   at would be slower and could fail.
 
-   English is the default: it is what the software itself says, so the manual matches the
-   buttons the reader is looking for. #}
+   Every visit opens in English, and the choice is deliberately *not* remembered. These two
+   pages are the first thing a stranger sees — a prospective client, an employer — and they
+   must not arrive in a language chosen once by someone else on this browser. The switch is
+   right there for a reader who wants Urdu, and it costs them one click each time. #}
 <div class="lang-switch d-flex justify-content-end mb-3">
   <div class="btn-group btn-group-sm" role="group" aria-label="Language">
     <button type="button" class="btn btn-outline-primary" data-lang-btn="en">English</button>
@@ -25,12 +26,8 @@
 
 <script>
 (function () {
-  var KEY = 'app_doc_lang';
-  var lang = localStorage.getItem(KEY) === 'ur' ? 'ur' : 'en';   // English by default
-
+  // Nothing is stored. Every load starts in English; switching lasts only for this visit.
   function apply(next) {
-    lang = next;
-    localStorage.setItem(KEY, next);
     document.querySelectorAll('[data-lang-block]').forEach(function (el) {
       el.classList.toggle('lang-on', el.getAttribute('data-lang-block') === next);
     });
@@ -43,6 +40,6 @@
     b.addEventListener('click', function () { apply(b.getAttribute('data-lang-btn')); });
   });
 
-  apply(lang);
+  apply('en');
 })();
 </script>
