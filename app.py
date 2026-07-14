@@ -8812,6 +8812,15 @@ def seed_data_cmd(yes, demo_user):
     general ledger, the subledgers and the stock all end up consistent — the
     reconciliation report passes on the data this produces, and the command
     checks that itself before it finishes."""
+    # Always say which database is about to be emptied — including under --yes, which is how
+    # it will actually be run. The demo database, the local one and a client's live books are
+    # told apart by one environment variable, and this command deletes everything it finds.
+    # A wipe that does not name its target is one mistyped export away from a disaster that
+    # cannot be undone.
+    target = (f"DEPLOYED database at {urlsplit(DATABASE_URL).hostname or 'unknown host'}"
+              if DATABASE_URL else "local SQLite database (instance/database.db)")
+    click.echo(f"Target: {target}")
+
     if not yes:
         click.echo("WARNING: deletes ALL data except user accounts, then inserts demo data.")
         if not click.confirm("Continue?"):
