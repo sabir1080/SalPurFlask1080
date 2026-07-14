@@ -420,7 +420,7 @@ class Purchase(db.Model):
     tax_percent         = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     discount_amount     = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     tax_amount          = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
-    date                = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+    date                = db.Column(db.DateTime, default=lambda: now_local(), nullable=False)
     notes               = db.Column(db.String(300), nullable=True)
     line_items          = db.relationship("PurchaseItem", backref="purchase_header", lazy=True, cascade="all,delete-orphan")
     is_reversed         = db.Column(db.Boolean, nullable=False, default=False)
@@ -440,7 +440,7 @@ class Sale(db.Model):
     tax_percent         = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     discount_amount     = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     tax_amount          = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
-    date                = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+    date                = db.Column(db.DateTime, default=lambda: now_local(), nullable=False)
     notes               = db.Column(db.String(300), nullable=True)
     line_items          = db.relationship("SaleItem", backref="sale_header", lazy=True, cascade="all,delete-orphan")
     is_reversed         = db.Column(db.Boolean, nullable=False, default=False)
@@ -487,7 +487,7 @@ class SupplierPayment(db.Model):
     supplier_id         = db.Column(db.Integer, db.ForeignKey("supplier.id"), nullable=False)
     purchase_id         = db.Column(db.Integer, db.ForeignKey("purchase.id"), nullable=True)
     amount              = db.Column(db.Numeric(14, 4), nullable=False)
-    payment_date        = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+    payment_date        = db.Column(db.DateTime, default=lambda: now_local(), nullable=False)
     payment_method      = db.Column(db.String(20), nullable=False, default="Cash")
     account_id          = db.Column(db.Integer, db.ForeignKey("financial_account.id"), nullable=True)
     reference_no        = db.Column(db.String(100), nullable=True)
@@ -503,7 +503,7 @@ class CustomerPayment(db.Model):
     customer_id         = db.Column(db.Integer, db.ForeignKey("customer.id"), nullable=False)
     sale_id             = db.Column(db.Integer, db.ForeignKey("sale.id"), nullable=True)
     amount              = db.Column(db.Numeric(14, 4), nullable=False)
-    payment_date        = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+    payment_date        = db.Column(db.DateTime, default=lambda: now_local(), nullable=False)
     payment_method      = db.Column(db.String(20), nullable=False, default="Cash")
     account_id          = db.Column(db.Integer, db.ForeignKey("financial_account.id"), nullable=True)
     reference_no        = db.Column(db.String(100), nullable=True)
@@ -521,7 +521,7 @@ class PurchaseReturn(db.Model):
     item_id      = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
     quantity     = db.Column(db.Integer, nullable=False)
     return_price = db.Column(db.Numeric(14, 4), nullable=False)
-    date         = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+    date         = db.Column(db.DateTime, default=lambda: now_local(), nullable=False)
     reason       = db.Column(db.String(300), nullable=True)
     purchase     = db.relationship("Purchase", backref="returns", lazy=True)
     # What the returned goods actually cost us (weighted average at return time).
@@ -539,7 +539,7 @@ class SaleReturn(db.Model):
     item_id      = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
     quantity     = db.Column(db.Integer, nullable=False)
     return_price = db.Column(db.Numeric(14, 4), nullable=False)
-    date         = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+    date         = db.Column(db.DateTime, default=lambda: now_local(), nullable=False)
     reason       = db.Column(db.String(300), nullable=True)
     sale         = db.relationship("Sale", backref="returns", lazy=True)
     # What the goods cost when they were sold — the cost they come back in at.
@@ -576,7 +576,7 @@ class StockAdjustment(db.Model):
     adj_type        = db.Column(db.String(30), nullable=False)
     quantity        = db.Column(db.Integer, nullable=False)
     direction       = db.Column(db.String(4), nullable=False, default="in")   # "in" or "out"
-    date            = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+    date            = db.Column(db.DateTime, default=lambda: now_local(), nullable=False)
     reason          = db.Column(db.String(300), nullable=True)
     # The value moved in or out, costed at the average when the adjustment was made.
     cost_value      = db.Column(db.Numeric(14, 4), nullable=False, default=0)
@@ -601,7 +601,7 @@ class Expense(db.Model):
     description     = db.Column(db.String(300), nullable=False)
     amount          = db.Column(db.Numeric(14, 4), nullable=False)
     date            = db.Column(db.DateTime, nullable=False,
-                                default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+                                default=lambda: now_local())
     payment_method  = db.Column(db.String(20), nullable=False, default="Cash")
     account_id      = db.Column(db.Integer, db.ForeignKey("financial_account.id"), nullable=True)
     reference_no    = db.Column(db.String(100), nullable=True)
@@ -1954,7 +1954,7 @@ class JournalEntry(db.Model):
     __tablename__ = "journal_entry"
     id             = db.Column(db.Integer, primary_key=True)
     entry_date     = db.Column(db.DateTime, nullable=False,
-                               default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+                               default=lambda: now_local())
     reference      = db.Column(db.String(50), nullable=True)
     description    = db.Column(db.String(300), nullable=False)
     source_type    = db.Column(db.String(20), nullable=False, default="manual")
@@ -2229,7 +2229,7 @@ class PurchaseOrder(db.Model):
     id              = db.Column(db.Integer, primary_key=True)
     supplier_id     = db.Column(db.Integer, db.ForeignKey("supplier.id"), nullable=False)
     order_date      = db.Column(db.DateTime, nullable=False,
-                                default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+                                default=lambda: now_local())
     expected_date   = db.Column(db.DateTime, nullable=True)
     status          = db.Column(db.String(20), nullable=False, default="Draft")
     notes           = db.Column(db.String(300), nullable=True)
@@ -2255,7 +2255,7 @@ class Quotation(db.Model):
     id              = db.Column(db.Integer, primary_key=True)
     customer_id     = db.Column(db.Integer, db.ForeignKey("customer.id"), nullable=False)
     quote_date      = db.Column(db.DateTime, nullable=False,
-                                default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+                                default=lambda: now_local())
     valid_until     = db.Column(db.DateTime, nullable=True)
     status          = db.Column(db.String(20), nullable=False, default="Draft")
     notes           = db.Column(db.String(300), nullable=True)
@@ -2284,7 +2284,7 @@ class DeliveryChallan(db.Model):
     id              = db.Column(db.Integer, primary_key=True)
     sale_id         = db.Column(db.Integer, db.ForeignKey("sale.id"), nullable=False, unique=True)
     challan_date    = db.Column(db.DateTime, nullable=False,
-                                default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+                                default=lambda: now_local())
     dispatch_date   = db.Column(db.DateTime, nullable=True)
     delivery_date   = db.Column(db.DateTime, nullable=True)
     status          = db.Column(db.String(20), nullable=False, default="Pending")
@@ -2359,6 +2359,28 @@ def record_audit(action, entity, entity_id=None, summary=""):
     except Exception:
         db.session.rollback()
         app.logger.exception("Failed to record audit entry (%s %s)", action, entity)
+
+_PHONE_PUNCTUATION = set("+-() ./")
+
+def valid_phone(raw):
+    """A phone number, as people anywhere actually write one.
+
+    The check used to be `contact.isdigit() and len(contact) >= 10`. That accepts
+    03001234567 and rejects every other way a number is written on earth:
+    +44 20 7946 0958, (212) 555-0143, +971 50 123 4567 — and +92 300 1234567, which is the
+    same Karachi number with its country code on it. Anyone outside Pakistan, and anyone
+    inside it dealing with a foreign supplier, simply could not save a contact.
+
+    So: allow the punctuation numbers are written with, and count the digits. Seven at the
+    least (the shortest usable subscriber numbers), fifteen at the most, which is the limit
+    the ITU sets for an international number. The number is stored exactly as it was typed,
+    because how a person writes their own phone number is information too.
+    """
+    raw = (raw or "").strip()
+    digits = sum(1 for c in raw if c.isdigit())
+    if not 7 <= digits <= 15:
+        return False
+    return all(c.isdigit() or c in _PHONE_PUNCTUATION for c in raw)
 
 def calc_discount_tax(gross, discount_type, discount_value, tax_percent):
     """Returns (discount_amt, tax_amt, net_total). discount_type: 'percent' or 'fixed'."""
@@ -3880,8 +3902,8 @@ def supplier():
             opening_balance = float(opening_str)
         if not name or not contact or not address:
             flash("All fields are required!", "danger")
-        elif not contact.isdigit() or len(contact) < 10:
-            flash("Contact must be a valid phone number!", "danger")
+        elif not valid_phone(contact):
+            flash("Enter a valid phone number (7-15 digits; + - ( ) and spaces are fine).", "danger")
         elif Supplier.query.filter_by(name=name, contact=contact, address=address).first():
             flash("Supplier already exists!", "warning")
             return redirect(url_for("supplier"))
@@ -3910,8 +3932,8 @@ def edit_supplier(id):
             flash("Opening balance must be a valid number!", "danger")
         elif not supplier.name or not supplier.contact or not supplier.address:
             flash("All fields are required!", "danger")
-        elif not supplier.contact.isdigit() or len(supplier.contact) < 10:
-            flash("Contact must be a valid phone number!", "danger")
+        elif not valid_phone(supplier.contact):
+            flash("Enter a valid phone number (7-15 digits; + - ( ) and spaces are fine).", "danger")
         else:
             supplier.opening_balance = float(opening_str or 0)
             sync_supplier_opening(supplier)
@@ -3993,8 +4015,8 @@ def customer():
             opening_balance = float(opening_str)
         if not name or not contact or not address:
             flash("All fields are required!", "danger")
-        elif not contact.isdigit() or len(contact) < 10:
-            flash("Contact must be a valid phone number!", "danger")
+        elif not valid_phone(contact):
+            flash("Enter a valid phone number (7-15 digits; + - ( ) and spaces are fine).", "danger")
         elif Customer.query.filter_by(name=name, contact=contact, address=address).first():
             flash("Customer already exists!", "warning")
             return redirect(url_for("customer"))
@@ -4023,8 +4045,8 @@ def edit_customer(id):
             flash("Opening balance must be a valid number!", "danger")
         elif not customer.name or not customer.contact or not customer.address:
             flash("All fields are required!", "danger")
-        elif not customer.contact.isdigit() or len(customer.contact) < 10:
-            flash("Contact must be a valid phone number!", "danger")
+        elif not valid_phone(customer.contact):
+            flash("Enter a valid phone number (7-15 digits; + - ( ) and spaces are fine).", "danger")
         else:
             customer.opening_balance = float(opening_str or 0)
             sync_customer_opening(customer)
