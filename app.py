@@ -3514,6 +3514,23 @@ def fmt_num(value):
     except (TypeError, ValueError):
         return value
 
+@app.template_filter("pct")
+def pct_filter(value):
+    """A rate, written the way a person writes one: 17%, 17.5%, 0.25%.
+
+    Rates are stored as Numeric(14, 4) — exact, because a quarter of a percent of a large
+    invoice is real money. But the storage is not the presentation: rendering the column
+    straight prints "17.0000%" on every invoice that goes to a customer, which is the sort
+    of detail that makes a system look like a school project.
+    """
+    try:
+        d = Decimal(str(value or 0)).normalize()
+    except (InvalidOperation, TypeError, ValueError):
+        return value
+    if d == d.to_integral_value():
+        d = d.quantize(Decimal("1"))          # 17.0000 -> 17, not 1.7E+1
+    return f"{d}"
+
 @app.template_filter("money")
 def money_filter(value):
     """A figure with its currency on it — for the numbers a person acts on: the total of an

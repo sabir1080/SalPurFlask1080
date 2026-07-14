@@ -106,3 +106,20 @@ def test_money_carries_the_currency(monkeypatch):
 
     monkeypatch.setitem(flask_app.config, "CURRENCY", "")
     assert money_filter(1234.5) == "1,234.50"            # blank means no symbol, not " 1,234.50"
+
+
+@pytest.mark.parametrize("stored, printed", [
+    ("17.0000", "17"),          # the storage is exact; the invoice should not say 17.0000%
+    ("17.5000", "17.5"),
+    ("0.2500", "0.25"),
+    ("5", "5"),
+    ("0.0000", "0"),
+    (None, "0"),
+])
+def test_a_rate_prints_the_way_a_person_writes_one(stored, printed):
+    """Rates are Numeric(14, 4) because a quarter of a percent of a large invoice is real
+    money. But storage is not presentation: rendering the column straight puts "17.0000%" on
+    every invoice that goes to a customer."""
+    from decimal import Decimal as D
+    from app import pct_filter
+    assert pct_filter(D(stored) if stored is not None else None) == printed

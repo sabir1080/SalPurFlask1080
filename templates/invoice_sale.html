@@ -177,11 +177,11 @@
                     <td class="text-end text-danger">
                         {% if row_disc > 0 %}
                             − {{ row_disc | fmt_num }}
-                            {% if si.discount_type == 'percent' %}<small class="text-muted">({{ si.discount_value }}%)</small>{% endif %}
+                            {% if si.discount_type == 'percent' %}<small class="text-muted">({{ si.discount_value | pct }}%)</small>{% endif %}
                         {% else %}—{% endif %}
                     </td>
                     <td class="text-end text-info">
-                        {% if row_tax > 0 %}+ {{ row_tax | fmt_num }}<small class="text-muted">({{ si.tax_percent }}%)</small>{% else %}—{% endif %}
+                        {% if row_tax > 0 %}+ {{ row_tax | fmt_num }}<small class="text-muted">({{ si.tax_percent | pct }}%)</small>{% else %}—{% endif %}
                     </td>
                     <td class="text-end fw-bold">{{ row_net | fmt_num }}</td>
                 </tr>

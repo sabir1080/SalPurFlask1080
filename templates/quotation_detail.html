@@ -118,7 +118,7 @@
                         {{ qi.discount_value }}{{ '%' if qi.discount_type == 'percent' else '' }}
                         {% else %}—{% endif %}
                     </td>
-                    <td class="text-end">{{ qi.tax_percent }}%</td>
+                    <td class="text-end">{{ qi.tax_percent | pct }}%</td>
                     <td class="text-end fw-semibold">{{ net | fmt_num }}</td>
                 </tr>
                 {% endfor %}
