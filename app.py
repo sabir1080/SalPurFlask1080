@@ -8685,21 +8685,20 @@ DEMO_CUSTOMERS = [
     ("Rehman Traders",     "03015555555", "University Road, Peshawar",       0),
 ]
 
+# The seeder rebuilds the master data too, so it keeps less than a transaction reset does.
+# Derived from that set rather than written out again: a list of tables to delete rots —
+# fixed assets and the invoice-number counter were both added after these two commands were
+# written, and both quietly survived a wipe that claimed to be total, until a demo turned up
+# holding six vans.
+_KEEP_ON_SEED = _KEEP_ON_TRANSACTION_RESET - {
+    "supplier", "customer", "item", "category", "expense_category",
+}
+
 def _wipe_transactional_data():
-    """Everything except users. Children before parents; the ledger goes first
-    because journal lines reference accounts, which survive."""
-    for model in (JournalLine, JournalEntry,
-                  SupplierLedgerEntry, CustomerLedgerEntry,
-                  SaleReturn, PurchaseReturn, StockAdjustment,
-                  CustomerPayment, SupplierPayment, Expense, ExpenseCategory,
-                  SaleItem, PurchaseItem, Sale, Purchase,
-                  DeliveryChallan, QuotationItem, Quotation,
-                  PurchaseOrderItem, PurchaseOrder,
-                  Item, Category, Customer, Supplier, AuditLog):
-        db.session.query(model).delete()
-    # Cash/bank accounts survive, but their opening balances are demo data too.
+    """Everything except the users and the ledger's foundations."""
+    _wipe_except(_KEEP_ON_SEED)
     for fa in FinancialAccount.query.all():
-        fa.opening_balance = 0
+        fa.opening_balance = 0        # cash/bank accounts survive; their balances are data
     db.session.commit()
 
 @app.cli.command("clear-transactions")
@@ -8726,18 +8725,17 @@ def clear_transactions_cmd(yes):
             click.echo("Aborted.")
             return
 
-    # Children before parents. Journal lines before entries, ledger entries last.
-    for model in (DeliveryChallan, QuotationItem, Quotation,
-                  PurchaseOrderItem, PurchaseOrder,
-                  SaleReturn, PurchaseReturn, StockAdjustment,
-                  CustomerPayment, SupplierPayment, Expense,
-                  SaleItem, PurchaseItem, Sale, Purchase,
-                  JournalLine, JournalEntry,
-                  SupplierLedgerEntry, CustomerLedgerEntry):
-        deleted = db.session.query(model).delete()
-        if deleted:
-            click.echo(f"  removed {deleted:>5} {model.__name__}")
-    db.session.commit()
+    # Name what survives, and delete the rest. This used to be a list of models to delete,
+    # and it had rotted: fixed assets, their depreciation charges and the invoice-number
+    # counter were all added afterwards and none of them was in it, so they survived a
+    # command whose whole job was to remove them.
+    before = {t.name: db.session.execute(
+                  db.select(func.count()).select_from(t)).scalar()
+              for t in db.metadata.sorted_tables if t.name not in _KEEP_ON_TRANSACTION_RESET}
+    _wipe_except(_KEEP_ON_TRANSACTION_RESET)
+    for name, n in sorted(before.items()):
+        if n:
+            click.echo(f"  removed {n:>5} {name}")
 
     # A closed year's closing entry has just been deleted with everything else,
     # so leaving the year closed would lock a ledger that no longer has one.
@@ -8805,7 +8803,9 @@ def clear_transactions_cmd(yes):
 
 @app.cli.command("seed-data")
 @click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
-def seed_data_cmd(yes):
+@click.option("--demo-user", is_flag=True,
+              help="Also create demo@demo.com / demo1234 as a MANAGER, for a public demo.")
+def seed_data_cmd(yes, demo_user):
     """Wipe all non-user data and build a realistic demo company.
 
     Everything goes through the same posting layer the web app uses, so the
@@ -8817,6 +8817,21 @@ def seed_data_cmd(yes):
         if not click.confirm("Continue?"):
             click.echo("Aborted.")
             return
+
+    if demo_user:
+        # Manager, never admin. A public demo login that can reverse documents, wipe the
+        # database or read the audit log is not a demo, it is an open door — the first
+        # visitor to find Admin → Start Fresh would empty the thing you are showing people.
+        existing = User.query.filter_by(email="demo@demo.com").first()
+        if existing:
+            existing.role, existing.verified = "manager", True
+            existing.password = pwd_context.hash("demo1234")
+        else:
+            db.session.add(User(name="Demo User", email="demo@demo.com",
+                                password=pwd_context.hash("demo1234"),
+                                verified=True, role="manager"))
+        db.session.commit()
+        click.echo("Demo login: demo@demo.com / demo1234  (manager — cannot reset or reverse)")
 
     year = datetime.now().year
     seed_chart_of_accounts()
@@ -8884,7 +8899,17 @@ def seed_data_cmd(yes):
 
     accounts = {fa.method: fa for fa in FinancialAccount.query.all()}
 
-    # -- Capital injection, so the company has cash to spend -------------------
+    # -- What was already in the till and the bank on day one ------------------
+    # A funded business, so the demo does not open on an overdraft. These post to the
+    # ledger like any other opening balance (Dr the account, Cr Opening Balance Equity),
+    # which is also the only reason they show up on the balance sheet at all.
+    for method, opening in (("Cash", 400000), ("Bank", 4500000)):
+        fa = accounts[method]
+        fa.opening_balance = Decimal(str(opening))
+        post_account_opening(fa)
+    db.session.commit()
+
+    # -- Capital injection, so the ledger has a manual journal entry in it ------
     post_entry(entry_date=D(1, 2), description="Owner's capital introduced",
                reference="JV-001", lines=[
                    {"code": ACC_CASH_IN_HAND, "debit": 300000, "credit": 0},
@@ -8975,6 +9000,12 @@ def seed_data_cmd(yes):
         sale("Ahmed Brothers",     D(6, 18), [("Wireless Mouse", 30, 1450),
                                               ("USB-C Cable 2m", 120, 640)], tax=17),
         sale("City Electronics",   D(7, 4),  [("HP Laptop 15s", 3, 120000)], tax=17),
+        sale("Rehman Traders",     D(2, 25), [("Samsung A15 Mobile", 5, 49500)], tax=17),
+        sale("Gulberg Interiors",  D(3, 28), [("Office Chair", 8, 11800)]),
+        sale("Zafar Retail Store", D(4, 18), [("USB-C Cable 2m", 200, 660)], tax=17),
+        sale("City Electronics",   D(5, 2),  [("HP Laptop 15s", 2, 121000)], tax=17),
+        sale("Ahmed Brothers",     D(5, 27), [("Steel Almirah", 4, 33500)]),
+        sale("Rehman Traders",     D(6, 25), [("Cotton Fabric", 250, 320)]),
     ]
     click.echo(f"  {len(sales)} sales.")
 
@@ -9007,7 +9038,9 @@ def seed_data_cmd(yes):
     receipt("Ahmed Brothers",     D(4, 15), 400000, method="Online")
     receipt("Gulberg Interiors",  D(5, 5),  150000, method="Cheque")
     receipt("Rehman Traders",     D(6, 10),  60000, method="Bank")
-    click.echo("  5 supplier payments, 6 customer receipts.")
+    receipt("City Electronics",   D(5, 20), 250000, method="Bank")
+    receipt("Gulberg Interiors",  D(6, 22), 120000)
+    click.echo("  5 supplier payments, 8 customer receipts.")
 
     # -- Expenses, each category wired to its GL account ----------------------
     exp_cats = {c.name: c for c in ExpenseCategory.query.all()}
@@ -9035,6 +9068,35 @@ def seed_data_cmd(yes):
         post_document("expense", e); db.session.commit()
     click.echo(f"  {len(demo_expenses)} expenses.")
 
+    # -- Fixed assets, and depreciation charged every month so far -------------
+    # Both methods, so the register shows what each one does to a book value.
+    # Sized for a business this size. A 2m-revenue trader does not run an 1.8m van, and a
+    # demo whose depreciation swallows its whole profit shows a loss to everyone you show it to.
+    demo_assets = [
+        ("Delivery Van",    "VAN-01", 1_200_000, 200_000, "Straight Line",    60, None, D(1, 15), "Bank"),
+        ("Office Laptops",  "LAP-01",   240_000,       0, "Straight Line",    36, None, D(3, 10), "Bank"),
+        ("Shop Fit-out",    "FIT-01",   400_000,       0, "Reducing Balance", None, 15, D(2, 5),  "Bank"),
+    ]
+    for name, tag, cost, salvage, method, life, rate, acq, pay_method in demo_assets:
+        asset = FixedAsset(name=name, tag=tag, acquisition_date=acq, cost=cost,
+                           salvage_value=salvage, method=method,
+                           useful_life_months=life, rate_percent=rate)
+        db.session.add(asset)
+        db.session.flush()
+        post_asset_acquisition(asset, accounts[pay_method].gl_account_id)
+        db.session.commit()
+
+    charged = 0
+    for m in range(1, datetime.now().month + 1):
+        try:
+            entry, total, count = run_depreciation(month_end(D(m, 1)))
+            db.session.commit()
+            if entry:
+                charged += 1
+        except PostingError:
+            db.session.rollback()          # nothing eligible that month
+    click.echo(f"  {len(demo_assets)} fixed assets, depreciation posted for {charged} month(s).")
+
     # -- Returns --------------------------------------------------------------
     pi = PurchaseItem.query.filter_by(purchase_id=purchases[4].id).first()
     item = db.session.get(Item, pi.item_id)
@@ -9057,10 +9119,13 @@ def seed_data_cmd(yes):
     click.echo("  1 purchase return, 1 sale return.")
 
     # -- Stock adjustments ----------------------------------------------------
+    # Direction comes from ADJUSTMENT_DIRECTIONS, the same map the form uses. It used to be
+    # worked out here by matching the label against a list of the outbound ones — a second
+    # copy of a rule that has since been fixed once, in one place.
     for iname, qty, adj_type, date in (("USB-C Cable 2m", 5, "Damage Write-off", D(5, 6)),
-                                       ("Wireless Mouse", 3, "Count Correction", D(6, 21))):
+                                       ("Wireless Mouse", 3, "Count Correction (Decrease)", D(6, 21))):
         it = items[iname]
-        direction = "out" if adj_type in ("Stock Out", "Damage Write-off", "Sample / Free Issue") else "in"
+        direction = ADJUSTMENT_DIRECTIONS[adj_type]
         adj = StockAdjustment(item_id=it.id, adj_type=adj_type, quantity=qty,
                               direction=direction, date=date, reason="Demo data")
         db.session.add(adj)

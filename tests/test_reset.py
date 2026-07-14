@@ -9,6 +9,7 @@ from app import (
     Account, JournalEntry, DocumentSequence, FiscalYear, AccountingPeriod,
     AuditLog, TaxCode, FixedAsset,
     FACTORY_RESET_PHRASE, TRANSACTION_RESET_PHRASE, factory_reset, reset_transactions,
+    _KEEP_ON_FACTORY_RESET, _KEEP_ON_TRANSACTION_RESET, _KEEP_ON_SEED,
     seed_chart_of_accounts, seed_fixed_asset_accounts, seed_fiscal_year,
     seed_financial_account_links, post_account_opening, allocate_document_number,
     accounting_position, total_cash_bank_balance,
@@ -235,6 +236,32 @@ def test_the_wrong_phrase_deletes_no_transactions_either(appctx):
     db.session.expire_all()
     assert (Sale.query.count(), JournalEntry.query.count(),
             Item.query.one().stock) == before
+
+
+def test_the_keep_lists_name_tables_that_actually_exist(appctx):
+    """Every wipe in this app names what it *keeps* and deletes the rest, which fails safe:
+    a table nobody remembered is deleted, not silently preserved. The one thing that can
+    still go wrong is a typo in the keep list — "expense_categories" instead of
+    "expense_category" would not error, it would just quietly delete the thing it was
+    written to protect.
+    """
+    real = {t.name for t in db.metadata.sorted_tables}
+    for label, keep in (("factory", _KEEP_ON_FACTORY_RESET),
+                        ("transaction", _KEEP_ON_TRANSACTION_RESET),
+                        ("seed", _KEEP_ON_SEED)):
+        unknown = keep - real
+        assert not unknown, f"{label} reset keeps tables that do not exist: {sorted(unknown)}"
+
+
+def test_nothing_that_holds_money_survives_a_wipe(appctx):
+    """The CLI wipes used to carry hand-written lists of models to delete, and both had
+    rotted: fixed assets, their depreciation charges and the invoice-number counter were
+    added long afterwards and appeared in neither. They survived a wipe that claimed to be
+    total — which is how a freshly seeded demo ended up holding six delivery vans."""
+    for table in ("fixed_asset", "depreciation_charge", "document_sequence",
+                  "journal_entry", "journal_line", "purchase", "sale"):
+        assert table not in _KEEP_ON_TRANSACTION_RESET, table
+        assert table not in _KEEP_ON_SEED, table
 
 
 def test_only_an_admin_can_reset(appctx):
