@@ -1,8 +1,10 @@
-# TradeFlow — Inventory & Accounting for Small Business
+# TradeFlow — Inventory & Double-Entry Accounting
 
-**Most inventory software keeps your stock in one place and your accounts in another, and quietly lets them disagree. Then the books don't balance and nobody can tell you why.**
+**Inventory software keeps your stock in one place and your accounts in another, and quietly lets them disagree. Then the books don't balance and nobody can tell you why.**
 
 TradeFlow doesn't. Every purchase, sale, return, payment, expense and depreciation charge is posted into a real **double-entry general ledger** the moment it is saved. The Balance Sheet, the Profit & Loss, the stock report and the cash flow statement are all summed from the same books — so they always agree, and there is a report that proves it.
+
+A full trading and accounting system: stock at weighted-average cost, receivables and payables with control accounts, a fixed asset register with depreciation, gapless invoice numbering, accounting periods and year-end closing. The kind of thing you are told to buy a licence for.
 
 ### 🔗 [Live demo](https://tradeflow-demo.onrender.com) — `demo@demo.com` / `demo1234`
 
@@ -123,7 +125,15 @@ Runs on any host that supports Python. On Render:
 | Build | `pip install -r requirements.txt` |
 | Start | `gunicorn app:app` |
 
-Set `DATABASE_URL` to a PostgreSQL connection string, plus `SECRET_KEY`, `SECURITY_PASSWORD_SALT` and `APP_TIMEZONE` (e.g. `Asia/Karachi`). Schema migrations run automatically on boot.
+Set `DATABASE_URL` to a PostgreSQL connection string, plus `SECRET_KEY` and `SECURITY_PASSWORD_SALT`. Schema migrations run automatically on boot.
+
+Three settings decide how the books behave, and they should be right **before any data is entered**:
+
+| | |
+|---|---|
+| `APP_TIMEZONE` | The business's own clock — `Asia/Karachi`, `Asia/Dubai`, `Europe/London`, `America/New_York`. Every business date is written on it, not on the server's. |
+| `FISCAL_YEAR_START_MONTH` | `1` (UAE, US), `7` (Pakistan), `4` (UK, India). Decides which accounting periods exist. |
+| `CURRENCY` | `Rs`, `£`, `$`, `AED`. Shown, never converted. |
 
 ---
 
