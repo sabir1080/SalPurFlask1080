@@ -14,9 +14,23 @@
 }
 /* Fixed layout keeps numeric column headers (e.g. "Net Amount") from being
    squeezed and clipped when item/category names are long. */
-.items-table { table-layout: fixed; }
-.items-table th, .items-table td { overflow-wrap: break-word; word-wrap: break-word; }
-.items-table thead th { white-space: normal; vertical-align: middle; }
+/* A number must never be folded onto a second line. "1,234,567.89" broken after the comma
+   reads as two different figures, and this is a document that goes to a supplier.
+
+   The table used to be `table-layout: fixed` with break-word on every cell, so a long
+   figure in a narrow column was simply cut in half and continued underneath. Now the
+   columns size themselves: the money columns cannot be squeezed below the width of what
+   is in them, and the column that gives way is the item name, which is prose and may
+   wrap. The colgroup below is a preference, not a cage. */
+.items-table { table-layout: auto; }
+.items-table th, .items-table td { white-space: nowrap; vertical-align: middle; }
+.items-table td.wrap, .items-table th.wrap {
+    white-space: normal;
+    overflow-wrap: anywhere;      /* a single very long item name still has to fit */
+}
+/* Unit, discount % and tax % sit under their figure rather than beside it, so the money
+   columns stay as narrow as the money in them. */
+.items-table small { display: block; font-size: 0.72em; }
 .inv-header { background: linear-gradient(135deg, #1e3a5f 0%, #1a3a6e 100%); color: white; border-radius: 8px 8px 0 0; padding: 22px 28px; }
 .inv-company { font-size: 1.4rem; font-weight: 800; letter-spacing: 0.3px; }
 .inv-company-sub { font-size: 0.78rem; opacity: 0.75; }
@@ -24,7 +38,7 @@
 .inv-num { font-size: 1.5rem; font-weight: 800; }
 .inv-date { font-size: 0.8rem; opacity: 0.8; }
 .inv-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 1.2px; color: #6c757d; font-weight: 700; margin-bottom: 2px; }
-.inv-totals td { padding: 5px 12px; border: none; font-size: 0.92rem; }
+.inv-totals td { padding: 5px 12px; border: none; font-size: 0.92rem; white-space: nowrap; }
 .inv-totals tr.total-final td { font-size: 1.05rem; font-weight: 700; border-top: 2px solid #dee2e6; padding-top: 8px; }
 /* A reversed invoice is cancelled — it must never be mistaken for a live one,
    on screen or on paper. print-color-adjust keeps the mark in the PDF. */
@@ -132,8 +146,8 @@
             <thead class="table-dark">
                 <tr>
                     <th>#</th>
-                    <th>Item</th>
-                    <th>Category</th>
+                    <th class="wrap">Item</th>
+                    <th class="wrap">Category</th>
                     <th class="text-end">Qty</th>
                     <th class="text-end">Unit Price</th>
                     <th class="text-end">Discount</th>
@@ -152,8 +166,8 @@
                 {% set ns.total_tax  = ns.total_tax + row_tax %}
                 <tr>
                     <td>{{ loop.index }}</td>
-                    <td class="fw-semibold">{{ pi.item.name }}</td>
-                    <td class="text-muted">{{ pi.item.id_category.name if pi.item.id_category else '—' }}</td>
+                    <td class="fw-semibold wrap">{{ pi.item.name }}</td>
+                    <td class="text-muted wrap">{{ pi.item.id_category.name if pi.item.id_category else '—' }}</td>
                     <td class="text-end text-nowrap">{{ "{:,}".format(pi.quantity) }}<small class="text-muted d-block">{{ pi.item.unit or 'Pcs' }}</small></td>
                     <td class="text-end">{{ pi.purchase_price | fmt_num }}</td>
                     <td class="text-end text-danger">

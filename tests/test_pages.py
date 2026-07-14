@@ -125,6 +125,31 @@ def test_dark_mode_repoints_the_bootstrap_text_colours():
         "into it")
 
 
+def test_money_columns_are_never_allowed_to_fold_onto_a_second_line():
+    """"1,234,567.89" broken after a comma reads as two different figures, and these are
+    documents that go to customers and suppliers.
+
+    An invoice's items table used to be `table-layout: fixed` with break-word on every
+    cell, so a figure too wide for its column was simply cut in half and continued
+    underneath. Money is always right-aligned here, so .text-end is the handle: wherever a
+    stylesheet lets cells break, the right-aligned ones must be exempt.
+    """
+    import re
+    from pathlib import Path
+
+    css = Path(flask_app.static_folder, "css", "style.css").read_text(encoding="utf-8")
+    assert re.search(r"\.table td\.text-end[^{]*\{[^}]*white-space:\s*nowrap", css, re.DOTALL), (
+        "style.css must stop right-aligned (money) table cells from wrapping")
+
+    for name in ("invoice_sale.html", "invoice_purchase.html", "reports.html"):
+        text = Path(flask_app.template_folder, name).read_text(encoding="utf-8")
+        # Anything that permits breaking inside a word must be paired with a nowrap rule
+        # for the money columns in the same file.
+        if re.search(r"(overflow-wrap|word-wrap|word-break)\s*:\s*(break-word|anywhere)", text):
+            assert re.search(r"white-space:\s*nowrap", text), (
+                f"{name} lets cells break mid-word but never exempts the money columns")
+
+
 def test_no_template_uses_a_css_variable_that_does_not_exist():
     """A misspelt CSS variable fails silently. `color: var(--muted)` — when the variable
     is actually `--text-muted` — is not an error: the browser simply has no colour to

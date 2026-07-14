@@ -183,6 +183,18 @@ body {
     margin-top: 20px;
 }
 
+/* A number is one thing, not a sentence. Never break one across two lines.
+   "1,234,567.89" split after the comma reads as two different figures, and on a printed
+   invoice handed to a customer that is not untidy — it is unreadable. Money is always
+   right-aligned in this app, so .text-end is the handle for it. Where the column is too
+   narrow the number now overflows rather than folds, which is visible and gets fixed;
+   folding is quiet and ships. */
+.table td.text-end,
+.table th.text-end,
+.table td.text-nowrap {
+    white-space: nowrap;
+}
+
 .badge.pay-status-paid {
     background-color: #059669;
 }
