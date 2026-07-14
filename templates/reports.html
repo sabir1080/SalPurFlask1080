@@ -47,7 +47,7 @@ function printReport(title, tableId, extraMeta) {
   /* Never fold a number onto a second line — "1,234,567.89" broken after the comma reads
      as two figures. Names may wrap; the column that has to give is the wide one. */
   th.text-end, td.text-end { text-align: right; white-space: nowrap; }
-  td { padding: 5px 8px; border-bottom: 1px solid #e5e7eb; font-size: 11px; word-break: break-word; }
+  td { padding: 5px 8px; border-bottom: 1px solid #e5e7eb; font-size: 11px; overflow-wrap: break-word; }
   tfoot td { background: #f3f4f6; font-weight: 700; border-top: 2px solid #9ca3af; }
   tr:nth-child(even) td { background: #f9fafb; }
   .badge-success { color: #166534; background: #dcfce7; padding: 2px 8px; border-radius: 99px; font-size: 10px; }

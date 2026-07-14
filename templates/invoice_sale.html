@@ -24,7 +24,13 @@
 .items-table th, .items-table td { white-space: nowrap; vertical-align: middle; }
 .items-table td.wrap, .items-table th.wrap {
     white-space: normal;
-    overflow-wrap: anywhere;      /* a single very long item name still has to fit */
+    /* break-word, NOT anywhere. They look interchangeable and are not: `anywhere` also
+       shrinks the column's min-content width, so an auto-laid-out table is free to squeeze
+       the column down to a single character and then split the word to fit — which is how
+       "Electronics" ended up as "Electronic" with a lone "s" underneath. `break-word`
+       leaves min-content at the longest word, so the column can never be narrower than the
+       word it holds, and a word is only ever broken when it cannot fit a line by itself. */
+    overflow-wrap: break-word;
 }
 /* Unit, discount % and tax % sit under their figure rather than beside it, so the money
    columns stay as narrow as the money in them. */
