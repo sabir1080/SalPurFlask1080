@@ -8966,14 +8966,49 @@ def seed_data_cmd(yes, demo_user):
         click.echo("Demo login: demo@demo.com / demo1234  (manager — cannot reset or reverse)")
 
     year = now_local().year
+    # Everything a first boot puts there. The seeder builds a demo from nothing and must not
+    # assume the app has been booted against this database first — it did, and fell over on
+    # a missing fixed-asset account the moment it was pointed at a fresh one.
     seed_chart_of_accounts()
+    seed_fixed_asset_accounts()
     seed_tax_codes()
+
+    click.echo("Clearing existing data ...")
+    _wipe_transactional_data()
+
+    # Clear the years out before seeding new ones, not after. A fiscal year left over from
+    # a different FISCAL_YEAR_START_MONTH does not just sit there: its periods overlap the
+    # ones about to be created, and a demo document dated inside the overlap lands in
+    # whichever is found first. Re-running the seeder with the setting changed would quietly
+    # produce a company trading in two fiscal years at once.
+    #
+    # Safe here, and only here: every posting has just been deleted, so nothing points at
+    # these periods any more. The web resets cannot do this — they are aimed at real books.
+    stale = [fy for fy in FiscalYear.query.all()
+             if fy.start_date.month != FISCAL_YEAR_START_MONTH]
+    for fy in stale:
+        db.session.delete(fy)              # cascades to its periods
+    if stale:
+        db.session.commit()
+        click.echo(f"  dropped {len(stale)} fiscal year(s) that started in another month: "
+                   f"{', '.join(fy.name for fy in stale)}")
+
     # The demo trades across a whole calendar year. Unless the fiscal year starts in
     # January, that spans two of them, and a document cannot be posted on a date no open
     # period covers. Both are seeded; seeding is idempotent, so on a January year the
     # second call does nothing.
     seed_fiscal_year(datetime(year, 1, 1))
     seed_fiscal_year(datetime(year, 12, 31))
+
+    # The seeder builds a demo company from nothing, so it cannot assume the cash and bank
+    # accounts are already there — it used to, and died on a KeyError against a database
+    # that did not happen to have been booted first.
+    if FinancialAccount.query.count() == 0:
+        types = {"Cash": "Cash", "Bank": "Bank", "Cheque": "Bank", "Online": "Bank"}
+        for m in PAYMENT_METHODS:
+            db.session.add(FinancialAccount(name=m, method=m, account_type=types.get(m, "Bank"),
+                                            opening_balance=0))
+        db.session.commit()
     seed_financial_account_links()
 
     closed = [fy.name for fy in FiscalYear.query.filter_by(is_closed=True).all()]
@@ -8981,9 +9016,6 @@ def seed_data_cmd(yes, demo_user):
         click.echo(f"Fiscal year(s) {', '.join(closed)} are closed; demo data cannot be "
                    f"posted into them.")
         return
-
-    click.echo("Clearing existing data ...")
-    _wipe_transactional_data()
 
     def D(month, day):
         """A date inside the current fiscal year, so every posting is accepted."""

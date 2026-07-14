@@ -73,6 +73,33 @@ def test_changing_the_setting_on_a_live_database_is_reported(appctx, monkeypatch
     assert app_module.fiscal_years_that_disagree_with_the_setting() == ["2026"]
 
 
+def test_reseeding_a_demo_drops_years_from_the_old_setting(appctx, monkeypatch):
+    """The seeder rebuilds a demo company from nothing. If it leaves behind a fiscal year
+    seeded under a different FISCAL_YEAR_START_MONTH, that year's periods overlap the ones
+    it is about to create, and a demo document dated inside the overlap lands in whichever
+    is found first — a company trading in two fiscal years at once.
+
+    Safe in the seeder and nowhere else: it has just deleted every posting, so nothing
+    points at those periods. The resets in the web UI are aimed at real books and must not
+    do this.
+    """
+    _start_month(monkeypatch, 1)
+    seed_fiscal_year(datetime(2026, 6, 1))                  # "2026", Jan-Dec
+    assert {fy.name for fy in FiscalYear.query.all()} == {"2026"}
+
+    _start_month(monkeypatch, 7)
+    runner = flask_app.test_cli_runner()
+    result = runner.invoke(args=["seed-data", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert "ALL CHECKS PASSED" in result.output
+
+    names = {fy.name for fy in FiscalYear.query.all()}
+    assert "2026" not in names, "the January year survived and now overlaps the July ones"
+    assert all("-" in n for n in names), names       # only two-calendar-year names remain
+    for fy in FiscalYear.query.all():
+        assert fy.start_date.month == 7
+
+
 def test_money_carries_the_currency(monkeypatch):
     monkeypatch.setitem(flask_app.config, "CURRENCY", "AED")
     assert money_filter(1234567.891) == "AED 1,234,567.89"

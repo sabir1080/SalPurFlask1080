@@ -13,6 +13,21 @@ os.environ.setdefault("SECRET_KEY", "test-secret")
 os.environ.setdefault("SECURITY_PASSWORD_SALT", "test-salt")
 os.environ.setdefault("FLASK_DEBUG", "0")
 
+# Pin the business settings the tests are written against.
+#
+# app.py calls load_dotenv(), and load_dotenv does not override variables already in the
+# environment — so setting them here wins over whatever is in the developer's .env. Without
+# this the suite reads that .env: put FISCAL_YEAR_START_MONTH=7 in it, for a Pakistani
+# client, and two dozen tests that post a document in March fail with "no open period",
+# because the only fiscal year seeded now runs July to June. Green on CI, where there is no
+# .env, and red on the machine of the person who has to fix it.
+#
+# A test suite whose result depends on a file that is not in the repository is not telling
+# you about your code. Tests that care about another value monkeypatch it and say so.
+os.environ["FISCAL_YEAR_START_MONTH"] = "1"
+os.environ["APP_TIMEZONE"] = "UTC"
+os.environ["CURRENCY"] = "Rs"
+
 from app import app as flask_app, db  # noqa: E402
 
 flask_app.config["WTF_CSRF_ENABLED"] = False   # let tests POST forms without a token
