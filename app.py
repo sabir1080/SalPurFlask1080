@@ -159,7 +159,23 @@ def to_local(dt):
     return dt.astimezone(APP_TZ)
 
 def now_local():
-    """Current wall-clock time in APP_TZ, naive (for display / 'generated on')."""
+    """What time it is *for this business*, naive, in APP_TZ.
+
+    This — not datetime.now() — is the clock the app runs on. datetime.now() reads the
+    machine's clock, and the machine is a server in someone else's data centre: on Render
+    it is UTC, five hours behind Karachi. Every business date derived from it is therefore
+    the server's idea of today, not the user's.
+
+    That is not a cosmetic difference. An invoice entered at 2am in Karachi lands on
+    yesterday's date. A month-end entry posted on the 1st lands in the previous month. And
+    a document reversed in the morning is stamped five hours in the past, so a report run
+    "as of now" shows the sale and not the reversal — the cancelled invoice goes on earning
+    profit that was never made.
+
+    Timestamps are different: when a row was *saved* is a moment in time, and those stay in
+    UTC and are converted for display (to_local, the localdt filter). The rule is the same
+    one the bizdate filter draws: a business date is a date, not an instant.
+    """
     return datetime.now(APP_TZ).replace(tzinfo=None)
 
 @app.template_filter("localdt")
@@ -1236,7 +1252,7 @@ def reverse_entry(entry, on_date=None, created_by_id=None):
         raise PostingError("A reversal cannot itself be reversed.")
 
     reversal = post_entry(
-        entry_date=on_date or max(datetime.now(), entry.entry_date),
+        entry_date=on_date or max(now_local(), entry.entry_date),
         description=f"Reversal of #{entry.id}: {entry.description}",
         reference=entry.reference,
         source_type=entry.source_type, source_id=entry.source_id,
@@ -1805,7 +1821,7 @@ def _opening_date():
     """Dated to the start of the open fiscal year, so an opening balance lands in
     the period it describes rather than on whatever day it was typed."""
     fy = FiscalYear.query.filter_by(is_closed=False).order_by(FiscalYear.start_date).first()
-    return datetime.combine(fy.start_date, datetime.min.time()) if fy else datetime.now()
+    return datetime.combine(fy.start_date, datetime.min.time()) if fy else now_local()
 
 def post_supplier_opening(supplier):
     """A positive opening balance is money we already owed: Cr Accounts Payable."""
@@ -2092,7 +2108,7 @@ def run_depreciation(period_end, created_by_id=None):
     if posted_entry("depreciation", run_id):
         raise PostingError(f"Depreciation for {period_end:%B %Y} has already been posted.")
 
-    now = datetime.now()
+    now = now_local()
     if period_end.replace(day=1, hour=0, minute=0, second=0, microsecond=0) > now:
         raise PostingError(f"{period_end:%B %Y} has not started yet.")
 
@@ -3264,7 +3280,7 @@ def migrate_database():
     seed_chart_of_accounts()
     seed_fixed_asset_accounts()
     seed_tax_codes()
-    seed_fiscal_year(datetime.now().year)
+    seed_fiscal_year(now_local().year)
 
     # Seed one cash/bank account per payment method (idempotent — only if none exist)
     if FinancialAccount.query.count() == 0:
@@ -3462,7 +3478,7 @@ def excel_response(filename, title, col_headers, rows, start_date_str=None, end_
         r += 1
 
     ws.cell(row=r, column=1, value="Generated On:")
-    ws.cell(row=r, column=2, value=datetime.now().strftime("%Y-%m-%d %H:%M"))
+    ws.cell(row=r, column=2, value=now_local().strftime("%Y-%m-%d %H:%M"))
     r += 1
 
     r += 1  # genuine blank row — no cell written here
@@ -4524,7 +4540,7 @@ def purchase():
         purchases=purchases,
         pagination=pagination,
         search=search,
-        today=datetime.now().strftime("%Y-%m-%d"),
+        today=now_local().strftime("%Y-%m-%d"),
     )
 
 @app.route("/purchase/edit/<int:id>", methods=["GET", "POST"])
@@ -4765,7 +4781,7 @@ def sale():
         sales=sales,
         pagination=pagination,
         search=search,
-        today=datetime.now().strftime("%Y-%m-%d"),
+        today=now_local().strftime("%Y-%m-%d"),
     )
 
 @app.route("/sale/edit/<int:id>", methods=["GET", "POST"])
@@ -5173,7 +5189,7 @@ def supplier_bulk_payment():
         outstanding=outstanding,
         bulk_amount_val=bulk_amount_val,
         general_suggested=general_suggested,
-        today=datetime.now().strftime("%Y-%m-%d"),
+        today=now_local().strftime("%Y-%m-%d"),
     )
 
 @app.route("/customer_bulk_receipt", methods=["GET", "POST"])
@@ -5323,7 +5339,7 @@ def customer_bulk_receipt():
         outstanding=outstanding,
         bulk_amount_val=bulk_amount_val,
         general_suggested=general_suggested,
-        today=datetime.now().strftime("%Y-%m-%d"),
+        today=now_local().strftime("%Y-%m-%d"),
     )
 
 @app.route("/customer_receipt", methods=["GET", "POST"])
@@ -6455,7 +6471,7 @@ def purchase_return():
         items_available=items_available,
         pagination=pagination,
         search=search,
-        today=datetime.now().strftime("%Y-%m-%d"),
+        today=now_local().strftime("%Y-%m-%d"),
     )
 
 @app.route("/purchase_return/delete/<int:id>", methods=["POST"])
@@ -6572,7 +6588,7 @@ def sale_return():
         items_available=items_available,
         pagination=pagination,
         search=search,
-        today=datetime.now().strftime("%Y-%m-%d"),
+        today=now_local().strftime("%Y-%m-%d"),
     )
 
 @app.route("/sale_return/delete/<int:id>", methods=["POST"])
@@ -6687,7 +6703,7 @@ def stock_adjustment():
     return render_template("stock_adjustment.html",
         adjustments=adjustments, items=items, pagination=pagination,
         search=search, adj_types=ADJUSTMENT_TYPES,
-        today=datetime.now().strftime("%Y-%m-%d"))
+        today=now_local().strftime("%Y-%m-%d"))
 
 @app.route("/stock_adjustment/delete/<int:id>", methods=["POST"])
 @admin_required
@@ -6793,7 +6809,7 @@ def expenses():
         payment_methods=PAYMENT_METHODS,
         gl_accounts=expense_gl_accounts(),
         total_expenses=total_expenses,
-        today=datetime.now().strftime("%Y-%m-%d"))
+        today=now_local().strftime("%Y-%m-%d"))
 
 @app.route("/expenses/delete/<int:id>", methods=["POST"])
 @admin_required
@@ -6858,7 +6874,7 @@ def purchase_orders():
         orders=orders, suppliers=suppliers, items=items,
         pagination=pagination, search=search,
         po_statuses=PO_STATUSES,
-        today=datetime.now().strftime("%Y-%m-%d"))
+        today=now_local().strftime("%Y-%m-%d"))
 
 @app.route("/purchase_orders/<int:id>")
 @manager_required
@@ -6894,9 +6910,9 @@ def convert_po_to_purchase(id):
     date_str = request.form.get("purchase_date", "").strip()
     notes    = request.form.get("notes", "").strip()
     try:
-        pur_date = datetime.strptime(date_str, "%Y-%m-%d") if date_str else datetime.now()
+        pur_date = datetime.strptime(date_str, "%Y-%m-%d") if date_str else now_local()
     except ValueError:
-        pur_date = datetime.now()
+        pur_date = now_local()
     first = po.line_items[0] if po.line_items else None
     if not first:
         flash("PO has no line items.", "danger")
@@ -7007,7 +7023,7 @@ def quotations():
         quotes=quotes, customers=customers, items=items,
         pagination=pagination, search=search,
         quote_statuses=QUOTATION_STATUSES,
-        today=datetime.now().strftime("%Y-%m-%d"))
+        today=now_local().strftime("%Y-%m-%d"))
 
 @app.route("/quotations/<int:id>")
 @manager_required
@@ -7048,9 +7064,9 @@ def convert_quotation_to_sale(id):
         return redirect(url_for("quotation_detail", id=id))
     date_str = request.form.get("sale_date", "").strip()
     try:
-        sal_date = datetime.strptime(date_str, "%Y-%m-%d") if date_str else datetime.now()
+        sal_date = datetime.strptime(date_str, "%Y-%m-%d") if date_str else now_local()
     except ValueError:
-        sal_date = datetime.now()
+        sal_date = now_local()
     # stock check
     stock_errors = []
     for qi in q.line_items:
@@ -7133,7 +7149,7 @@ def delivery_challans():
         challans=challans, pending_sales=pending_sales,
         pagination=pagination, search=search,
         status_filter=status_filter, challan_statuses=CHALLAN_STATUSES,
-        today=datetime.now().strftime("%Y-%m-%d"))
+        today=now_local().strftime("%Y-%m-%d"))
 
 @app.route("/delivery_challans/create", methods=["POST"])
 @manager_required
@@ -7184,7 +7200,7 @@ def update_challan_status(id):
 @app.route("/reports/aging")
 @manager_required
 def report_aging():
-    today = datetime.now().date()
+    today = now_local().date()
 
     def age_bucket(date_val):
         days = (today - date_val.date()).days
@@ -7230,7 +7246,7 @@ def report_profit_loss():
     free when the income accounts are added up."""
     start_str = request.args.get("start", "")
     end_str   = request.args.get("end", "")
-    today     = datetime.now()
+    today     = now_local()
     try:
         start = datetime.strptime(start_str, "%Y-%m-%d") if start_str else datetime(today.year, 1, 1)
         end   = datetime.strptime(end_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59) if end_str else today
@@ -7266,7 +7282,7 @@ def report_cash_flow():
     """Where the cash actually came from and went, straight from the GL."""
     start_str = request.args.get("start", "")
     end_str   = request.args.get("end", "")
-    today     = datetime.now()
+    today     = now_local()
     try:
         start = datetime.strptime(start_str, "%Y-%m-%d") if start_str else datetime(today.year, 1, 1)
         end   = datetime.strptime(end_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59) if end_str else today
@@ -7284,7 +7300,7 @@ def report_cash_book():
     start_str = request.args.get("start", "")
     end_str   = request.args.get("end", "")
     method_filter = request.args.get("method", "")
-    today = datetime.now()
+    today = now_local()
     try:
         start = datetime.strptime(start_str, "%Y-%m-%d") if start_str else datetime(today.year, today.month, 1)
         end   = datetime.strptime(end_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59) if end_str else today
@@ -7424,11 +7440,11 @@ def parse_as_of(default=None):
     """`?as_of=YYYY-MM-DD` → end of that day, so entries dated that day are included."""
     raw = request.args.get("as_of", "").strip()
     if not raw:
-        return default or datetime.now()
+        return default or now_local()
     try:
         return datetime.strptime(raw, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
     except ValueError:
-        return default or datetime.now()
+        return default or now_local()
 
 def accounting_position(as_of=None):
     """Point-in-time figures, summed from the general ledger.
@@ -7436,7 +7452,7 @@ def accounting_position(as_of=None):
     Equity is no longer a residual: it is the sum of the equity accounts plus the
     profit earned to date. That the sheet balances is therefore a *result* — and
     if it ever does not, something is genuinely wrong."""
-    as_of = as_of or datetime.now()
+    as_of = as_of or now_local()
     b = gl_balances(as_of=as_of)
 
     assets      = accounts_by_type(b, "Asset")
@@ -7763,7 +7779,7 @@ def fixed_asset_dispose(id):
 @manager_required
 def periods():
     years = FiscalYear.query.order_by(FiscalYear.start_date.desc()).all()
-    return render_template("periods.html", years=years, today=datetime.now().date())
+    return render_template("periods.html", years=years, today=now_local().date())
 
 @app.route("/periods/<int:id>/toggle", methods=["POST"])
 @admin_required
@@ -7859,7 +7875,7 @@ def report_reconciliation():
     customers = [(c, get_customer_balance(c.id)) for c in Customer.query.order_by(Customer.name).all()]
     suppliers = [(s, get_supplier_balance(s.id)) for s in Supplier.query.order_by(Supplier.name).all()]
 
-    return render_template("report_reconciliation.html", rows=rows, as_of=datetime.now(),
+    return render_template("report_reconciliation.html", rows=rows, as_of=now_local(),
                            customers=[c for c in customers if abs(c[1]) > 0.001],
                            suppliers=[s for s in suppliers if abs(s[1]) > 0.001],
                            all_ok=all(r["ok"] for r in rows))
@@ -8061,7 +8077,7 @@ def tax_codes():
 def report_gst():
     start_str = request.args.get("start", "")
     end_str   = request.args.get("end", "")
-    today = datetime.now()
+    today = now_local()
     try:
         start = datetime.strptime(start_str, "%Y-%m-%d") if start_str else datetime(today.year, today.month, 1)
         end   = datetime.strptime(end_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59) if end_str else today
@@ -8129,8 +8145,8 @@ def seed_accounting_cmd():
     click.echo(f"Chart of accounts: {n} account(s) created, {Account.query.count()} total.")
     t = seed_tax_codes()
     click.echo(f"Tax codes: {t} total.")
-    p = seed_fiscal_year(datetime.now().year)
-    click.echo(f"Fiscal year {datetime.now().year}: {p} period(s) created.")
+    p = seed_fiscal_year(now_local().year)
+    click.echo(f"Fiscal year {now_local().year}: {p} period(s) created.")
 
 @app.cli.command("reset-db")
 @click.option("--yes", is_flag=True, help="Required. Drops every table.")
@@ -8160,7 +8176,7 @@ def reset_db_cmd(yes, wipe_remote):
     click.echo("All tables dropped and recreated.")
     seed_chart_of_accounts()
     seed_tax_codes()
-    seed_fiscal_year(datetime.now().year)
+    seed_fiscal_year(now_local().year)
     # drop_all took the seeded cash/bank accounts with it.
     types = {"Cash": "Cash", "Bank": "Bank", "Cheque": "Bank", "Online": "Bank"}
     for m in PAYMENT_METHODS:
@@ -8425,7 +8441,7 @@ def admin_system():
         dialect=dialect,
         db_size_kb=db_size_kb,
         table_counts=table_counts,
-        backup_name=f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+        backup_name=f"backup_{now_local().strftime('%Y%m%d_%H%M%S')}.json",
     )
 
 FACTORY_RESET_PHRASE = "DELETE ALL DATA"
@@ -8455,7 +8471,7 @@ def _seed_fresh_ledger():
     seed_chart_of_accounts()
     seed_fixed_asset_accounts()
     seed_tax_codes()
-    seed_fiscal_year(datetime.now().year)
+    seed_fiscal_year(now_local().year)
     # Only if there are none — a transaction reset keeps the cash/bank accounts, and
     # `method` is UNIQUE, so seeding them again unconditionally would fail the whole
     # reset on the four accounts it was supposed to leave alone.
@@ -8579,7 +8595,7 @@ def admin_backup():
         app.logger.exception("Backup failed")
         flash(f"Backup failed: {e}", "danger")
         return redirect(url_for("admin_system"))
-    filename = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    filename = f"backup_{now_local().strftime('%Y%m%d_%H%M%S')}.json"
     return send_file(
         BytesIO(payload.encode("utf-8")),
         as_attachment=True, download_name=filename, mimetype="application/json",
@@ -8652,7 +8668,7 @@ def backup_db_cmd(path):
     data = export_database_dict()
     if not path:
         os.makedirs("backups", exist_ok=True)
-        path = os.path.join("backups", f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+        path = os.path.join("backups", f"backup_{now_local().strftime('%Y%m%d_%H%M%S')}.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, default=_json_default, indent=1)
     rows = sum(len(v) for v in data["tables"].values())
@@ -8842,7 +8858,7 @@ def seed_data_cmd(yes, demo_user):
         db.session.commit()
         click.echo("Demo login: demo@demo.com / demo1234  (manager — cannot reset or reverse)")
 
-    year = datetime.now().year
+    year = now_local().year
     seed_chart_of_accounts()
     seed_tax_codes()
     seed_fiscal_year(year)
@@ -9096,7 +9112,7 @@ def seed_data_cmd(yes, demo_user):
         db.session.commit()
 
     charged = 0
-    for m in range(1, datetime.now().month + 1):
+    for m in range(1, now_local().month + 1):
         try:
             entry, total, count = run_depreciation(month_end(D(m, 1)))
             db.session.commit()
@@ -9191,7 +9207,7 @@ def seed_data_cmd(yes, demo_user):
     all_ok &= check("AP: ledger = supplier subledger", gl_of(ACC_AP), sub_ap)
     all_ok &= check("Inventory: ledger = stock value", gl_of(ACC_INVENTORY), sub_inv)
 
-    income, expense = gl_profit(None, datetime.now())
+    income, expense = gl_profit(None, now_local())
     click.echo("")
     click.echo(f"  Journal entries {JournalEntry.query.count()}, lines {JournalLine.query.count()}")
     click.echo(f"  Revenue {float(income):,.2f}   Expenses {float(expense):,.2f}   "
