@@ -150,6 +150,23 @@ except Exception:
     app.config["APP_TIMEZONE"] = "UTC"
     APP_TZ = _UTC
 
+# The month a fiscal year starts in. Pakistan runs July–June, the UK April–March, the UAE
+# and the US January–December. It has to be a setting: a business cannot file its accounts
+# against a year its tax authority does not recognise.
+try:
+    FISCAL_YEAR_START_MONTH = int(os.getenv("FISCAL_YEAR_START_MONTH", "1"))
+    if not 1 <= FISCAL_YEAR_START_MONTH <= 12:
+        raise ValueError
+except ValueError:
+    app.logger.warning("FISCAL_YEAR_START_MONTH must be 1-12 — falling back to January")
+    FISCAL_YEAR_START_MONTH = 1
+app.config["FISCAL_YEAR_START_MONTH"] = FISCAL_YEAR_START_MONTH
+
+# What the money is. Shown, never converted — this system keeps one company's books in one
+# currency, and printing a figure with no unit on it is how a quote in rupees gets paid in
+# dollars.
+app.config["CURRENCY"] = os.getenv("CURRENCY", "Rs").strip()
+
 def to_local(dt):
     """A stored datetime (assumed UTC; naive or aware) -> aware datetime in APP_TZ."""
     if dt is None:
@@ -1069,22 +1086,67 @@ def seed_financial_account_links():
         ensure_gl_account_for_financial(fa)
     db.session.commit()
 
-def seed_fiscal_year(year):
-    """One fiscal year with twelve monthly periods. Calendar-year by default;
-    an April–March year is a matter of changing the dates here."""
+def fiscal_year_bounds(when):
+    """The fiscal year that `when` falls in: (name, first day, last day).
+
+    A tax year is not January to December everywhere, and a business cannot simply pretend
+    it is. Pakistan runs July–June, the UK April–March, the UAE and the US January–December.
+    Set FISCAL_YEAR_START_MONTH once and every year, period, opening balance and invoice
+    sequence follows it.
+
+    A year that does not start in January spans two calendar years, so it is named for both
+    — "2026-27" — which is how such a year is written and, incidentally, how it has to be
+    written for an invoice number to be unambiguous.
+    """
+    m = FISCAL_YEAR_START_MONTH
+    start_year = when.year if when.month >= m else when.year - 1
+    start = date(start_year, m, 1)
+    end = date(start_year + 1, m, 1) - timedelta(days=1)
+    name = str(start_year) if m == 1 else f"{start_year}-{(start_year + 1) % 100:02d}"
+    return name, start, end
+
+def fiscal_years_that_disagree_with_the_setting():
+    """Fiscal years already in the database that do not start in FISCAL_YEAR_START_MONTH.
+
+    Changing the setting on a database that already has years does not move them. The old
+    ones stay exactly where they are, and their periods now *overlap* the new ones — so a
+    document dated inside the overlap lands in whichever period is found first, which is to
+    say arbitrarily. It will be numbered for that year, closed with that year, and reported
+    in it.
+
+    Nothing here can fix that automatically: deleting a fiscal year would take its periods,
+    and its postings, with it. So this reports, loudly, and leaves the decision to a human.
+    """
+    return [fy.name for fy in FiscalYear.query.all()
+            if fy.start_date.month != FISCAL_YEAR_START_MONTH]
+
+def seed_fiscal_year(when=None):
+    """One fiscal year with twelve monthly periods, for the year `when` falls in.
+
+    `when` may be a date, a datetime, or an int — an int being the calendar year the fiscal
+    year *starts* in, which is what a caller who says `seed_fiscal_year(2026)` means.
+    """
     from calendar import monthrange
-    name = str(year)
+    if when is None:
+        when = now_local()
+    if isinstance(when, int):
+        when = date(when, FISCAL_YEAR_START_MONTH, 1)
+
+    name, start, end = fiscal_year_bounds(when)
     if FiscalYear.query.filter_by(name=name).first():
         return 0
-    fy = FiscalYear(name=name, start_date=date(year, 1, 1), end_date=date(year, 12, 31))
+    fy = FiscalYear(name=name, start_date=start, end_date=end)
     db.session.add(fy)
     db.session.flush()
-    for m in range(1, 13):
-        last = monthrange(year, m)[1]
+
+    y, m = start.year, start.month
+    for _ in range(12):
+        last = monthrange(y, m)[1]
         db.session.add(AccountingPeriod(
             fiscal_year_id=fy.id,
-            name=date(year, m, 1).strftime("%b %Y"),
-            start_date=date(year, m, 1), end_date=date(year, m, last)))
+            name=date(y, m, 1).strftime("%b %Y"),
+            start_date=date(y, m, 1), end_date=date(y, m, last)))
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
     db.session.commit()
     return 12
 
@@ -3302,7 +3364,18 @@ def migrate_database():
     seed_chart_of_accounts()
     seed_fixed_asset_accounts()
     seed_tax_codes()
-    seed_fiscal_year(now_local().year)
+
+    # Say so before seeding a year that will overlap the ones already there.
+    mismatched = fiscal_years_that_disagree_with_the_setting()
+    if mismatched:
+        app.logger.warning(
+            "FISCAL_YEAR_START_MONTH is %d, but these fiscal years do not start in that "
+            "month: %s. Their periods overlap any year seeded now, and a document dated "
+            "inside the overlap will land in whichever is found first. Set the variable "
+            "back, or start from a clean database — do not trade across both.",
+            FISCAL_YEAR_START_MONTH, ", ".join(mismatched))
+
+    seed_fiscal_year(now_local())
 
     # Seed one cash/bank account per payment method (idempotent — only if none exist)
     if FinancialAccount.query.count() == 0:
@@ -3441,6 +3514,17 @@ def fmt_num(value):
     except (TypeError, ValueError):
         return value
 
+@app.template_filter("money")
+def money_filter(value):
+    """A figure with its currency on it — for the numbers a person acts on: the total of an
+    invoice, the profit for the year. A bare "1,234,567.89" on a quotation is how a price in
+    rupees gets paid in dollars.
+
+    Not for every cell in a table; a column of figures under a heading that names the
+    currency does not need it repeated on each row."""
+    symbol = app.config.get("CURRENCY", "")
+    return f"{symbol} {fmt_num(value)}".strip()
+
 def write_csv_header(writer, report_title, start_date_str=None, end_date_str=None, extra_info=None):
     company = app.config["COMPANY_NAME"]
     tagline = app.config["COMPANY_TAGLINE"]
@@ -3546,6 +3630,7 @@ def inject_form_defaults():
         "cash_flow_sections": CASH_FLOW_SECTIONS,
         "company_name": app.config["COMPANY_NAME"],
         "app_name": app.config["APP_NAME"],
+        "currency": app.config["CURRENCY"],
         "company_tagline": app.config["COMPANY_TAGLINE"],
         "app_timezone": app.config["APP_TIMEZONE"],
         "designed_developed": app.config["DESIGNED_DEVELOPED"],
@@ -8167,7 +8252,7 @@ def seed_accounting_cmd():
     click.echo(f"Chart of accounts: {n} account(s) created, {Account.query.count()} total.")
     t = seed_tax_codes()
     click.echo(f"Tax codes: {t} total.")
-    p = seed_fiscal_year(now_local().year)
+    p = seed_fiscal_year(now_local())
     click.echo(f"Fiscal year {now_local().year}: {p} period(s) created.")
 
 @app.cli.command("reset-db")
@@ -8198,7 +8283,7 @@ def reset_db_cmd(yes, wipe_remote):
     click.echo("All tables dropped and recreated.")
     seed_chart_of_accounts()
     seed_tax_codes()
-    seed_fiscal_year(now_local().year)
+    seed_fiscal_year(now_local())
     # drop_all took the seeded cash/bank accounts with it.
     types = {"Cash": "Cash", "Bank": "Bank", "Cheque": "Bank", "Online": "Bank"}
     for m in PAYMENT_METHODS:
@@ -8493,7 +8578,7 @@ def _seed_fresh_ledger():
     seed_chart_of_accounts()
     seed_fixed_asset_accounts()
     seed_tax_codes()
-    seed_fiscal_year(now_local().year)
+    seed_fiscal_year(now_local())
     # Only if there are none — a transaction reset keeps the cash/bank accounts, and
     # `method` is UNIQUE, so seeding them again unconditionally would fail the whole
     # reset on the four accounts it was supposed to leave alone.
@@ -8883,12 +8968,18 @@ def seed_data_cmd(yes, demo_user):
     year = now_local().year
     seed_chart_of_accounts()
     seed_tax_codes()
-    seed_fiscal_year(year)
+    # The demo trades across a whole calendar year. Unless the fiscal year starts in
+    # January, that spans two of them, and a document cannot be posted on a date no open
+    # period covers. Both are seeded; seeding is idempotent, so on a January year the
+    # second call does nothing.
+    seed_fiscal_year(datetime(year, 1, 1))
+    seed_fiscal_year(datetime(year, 12, 31))
     seed_financial_account_links()
 
-    fy = FiscalYear.query.filter_by(name=str(year)).first()
-    if fy and fy.is_closed:
-        click.echo(f"Fiscal year {year} is closed; demo data cannot be posted into it.")
+    closed = [fy.name for fy in FiscalYear.query.filter_by(is_closed=True).all()]
+    if closed:
+        click.echo(f"Fiscal year(s) {', '.join(closed)} are closed; demo data cannot be "
+                   f"posted into them.")
         return
 
     click.echo("Clearing existing data ...")

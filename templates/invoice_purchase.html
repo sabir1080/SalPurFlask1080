@@ -221,15 +221,15 @@
             {% endif %}
             <tr class="total-final">
                 <td>Net Total</td>
-                <td class="text-end">{{ total | fmt_num }}</td>
+                <td class="text-end">{{ total | money }}</td>
             </tr>
             <tr class="text-success">
                 <td>Amount Paid</td>
-                <td class="text-end">{{ paid | fmt_num }}</td>
+                <td class="text-end">{{ paid | money }}</td>
             </tr>
             <tr class="total-final {% if balance > 0 %}text-danger{% else %}text-success{% endif %}">
                 <td>Balance Due</td>
-                <td class="text-end">{{ balance | fmt_num }}</td>
+                <td class="text-end">{{ balance | money }}</td>
             </tr>
         </table>
     </div>
