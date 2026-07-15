@@ -4273,6 +4273,21 @@ def delete_category(id):
         flash("Category deleted successfully!", "success")
     return redirect(url_for("category"))
 
+def barcode_taken(barcode, exclude_id=None):
+    """True if another item already carries this barcode.
+
+    A barcode has to point at one item and one only — the whole point of scanning is that
+    the code names the product with no ambiguity. Two items sharing a code (a mistyped
+    company barcode, the same number pasted twice) would make the POS pick whichever it
+    found first, silently ringing up the wrong thing. Blank is never 'taken': any number of
+    items may have no code."""
+    if not barcode:
+        return False
+    q = Item.query.filter(Item.barcode == barcode)
+    if exclude_id is not None:
+        q = q.filter(Item.id != exclude_id)
+    return db.session.query(q.exists()).scalar()
+
 @app.route("/item", methods=["GET", "POST"])
 @verified_required
 def item():
@@ -4311,6 +4326,9 @@ def item():
             flash("Purchase price must be a non-negative number!", "danger")
         elif sale_price and (not sale_price.replace(".", "", 1).isdigit() or float(sale_price) < 0):
             flash("Sale price must be a non-negative number!", "danger")
+        elif barcode_taken(barcode):
+            flash(f"Barcode '{barcode}' is already used by another item. "
+                  "A code must point at one item only.", "danger")
         else:
             os_val = int(opening_stock)
             item = Item(
@@ -4355,6 +4373,7 @@ def edit_item(id):
         reorder_level = request.form.get("reorder_level", "").strip()
         purchase_price = request.form.get("purchase_price", "").strip()
         sale_price = request.form.get("sale_price", "").strip()
+        barcode = request.form.get("barcode", "").strip() or None
         if unit not in ITEM_UNITS:
             unit = "Pcs"
         if not categories:
@@ -4369,6 +4388,9 @@ def edit_item(id):
             flash("Purchase price must be a non-negative number!", "danger")
         elif sale_price and (not sale_price.replace(".", "", 1).isdigit() or float(sale_price) < 0):
             flash("Sale price must be a non-negative number!", "danger")
+        elif barcode_taken(barcode, exclude_id=item.id):
+            flash(f"Barcode '{barcode}' is already used by another item. "
+                  "A code must point at one item only.", "danger")
         else:
             new_os = int(opening_stock)
             stock_adjustment = new_os - item.opening_stock
@@ -4384,7 +4406,7 @@ def edit_item(id):
             item.reorder_level = int(reorder_level)
             item.purchase_price = float(purchase_price) if purchase_price else None
             item.sale_price = float(sale_price) if sale_price else None
-            item.barcode = request.form.get("barcode", "").strip() or None
+            item.barcode = barcode
             new_opening_value = (Decimal(str(new_os)) * Decimal(str(item.purchase_price or 0))).quantize(MONEY)
             item.inventory_value = (Decimal(str(item.inventory_value or 0))
                                     - old_opening_value + new_opening_value)

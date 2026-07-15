@@ -85,6 +85,44 @@ def test_items_without_a_code_can_be_assigned_one_in_one_click(appctx):
     assert r.get_json()["items"][0]["id"] == b.id
 
 
+def test_two_items_cannot_share_a_barcode(appctx):
+    """A scanned code has to name one product. If two items carried the same barcode, the
+    POS would ring up whichever it found first — silently the wrong thing."""
+    _item("Cola", "8964000112233")
+    c = _manager()
+    cat = Category.query.first()
+
+    # adding a second item with the same code is refused
+    r = c.post("/item", data={
+        "name": "Pepsi", "category_id": cat.id, "unit": "Pcs", "opening_stock": "0",
+        "reorder_level": "5", "sale_price": "100", "barcode": "8964000112233",
+    }, follow_redirects=True)
+    assert "already used by another item" in r.get_data(as_text=True)
+    assert Item.query.filter_by(name="Pepsi").count() == 0
+
+    # a different (company) barcode is fine
+    c.post("/item", data={
+        "name": "Pepsi", "category_id": cat.id, "unit": "Pcs", "opening_stock": "0",
+        "reorder_level": "5", "sale_price": "100", "barcode": "8964000999999",
+    }, follow_redirects=True)
+    assert Item.query.filter_by(name="Pepsi").one().barcode == "8964000999999"
+
+
+def test_editing_an_item_keeps_its_own_barcode(appctx):
+    """The duplicate check must not trip on the item's own code when it is edited."""
+    it = _item("Cola", "8964000112233")
+    c = _manager()
+    cat = Category.query.first()
+    r = c.post(f"/item/edit/{it.id}", data={
+        "name": "Cola 1L", "category_id": cat.id, "unit": "Pcs",
+        "opening_stock": "0", "reorder_level": "5", "sale_price": "120",
+        "barcode": "8964000112233",             # unchanged — its own code
+    }, follow_redirects=True)
+    assert "already used" not in r.get_data(as_text=True)
+    db.session.expire_all()
+    assert db.session.get(Item, it.id).name == "Cola 1L"
+
+
 def test_staff_cannot_open_the_label_printer(appctx):
     db.session.add(User(name="S", email="s@t.com", password=pwd_context.hash("secret123"),
                         verified=True, role="staff"))
