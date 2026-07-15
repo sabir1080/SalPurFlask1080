@@ -1,0 +1,262 @@
+{% extends 'base.html' %}
+{% block title %}Point of Sale — {{ company_name }}{% endblock %}
+{% block content %}
+<style>
+  .pos-wrap { color: var(--text-dark); }
+  .pos-grid { display: grid; grid-template-columns: 1fr 380px; gap: 1rem; align-items: start; }
+  @media (max-width: 900px) { .pos-grid { grid-template-columns: 1fr; } }
+
+  .pos-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px; padding: 1rem; }
+  .pos-scan { font-size: 1.1rem; padding: .75rem 1rem; }
+  .pos-results { max-height: 320px; overflow-y: auto; margin-top: .5rem; }
+  .pos-hit {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: .6rem .75rem; border: 1px solid var(--border); border-radius: 10px;
+    margin-bottom: .4rem; cursor: pointer; background: var(--surface);
+  }
+  .pos-hit:hover { border-color: var(--primary); }
+  .pos-hit .nm { font-weight: 600; color: var(--text-dark); }
+  .pos-hit .meta { font-size: .8rem; color: var(--text-muted); }
+  .pos-hit .oos { color: #dc3545; font-weight: 600; }
+
+  .cart-line { display: grid; grid-template-columns: 1fr auto auto; gap: .5rem; align-items: center;
+               padding: .5rem 0; border-bottom: 1px solid var(--border); }
+  .cart-line .nm { font-weight: 600; color: var(--text-dark); }
+  .cart-line .meta { font-size: .78rem; color: var(--text-muted); }
+  .cart-qty { width: 64px; text-align: center; }
+  .cart-amt { min-width: 90px; text-align: right; font-weight: 700; white-space: nowrap; }
+  .cart-x { cursor: pointer; color: #dc3545; border: 0; background: none; font-size: 1.1rem; }
+
+  .pos-total { font-size: 2rem; font-weight: 800; color: var(--text-dark); }
+  .pos-change { font-size: 1.3rem; font-weight: 700; }
+  .pos-empty { color: var(--text-muted); text-align: center; padding: 2rem 0; }
+</style>
+
+<div class="pos-wrap">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="mb-0"><i class="bi bi-shop"></i> Point of Sale</h3>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left"></i> Dashboard
+    </a>
+  </div>
+
+  <div class="pos-grid">
+    <!-- LEFT: scan / search -->
+    <div class="pos-card">
+      <label class="form-label fw-semibold">Scan barcode / QR, or type an item name</label>
+      <input id="scan" class="form-control pos-scan" autocomplete="off" autofocus
+             placeholder="Scan or search…">
+      <div class="form-text">A USB barcode/QR reader types the code and adds the item automatically.</div>
+      <div id="results" class="pos-results"></div>
+    </div>
+
+    <!-- RIGHT: cart + payment -->
+    <div class="pos-card">
+      <h6 class="fw-bold mb-2"><i class="bi bi-cart"></i> Cart</h6>
+      <div id="cart"></div>
+      <div id="cartEmpty" class="pos-empty">Cart is empty — scan or search an item.</div>
+
+      <hr>
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="text-muted">Total</span>
+        <span class="pos-total"><span id="curr">{{ currency }}</span> <span id="total">0.00</span></span>
+      </div>
+
+      <div class="mb-2">
+        <label class="form-label small mb-1">Customer</label>
+        <select id="customer" class="form-select form-select-sm">
+          <option value="{{ walkin.id }}">Walk-in Customer</option>
+          {% for c in customers if c.name != 'Walk-in Customer' %}
+          <option value="{{ c.id }}">{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="row g-2 mb-2">
+        <div class="col-6">
+          <label class="form-label small mb-1">Pay by</label>
+          <select id="account" class="form-select form-select-sm">
+            {% for a in accounts %}
+            <option value="{{ a.id }}">{{ a.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-6">
+          <label class="form-label small mb-1">Amount received</label>
+          <input id="paid" type="number" step="0.01" min="0" class="form-control form-control-sm" placeholder="0.00">
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <span class="text-muted">Change</span>
+        <span class="pos-change" id="change">{{ currency }} 0.00</span>
+      </div>
+
+      <button id="checkout" class="btn btn-success w-100 btn-lg" disabled>
+        <i class="bi bi-check2-circle"></i> Complete Sale
+      </button>
+      <div id="posMsg" class="small mt-2"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const CSRF = "{{ csrf_token() }}";
+  const CURR = "{{ currency }}";
+  const scan = document.getElementById('scan');
+  const results = document.getElementById('results');
+  const cartEl = document.getElementById('cart');
+  const cartEmpty = document.getElementById('cartEmpty');
+  const totalEl = document.getElementById('total');
+  const paidEl = document.getElementById('paid');
+  const changeEl = document.getElementById('change');
+  const checkoutBtn = document.getElementById('checkout');
+  const msg = document.getElementById('posMsg');
+
+  let cart = [];          // {id, name, price, qty, stock, unit}
+  let lookupTimer = null;
+
+  const money = n => Number(n || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const cartTotal = () => cart.reduce((s, l) => s + l.price * l.qty, 0);
+
+  function refocus() { scan.focus(); }
+
+  function render() {
+    cartEl.innerHTML = '';
+    cart.forEach((l, i) => {
+      const row = document.createElement('div');
+      row.className = 'cart-line';
+      row.innerHTML =
+        '<div><div class="nm">' + l.name + '</div>' +
+        '<div class="meta">' + money(l.price) + ' each · ' + l.stock + ' in stock</div></div>' +
+        '<input type="number" min="1" class="form-control form-control-sm cart-qty" value="' + l.qty + '" data-i="' + i + '">' +
+        '<div class="d-flex align-items-center gap-2">' +
+        '<span class="cart-amt">' + money(l.price * l.qty) + '</span>' +
+        '<button class="cart-x" data-x="' + i + '" title="Remove">&times;</button></div>';
+      cartEl.appendChild(row);
+    });
+    cartEmpty.style.display = cart.length ? 'none' : 'block';
+    totalEl.textContent = money(cartTotal());
+    checkoutBtn.disabled = cart.length === 0;
+    updateChange();
+  }
+
+  function updateChange() {
+    const paid = parseFloat(paidEl.value || 0);
+    const ch = paid - cartTotal();
+    changeEl.textContent = CURR + ' ' + money(ch > 0 ? ch : 0);
+  }
+
+  function addItem(it) {
+    if (it.stock <= 0) { flash(it.name + ' is out of stock.', true); return; }
+    const found = cart.find(l => l.id === it.id);
+    if (found) {
+      if (found.qty + 1 > it.stock) { flash('Only ' + it.stock + ' in stock.', true); return; }
+      found.qty += 1;
+    } else {
+      cart.push({ id: it.id, name: it.name, price: it.price, qty: 1, stock: it.stock, unit: it.unit });
+    }
+    results.innerHTML = '';
+    scan.value = '';
+    render();
+    refocus();
+  }
+
+  function showResults(items) {
+    results.innerHTML = '';
+    if (!items.length) { results.innerHTML = '<div class="pos-empty">No item found.</div>'; return; }
+    items.forEach(it => {
+      const d = document.createElement('div');
+      d.className = 'pos-hit';
+      d.innerHTML = '<div><div class="nm">' + it.name + '</div>' +
+        '<div class="meta">' + (it.barcode ? it.barcode + ' · ' : '') + money(it.price) + '</div></div>' +
+        '<div class="' + (it.stock > 0 ? 'meta' : 'oos') + '">' +
+        (it.stock > 0 ? (it.stock + ' in stock') : 'Out of stock') + '</div>';
+      d.addEventListener('click', () => addItem(it));
+      results.appendChild(d);
+    });
+  }
+
+  async function lookup(q, autoAdd) {
+    const r = await fetch("{{ url_for('pos_lookup') }}?q=" + encodeURIComponent(q));
+    const data = await r.json();
+    // A scanner sends the whole code then Enter: if exactly one item comes back, ring it.
+    if (autoAdd && data.items.length === 1) { addItem(data.items[0]); return; }
+    showResults(data.items);
+  }
+
+  scan.addEventListener('input', function () {
+    const q = scan.value.trim();
+    clearTimeout(lookupTimer);
+    if (!q) { results.innerHTML = ''; return; }
+    lookupTimer = setTimeout(() => lookup(q, false), 200);
+  });
+
+  scan.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const q = scan.value.trim();
+      if (q) lookup(q, true);   // Enter = a completed scan
+    }
+  });
+
+  cartEl.addEventListener('input', function (e) {
+    const i = e.target.getAttribute('data-i');
+    if (i === null) return;
+    let qty = parseInt(e.target.value || '1', 10);
+    const line = cart[i];
+    if (qty < 1) qty = 1;
+    if (qty > line.stock) { qty = line.stock; e.target.value = qty; flash('Only ' + line.stock + ' in stock.', true); }
+    line.qty = qty;
+    render();
+  });
+
+  cartEl.addEventListener('click', function (e) {
+    const x = e.target.getAttribute('data-x');
+    if (x !== null) { cart.splice(x, 1); render(); refocus(); }
+  });
+
+  paidEl.addEventListener('input', updateChange);
+
+  function flash(text, isError) {
+    msg.textContent = text;
+    msg.className = 'small mt-2 ' + (isError ? 'text-danger' : 'text-success');
+  }
+
+  checkoutBtn.addEventListener('click', async function () {
+    if (!cart.length) return;
+    checkoutBtn.disabled = true;
+    flash('Saving…', false);
+    try {
+      const r = await fetch("{{ url_for('pos_checkout') }}", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+        body: JSON.stringify({
+          customer_id: document.getElementById('customer').value,
+          account_id: document.getElementById('account').value,
+          amount_paid: paidEl.value || 0,
+          items: cart.map(l => ({ item_id: l.id, qty: l.qty, price: l.price })),
+        }),
+      });
+      const data = await r.json();
+      if (!data.ok) { flash(data.error || 'Sale failed.', true); checkoutBtn.disabled = false; return; }
+      // Sold. Clear the counter and open the slip.
+      cart = []; paidEl.value = ''; render();
+      flash('Sale ' + data.invoice_no + ' done. Change ' + CURR + ' ' + money(data.change), false);
+      window.open(data.receipt_url, '_blank');
+      refocus();
+    } catch (err) {
+      flash('Network error — please try again.', true);
+      checkoutBtn.disabled = false;
+    }
+  });
+
+  // Keep the scan box focused, so a physical reader always lands there.
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('input') && !e.target.closest('select') && !e.target.closest('button')) refocus();
+  });
+  render();
+})();
+</script>
+{% endblock %}

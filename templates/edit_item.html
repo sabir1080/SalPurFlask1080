@@ -45,6 +45,11 @@
             <label for="sale_price" class="form-label">Sale Price (per unit)</label>
             <input type="number" step="0.01" class="form-control" id="sale_price" name="sale_price" value="{{ item.sale_price if item.sale_price else '' }}">
         </div>
+        <div class="mb-3">
+            <label for="barcode" class="form-label">Barcode / QR <span class="text-muted small">(for the POS counter — optional)</span></label>
+            <input type="text" class="form-control" id="barcode" name="barcode" autocomplete="off"
+                   placeholder="Scan or type the item's code" value="{{ item.barcode or '' }}">
+        </div>
         <button type="submit" class="btn btn-primary">Update Item</button>
         <a href="{{ url_for('item') }}" class="btn btn-secondary">Cancel</a>
     </form>

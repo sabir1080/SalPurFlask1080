@@ -1,0 +1,96 @@
+{% extends 'base.html' %}
+{% block title %}Receipt {{ sale.invoice_no or sale.id }}{% endblock %}
+{% block content %}
+<style>
+  /* A thermal slip: 80mm wide, monospace, black on white. On screen it sits in the
+     middle of the page; on paper it is the only thing printed, at slip width. */
+  .slip {
+    width: 80mm; max-width: 80mm; margin: 1rem auto;
+    background: #fff; color: #000;
+    font-family: "Consolas", "Courier New", monospace; font-size: 12px; line-height: 1.4;
+    padding: 6mm 5mm; border: 1px solid #ddd;
+  }
+  .slip h1 { font-size: 15px; text-align: center; margin: 0 0 2px; font-weight: 800; }
+  .slip .sub { text-align: center; font-size: 11px; margin-bottom: 6px; }
+  .slip .rule { border-top: 1px dashed #000; margin: 6px 0; }
+  .slip table { width: 100%; border-collapse: collapse; }
+  .slip td { padding: 1px 0; vertical-align: top; }
+  .slip .r { text-align: right; white-space: nowrap; }
+  .slip .tot td { font-weight: 800; font-size: 13px; padding-top: 3px; }
+  .slip .center { text-align: center; }
+  .slip .muted { color: #333; font-size: 11px; }
+
+  .noprint { text-align: center; margin: 1rem; }
+
+  @media print {
+    /* Print only the slip, at slip width, whatever theme the screen was in. */
+    body { background: #fff !important; }
+    .navbar, footer, .noprint, .flash-messages { display: none !important; }
+    .slip { border: 0; margin: 0; width: 80mm; color: #000 !important; background: #fff !important; }
+    @page { margin: 0; size: 80mm auto; }
+  }
+</style>
+
+<div class="noprint">
+  <button class="btn btn-primary" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
+  <a class="btn btn-outline-secondary" href="{{ url_for('pos') }}"><i class="bi bi-arrow-left"></i> Back to POS</a>
+</div>
+
+<div class="slip">
+  <h1>{{ company_name }}</h1>
+  <div class="sub">
+    {% if company_tagline %}{{ company_tagline }}<br>{% endif %}
+    SALES RECEIPT
+  </div>
+
+  <div class="rule"></div>
+  <table>
+    <tr><td>Receipt</td><td class="r">{{ sale.invoice_no or sale.id }}</td></tr>
+    <tr><td>Date</td><td class="r">{{ sale.date | bizdate('%d %b %Y') }}</td></tr>
+    <tr><td>Cashier</td><td class="r">{{ current_user.name }}</td></tr>
+    {% if sale.id_customer and sale.id_customer.name != 'Walk-in Customer' %}
+    <tr><td>Customer</td><td class="r">{{ sale.id_customer.name }}</td></tr>
+    {% endif %}
+  </table>
+
+  <div class="rule"></div>
+  <table>
+    <tr class="muted"><td>Item</td><td class="r">Qty x Price</td><td class="r">Amount</td></tr>
+    {% for si in sale.line_items %}
+    <tr>
+      <td colspan="3">{{ si.item.name }}</td>
+    </tr>
+    <tr>
+      <td></td>
+      <td class="r muted">{{ si.quantity }} x {{ si.sale_price | fmt_num }}</td>
+      <td class="r">{{ si.amount | fmt_num }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <div class="rule"></div>
+  <table>
+    <tr class="tot"><td>TOTAL</td><td></td><td class="r">{{ currency }} {{ total | fmt_num }}</td></tr>
+    <tr><td>Paid</td><td></td><td class="r">{{ received | fmt_num }}</td></tr>
+    {% set change = received - total %}
+    {% if change > 0 %}
+    <tr><td>Change</td><td></td><td class="r">{{ change | fmt_num }}</td></tr>
+    {% endif %}
+    {% set due = total - received %}
+    {% if due > 0.001 %}
+    <tr><td>Balance due</td><td></td><td class="r">{{ due | fmt_num }}</td></tr>
+    {% endif %}
+  </table>
+
+  <div class="rule"></div>
+  <div class="center muted">
+    Thank you for your purchase!<br>
+    {% if sale.is_reversed %}** REVERSED — NOT VALID **{% endif %}
+  </div>
+</div>
+
+<script>
+  // Offer the print dialog straight away — a counter wants the slip, not a page to read.
+  window.addEventListener('load', function () { setTimeout(function () { window.print(); }, 250); });
+</script>
+{% endblock %}

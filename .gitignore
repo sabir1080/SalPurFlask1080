@@ -14,3 +14,7 @@ static/*.csv
 desktop.ini
 .pytest_cache/
 ForMyUseOnly/
+
+# Large media — keep videos out of git (GitHub 100MB limit)
+docs/screenshots/*.mp4
+*.mp4
