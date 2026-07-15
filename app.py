@@ -5091,6 +5091,76 @@ def pos_receipt(id):
     return render_template("pos_receipt.html", sale=sal,
                            total=sale_total(sal), received=received)
 
+# ── Item labels (printable barcode / QR stickers) ─────────────────────────────
+def code_svg(value, kind="barcode"):
+    """Inline SVG for one item's code — a Code128 barcode, or a QR.
+
+    SVG, not a PNG, so it prints crisp at any size and needs no image files on disk or
+    fetched over the network (a strict CSP would block those anyway). Returns '' if the
+    value cannot be encoded, so one bad code never takes the whole label sheet down."""
+    if not value:
+        return ""
+    from io import BytesIO
+    buf = BytesIO()
+    try:
+        if kind == "qr":
+            import qrcode
+            import qrcode.image.svg
+            qrcode.make(value, image_factory=qrcode.image.svg.SvgPathImage).save(buf)
+        else:
+            import barcode
+            from barcode.writer import SVGWriter
+            barcode.get("code128", str(value), writer=SVGWriter()).write(buf)
+        svg = buf.getvalue().decode("utf-8")
+        i = svg.find("<svg")           # drop the XML declaration so it embeds inline
+        return svg[i:] if i != -1 else svg
+    except Exception:
+        app.logger.exception("Could not render a %s for %r", kind, value)
+        return ""
+
+@app.route("/labels")
+@manager_required
+def labels():
+    """Printable barcode / QR labels to stick on stock.
+
+    Pick how many of each item, barcode or QR, and print a sheet. Only items that have a
+    code get a label; items without one are listed with a one-click way to assign codes."""
+    items = Item.query.outerjoin(Category, Item.category_id == Category.id) \
+        .order_by(Category.name, Item.name).all()
+    kind = "qr" if request.args.get("type") == "qr" else "barcode"
+    show_price = request.args.get("price", "1") != "0"
+
+    sheet = []
+    for it in items:
+        try:
+            copies = int(request.args.get(f"copies_{it.id}", "0") or 0)
+        except ValueError:
+            copies = 0
+        if copies > 0 and it.barcode:
+            svg = code_svg(it.barcode, kind)
+            for _ in range(min(copies, 200)):        # a sane cap per print run
+                sheet.append({"name": it.name, "price": it.sale_price,
+                              "code": it.barcode, "svg": svg})
+
+    missing = [it for it in items if not it.barcode]
+    return render_template("labels.html", items=items, sheet=sheet, kind=kind,
+                           show_price=show_price, missing=missing)
+
+@app.route("/labels/assign", methods=["POST"])
+@manager_required
+def labels_assign():
+    """Give every item that has no code a stable numeric one, so it can be labelled and
+    scanned. Numeric (not the name) because the cheapest scanners read digits most
+    reliably, and the id makes it unique and repeatable."""
+    n = 0
+    for it in Item.query.filter(or_(Item.barcode.is_(None), Item.barcode == "")).all():
+        it.barcode = f"{it.id:012d}"
+        n += 1
+    if n:
+        db.session.commit()
+    flash(f"Assigned a code to {n} item(s) that had none.", "success")
+    return redirect(url_for("labels"))
+
 @app.route("/sale/edit/<int:id>", methods=["GET", "POST"])
 @manager_required
 def edit_sale(id):

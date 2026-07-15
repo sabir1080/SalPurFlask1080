@@ -1,0 +1,114 @@
+{% extends 'base.html' %}
+{% block title %}Print Labels — {{ company_name }}{% endblock %}
+{% block content %}
+<style>
+  .lbl-wrap { color: var(--text-dark); }
+  .lbl-panel { background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px; padding: 1rem; margin-bottom: 1.5rem; }
+  .lbl-table { width: 100%; }
+  .lbl-table th, .lbl-table td { padding: .4rem .5rem; border-bottom: 1px solid var(--border); }
+  .lbl-copies { width: 80px; }
+
+  /* The printable sheet — a wrapping grid of stickers. */
+  .lbl-sheet { display: flex; flex-wrap: wrap; gap: 4mm; }
+  .lbl {
+    width: 50mm; box-sizing: border-box; text-align: center;
+    border: 1px dashed #bbb; border-radius: 4px; padding: 2mm;
+    background: #fff; color: #000;
+  }
+  .lbl .nm { font-size: 10px; font-weight: 700; line-height: 1.1; margin-bottom: 1mm;
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lbl .img svg { width: 100%; height: 14mm; }
+  .lbl.qr .img svg { height: 20mm; width: auto; }
+  .lbl .code { font-size: 8px; font-family: monospace; margin-top: .5mm; }
+  .lbl .pr { font-size: 11px; font-weight: 800; margin-top: .5mm; }
+
+  @media print {
+    .navbar, footer, .flash-messages, .lbl-panel, .lbl-actions { display: none !important; }
+    body { background: #fff !important; }
+    .lbl-sheet { gap: 2mm; }
+    .lbl { border: 1px dashed #ccc; color: #000 !important; background: #fff !important; }
+    @page { margin: 8mm; }
+  }
+</style>
+
+<div class="lbl-wrap">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="mb-0"><i class="bi bi-upc-scan"></i> Print Item Labels</h3>
+    <a href="{{ url_for('item') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Items</a>
+  </div>
+
+  {% if missing %}
+  <div class="alert alert-warning d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span><i class="bi bi-exclamation-triangle"></i>
+      {{ missing | length }} item(s) have no barcode yet, so they can't be labelled or scanned.</span>
+    <form method="POST" action="{{ url_for('labels_assign') }}" class="m-0">
+      <button class="btn btn-warning btn-sm"><i class="bi bi-magic"></i> Assign codes automatically</button>
+    </form>
+  </div>
+  {% endif %}
+
+  <!-- Control panel -->
+  <form method="GET" class="lbl-panel">
+    <div class="row g-3 align-items-end mb-3">
+      <div class="col-auto">
+        <label class="form-label small mb-1">Code type</label>
+        <select name="type" class="form-select form-select-sm">
+          <option value="barcode" {% if kind == 'barcode' %}selected{% endif %}>Barcode (Code128)</option>
+          <option value="qr" {% if kind == 'qr' %}selected{% endif %}>QR code</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label small mb-1">Price on label</label>
+        <select name="price" class="form-select form-select-sm">
+          <option value="1" {% if show_price %}selected{% endif %}>Show price</option>
+          <option value="0" {% if not show_price %}selected{% endif %}>Hide price</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-eye"></i> Preview</button>
+      </div>
+    </div>
+
+    <div class="table-responsive" style="max-height: 340px; overflow-y: auto;">
+      <table class="lbl-table">
+        <thead><tr><th>Item</th><th>Code</th><th class="text-end">Price</th><th>Copies</th></tr></thead>
+        <tbody>
+          {% for it in items %}
+          <tr>
+            <td>{{ it.name }}</td>
+            <td class="small text-muted">{{ it.barcode or '— none —' }}</td>
+            <td class="text-end">{{ it.sale_price | fmt_num if it.sale_price else '—' }}</td>
+            <td>
+              <input type="number" min="0" max="200" name="copies_{{ it.id }}" class="form-control form-control-sm lbl-copies"
+                     value="{{ request.args.get('copies_' ~ it.id, '0') }}" {% if not it.barcode %}disabled title="No code"{% endif %}>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="form-text mt-2">Set how many labels you want of each item, choose barcode or QR, then Preview.</div>
+  </form>
+
+  {% if sheet %}
+  <div class="lbl-actions d-flex justify-content-between align-items-center mb-2">
+    <span class="text-muted">{{ sheet | length }} label(s) ready</span>
+    <button class="btn btn-success" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
+  </div>
+
+  <div class="lbl-sheet">
+    {% for l in sheet %}
+    <div class="lbl {{ 'qr' if kind == 'qr' else '' }}">
+      <div class="nm">{{ l.name }}</div>
+      <div class="img">{{ l.svg | safe }}</div>
+      <div class="code">{{ l.code }}</div>
+      {% if show_price and l.price %}<div class="pr">{{ currency }} {{ l.price | fmt_num }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% elif not missing %}
+  <div class="alert alert-info"><i class="bi bi-info-circle"></i>
+    Set a number under <strong>Copies</strong> for the items you want, then press <strong>Preview</strong>.</div>
+  {% endif %}
+</div>
+{% endblock %}

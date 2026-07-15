@@ -11,6 +11,8 @@ bcrypt>=4.0.0
 flask-wtf
 anthropic
 openpyxl
+python-barcode
+qrcode
 psycopg[binary]
 psycopg2-binary
 sentry-sdk[flask]
