@@ -95,6 +95,31 @@ Run them and they either all agree or they do not. There is no third answer, and
 
 ---
 
+## Roles & permissions
+
+Three roles. Each higher role includes everything the ones below it can do. The reversible and destructive actions — reversing a posted document, closing a year, managing users, backups, resets — are admin-only, because those are the ones you cannot take back.
+
+| Task | Staff | Manager | Admin |
+|---|:---:|:---:|:---:|
+| Record customer receipts, supplier payments, expenses | ✓ | ✓ | ✓ |
+| View sales, purchases and item lists | ✓ | ✓ | ✓ |
+| Create sales & purchase invoices | — | ✓ | ✓ |
+| Point of Sale (POS) | — | ✓ | ✓ |
+| Add / edit items & categories, stock adjustments | — | ✓ | ✓ |
+| Print barcode / QR labels | — | ✓ | ✓ |
+| Dashboard & all financial reports | — | ✓ | ✓ |
+| Manual journal entries | — | ✓ | ✓ |
+| Fiscal years & accounting periods | — | ✓ | ✓ |
+| **Reverse** a posted document | — | — | ✓ |
+| **Close** a fiscal year | — | — | ✓ |
+| Create cash / bank & ledger accounts | — | — | ✓ |
+| Manage users & roles | — | — | ✓ |
+| Audit log | — | — | ✓ |
+| Backup & restore | — | — | ✓ |
+| Delete all data / all transactions (reset) | — | — | ✓ |
+
+---
+
 ## Tech
 
 Python · Flask · SQLAlchemy · Bootstrap 5 · PostgreSQL or SQLite · Gunicorn

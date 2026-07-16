@@ -9303,6 +9303,18 @@ def seed_data_cmd(yes, demo_user):
         db.session.commit()
     seed_financial_account_links()
 
+    # A "Card" account, so the demo POS shows card payment alongside cash — a payment type
+    # every visitor understands, wherever they are. Deliberately not JazzCash / Easypaisa:
+    # the demo is shown to buyers worldwide, and a local wallet name would only puzzle them.
+    # A shop's own local methods are added on its own site, by its admin.
+    if not FinancialAccount.query.filter_by(name="Card").first():
+        card = FinancialAccount(name="Card", method=new_account_method_token(),
+                                account_type="Bank", opening_balance=0)
+        db.session.add(card)
+        db.session.flush()
+        ensure_gl_account_for_financial(card)
+        db.session.commit()
+
     closed = [fy.name for fy in FiscalYear.query.filter_by(is_closed=True).all()]
     if closed:
         click.echo(f"Fiscal year(s) {', '.join(closed)} are closed; demo data cannot be "
