@@ -4,7 +4,7 @@
 
 TradeFlow doesn't. Every purchase, sale, return, payment, expense and depreciation charge is posted into a real **double-entry general ledger** the moment it is saved. The Balance Sheet, the Profit & Loss, the stock report and the cash flow statement are all summed from the same books — so they always agree, and there is a report that proves it.
 
-A full trading and accounting system: stock at weighted-average cost, receivables and payables with control accounts, a fixed asset register with depreciation, gapless invoice numbering, accounting periods and year-end closing. The kind of thing you are told to buy a licence for.
+A full trading and accounting system: a point-of-sale counter with barcode/QR scanning, stock at weighted-average cost, receivables and payables with control accounts, a fixed asset register with depreciation, gapless invoice numbering, accounting periods and year-end closing. The kind of thing you are told to buy a licence for.
 
 ### 🔗 [Live demo](https://tradeflow-demo.onrender.com) — `demo@demo.com` / `demo1234`
 
@@ -25,6 +25,18 @@ A full trading and accounting system: stock at weighted-average cost, receivable
 ---
 
 ## What it does
+
+**Point of Sale (POS)**
+- Fast counter screen: scan a barcode/QR or search, build a cart, take payment, print a receipt
+- Works with any USB barcode/QR reader (it types the code — no driver, no setup)
+- Cash, card or bank payment; change calculated at the counter
+- Compact thermal-slip receipt
+- Every POS sale posts through the **same double-entry ledger** as everything else — the till keeps no separate books
+
+**Labels**
+- Print **barcode or QR stickers** for stock, any number per item, on one sheet
+- Use a product's own printed barcode, or assign codes to items that have none in one click
+- The code on the sticker is the exact value the POS scans
 
 **Trading**
 - Suppliers & customers with opening balances, running ledgers, statements and ageing
@@ -90,7 +102,7 @@ Python · Flask · SQLAlchemy · Bootstrap 5 · PostgreSQL or SQLite · Gunicorn
 - Exact-decimal money (`Numeric(14,4)`) — no floating-point cents
 - Row-level locking on stock, so two simultaneous sales cannot oversell the same item
 - CSRF protection, argon2 password hashing, security headers, DB-backed rate limiting
-- **82 tests**, run on every push (GitHub Actions)
+- **120+ tests**, run on every push (GitHub Actions)
 
 ---
 
