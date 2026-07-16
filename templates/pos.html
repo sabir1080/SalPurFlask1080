@@ -27,6 +27,18 @@
   .cart-amt { min-width: 90px; text-align: right; font-weight: 700; white-space: nowrap; }
   .cart-x { cursor: pointer; color: #dc3545; border: 0; background: none; font-size: 1.1rem; }
 
+  /* Payment method as tap-able buttons — faster at a counter than a dropdown, and the
+     options (Cash / Card / Bank) are all visible at once instead of hidden in a menu. */
+  .pay-btns { display: flex; flex-wrap: wrap; gap: .4rem; }
+  .pay-btn {
+    flex: 1 1 auto; min-width: 72px; padding: .5rem .6rem;
+    border: 2px solid var(--border); border-radius: 10px;
+    background: var(--surface); color: var(--text-dark);
+    font-weight: 600; font-size: .9rem; cursor: pointer;
+  }
+  .pay-btn:hover { border-color: var(--primary); }
+  .pay-btn.active { border-color: var(--primary); background: var(--primary); color: #fff; }
+
   .pos-total { font-size: 2rem; font-weight: 800; color: var(--text-dark); }
   .pos-change { font-size: 1.3rem; font-weight: 700; }
   .pos-empty { color: var(--text-muted); text-align: center; padding: 2rem 0; }
@@ -72,19 +84,19 @@
         </select>
       </div>
 
-      <div class="row g-2 mb-2">
-        <div class="col-6">
-          <label class="form-label small mb-1">Pay by</label>
-          <select id="account" class="form-select form-select-sm">
-            {% for a in accounts %}
-            <option value="{{ a.id }}">{{ a.name }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-6">
-          <label class="form-label small mb-1">Amount received</label>
-          <input id="paid" type="number" step="0.01" min="0" class="form-control form-control-sm" placeholder="0.00">
-        </div>
+      <label class="form-label small mb-1">Payment method</label>
+      <div id="payBtns" class="pay-btns mb-2">
+        {% for a in accounts %}
+        <button type="button" class="pay-btn{% if loop.first %} active{% endif %}" data-acct="{{ a.id }}">
+          {{ a.name }}
+        </button>
+        {% endfor %}
+      </div>
+      <input type="hidden" id="account" value="{{ accounts[0].id if accounts else '' }}">
+
+      <div class="mb-2">
+        <label class="form-label small mb-1">Amount received</label>
+        <input id="paid" type="number" step="0.01" min="0" class="form-control" placeholder="0.00">
       </div>
 
       <div class="d-flex justify-content-between align-items-center mb-3">
@@ -218,6 +230,15 @@
   });
 
   paidEl.addEventListener('input', updateChange);
+
+  // Payment method buttons: tap one to select the account the money goes into.
+  document.getElementById('payBtns').addEventListener('click', function (e) {
+    const btn = e.target.closest('.pay-btn');
+    if (!btn) return;
+    document.querySelectorAll('.pay-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('account').value = btn.getAttribute('data-acct');
+  });
 
   function flash(text, isError) {
     msg.textContent = text;
