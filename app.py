@@ -229,6 +229,9 @@ def sql_date_fmt(col, fmt="%Y-%m"):
 def is_signup_allowed():
     return os.getenv("ALLOW_SIGNUP", "false").lower() in ("1", "true", "yes")
 
+def is_demo_mode():
+    return os.getenv("DEMO_MODE", "false").lower() in ("1", "true", "yes")
+
 # Utility Functions
 def generate_verification_token(email):
     serializer = URLSafeTimedSerializer(app.config["SECRET_KEY"])
@@ -3664,6 +3667,7 @@ def inject_form_defaults():
         "company_tagline": app.config["COMPANY_TAGLINE"],
         "app_timezone": app.config["APP_TIMEZONE"],
         "designed_developed": app.config["DESIGNED_DEVELOPED"],
+        "demo_mode": is_demo_mode(),
         "purchase_total": purchase_total,
         "sale_total": sale_total,
         "get_purchase_paid": get_purchase_paid,
@@ -6085,6 +6089,9 @@ def export_customer_ledger_excel(id):
 @verified_required
 def profile():
     if request.method == "POST":
+        if is_demo_mode():
+            flash("Password changes are disabled in the demo.", "warning")
+            return redirect(url_for("profile"))
         current_password = request.form.get("current_password", "").strip()
         new_password = request.form.get("new_password", "").strip()
         confirm_password = request.form.get("confirm_password", "").strip()

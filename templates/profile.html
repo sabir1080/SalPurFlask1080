@@ -30,6 +30,9 @@
         <div class="card border-0 shadow-sm">
             <div class="card-header bg-transparent fw-semibold">Change Password</div>
             <div class="card-body">
+                {% if demo_mode %}
+                <p class="text-muted mb-0"><i class="bi bi-lock"></i> Password changes are disabled in the demo.</p>
+                {% else %}
                 <form method="POST">
                     <div class="mb-3">
                         <label class="form-label">Current Password</label>
@@ -47,6 +50,7 @@
                     <button type="submit" class="btn btn-primary"><i class="bi bi-key"></i> Change Password</button>
                     <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
                 </form>
+                {% endif %}
             </div>
         </div>
     </div>
