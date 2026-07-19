@@ -24,20 +24,34 @@
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
+            {% macro perm_link(endpoint, icon, label, allowed) %}
+            <li class="nav-item">
+                <a class="nav-link{% if not allowed %} disabled{% endif %}"
+                   {% if allowed %}href="{{ url_for(endpoint) }}"{% else %}href="#" tabindex="-1" aria-disabled="true" title="You do not have permission for this"{% endif %}>
+                    <i class="bi {{ icon }}"></i> {{ label }}
+                </a>
+            </li>
+            {% endmacro %}
+            {% macro perm_item(endpoint, icon, label, allowed) %}
+            <li>
+                <a class="dropdown-item{% if not allowed %} disabled{% endif %}"
+                   {% if allowed %}href="{{ url_for(endpoint) }}"{% else %}href="#" tabindex="-1" aria-disabled="true" title="You do not have permission for this"{% endif %}>
+                    <i class="bi {{ icon }}"></i> {{ label }}
+                </a>
+            </li>
+            {% endmacro %}
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     {% if current_user.is_authenticated %}
-                    {% if current_user.is_manager %}
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
-                    {% endif %}
+                    {{ perm_link('dashboard', 'bi-speedometer2', 'Dashboard', current_user.is_manager) }}
 
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
                             <i class="bi bi-people"></i> Parties
                         </a>
                         <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="{{ url_for('supplier') }}"><i class="bi bi-truck"></i> Suppliers</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('customer') }}"><i class="bi bi-person-check"></i> Customers</a></li>
+                            {{ perm_item('supplier', 'bi-truck', 'Suppliers', true) }}
+                            {{ perm_item('customer', 'bi-person-check', 'Customers', true) }}
                         </ul>
                     </li>
 
@@ -46,10 +60,10 @@
                             <i class="bi bi-boxes"></i> Inventory
                         </a>
                         <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="{{ url_for('category') }}"><i class="bi bi-tag"></i> Categories</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('item') }}"><i class="bi bi-box-seam"></i> Items</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('labels') }}"><i class="bi bi-upc-scan"></i> Print Labels</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('stock_adjustment') }}"><i class="bi bi-arrow-left-right"></i> Stock Adjustments</a></li>
+                            {{ perm_item('category', 'bi-tag', 'Categories', true) }}
+                            {{ perm_item('item', 'bi-box-seam', 'Items', true) }}
+                            {{ perm_item('labels', 'bi-upc-scan', 'Print Labels', current_user.is_manager) }}
+                            {{ perm_item('stock_adjustment', 'bi-arrow-left-right', 'Stock Adjustments', current_user.is_manager) }}
                         </ul>
                     </li>
 
@@ -62,41 +76,40 @@
                             <i class="bi bi-cart"></i> Transactions
                         </a>
                         <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="{{ url_for('purchase_orders') }}"><i class="bi bi-file-earmark-text"></i> Purchase Orders</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('purchase') }}"><i class="bi bi-cart-plus"></i> Purchases</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('supplier_payment') }}"><i class="bi bi-cash-coin"></i> Supplier Payments</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('supplier_bulk_payment') }}"><i class="bi bi-cash-stack"></i> Bulk Payment</a></li>
+                            {{ perm_item('purchase_orders', 'bi-file-earmark-text', 'Purchase Orders', current_user.is_manager) }}
+                            {{ perm_item('purchase', 'bi-cart-plus', 'Purchases', true) }}
+                            {{ perm_item('supplier_payment', 'bi-cash-coin', 'Supplier Payments', true) }}
+                            {{ perm_item('supplier_bulk_payment', 'bi-cash-stack', 'Bulk Payment', true) }}
                             <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="{{ url_for('quotations') }}"><i class="bi bi-file-earmark-ruled"></i> Quotations</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('sale') }}"><i class="bi bi-bag-check"></i> Sales</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('customer_receipt') }}"><i class="bi bi-receipt"></i> Customer Receipts</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('customer_bulk_receipt') }}"><i class="bi bi-cash-stack"></i> Bulk Receipt</a></li>
+                            {{ perm_item('quotations', 'bi-file-earmark-ruled', 'Quotations', current_user.is_manager) }}
+                            {{ perm_item('sale', 'bi-bag-check', 'Sales', true) }}
+                            {{ perm_item('customer_receipt', 'bi-receipt', 'Customer Receipts', true) }}
+                            {{ perm_item('customer_bulk_receipt', 'bi-cash-stack', 'Bulk Receipt', true) }}
                             <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="{{ url_for('purchase_return') }}"><i class="bi bi-arrow-return-left"></i> Purchase Returns</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('sale_return') }}"><i class="bi bi-arrow-return-right"></i> Sale Returns</a></li>
+                            {{ perm_item('purchase_return', 'bi-arrow-return-left', 'Purchase Returns', true) }}
+                            {{ perm_item('sale_return', 'bi-arrow-return-right', 'Sale Returns', true) }}
                             <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="{{ url_for('delivery_challans') }}"><i class="bi bi-truck"></i> Delivery Challans</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('expenses') }}"><i class="bi bi-wallet2"></i> Expenses</a></li>
+                            {{ perm_item('delivery_challans', 'bi-truck', 'Delivery Challans', true) }}
+                            {{ perm_item('expenses', 'bi-wallet2', 'Expenses', current_user.is_manager) }}
                         </ul>
                     </li>
 
-                    {% if current_user.is_manager %}
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
                             <i class="bi bi-bar-chart-line"></i> Reports
                         </a>
                         <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="{{ url_for('reports') }}"><i class="bi bi-graph-up"></i> Sales &amp; Inventory</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('report_profit_loss') }}"><i class="bi bi-graph-up-arrow"></i> Profit &amp; Loss</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('report_balance_sheet') }}"><i class="bi bi-clipboard-data"></i> Balance Sheet</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('report_trial_balance') }}"><i class="bi bi-list-columns-reverse"></i> Trial Balance</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('report_cash_flow') }}"><i class="bi bi-arrow-left-right"></i> Cash Flow Statement</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('report_stock') }}"><i class="bi bi-boxes"></i> Stock Valuation</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('report_aging') }}"><i class="bi bi-clock-history"></i> AP/AR Aging</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('report_cash_book') }}"><i class="bi bi-journal-text"></i> Cash Book</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('report_gst') }}"><i class="bi bi-receipt-cutoff"></i> Tax Summary</a></li>
+                            {{ perm_item('reports', 'bi-graph-up', 'Sales & Inventory', current_user.is_manager) }}
+                            {{ perm_item('report_profit_loss', 'bi-graph-up-arrow', 'Profit & Loss', current_user.is_manager) }}
+                            {{ perm_item('report_balance_sheet', 'bi-clipboard-data', 'Balance Sheet', current_user.is_manager) }}
+                            {{ perm_item('report_trial_balance', 'bi-list-columns-reverse', 'Trial Balance', current_user.is_manager) }}
+                            {{ perm_item('report_cash_flow', 'bi-arrow-left-right', 'Cash Flow Statement', current_user.is_manager) }}
+                            {{ perm_item('report_stock', 'bi-boxes', 'Stock Valuation', current_user.is_manager) }}
+                            {{ perm_item('report_aging', 'bi-clock-history', 'AP/AR Aging', current_user.is_manager) }}
+                            {{ perm_item('report_cash_book', 'bi-journal-text', 'Cash Book', current_user.is_manager) }}
+                            {{ perm_item('report_gst', 'bi-receipt-cutoff', 'Tax Summary', current_user.is_manager) }}
                             <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="{{ url_for('report_reconciliation') }}"><i class="bi bi-check2-square"></i> Reconciliation</a></li>
+                            {{ perm_item('report_reconciliation', 'bi-check2-square', 'Reconciliation', current_user.is_manager) }}
                         </ul>
                     </li>
 
@@ -105,30 +118,26 @@
                             <i class="bi bi-journal-bookmark"></i> Accounting
                         </a>
                         <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="{{ url_for('chart_of_accounts') }}"><i class="bi bi-diagram-3"></i> Chart of Accounts</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('journal') }}"><i class="bi bi-journal-plus"></i> Journal Entries</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('accounts') }}"><i class="bi bi-bank"></i> Cash &amp; Bank Accounts</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('fixed_assets') }}"><i class="bi bi-building-gear"></i> Fixed Assets</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('periods') }}"><i class="bi bi-calendar-range"></i> Fiscal Years &amp; Periods</a></li>
-                            {% if current_user.is_admin %}
+                            {{ perm_item('chart_of_accounts', 'bi-diagram-3', 'Chart of Accounts', current_user.is_manager) }}
+                            {{ perm_item('journal', 'bi-journal-plus', 'Journal Entries', current_user.is_manager) }}
+                            {{ perm_item('accounts', 'bi-bank', 'Cash & Bank Accounts', current_user.is_manager) }}
+                            {{ perm_item('fixed_assets', 'bi-building-gear', 'Fixed Assets', current_user.is_manager) }}
+                            {{ perm_item('periods', 'bi-calendar-range', 'Fiscal Years & Periods', current_user.is_manager) }}
                             <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="{{ url_for('tax_codes') }}"><i class="bi bi-percent"></i> Tax Codes</a></li>
-                            {% endif %}
+                            {{ perm_item('tax_codes', 'bi-percent', 'Tax Codes', current_user.is_admin) }}
                         </ul>
                     </li>
-                    {% endif %}
-                    {% if current_user.is_admin %}
+
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
                             <i class="bi bi-shield-person"></i> Admin
                         </a>
                         <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="{{ url_for('admin_users') }}"><i class="bi bi-people"></i> Users</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('admin_audit') }}"><i class="bi bi-clock-history"></i> Audit Log</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('admin_system') }}"><i class="bi bi-hdd"></i> Backup &amp; Restore</a></li>
+                            {{ perm_item('admin_users', 'bi-people', 'Users', current_user.is_admin) }}
+                            {{ perm_item('admin_audit', 'bi-clock-history', 'Audit Log', current_user.is_admin) }}
+                            {{ perm_item('admin_system', 'bi-hdd', 'Backup & Restore', current_user.is_admin) }}
                         </ul>
                     </li>
-                    {% endif %}
                     {% endif %}
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('manual') }}"><i class="bi bi-book"></i> Manual</a></li>
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('about') }}"><i class="bi bi-info-circle"></i> About</a></li>
