@@ -1,8 +1,8 @@
 {% extends 'base.html' %}
-{% block title %}GST Report{% endblock %}
+{% block title %}Tax Summary{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h2><i class="bi bi-receipt-cutoff text-warning"></i> GST / Tax Summary</h2>
+    <h2><i class="bi bi-receipt-cutoff text-warning"></i> Tax Summary</h2>
     <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">
         <i class="bi bi-printer"></i> Print
     </button>
@@ -39,7 +39,7 @@
     <div class="col-md-4">
         <div class="card border-0 shadow-sm text-center py-3
             {{ 'bg-danger text-white' if net_gst > 0 else 'bg-success text-white' if net_gst < 0 else '' }}">
-            <div class="small">Net GST {{ '(Payable)' if net_gst > 0 else '(Refundable)' if net_gst < 0 else '' }}</div>
+            <div class="small">Net Tax {{ '(Payable)' if net_gst > 0 else '(Refundable)' if net_gst < 0 else '' }}</div>
             <div class="fs-3 fw-bold">{{ net_gst | fmt_num }}</div>
         </div>
     </div>

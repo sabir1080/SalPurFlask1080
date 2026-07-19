@@ -78,7 +78,7 @@
                                     </select>
                                 </td>
                                 <td><input type="number" step="0.01" min="0" class="form-control form-control-sm" name="discount_value[]" value="0"></td>
-                                <td><input type="number" step="0.01" min="0" class="form-control form-control-sm" name="tax_percent[]" value="0"></td>
+                                <td><input type="number" step="0.01" min="0" class="form-control form-control-sm" name="tax_percent[]" value="{{ '%.2f' | format(default_tax_rate) }}"></td>
                                 <td></td>
                             </tr>
                         </tbody>
@@ -140,11 +140,16 @@
 const ITEMS_DATA = [
     {% for item in items %}{"id":{{ item.id }},"price":{{ item.sale_price or 0 }}},{% endfor %}
 ];
+const DEFAULT_TAX_RATE = {{ '%.2f' | format(default_tax_rate) }};
 function addRow() {
     const tbody = document.getElementById('itemBody');
     const first = tbody.querySelector('tr');
     const clone = first.cloneNode(true);
-    clone.querySelectorAll('input').forEach(i => { if(i.name!='discount_value[]'&&i.name!='tax_percent[]') i.value=''; else i.value='0'; });
+    clone.querySelectorAll('input').forEach(i => {
+        if (i.name == 'discount_value[]') i.value = '0';
+        else if (i.name == 'tax_percent[]') i.value = DEFAULT_TAX_RATE;
+        else i.value = '';
+    });
     if(clone.querySelector('input[name="quantity[]"]')) clone.querySelector('input[name="quantity[]"]').value='1';
     clone.querySelectorAll('select').forEach(s => s.selectedIndex = 0);
     const last = clone.querySelector('td:last-child');

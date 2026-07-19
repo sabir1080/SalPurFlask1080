@@ -232,6 +232,13 @@ def is_signup_allowed():
 def is_demo_mode():
     return os.getenv("DEMO_MODE", "false").lower() in ("1", "true", "yes")
 
+def get_standard_tax_rate():
+    """The single rate an admin sets on /tax_codes for their own country (17% Pakistan
+    sales tax, 20% UK VAT, 8.5% a US state's sales tax, ...). Used only as a default on
+    new document lines — each line can still be overridden or zeroed independently."""
+    code = TaxCode.query.filter_by(name="Standard").first()
+    return code.total_rate if code else 0.0
+
 # Utility Functions
 def generate_verification_token(email):
     serializer = URLSafeTimedSerializer(app.config["SECRET_KEY"])
@@ -3668,6 +3675,7 @@ def inject_form_defaults():
         "app_timezone": app.config["APP_TIMEZONE"],
         "designed_developed": app.config["DESIGNED_DEVELOPED"],
         "demo_mode": is_demo_mode(),
+        "default_tax_rate": get_standard_tax_rate(),
         "purchase_total": purchase_total,
         "sale_total": sale_total,
         "get_purchase_paid": get_purchase_paid,
