@@ -51,6 +51,7 @@
                         <thead class="table-light">
                             <tr>
                                 <th style="min-width:200px">Item</th>
+                                <th style="width:100px">Unit</th>
                                 <th style="width:80px">Qty</th>
                                 <th style="width:120px">Sale Price</th>
                                 <th style="width:100px">Disc Type</th>
@@ -69,6 +70,7 @@
                                         {% endfor %}
                                     </select>
                                 </td>
+                                <td><select class="form-select form-select-sm unit-select" name="unit_id[]"></select></td>
                                 <td><input type="number" min="1" class="form-control form-control-sm" name="quantity[]" value="1" required></td>
                                 <td><input type="number" step="0.01" min="0" class="form-control form-control-sm" name="sale_price[]" required></td>
                                 <td>
@@ -141,6 +143,24 @@ const ITEMS_DATA = [
     {% for item in items %}{"id":{{ item.id }},"price":{{ item.sale_price or 0 }}},{% endfor %}
 ];
 const DEFAULT_TAX_RATE = {{ '%.2f' | format(default_tax_rate) }};
+const ITEM_UNITS = {{ item_units_for_js(items) | tojson }};
+
+function populateUnits(row, itemId) {
+    const unitSel = row.querySelector('.unit-select');
+    const units = ITEM_UNITS[itemId] || [];
+    unitSel.innerHTML = units.map(u =>
+        `<option value="${u.key}" data-factor="${u.factor}" data-price="${u.sale_price ?? ''}">${u.name}</option>`
+    ).join('');
+    applyUnitPrice(unitSel);
+}
+
+function applyUnitPrice(unitSel) {
+    const opt = unitSel.options[unitSel.selectedIndex];
+    const row = unitSel.closest('tr');
+    const priceInput = row.querySelector('input[name="sale_price[]"]');
+    if (opt && opt.dataset.price) priceInput.value = opt.dataset.price;
+}
+
 function addRow() {
     const tbody = document.getElementById('itemBody');
     const first = tbody.querySelector('tr');
@@ -152,16 +172,18 @@ function addRow() {
     });
     if(clone.querySelector('input[name="quantity[]"]')) clone.querySelector('input[name="quantity[]"]').value='1';
     clone.querySelectorAll('select').forEach(s => s.selectedIndex = 0);
+    clone.querySelector('.unit-select').innerHTML = '';
     const last = clone.querySelector('td:last-child');
     last.innerHTML = '<button type="button" class="btn btn-danger btn-sm" onclick="this.closest(\'tr\').remove()">×</button>';
     tbody.appendChild(clone);
 }
 document.getElementById('itemBody').addEventListener('change', function(e) {
     if (e.target.name === 'item_id[]') {
-        const price = e.target.selectedOptions[0]?.dataset.price || '';
         const row = e.target.closest('tr');
-        const priceInput = row.querySelector('input[name="sale_price[]"]');
-        if (price && priceInput && !priceInput.value) priceInput.value = price;
+        populateUnits(row, e.target.value);
+    }
+    if (e.target.name === 'unit_id[]') {
+        applyUnitPrice(e.target);
     }
 });
 </script>

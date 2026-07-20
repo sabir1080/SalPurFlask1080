@@ -62,7 +62,7 @@
     </tr>
     <tr>
       <td></td>
-      <td class="r muted">{{ si.quantity }} x {{ si.sale_price | fmt_num }}</td>
+      <td class="r muted">{{ si.quantity }} {{ si.display_unit }} x {{ si.sale_price | fmt_num }}</td>
       <td class="r">{{ si.amount | fmt_num }}</td>
     </tr>
     {% endfor %}

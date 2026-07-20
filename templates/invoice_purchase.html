@@ -174,7 +174,7 @@
                     <td>{{ loop.index }}</td>
                     <td class="fw-semibold wrap">{{ pi.item.name }}</td>
                     <td class="text-muted wrap">{{ pi.item.id_category.name if pi.item.id_category else '—' }}</td>
-                    <td class="text-end text-nowrap">{{ "{:,}".format(pi.quantity) }}<small class="text-muted d-block">{{ pi.item.unit or 'Pcs' }}</small></td>
+                    <td class="text-end text-nowrap">{{ "{:,}".format(pi.quantity) }}<small class="text-muted d-block">{{ pi.display_unit }}</small></td>
                     <td class="text-end">{{ pi.purchase_price | fmt_num }}</td>
                     <td class="text-end text-danger">
                         {% if row_disc > 0 %}
@@ -246,7 +246,7 @@
                 {% for r in purchase.returns %}
                 <tr>
                     <td>{{ r.date.strftime('%d %b %Y') }}</td>
-                    <td class="text-end">{{ r.quantity }}</td>
+                    <td class="text-end">{{ r.quantity }} {{ r.unit_name or (r.item.unit if r.item else '') }}</td>
                     <td class="text-end">{{ r.return_price | fmt_num }}</td>
                     <td class="text-end">{{ (r.quantity * r.return_price) | fmt_num }}</td>
                     <td>{{ r.reason or '—' }}</td>

@@ -45,7 +45,7 @@
                                 <option value="{{ row.pi.id }}"
                                     data-price="{{ row.pi.purchase_price }}"
                                     data-remaining="{{ row.remaining }}">
-                                    #PUR-{{ row.pi.purchase_header.id }} — {{ row.pi.purchase_header.id_supplier.name }} — {{ row.pi.item.name }} (Rem: {{ row.remaining }})
+                                    #PUR-{{ row.pi.purchase_header.id }} — {{ row.pi.purchase_header.id_supplier.name }} — {{ row.pi.item.name }} (Rem: {{ row.remaining }} {{ row.pi.display_unit }})
                                 </option>
                                 {% endfor %}
                             </select>
@@ -90,7 +90,7 @@
             <td><a href="{{ url_for('purchase_invoice', id=r.purchase_id) }}" target="_blank">#{{ r.purchase_id }}</a></td>
             <td>{{ r.supplier.name }}</td>
             <td>{{ r.item.name }}</td>
-            <td class="text-end">{{ r.quantity }}</td>
+            <td class="text-end">{{ r.quantity }} {{ r.unit_name or (r.item.unit if r.item else '') }}</td>
             <td class="text-end">{{ r.return_price | fmt_num }}</td>
             <td class="text-end">{{ purchase_return_total(r) | fmt_num }}</td>
             <td>{{ r.date.strftime('%Y-%m-%d') }}</td>
@@ -108,7 +108,7 @@
 <div class="pagination">{{ pagination.links }}</div>
 
 <script>
-const piOptions = `{% for row in items_available %}<option value="{{ row.pi.id }}" data-price="{{ row.pi.purchase_price }}" data-remaining="{{ row.remaining }}">#PUR-{{ row.pi.purchase_header.id }} — {{ row.pi.purchase_header.id_supplier.name }} — {{ row.pi.item.name }} (Rem: {{ row.remaining }})</option>{% endfor %}`;
+const piOptions = `{% for row in items_available %}<option value="{{ row.pi.id }}" data-price="{{ row.pi.purchase_price }}" data-remaining="{{ row.remaining }}">#PUR-{{ row.pi.purchase_header.id }} — {{ row.pi.purchase_header.id_supplier.name }} — {{ row.pi.item.name }} (Rem: {{ row.remaining }} {{ row.pi.display_unit }})</option>{% endfor %}`;
 
 function fillRow(sel) {
     const opt = sel.options[sel.selectedIndex];

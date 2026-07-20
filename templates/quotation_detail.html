@@ -104,13 +104,13 @@
             </thead>
             <tbody>
                 {% for qi in q.line_items %}
-                {% set gross = qi.quantity * qi.sale_price %}
+                {% set gross = (qi.quantity * qi.sale_price) | float %}
                 {% set net = q_item_net(qi) %}
-                {% set disc = gross - net + (gross * qi.tax_percent / 100) %}
+                {% set disc = gross - net + (gross * (qi.tax_percent | float) / 100) %}
                 <tr>
                     <td>{{ loop.index }}</td>
                     <td>{{ qi.item.name }}</td>
-                    <td class="text-end">{{ qi.quantity }}</td>
+                    <td class="text-end">{{ qi.quantity }} {{ qi.display_unit }}</td>
                     <td class="text-end">{{ qi.sale_price | fmt_num }}</td>
                     <td class="text-end">{{ gross | fmt_num }}</td>
                     <td class="text-end text-danger">

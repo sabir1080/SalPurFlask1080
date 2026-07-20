@@ -102,7 +102,7 @@
                 <tr>
                     <td>{{ loop.index }}</td>
                     <td>{{ poi.item.name }}</td>
-                    <td class="text-end">{{ poi.quantity }}</td>
+                    <td class="text-end">{{ poi.quantity }} {{ poi.display_unit }}</td>
                     <td class="text-end">{{ poi.purchase_price | fmt_num }}</td>
                     <td class="text-end fw-semibold">{{ row_total | fmt_num }}</td>
                 </tr>

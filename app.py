@@ -441,6 +441,103 @@ class Item(db.Model):
             return (Decimal(str(self.inventory_value)) / Decimal(str(self.stock))).quantize(MONEY)
         return Decimal(str(self.purchase_price or 0)).quantize(MONEY)
 
+class ItemUnit(db.Model):
+    """An alternate unit an item can be bought or sold in, besides its base unit
+    (Item.unit, where Item.stock is always tracked — a Box of something is not a
+    different item, it is the same stock counted differently at the counter).
+
+    Example: a medicine's base unit is Tablet; it might also be bought in Box
+    (factor 100) and sold in Strip (factor 10). `factor` is how many base units
+    make one of this unit. Whole numbers only — Item.stock is an integer count,
+    so a fractional factor would leave fractional pieces on the shelf.
+
+    Purchase/sale/quotation/PO lines snapshot the name and factor they used
+    (see PurchaseItem.unit_name/unit_factor) rather than pointing at this row,
+    so renaming or deleting a unit here never rewrites a past invoice."""
+    __tablename__ = "item_unit"
+    id              = db.Column(db.Integer, primary_key=True)
+    item_id         = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
+    name            = db.Column(db.String(20), nullable=False)
+    factor          = db.Column(db.Integer, nullable=False)   # base units per one of this unit
+    purchase_price  = db.Column(db.Numeric(14, 4), nullable=True)
+    sale_price      = db.Column(db.Numeric(14, 4), nullable=True)
+    item            = db.relationship("Item", backref=db.backref(
+        "alt_units", cascade="all,delete-orphan", order_by="ItemUnit.id"))
+
+def item_unit_choices(item):
+    """Every unit this item can be transacted in: the base unit first (key ""),
+    then each alternate unit (key = its ItemUnit id, as a string)."""
+    choices = [{"key": "", "name": item.unit or "Pcs", "factor": 1,
+                "purchase_price": item.purchase_price, "sale_price": item.sale_price}]
+    for u in item.alt_units:
+        choices.append({"key": str(u.id), "name": u.name, "factor": u.factor,
+                         "purchase_price": u.purchase_price, "sale_price": u.sale_price})
+    return choices
+
+def item_units_for_js(items):
+    """{item_id: [{key, name, factor, purchase_price, sale_price}, ...]} with plain
+    floats, ready to embed in a template via |tojson — Decimal renders as a JSON
+    string, not a number, which is worth avoiding in hand-written cart/form JS."""
+    return {
+        it.id: [{"key": c["key"], "name": c["name"], "factor": c["factor"],
+                 "purchase_price": float(c["purchase_price"]) if c["purchase_price"] is not None else None,
+                 "sale_price": float(c["sale_price"]) if c["sale_price"] is not None else None}
+                for c in item_unit_choices(it)]
+        for it in items
+    }
+
+def resolve_item_unit(item, unit_key):
+    """Resolve a submitted unit key to (unit_name, factor).
+
+    unit_name is None for the base unit — deliberately not item.unit's current
+    value, so that if the item's base unit is ever renamed, old lines still read
+    back as 'whatever the base unit was called then' via the fallback in display
+    code, not silently relabelled. factor is always a positive int."""
+    unit_key = (unit_key or "").strip()
+    if not unit_key:
+        return None, 1
+    u = ItemUnit.query.filter_by(id=int(unit_key), item_id=item.id).first() if unit_key.isdigit() else None
+    if not u:
+        return None, 1
+    return u.name, u.factor
+
+def line_base_qty(line_item):
+    """A transaction line's quantity converted to the item's base unit — the only
+    unit Item.stock is ever tracked in. unit_factor is 1 for base-unit lines and
+    for every line written before multi-unit existed."""
+    return int(line_item.quantity) * int(line_item.unit_factor or 1)
+
+def save_item_units(item):
+    """Replace an item's alternate units from the submitted alt_unit_* form arrays.
+    Deletes and recreates rather than diffing — safe because purchase/sale/etc. lines
+    snapshot the unit name and factor they used, not a reference to this row, so
+    renaming or removing a unit here never touches past transactions.
+
+    Returns an error string for the first invalid row, or None."""
+    names   = request.form.getlist("alt_unit_name[]")
+    factors = request.form.getlist("alt_unit_factor[]")
+    pprices = request.form.getlist("alt_unit_purchase_price[]")
+    sprices = request.form.getlist("alt_unit_sale_price[]")
+    rows = []
+    for i, name in enumerate(names):
+        name = name.strip()
+        factor_s = factors[i].strip() if i < len(factors) else ""
+        if not name and not factor_s:
+            continue
+        if not name or not factor_s:
+            return "Each alternate unit needs both a name and a factor."
+        if not factor_s.isdigit() or int(factor_s) < 1:
+            return f"'{name}': the factor must be a whole number of at least 1."
+        pp = pprices[i].strip() if i < len(pprices) else ""
+        sp = sprices[i].strip() if i < len(sprices) else ""
+        rows.append((name, int(factor_s),
+                     float(pp) if pp else None, float(sp) if sp else None))
+    ItemUnit.query.filter_by(item_id=item.id).delete()
+    for name, factor, pp, sp in rows:
+        db.session.add(ItemUnit(item_id=item.id, name=name, factor=factor,
+                                purchase_price=pp, sale_price=sp))
+    return None
+
 class Purchase(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
     supplier_id         = db.Column(db.Integer, db.ForeignKey("supplier.id"), nullable=False)
@@ -493,7 +590,16 @@ class PurchaseItem(db.Model):
     tax_percent     = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     tax_amount      = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     amount          = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    # The unit this line was bought in (e.g. "Box"), and how many of the item's
+    # base unit that equals. NULL/1 means the base unit itself — every line
+    # written before multi-unit existed reads back that way automatically.
+    unit_name       = db.Column(db.String(20), nullable=True)
+    unit_factor     = db.Column(db.Integer, nullable=False, default=1)
     item            = db.relationship("Item", foreign_keys=[item_id])
+
+    @property
+    def display_unit(self):
+        return self.unit_name or (self.item.unit if self.item else "Pcs")
 
 class SaleItem(db.Model):
     __tablename__   = "sale_item"
@@ -509,7 +615,14 @@ class SaleItem(db.Model):
     tax_percent     = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     tax_amount      = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     amount          = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    # See PurchaseItem.unit_name/unit_factor.
+    unit_name       = db.Column(db.String(20), nullable=True)
+    unit_factor     = db.Column(db.Integer, nullable=False, default=1)
     item            = db.relationship("Item", foreign_keys=[item_id])
+
+    @property
+    def display_unit(self):
+        return self.unit_name or (self.item.unit if self.item else "Pcs")
 
 PAYMENT_METHODS = ("Cash", "Bank", "Cheque", "Online")
 ITEM_UNITS = ("Pcs", "Dozen", "Meter", "Kg", "Gram", "Liter", "Box", "Carton", "Bag", "Yard", "Foot", "Set", "Pair", "Roll", "Sheet", "Pack")
@@ -561,6 +674,11 @@ class PurchaseReturn(db.Model):
     cost_removed = db.Column(db.Numeric(14, 4), nullable=False, default=0)
     is_reversed  = db.Column(db.Boolean, nullable=False, default=False)
     reversed_at  = db.Column(db.DateTime, nullable=True)
+    # Copied from the PurchaseItem line being returned against, at return time —
+    # a return is always in that line's own unit, never chosen separately. See
+    # PurchaseItem.unit_name/unit_factor.
+    unit_name    = db.Column(db.String(20), nullable=True)
+    unit_factor  = db.Column(db.Integer, nullable=False, default=1)
     supplier     = db.relationship("Supplier", backref="purchase_returns", lazy=True)
     item         = db.relationship("Item", backref="purchase_returns", lazy=True)
 
@@ -578,6 +696,9 @@ class SaleReturn(db.Model):
     cost_restored = db.Column(db.Numeric(14, 4), nullable=False, default=0)
     is_reversed  = db.Column(db.Boolean, nullable=False, default=False)
     reversed_at  = db.Column(db.DateTime, nullable=True)
+    # Copied from the SaleItem line being returned against. See PurchaseReturn.unit_name.
+    unit_name    = db.Column(db.String(20), nullable=True)
+    unit_factor  = db.Column(db.Integer, nullable=False, default=1)
     customer     = db.relationship("Customer", backref="sale_returns", lazy=True)
     item         = db.relationship("Item", backref="sale_returns", lazy=True)
 
@@ -1422,7 +1543,8 @@ def _doc_lines(doc, price_attr):
 def _cogs_of(sale):
     rows = sale.line_items or []
     if rows:
-        return sum(Decimal(str(r.quantity)) * Decimal(str(r.cost_price or 0)) for r in rows).quantize(MONEY)
+        # cost_price is per base unit, so the total needs the base qty.
+        return sum(Decimal(str(line_base_qty(r))) * Decimal(str(r.cost_price or 0)) for r in rows).quantize(MONEY)
     return (Decimal(str(sale.quantity or 0)) * Decimal(str(sale.cost_price or 0))).quantize(MONEY)
 
 def post_purchase(pur, created_by_id=None):
@@ -1728,7 +1850,8 @@ def _unwind_stock_and_subledger(kind, doc):
             if item:
                 # Remove exactly the cost this line added — its taxable amount —
                 # not today's average, which later purchases may have moved.
-                item_remove_stock(item, pi.quantity,
+                # Stock moves in the item's base unit, however the line was priced.
+                item_remove_stock(item, line_base_qty(pi),
                                   cost_total=Decimal(str(pi.amount)) - Decimal(str(pi.tax_amount or 0)))
         sup_id = remove_supplier_ledger_entry("purchase", doc.id)
         return ("supplier", sup_id)
@@ -1737,9 +1860,11 @@ def _unwind_stock_and_subledger(kind, doc):
         for si in doc.line_items:
             item = db.session.get(Item, si.item_id)
             if item:
-                # Goods come back in at the cost they left at.
-                item_add_stock(item, si.quantity,
-                               Decimal(str(si.cost_price or 0)) * Decimal(str(si.quantity)))
+                # Goods come back in at the cost they left at. cost_price is per base
+                # unit (it is a snapshot of avg_cost), so the total needs the base qty.
+                base_qty = line_base_qty(si)
+                item_add_stock(item, base_qty,
+                               Decimal(str(si.cost_price or 0)) * Decimal(str(base_qty)))
         cust_id = remove_customer_ledger_entry("sale", doc.id)
         return ("customer", cust_id)
 
@@ -1755,13 +1880,13 @@ def _unwind_stock_and_subledger(kind, doc):
     if kind == "purchase_return":
         item = db.session.get(Item, doc.item_id)
         if item:                                   # goods had left; bring them back
-            item_add_stock(item, doc.quantity, Decimal(str(doc.cost_removed or 0)))
+            item_add_stock(item, line_base_qty(doc), Decimal(str(doc.cost_removed or 0)))
         return ("supplier", remove_supplier_ledger_entry("purchase_return", doc.id))
 
     if kind == "sale_return":
         item = db.session.get(Item, doc.item_id)
         if item:                                   # goods had come back; send them out
-            item_remove_stock(item, doc.quantity, cost_total=Decimal(str(doc.cost_restored or 0)))
+            item_remove_stock(item, line_base_qty(doc), cost_total=Decimal(str(doc.cost_restored or 0)))
         return ("customer", remove_customer_ledger_entry("sale_return", doc.id))
 
     if kind == "stock_adjustment":
@@ -1872,7 +1997,7 @@ def sale_line_cost(sale_return):
     si = SaleItem.query.filter_by(sale_id=sale_return.sale_id,
                                   item_id=sale_return.item_id).first()
     unit = Decimal(str(si.cost_price)) if si else Decimal(str(sale_return.item.avg_cost if sale_return.item else 0))
-    return (unit * Decimal(str(sale_return.quantity))).quantize(MONEY)
+    return (unit * Decimal(str(line_base_qty(sale_return)))).quantize(MONEY)
 
 # ── Opening balances ──────────────────────────────────────────────────────────
 # What the business already owned and owed before it started using the system.
@@ -2322,7 +2447,14 @@ class PurchaseOrderItem(db.Model):
     item_id         = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
     quantity        = db.Column(db.Integer, nullable=False)
     purchase_price  = db.Column(db.Numeric(14, 4), nullable=False)
+    # See PurchaseItem.unit_name/unit_factor. Carried onto the Purchase this PO converts to.
+    unit_name       = db.Column(db.String(20), nullable=True)
+    unit_factor     = db.Column(db.Integer, nullable=False, default=1)
     item            = db.relationship("Item", foreign_keys=[item_id])
+
+    @property
+    def display_unit(self):
+        return self.unit_name or (self.item.unit if self.item else "Pcs")
 
 # ── Quotation ─────────────────────────────────────────────────────────────────
 QUOTATION_STATUSES = ("Draft", "Sent", "Accepted", "Rejected", "Converted")
@@ -2351,7 +2483,14 @@ class QuotationItem(db.Model):
     discount_type   = db.Column(db.String(10), nullable=False, default="percent")
     discount_value  = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     tax_percent     = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    # See PurchaseItem.unit_name/unit_factor. Carried onto the Sale this quotation converts to.
+    unit_name       = db.Column(db.String(20), nullable=True)
+    unit_factor     = db.Column(db.Integer, nullable=False, default=1)
     item            = db.relationship("Item", foreign_keys=[item_id])
+
+    @property
+    def display_unit(self):
+        return self.unit_name or (self.item.unit if self.item else "Pcs")
 
 # ── Delivery Challan ──────────────────────────────────────────────────────────
 CHALLAN_STATUSES = ("Pending", "Dispatched", "Delivered", "Cancelled")
@@ -3047,6 +3186,19 @@ def migrate_database():
                       + COALESCE((SELECT SUM(pr.quantity) FROM purchase_return pr WHERE pr.item_id = item.id), 0)
                       - COALESCE((SELECT SUM(sr.quantity) FROM sale_return sr WHERE sr.item_id = item.id), 0)
                 """))
+    # Multi-unit: the unit a line was transacted in, and its factor into the item's
+    # base unit. Nullable/default-1, so every existing row reads back as "the base
+    # unit, factor 1" — exactly what it always implicitly was.
+    for tbl in ("purchase_item", "sale_item", "quotation_item", "purchase_order_item",
+                "purchase_return", "sale_return"):
+        if tbl in inspector.get_table_names():
+            cols = {col["name"] for col in inspector.get_columns(tbl)}
+            with db.engine.begin() as conn:
+                if "unit_name" not in cols:
+                    conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN unit_name VARCHAR(20)"))
+                if "unit_factor" not in cols:
+                    conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN unit_factor INTEGER DEFAULT 1"))
+
     for table, column in (("supplier", "opening_balance"), ("customer", "opening_balance")):
         if table in inspector.get_table_names():
             cols = {col["name"] for col in inspector.get_columns(table)}
@@ -3676,6 +3828,7 @@ def inject_form_defaults():
         "designed_developed": app.config["DESIGNED_DEVELOPED"],
         "demo_mode": is_demo_mode(),
         "default_tax_rate": get_standard_tax_rate(),
+        "item_units_for_js": item_units_for_js,
         "purchase_total": purchase_total,
         "sale_total": sale_total,
         "get_purchase_paid": get_purchase_paid,
@@ -3952,7 +4105,7 @@ def dashboard():
     sales = Sale.query.order_by(Sale.date.desc()).limit(5).all()
     total_purchase_cost = db.session.query(func.sum(PurchaseItem.amount)).scalar() or 0.0
     total_sale_revenue = db.session.query(func.sum(SaleItem.amount)).scalar() or 0.0
-    _profit_expr = SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.cost_price
+    _profit_expr = SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.unit_factor * SaleItem.cost_price
     total_gross_profit = db.session.query(func.sum(_profit_expr)).scalar() or 0.0
     total_purchase_returns = db.session.query(func.sum(PurchaseReturn.quantity * PurchaseReturn.return_price)).scalar() or 0.0
     total_sale_returns = db.session.query(func.sum(SaleReturn.quantity * SaleReturn.return_price)).scalar() or 0.0
@@ -4358,6 +4511,13 @@ def item():
             item.inventory_value = (Decimal(str(item.opening_stock or 0))
                                     * Decimal(str(item.purchase_price or 0))).quantize(MONEY)
             db.session.flush()
+            unit_error = save_item_units(item)
+            if unit_error:
+                db.session.rollback()
+                flash(unit_error, "danger")
+                return render_template("item.html", items=items, categories=categories,
+                                       pagination=pagination, search=search,
+                                       category_filter=category_filter)
             post_item_opening(item)
             db.session.commit()
             record_audit("create", "Item", item.id, f"Item '{item.name}' added")
@@ -4422,6 +4582,11 @@ def edit_item(id):
             new_opening_value = (Decimal(str(new_os)) * Decimal(str(item.purchase_price or 0))).quantize(MONEY)
             item.inventory_value = (Decimal(str(item.inventory_value or 0))
                                     - old_opening_value + new_opening_value)
+            unit_error = save_item_units(item)
+            if unit_error:
+                db.session.rollback()
+                flash(unit_error, "danger")
+                return render_template("edit_item.html", item=item, categories=categories)
             db.session.flush()
             post_item_opening(item)          # reverses the old opening entry and re-posts
             db.session.commit()
@@ -4456,34 +4621,43 @@ def item_ledger(id):
     purchase_returns = PurchaseReturn.query.filter_by(item_id=id).all()
     sale_returns     = SaleReturn.query.filter_by(item_id=id).all()
 
+    # stock_in/out are in the item's base unit — the only unit item.stock (and this
+    # ledger's running balance) is ever tracked in, whatever unit the line was actually
+    # bought/sold in. Rate follows it down to a per-base-unit price so it still lines
+    # up with stock_in/out (Rate × qty ≈ Value); Value itself is a total and needs no
+    # conversion either way.
     entries = []
     for pi in purchase_items:
+        factor = pi.unit_factor or 1
         entries.append({
             "date": pi.purchase_header.date, "type": "Purchase", "badge": "success",
             "ref": f"PO #{pi.purchase_header.id}", "party": pi.purchase_header.id_supplier.name,
-            "stock_in": pi.quantity, "stock_out": 0,
-            "rate": pi.purchase_price, "value": purchase_item_total(pi),
+            "stock_in": line_base_qty(pi), "stock_out": 0,
+            "rate": pi.purchase_price / factor, "value": purchase_item_total(pi),
         })
     for si in sale_items:
+        factor = si.unit_factor or 1
         entries.append({
             "date": si.sale_header.date, "type": "Sale", "badge": "primary",
             "ref": f"SO #{si.sale_header.id}", "party": si.sale_header.id_customer.name,
-            "stock_in": 0, "stock_out": si.quantity,
-            "rate": si.sale_price, "value": sale_item_total(si),
+            "stock_in": 0, "stock_out": line_base_qty(si),
+            "rate": si.sale_price / factor, "value": sale_item_total(si),
         })
     for pr in purchase_returns:
+        factor = pr.unit_factor or 1
         entries.append({
             "date": pr.date, "type": "Purchase Return", "badge": "warning",
             "ref": f"PR #{pr.id}", "party": pr.supplier.name,
-            "stock_in": 0, "stock_out": pr.quantity,
-            "rate": pr.return_price, "value": round(pr.quantity * pr.return_price, 2),
+            "stock_in": 0, "stock_out": line_base_qty(pr),
+            "rate": pr.return_price / factor, "value": round(pr.quantity * pr.return_price, 2),
         })
     for sr in sale_returns:
+        factor = sr.unit_factor or 1
         entries.append({
             "date": sr.date, "type": "Sale Return", "badge": "secondary",
             "ref": f"SR #{sr.id}", "party": sr.customer.name,
-            "stock_in": sr.quantity, "stock_out": 0,
-            "rate": sr.return_price, "value": round(sr.quantity * sr.return_price, 2),
+            "stock_in": line_base_qty(sr), "stock_out": 0,
+            "rate": sr.return_price / factor, "value": round(sr.quantity * sr.return_price, 2),
         })
 
     adjustments = StockAdjustment.query.filter_by(item_id=id).all()
@@ -4644,6 +4818,7 @@ def purchase():
         disc_types   = request.form.getlist("discount_type[]")
         disc_values  = request.form.getlist("discount_value[]")
         tax_pcts     = request.form.getlist("tax_percent[]")
+        unit_ids     = request.form.getlist("unit_id[]")
 
         rows = []
         for i, (iid, qty, price) in enumerate(zip(item_ids, quantities, prices)):
@@ -4653,6 +4828,7 @@ def purchase():
                     disc_types[i] if i < len(disc_types) else "percent",
                     disc_values[i] if i < len(disc_values) else "0",
                     tax_pcts[i] if i < len(tax_pcts) else "0",
+                    unit_ids[i] if i < len(unit_ids) else "",
                 ))
 
         row_error = validate_line_rows(rows) if rows else None
@@ -4677,7 +4853,7 @@ def purchase():
                 )
                 db.session.add(pur)
                 db.session.flush()
-                for iid, qty, price, d_type, d_val, tax in rows:
+                for iid, qty, price, d_type, d_val, tax, unit_key in rows:
                     item_obj = get_item_locked(int(iid)) or abort(404)   # lock: no lost stock updates
                     qty_i  = int(qty)
                     price_f = float(price)
@@ -4685,16 +4861,19 @@ def purchase():
                     tax_f   = float(tax or 0)
                     gross   = qty_i * price_f
                     disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
+                    unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
                     pi = PurchaseItem(
                         purchase_id=pur.id, item_id=int(iid),
                         quantity=qty_i, purchase_price=price_f,
                         discount_type=d_type or "percent", discount_value=d_val_f,
                         discount_amount=disc_amt, tax_percent=tax_f,
                         tax_amount=tax_amt, amount=net,
+                        unit_name=unit_name, unit_factor=unit_factor,
                     )
                     db.session.add(pi)
                     # Tax is recoverable, so it is not part of what the goods cost.
-                    item_add_stock(item_obj, qty_i, net - tax_amt)
+                    # Stock moves in the item's base unit, however this line was priced.
+                    item_add_stock(item_obj, qty_i * unit_factor, net - tax_amt)
                 db.session.flush()
                 db.session.refresh(pur)
                 pur.invoice_no = allocate_document_number("purchase", pur.date)
@@ -4734,6 +4913,7 @@ def edit_purchase(id):
         disc_types  = request.form.getlist("discount_type[]")
         disc_values = request.form.getlist("discount_value[]")
         tax_pcts    = request.form.getlist("tax_percent[]")
+        unit_ids    = request.form.getlist("unit_id[]")
 
         rows = []
         for i, (iid, qty, price) in enumerate(zip(item_ids, quantities, prices)):
@@ -4743,6 +4923,7 @@ def edit_purchase(id):
                     disc_types[i] if i < len(disc_types) else "percent",
                     disc_values[i] if i < len(disc_values) else "0",
                     tax_pcts[i] if i < len(tax_pcts) else "0",
+                    unit_ids[i] if i < len(unit_ids) else "",
                 ))
 
         row_error = validate_line_rows(rows) if rows else None
@@ -4760,7 +4941,7 @@ def edit_purchase(id):
                 for pi in pur.line_items:
                     old_item = db.session.get(Item, pi.item_id)
                     if old_item:
-                        old_item.stock -= pi.quantity
+                        old_item.stock -= line_base_qty(pi)
                         touched_items[old_item.id] = old_item
                 # Delete old line items
                 PurchaseItem.query.filter_by(purchase_id=pur.id).delete()
@@ -4775,21 +4956,23 @@ def edit_purchase(id):
                 pur.date           = datetime.strptime(date_str, "%Y-%m-%d")
                 pur.notes          = notes or None
                 # Create new line items
-                for iid, qty, price, d_type, d_val, tax in rows:
+                for iid, qty, price, d_type, d_val, tax, unit_key in rows:
                     item_obj = db.session.get(Item, int(iid)) or abort(404)
                     qty_i = int(qty); price_f = float(price)
                     d_val_f = float(d_val or 0); tax_f = float(tax or 0)
                     gross = qty_i * price_f
                     disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
+                    unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
                     pi = PurchaseItem(
                         purchase_id=pur.id, item_id=int(iid),
                         quantity=qty_i, purchase_price=price_f,
                         discount_type=d_type or "percent", discount_value=d_val_f,
                         discount_amount=disc_amt, tax_percent=tax_f,
                         tax_amount=tax_amt, amount=net,
+                        unit_name=unit_name, unit_factor=unit_factor,
                     )
                     db.session.add(pi)
-                    item_add_stock(item_obj, qty_i, net - tax_amt)
+                    item_add_stock(item_obj, qty_i * unit_factor, net - tax_amt)
                     touched_items[item_obj.id] = item_obj
 
                 negative_items = [it for it in touched_items.values() if it.stock < 0]
@@ -4832,7 +5015,7 @@ def delete_purchase(id):
     for pi in pur.line_items:
         item_obj = db.session.get(Item, pi.item_id)
         if item_obj:
-            item_obj.stock -= pi.quantity
+            item_obj.stock -= line_base_qty(pi)
     audit_summary = f"Purchase #{pur.id} ({pur.id_supplier.name if pur.id_supplier else 'supplier'}) deleted"
     supplier_id = remove_supplier_ledger_entry("purchase", pur.id)
     db.session.delete(pur)
@@ -4867,6 +5050,7 @@ def sale():
         disc_types  = request.form.getlist("discount_type[]")
         disc_values = request.form.getlist("discount_value[]")
         tax_pcts    = request.form.getlist("tax_percent[]")
+        unit_ids    = request.form.getlist("unit_id[]")
 
         rows = []
         for i, (iid, qty, price) in enumerate(zip(item_ids, quantities, prices)):
@@ -4876,6 +5060,7 @@ def sale():
                     disc_types[i] if i < len(disc_types) else "percent",
                     disc_values[i] if i < len(disc_values) else "0",
                     tax_pcts[i] if i < len(tax_pcts) else "0",
+                    unit_ids[i] if i < len(unit_ids) else "",
                 ))
 
         row_error = validate_line_rows(rows) if rows else None
@@ -4890,10 +5075,12 @@ def sale():
                 sale_date = datetime.strptime(date_str, "%Y-%m-%d")
                 # Check stock for all items first
                 stock_errors = []
-                for iid, qty, price, *_ in rows:
+                for iid, qty, price, d_type, d_val, tax, unit_key in rows:
                     item_obj = db.session.get(Item, int(iid))
-                    if item_obj and item_obj.stock < int(qty):
-                        stock_errors.append(f"{item_obj.name}: only {item_obj.stock} available")
+                    if item_obj:
+                        _, factor = resolve_item_unit(item_obj, unit_key)
+                        if item_obj.stock < int(qty) * factor:
+                            stock_errors.append(f"{item_obj.name}: only {item_obj.stock} {item_obj.unit} available")
                 if stock_errors:
                     flash("Insufficient stock — " + "; ".join(stock_errors), "danger")
                 else:
@@ -4910,12 +5097,14 @@ def sale():
                     )
                     db.session.add(sal)
                     db.session.flush()
-                    for iid, qty, price, d_type, d_val, tax in rows:
+                    for iid, qty, price, d_type, d_val, tax, unit_key in rows:
                         item_obj = get_item_locked(int(iid)) or abort(404)
                         qty_i = int(qty); price_f = float(price)
+                        unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
+                        base_qty = qty_i * unit_factor
                         # Authoritative check under the row lock — a concurrent sale
                         # may have reduced stock since the pre-check above.
-                        if item_obj.stock < qty_i:
+                        if item_obj.stock < base_qty:
                             db.session.rollback()
                             flash(f"Insufficient stock for {item_obj.name}: only {item_obj.stock} "
                                   "available now (it changed while saving). Please try again.", "danger")
@@ -4925,6 +5114,7 @@ def sale():
                         disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
                         # Cost is the weighted average at the moment of sale, captured
                         # on the line so a later purchase never re-values a past sale.
+                        # avg_cost is per base unit, so the total needs the base qty.
                         unit_cost = item_obj.avg_cost
                         si = SaleItem(
                             sale_id=sal.id, item_id=int(iid),
@@ -4933,9 +5123,10 @@ def sale():
                             discount_type=d_type or "percent", discount_value=d_val_f,
                             discount_amount=disc_amt, tax_percent=tax_f,
                             tax_amount=tax_amt, amount=net,
+                            unit_name=unit_name, unit_factor=unit_factor,
                         )
                         db.session.add(si)
-                        item_remove_stock(item_obj, qty_i, cost_total=unit_cost * Decimal(str(qty_i)))
+                        item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)))
                     db.session.flush()
                     db.session.refresh(sal)
                     sal.invoice_no = allocate_document_number("sale", sal.date)
@@ -5014,6 +5205,9 @@ def pos_lookup():
         "id": it.id, "name": it.name, "barcode": it.barcode or "",
         "price": float(it.sale_price or 0), "stock": it.stock,
         "unit": it.unit or "Pcs",
+        "units": [{"key": u["key"], "name": u["name"], "factor": u["factor"],
+                   "price": float(u["sale_price"] or 0) or float(it.sale_price or 0)}
+                  for u in item_unit_choices(it)],
     } for it in matches]}
 
 @app.route("/pos/checkout", methods=["POST"])
@@ -5067,18 +5261,23 @@ def pos_checkout():
             if qty_i <= 0 or price_f < 0:
                 db.session.rollback()
                 return {"ok": False, "error": f"Bad quantity or price for {item_obj.name}."}, 400
-            if item_obj.stock < qty_i:
+            # The factor is resolved from the item's own unit definitions server-side,
+            # never trusted from the client — a wrong factor would corrupt stock.
+            unit_name, unit_factor = resolve_item_unit(item_obj, str(ln.get("unit_id") or ""))
+            base_qty = qty_i * unit_factor
+            if item_obj.stock < base_qty:
                 db.session.rollback()
                 return {"ok": False,
-                        "error": f"Only {item_obj.stock} × {item_obj.name} in stock."}, 400
+                        "error": f"Only {item_obj.stock} {item_obj.unit} × {item_obj.name} in stock."}, 400
             net = (Decimal(str(qty_i)) * Decimal(str(price_f))).quantize(MONEY)
             total += net
             unit_cost = item_obj.avg_cost
             db.session.add(SaleItem(
                 sale_id=sal.id, item_id=item_obj.id, quantity=qty_i, sale_price=price_f,
                 cost_price=float(unit_cost), discount_type="percent", discount_value=0,
-                discount_amount=0, tax_percent=0, tax_amount=0, amount=net))
-            item_remove_stock(item_obj, qty_i, cost_total=unit_cost * Decimal(str(qty_i)))
+                discount_amount=0, tax_percent=0, tax_amount=0, amount=net,
+                unit_name=unit_name, unit_factor=unit_factor))
+            item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)))
 
         db.session.flush()
         db.session.refresh(sal)
@@ -5212,6 +5411,7 @@ def edit_sale(id):
         disc_types  = request.form.getlist("discount_type[]")
         disc_values = request.form.getlist("discount_value[]")
         tax_pcts    = request.form.getlist("tax_percent[]")
+        unit_ids    = request.form.getlist("unit_id[]")
 
         rows = []
         for i, (iid, qty, price) in enumerate(zip(item_ids, quantities, prices)):
@@ -5221,6 +5421,7 @@ def edit_sale(id):
                     disc_types[i] if i < len(disc_types) else "percent",
                     disc_values[i] if i < len(disc_values) else "0",
                     tax_pcts[i] if i < len(tax_pcts) else "0",
+                    unit_ids[i] if i < len(unit_ids) else "",
                 ))
 
         row_error = validate_line_rows(rows) if rows else None
@@ -5237,19 +5438,21 @@ def edit_sale(id):
                 for si in sal.line_items:
                     old_item = db.session.get(Item, si.item_id)
                     if old_item:
-                        old_item.stock += si.quantity
+                        old_item.stock += line_base_qty(si)
                 # Check new stock
                 stock_errors = []
-                for iid, qty, price, *_ in rows:
+                for iid, qty, price, d_type, d_val, tax, unit_key in rows:
                     item_obj = db.session.get(Item, int(iid))
-                    if item_obj and item_obj.stock < int(qty):
-                        stock_errors.append(f"{item_obj.name}: only {item_obj.stock} available")
+                    if item_obj:
+                        _, factor = resolve_item_unit(item_obj, unit_key)
+                        if item_obj.stock < int(qty) * factor:
+                            stock_errors.append(f"{item_obj.name}: only {item_obj.stock} {item_obj.unit} available")
                 if stock_errors:
                     # Undo stock restoration
                     for si in sal.line_items:
                         old_item = db.session.get(Item, si.item_id)
                         if old_item:
-                            old_item.stock -= si.quantity
+                            old_item.stock -= line_base_qty(si)
                     flash("Insufficient stock — " + "; ".join(stock_errors), "danger")
                 else:
                     # Delete old line items, update header
@@ -5262,12 +5465,14 @@ def edit_sale(id):
                     sal.discount_amount = 0; sal.tax_percent = 0; sal.tax_amount = 0
                     sal.date = datetime.strptime(date_str, "%Y-%m-%d")
                     sal.notes = notes or None
-                    for iid, qty, price, d_type, d_val, tax in rows:
+                    for iid, qty, price, d_type, d_val, tax, unit_key in rows:
                         item_obj = db.session.get(Item, int(iid)) or abort(404)
                         qty_i = int(qty); price_f = float(price)
                         d_val_f = float(d_val or 0); tax_f = float(tax or 0)
                         gross = qty_i * price_f
                         disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
+                        unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
+                        base_qty = qty_i * unit_factor
                         # Cost is the weighted average at the moment of sale, captured
                         # on the line so a later purchase never re-values a past sale.
                         unit_cost = item_obj.avg_cost
@@ -5278,9 +5483,10 @@ def edit_sale(id):
                             discount_type=d_type or "percent", discount_value=d_val_f,
                             discount_amount=disc_amt, tax_percent=tax_f,
                             tax_amount=tax_amt, amount=net,
+                            unit_name=unit_name, unit_factor=unit_factor,
                         )
                         db.session.add(si)
-                        item_remove_stock(item_obj, qty_i, cost_total=unit_cost * Decimal(str(qty_i)))
+                        item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)))
                     db.session.flush()
                     db.session.refresh(sal)
                     if old_customer_id != int(customer_id):
@@ -5311,7 +5517,7 @@ def delete_sale(id):
     for si in sal.line_items:
         item_obj = db.session.get(Item, si.item_id)
         if item_obj:
-            item_obj.stock += si.quantity
+            item_obj.stock += line_base_qty(si)
     audit_summary = f"Sale #{sal.id} ({sal.id_customer.name if sal.id_customer else 'customer'}) deleted"
     customer_id = remove_customer_ledger_entry("sale", sal.id)
     db.session.delete(sal)
@@ -6221,7 +6427,7 @@ def reports():
                 # sale_amt  = gross - discount + tax  (what customer pays = net total) = SaleItem.amount
                 # profit    = gross - discount - cogs (tax excluded from profit)
                 _sale_net  = SaleItem.amount
-                _sale_prof = SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.cost_price
+                _sale_prof = SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.unit_factor * SaleItem.cost_price
                 date_profit_report = (
                     db.session.query(
                         db.func.date(Sale.date).label("sale_date"),
@@ -6300,7 +6506,7 @@ def reports():
                     db.session.query(
                         db.func.sum(_sale_net).label("total_sale_amt"),
                         db.func.sum(_sale_prof).label("total_profit_amt"),
-                        db.func.sum(SaleItem.quantity * SaleItem.cost_price).label("total_purchase_cost"),
+                        db.func.sum(SaleItem.quantity * SaleItem.unit_factor * SaleItem.cost_price).label("total_purchase_cost"),
                     )
                     .select_from(SaleItem)
                     .join(Sale, SaleItem.sale_id == Sale.id)
@@ -6469,7 +6675,7 @@ def export_date_sale_report():
             db.session.query(
                 db.func.date(Sale.date).label("sale_date"),
                 db.func.sum(SaleItem.amount).label("sale_amt"),
-                db.func.sum(SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.cost_price).label("profit_amt"),
+                db.func.sum(SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.unit_factor * SaleItem.cost_price).label("profit_amt"),
             )
             .select_from(SaleItem)
             .join(Sale, SaleItem.sale_id == Sale.id)
@@ -6503,7 +6709,7 @@ def export_item_sale_report():
                 Item.name.label("name"),
                 Category.name.label("category"),
                 db.func.sum(SaleItem.amount).label("sale_amt"),
-                db.func.sum(SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.cost_price).label("profit_amt"),
+                db.func.sum(SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.unit_factor * SaleItem.cost_price).label("profit_amt"),
             )
             .select_from(SaleItem)
             .join(Sale, SaleItem.sale_id == Sale.id)
@@ -6538,7 +6744,7 @@ def export_customer_sale_report():
             db.session.query(
                 Customer.name.label("name"),
                 db.func.sum(SaleItem.amount).label("sale_amt"),
-                db.func.sum(SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.cost_price).label("profit_amt"),
+                db.func.sum(SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.unit_factor * SaleItem.cost_price).label("profit_amt"),
             )
             .select_from(SaleItem)
             .join(Sale, SaleItem.sale_id == Sale.id)
@@ -6572,7 +6778,7 @@ def export_category_sale_report():
             db.session.query(
                 Category.name.label("name"),
                 db.func.sum(SaleItem.amount).label("sale_amt"),
-                db.func.sum(SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.cost_price).label("profit_amt"),
+                db.func.sum(SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.unit_factor * SaleItem.cost_price).label("profit_amt"),
             )
             .select_from(SaleItem)
             .join(Sale, SaleItem.sale_id == Sale.id)
@@ -6846,7 +7052,7 @@ def purchase_return():
                     if int(qty_s) > remaining:
                         errors.append(f"Row {idx} ({pi.item.name}): cannot return {qty_s}, only {remaining} remaining.")
                         continue
-                    if pi.item and pi.item.stock < int(qty_s):
+                    if pi.item and pi.item.stock < int(qty_s) * (pi.unit_factor or 1):
                         errors.append(f"Row {idx} ({pi.item.name}): only {pi.item.stock} in current stock, cannot return {qty_s}.")
                         continue
                     rows.append((pi, int(qty_s), price_f, reason_s.strip() or None))
@@ -6857,6 +7063,7 @@ def purchase_return():
                     for pi, qty, price, reason_val in rows:
                         purchase = pi.purchase_header
                         item = db.session.get(Item, pi.item_id)
+                        # A return is always in the original line's unit, never chosen separately.
                         pr = PurchaseReturn(
                             purchase_id=purchase.id,
                             supplier_id=purchase.supplier_id,
@@ -6865,11 +7072,12 @@ def purchase_return():
                             return_price=price,
                             date=ret_date,
                             reason=reason_val,
+                            unit_name=pi.unit_name, unit_factor=pi.unit_factor or 1,
                         )
                         if item:
                             # Goods leave at what they cost us, not at the agreed
                             # credit note — the difference is a gain or loss.
-                            pr.cost_removed = item_remove_stock(item, qty)
+                            pr.cost_removed = item_remove_stock(item, qty * (pi.unit_factor or 1))
                         db.session.add(pr)
                         db.session.flush()
                         sync_supplier_purchase_return(pr)
@@ -6895,7 +7103,7 @@ def delete_purchase_return(id):
     assert_not_posted("purchase_return", pr.id, f"Purchase return #{pr.id}")
     item = db.session.get(Item, pr.item_id)
     if item:
-        item.stock += pr.quantity
+        item.stock += line_base_qty(pr)
     supplier_id = remove_supplier_ledger_entry("purchase_return", pr.id)
     db.session.delete(pr)
     db.session.commit()
@@ -6972,6 +7180,7 @@ def sale_return():
                     for si, qty, price, reason_val in rows:
                         sale = si.sale_header
                         item = db.session.get(Item, si.item_id)
+                        # A return is always in the original line's unit, never chosen separately.
                         sr = SaleReturn(
                             sale_id=sale.id,
                             customer_id=sale.customer_id,
@@ -6980,13 +7189,16 @@ def sale_return():
                             return_price=price,
                             date=ret_date,
                             reason=reason_val,
+                            unit_name=si.unit_name, unit_factor=si.unit_factor or 1,
                         )
                         if item:
-                            # Back into stock at the cost they left at, taken from
-                            # the original sale line — never at today's average.
-                            cost = (Decimal(str(si.cost_price or 0)) * Decimal(str(qty))).quantize(MONEY)
+                            # Back into stock at the cost they left at, taken from the
+                            # original sale line — never at today's average. cost_price
+                            # is per base unit, so the total needs the base qty.
+                            base_qty = qty * (si.unit_factor or 1)
+                            cost = (Decimal(str(si.cost_price or 0)) * Decimal(str(base_qty))).quantize(MONEY)
                             sr.cost_restored = cost
-                            item_add_stock(item, qty, cost)
+                            item_add_stock(item, base_qty, cost)
                         db.session.add(sr)
                         db.session.flush()
                         sync_customer_sale_return(sr)
@@ -7012,7 +7224,7 @@ def delete_sale_return(id):
     assert_not_posted("sale_return", sr.id, f"Sale return #{sr.id}")
     item = db.session.get(Item, sr.item_id)
     if item:
-        item.stock -= sr.quantity
+        item.stock -= line_base_qty(sr)
     customer_id = remove_customer_ledger_entry("sale_return", sr.id)
     db.session.delete(sr)
     db.session.commit()
@@ -7257,8 +7469,9 @@ def purchase_orders():
         item_ids      = request.form.getlist("item_id[]")
         quantities    = request.form.getlist("quantity[]")
         prices        = request.form.getlist("purchase_price[]")
-        rows = [(iid.strip(), qty.strip(), pr.strip())
-                for iid, qty, pr in zip(item_ids, quantities, prices)
+        unit_ids      = request.form.getlist("unit_id[]")
+        rows = [(iid.strip(), qty.strip(), pr.strip(), unit_ids[i] if i < len(unit_ids) else "")
+                for i, (iid, qty, pr) in enumerate(zip(item_ids, quantities, prices))
                 if iid.strip() and qty.strip() and pr.strip()]
         row_error = validate_line_rows(rows) if rows else None
         if not supplier_id or not order_date:
@@ -7276,10 +7489,13 @@ def purchase_orders():
             )
             db.session.add(po)
             db.session.flush()
-            for iid, qty, price in rows:
+            for iid, qty, price, unit_key in rows:
+                item_obj = db.session.get(Item, int(iid)) or abort(404)
+                unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
                 db.session.add(PurchaseOrderItem(
                     po_id=po.id, item_id=int(iid),
                     quantity=int(qty), purchase_price=float(price),
+                    unit_name=unit_name, unit_factor=unit_factor,
                 ))
             db.session.commit()
             flash(f"Purchase Order #{po.id} created.", "success")
@@ -7347,10 +7563,11 @@ def convert_po_to_purchase(id):
             quantity=poi.quantity, purchase_price=poi.purchase_price,
             discount_type="percent", discount_value=0,
             discount_amount=0, tax_percent=0, tax_amount=0, amount=gross,
+            unit_name=poi.unit_name, unit_factor=poi.unit_factor or 1,
         ))
         item_obj = db.session.get(Item, poi.item_id)
         if item_obj:
-            item_add_stock(item_obj, poi.quantity, gross)   # PO lines carry no tax
+            item_add_stock(item_obj, poi.quantity * (poi.unit_factor or 1), gross)   # PO lines carry no tax
     db.session.flush()
     db.session.refresh(pur)
     pur.invoice_no = allocate_document_number("purchase", pur.date)
@@ -7399,13 +7616,15 @@ def quotations():
         disc_types   = request.form.getlist("discount_type[]")
         disc_values  = request.form.getlist("discount_value[]")
         tax_pcts     = request.form.getlist("tax_percent[]")
+        unit_ids     = request.form.getlist("unit_id[]")
         rows = []
         for i, (iid, qty, price) in enumerate(zip(item_ids, quantities, prices)):
             if iid.strip() and qty.strip() and price.strip():
                 rows.append((iid.strip(), qty.strip(), price.strip(),
                     disc_types[i] if i < len(disc_types) else "percent",
                     disc_values[i] if i < len(disc_values) else "0",
-                    tax_pcts[i] if i < len(tax_pcts) else "0"))
+                    tax_pcts[i] if i < len(tax_pcts) else "0",
+                    unit_ids[i] if i < len(unit_ids) else ""))
         row_error = validate_line_rows(rows) if rows else None
         if not customer_id or not quote_date:
             flash("Customer and date are required.", "danger")
@@ -7422,13 +7641,16 @@ def quotations():
             )
             db.session.add(q)
             db.session.flush()
-            for iid, qty, price, d_type, d_val, tax in rows:
+            for iid, qty, price, d_type, d_val, tax, unit_key in rows:
+                item_obj = db.session.get(Item, int(iid)) or abort(404)
+                unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
                 db.session.add(QuotationItem(
                     quotation_id=q.id, item_id=int(iid),
                     quantity=int(qty), sale_price=float(price),
                     discount_type=d_type or "percent",
                     discount_value=float(d_val or 0),
                     tax_percent=float(tax or 0),
+                    unit_name=unit_name, unit_factor=unit_factor,
                 ))
             db.session.commit()
             flash(f"Quotation #{q.id} created.", "success")
@@ -7485,7 +7707,7 @@ def convert_quotation_to_sale(id):
     stock_errors = []
     for qi in q.line_items:
         item_obj = db.session.get(Item, qi.item_id)
-        if item_obj and item_obj.stock < qi.quantity:
+        if item_obj and item_obj.stock < line_base_qty(qi):
             stock_errors.append(f"{item_obj.name}: only {item_obj.stock} in stock")
     if stock_errors:
         flash("Insufficient stock — " + "; ".join(stock_errors), "danger")
@@ -7506,6 +7728,7 @@ def convert_quotation_to_sale(id):
         disc_amt, tax_amt, net = calc_discount_tax(gross, qi.discount_type, qi.discount_value, qi.tax_percent)
         item_obj = db.session.get(Item, qi.item_id)
         unit_cost = item_obj.avg_cost if item_obj else Decimal("0")
+        base_qty = line_base_qty(qi)
         db.session.add(SaleItem(
             sale_id=sal.id, item_id=qi.item_id,
             quantity=qi.quantity, sale_price=qi.sale_price,
@@ -7513,10 +7736,11 @@ def convert_quotation_to_sale(id):
             discount_type=qi.discount_type, discount_value=qi.discount_value,
             discount_amount=disc_amt, tax_percent=qi.tax_percent,
             tax_amount=tax_amt, amount=net,
+            unit_name=qi.unit_name, unit_factor=qi.unit_factor or 1,
         ))
         if item_obj:
-            item_remove_stock(item_obj, qi.quantity,
-                              cost_total=unit_cost * Decimal(str(qi.quantity)))
+            item_remove_stock(item_obj, base_qty,
+                              cost_total=unit_cost * Decimal(str(base_qty)))
     db.session.flush()
     db.session.refresh(sal)
     sal.invoice_no = allocate_document_number("sale", sal.date)
