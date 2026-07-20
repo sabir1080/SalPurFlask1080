@@ -4139,12 +4139,18 @@ def signup():
         {app.config['APP_NAME']} Team
         """
 
-        if send_email(email, f"Verify Your Email - {app.config['APP_NAME']}", body):
-           flash(f"A verification email has been sent to {email}. Please check your inbox.", "success")
-        else:
-            db.session.delete(user)
-            db.session.commit()
-            return render_template("signup.html")
+        # Temporarily skip email verification for demo
+        # if send_email(email, f"Verify Your Email - {app.config['APP_NAME']}", body):
+        #    flash(f"A verification email has been sent to {email}. Please check your inbox.", "success")
+        # else:
+        #     db.session.delete(user)
+        #     db.session.commit()
+        #     return render_template("signup.html")
+
+        # Auto-verify for demo
+        user.verified = True
+        db.session.commit()
+        flash(f"Account created successfully! You can now sign in.", "success")
         return redirect(url_for("signin"))
     return render_template("signup.html")
 
