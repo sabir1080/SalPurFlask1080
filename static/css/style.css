@@ -167,6 +167,41 @@ body {
     color: var(--primary);
 }
 
+/* Disabled nav items - visually distinct, non-clickable */
+.navbar .nav-link.disabled {
+    color: #999 !important;
+    opacity: 0.6;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.navbar .nav-link.disabled:hover {
+    background: transparent;
+    color: #999 !important;
+}
+
+[data-theme="dark"] .navbar .nav-link.disabled {
+    color: #777 !important;
+    opacity: 0.5;
+}
+
+.navbar .dropdown-item.disabled {
+    color: #999 !important;
+    opacity: 0.6;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.navbar .dropdown-item.disabled:hover {
+    background: transparent;
+    color: #999 !important;
+}
+
+[data-theme="dark"] .navbar .dropdown-item.disabled {
+    color: #777 !important;
+    opacity: 0.5;
+}
+
 .alert {
     margin-bottom: 20px;
     border: none;
