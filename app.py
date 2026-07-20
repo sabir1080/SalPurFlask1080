@@ -4115,7 +4115,7 @@ def signup():
             flash("Password must be at least 6 characters!", "danger")
             return render_template("signup.html")
         hashed_password = pwd_context.hash(password)
-        user = User(name=name, email=email, password=hashed_password, verified=False)
+        user = User(name=name, email=email, password=hashed_password, verified=False, role="admin")
         try:
             db.session.add(user)
             db.session.commit()
