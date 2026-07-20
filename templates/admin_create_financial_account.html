@@ -1,0 +1,128 @@
+{% extends 'base.html' %}
+{% block title %}Create Financial Account{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-plus-circle-fill"></i> Create Financial Account</h2>
+    <a href="{{ url_for('admin_financial_accounts') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="account_type" class="form-label">Account Type</label>
+                        <div class="btn-group w-100" role="group">
+                            <input type="radio" class="btn-check" name="account_type" id="type_control" value="control" onchange="updateForm()">
+                            <label class="btn btn-outline-primary" for="type_control">Control Account</label>
+
+                            <input type="radio" class="btn-check" name="account_type" id="type_subsidiary" value="subsidiary" onchange="updateForm()">
+                            <label class="btn btn-outline-primary" for="type_subsidiary">Subsidiary Account</label>
+
+                            <input type="radio" class="btn-check" name="account_type" id="type_standalone" value="standalone" onchange="updateForm()">
+                            <label class="btn btn-outline-primary" for="type_standalone">Standalone Account</label>
+                        </div>
+                        <small class="form-text text-muted d-block mt-2">
+                            <strong>Control Account:</strong> A header that groups subsidiary accounts (e.g., "Banks" grouping HBL, UBL, etc.)<br>
+                            <strong>Subsidiary Account:</strong> A selectable account under a control account (e.g., "HBL", "UBL")<br>
+                            <strong>Standalone Account:</strong> Independent account not grouped (e.g., "Cheque", "Online")
+                        </small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Account Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="name" name="name" required placeholder="e.g., UBL, Cash in Hand, etc.">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="account_subtype" class="form-label">Account Subtype</label>
+                        <select class="form-select" id="account_subtype" name="account_subtype">
+                            <option value="Cash">Cash</option>
+                            <option value="Bank">Bank</option>
+                        </select>
+                    </div>
+
+                    <div id="parent_section" class="mb-3" style="display: none;">
+                        <label for="parent_id" class="form-label">Parent Control Account <span class="text-danger">*</span></label>
+                        <select class="form-select" id="parent_id" name="parent_id">
+                            <option value="">-- Select Parent Account --</option>
+                            {% for control in control_accounts %}
+                            <option value="{{ control.id }}">{{ control.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="opening_balance" class="form-label">Opening Balance</label>
+                        <div class="input-group">
+                            <span class="input-group-text">{{ currency }}</span>
+                            <input type="number" class="form-control" id="opening_balance" name="opening_balance" value="0" step="0.01" min="0">
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-circle-fill"></i> Create Account
+                        </button>
+                        <a href="{{ url_for('admin_financial_accounts') }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-x-circle"></i> Cancel
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card border-0 bg-light">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-question-circle-fill"></i> Examples</h5>
+                <div class="mb-3">
+                    <strong>Control Account Structure:</strong>
+                    <div class="text-muted small mt-2 ps-2">
+                        📁 <strong>Cash</strong> (Control)<br>
+                        └─ Cash in Hand (Subsidiary)<br>
+                        └─ Cash at Cashier (Subsidiary)<br>
+                        <br>
+                        📁 <strong>Banks</strong> (Control)<br>
+                        └─ HBL (Subsidiary)<br>
+                        └─ UBL (Subsidiary)<br>
+                        └─ ABL (Subsidiary)
+                    </div>
+                </div>
+                <hr>
+                <div class="alert alert-info small mb-0">
+                    <i class="bi bi-lightbulb"></i>
+                    Only <strong>subsidiary accounts</strong> appear in POS and payment forms.
+                    Control accounts are for organization and reporting only.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function updateForm() {
+    const type = document.querySelector('input[name="account_type"]:checked')?.value;
+    const parentSection = document.getElementById('parent_section');
+    const parentSelect = document.getElementById('parent_id');
+
+    if (type === 'subsidiary') {
+        parentSection.style.display = 'block';
+        parentSelect.required = true;
+    } else {
+        parentSection.style.display = 'none';
+        parentSelect.required = false;
+        parentSelect.value = '';
+    }
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', updateForm);
+</script>
+
+{% endblock %}

@@ -1,0 +1,132 @@
+{% extends 'base.html' %}
+{% block title %}Edit Financial Account{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>
+        <i class="bi bi-pencil-square"></i> Edit Account
+        <span class="badge {% if account.is_control %}bg-info{% else %}bg-success{% endif %} ms-2">
+            {{ 'Control' if account.is_control else 'Account' }}
+        </span>
+    </h2>
+    <a href="{{ url_for('admin_financial_accounts') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label class="form-label">Account Type</label>
+                        <div class="alert alert-light border">
+                            {% if account.is_control %}
+                            <span class="badge bg-info">Control Account</span>
+                            <small class="text-muted d-block mt-2">This is a header account that groups subsidiary accounts.</small>
+                            {% else %}
+                            <span class="badge bg-success">Subsidiary Account</span>
+                            <small class="text-muted d-block mt-2">This account can be selected in POS and payment forms.</small>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Account Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="name" name="name" value="{{ account.name }}" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="opening_balance" class="form-label">Opening Balance</label>
+                        <div class="input-group">
+                            <span class="input-group-text">{{ currency }}</span>
+                            <input type="number" class="form-control" id="opening_balance" name="opening_balance"
+                                   value="{{ account.opening_balance | float }}" step="0.01" min="0">
+                        </div>
+                        <small class="form-text text-muted">Initial balance for this account</small>
+                    </div>
+
+                    {% if not account.is_control %}
+                    <div class="mb-3">
+                        <label for="parent_id" class="form-label">Parent Control Account</label>
+                        <select class="form-select" id="parent_id" name="parent_id">
+                            <option value="">-- None (Standalone) --</option>
+                            {% for control in control_accounts %}
+                            <option value="{{ control.id }}" {% if account.parent_id == control.id %}selected{% endif %}>
+                                {{ control.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+
+                    <div class="mb-3">
+                        <label for="is_active" class="form-label">Status</label>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="is_active" name="is_active"
+                                   {% if account.is_active %}checked{% endif %}>
+                            <label class="form-check-label" for="is_active">
+                                Active <small class="text-muted">(inactive accounts don't appear in forms)</small>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-circle-fill"></i> Save Changes
+                        </button>
+                        <a href="{{ url_for('admin_financial_accounts') }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-x-circle"></i> Cancel
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card border-0 bg-light">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-info-circle-fill"></i> Account Info</h5>
+                <div class="small">
+                    <p class="mb-2">
+                        <strong>Account Type:</strong> {{ 'Control' if account.is_control else 'Subsidiary' if account.parent_id else 'Standalone' }}
+                    </p>
+                    <p class="mb-2">
+                        <strong>Account Subtype:</strong> {{ account.account_type }}
+                    </p>
+                    {% if not account.is_control %}
+                    <p class="mb-2">
+                        <strong>Appears in Forms:</strong>
+                        {% if account.is_active %}
+                        <span class="badge bg-success">Yes</span>
+                        {% else %}
+                        <span class="badge bg-secondary">No (Inactive)</span>
+                        {% endif %}
+                    </p>
+                    {% endif %}
+                    {% if account.parent_id %}
+                    <p class="mb-2">
+                        <strong>Parent Account:</strong> {{ account.parent.name if account.parent else 'None' }}
+                    </p>
+                    {% endif %}
+                </div>
+
+                {% if account.children %}
+                <hr class="my-3">
+                <h6><i class="bi bi-diagram-2"></i> Subsidiary Accounts</h6>
+                <div class="small">
+                    <ul class="list-unstyled">
+                        {% for child in account.children %}
+                        <li><i class="bi bi-dash-circle"></i> {{ child.name }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

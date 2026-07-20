@@ -788,9 +788,12 @@ class FinancialAccount(db.Model):
     account_type    = db.Column(db.String(10), nullable=False, default="Cash")  # Cash / Bank
     opening_balance = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     is_active       = db.Column(db.Boolean, nullable=False, default=True)
+    is_control      = db.Column(db.Boolean, nullable=False, default=False)  # True = control account (header), False = selectable
+    parent_id       = db.Column(db.Integer, db.ForeignKey("financial_account.id"), nullable=True)  # parent control account
     # Every cash/bank account is a GL account too — that is what a payment credits.
     gl_account_id   = db.Column(db.Integer, db.ForeignKey("account.id"), nullable=True)
     gl_account      = db.relationship("Account", lazy="joined")
+    parent          = db.relationship("FinancialAccount", remote_side=[id], backref="children", lazy=True)  # hierarchical relationship
 
 def new_account_method_token():
     """A `method` value for a user-created account: unique, ≤20 chars, and
@@ -2773,6 +2776,15 @@ def get_account_balance(account):
 def total_cash_bank_balance():
     return sum(get_account_balance(a) for a in FinancialAccount.query.all())
 
+def get_selectable_accounts():
+    """Return only leaf/subsidiary accounts (is_control=False), ordered hierarchically.
+    These are the accounts shown in POS and payment forms."""
+    return FinancialAccount.query.filter_by(is_control=False).order_by(FinancialAccount.parent_id, FinancialAccount.name).all()
+
+def get_active_control_accounts():
+    """Return only active control accounts (is_control=True) for admin hierarchies."""
+    return FinancialAccount.query.filter_by(is_control=True, is_active=True).order_by(FinancialAccount.name).all()
+
 def account_transactions(account):
     """Chronological list of movements for an account's ledger view, read off the
     account's GL leaf — the same place get_account_balance reads, so the rows always
@@ -2794,8 +2806,10 @@ def account_transactions(account):
     return rows
 
 def active_accounts():
-    return (FinancialAccount.query.filter_by(is_active=True)
-            .order_by(FinancialAccount.account_type, FinancialAccount.name).all())
+    """Return active selectable accounts (is_control=False) for POS and payment forms.
+    Control accounts are headers only and not selectable."""
+    return (FinancialAccount.query.filter_by(is_active=True, is_control=False)
+            .order_by(FinancialAccount.parent_id, FinancialAccount.name).all())
 
 def parse_account_id(raw):
     """Form value → (account_id or None, error or None). Blank means 'untagged',
@@ -3469,6 +3483,16 @@ def migrate_database():
                         f"ALTER TABLE {table} ADD COLUMN gl_account_id INTEGER "
                         "REFERENCES account(id)"
                     ))
+
+    # Hierarchical financial accounts: control accounts (headers) with subsidiary accounts (selectable)
+    if "financial_account" in inspector.get_table_names():
+        cols = {col["name"] for col in inspector.get_columns("financial_account")}
+        if "is_control" not in cols:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE financial_account ADD COLUMN is_control BOOLEAN NOT NULL DEFAULT 0"))
+        if "parent_id" not in cols:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE financial_account ADD COLUMN parent_id INTEGER REFERENCES financial_account(id)"))
 
     # Weighted-average costing: what the stock on hand actually cost.
     if "item" in inspector.get_table_names():
@@ -7990,10 +8014,52 @@ def report_cash_book():
 @app.route("/accounts")
 @manager_required
 def accounts():
-    accts = FinancialAccount.query.order_by(FinancialAccount.id).all()
-    rows = [{"acct": a, "balance": get_account_balance(a)} for a in accts]
-    total = sum(r["balance"] for r in rows)
-    return render_template("accounts.html", rows=rows, total=total)
+    """Display financial accounts hierarchically with balances."""
+    control_accounts = get_active_control_accounts()
+    standalone_accounts = FinancialAccount.query.filter_by(is_control=False, parent_id=None, is_active=True).order_by(FinancialAccount.name).all()
+
+    rows = []
+    total = Decimal("0")
+
+    # Add control accounts with their subsidiaries
+    for control in control_accounts:
+        control_balance = Decimal("0")
+        control_row_idx = len(rows)  # Remember where we added the control account
+        rows.append({
+            "acct": control,
+            "balance": None,  # Will be calculated from children
+            "is_control": True,
+            "level": 0
+        })
+
+        # Add subsidiaries and calculate control balance
+        for subsidiary in control.children:
+            if subsidiary.is_active:
+                balance = get_account_balance(subsidiary)
+                control_balance += Decimal(str(balance))
+                rows.append({
+                    "acct": subsidiary,
+                    "balance": balance,
+                    "is_control": False,
+                    "level": 1
+                })
+
+        # Set control account balance to sum of children
+        rows[control_row_idx]["balance"] = float(control_balance)
+        total += control_balance
+
+    # Add standalone accounts
+    for standalone in standalone_accounts:
+        balance = get_account_balance(standalone)
+        rows.append({
+            "acct": standalone,
+            "balance": balance,
+            "is_control": False,
+            "level": 0
+        })
+        total += Decimal(str(balance))
+
+    return render_template("accounts.html", rows=rows, total=float(total))
 
 def account_name_taken(name, exclude_id=None):
     """Two accounts with the same name are indistinguishable in every dropdown,
@@ -8963,6 +9029,127 @@ def admin_toggle_verify(id):
     flash(f"User '{user.name}' is now {state}.", "success")
     return redirect(url_for("admin_users"))
 
+# ─── Financial Account Hierarchy Management ────────────────────────────────────
+@app.route("/admin/financial-accounts")
+@admin_required
+def admin_financial_accounts():
+    """List all financial accounts in hierarchical view."""
+    control_accounts = get_active_control_accounts()
+    standalone_accounts = FinancialAccount.query.filter_by(is_control=False, parent_id=None, is_active=True).order_by(FinancialAccount.name).all()
+    return render_template("admin_financial_accounts.html",
+                         control_accounts=control_accounts,
+                         standalone_accounts=standalone_accounts)
+
+@app.route("/admin/financial-accounts/create", methods=["GET", "POST"])
+@admin_required
+def admin_create_financial_account():
+    """Create a new financial account (control or subsidiary)."""
+    if request.method == "POST":
+        account_type = request.form.get("account_type", "").strip()  # "control" or "subsidiary" or "standalone"
+        name = request.form.get("name", "").strip()
+        opening_balance_str = request.form.get("opening_balance", "0").strip()
+        parent_id = request.form.get("parent_id", "").strip() or None
+        account_subtype = request.form.get("account_subtype", "Cash").strip()
+
+        if not name:
+            flash("Account name is required!", "danger")
+        else:
+            try:
+                opening_balance = Decimal(opening_balance_str) if opening_balance_str else Decimal("0")
+            except (InvalidOperation, ValueError):
+                flash("Invalid opening balance!", "danger")
+                return render_template("admin_create_financial_account.html",
+                                      control_accounts=get_active_control_accounts())
+
+            is_control = (account_type == "control")
+
+            account = FinancialAccount(
+                name=name,
+                method=new_account_method_token(),
+                account_type=account_subtype,
+                opening_balance=opening_balance,
+                is_control=is_control,
+                parent_id=int(parent_id) if parent_id else None,
+                is_active=True
+            )
+            db.session.add(account)
+            db.session.flush()
+            ensure_gl_account_for_financial(account)
+            db.session.commit()
+            record_audit("create", "FinancialAccount", account.id, f"Created {'control account' if is_control else 'account'} '{name}'")
+            flash(f"{'Control account' if is_control else 'Account'} '{name}' created successfully!", "success")
+            return redirect(url_for("admin_financial_accounts"))
+
+    control_accounts = get_active_control_accounts()
+    return render_template("admin_create_financial_account.html",
+                         control_accounts=control_accounts)
+
+@app.route("/admin/financial-accounts/<int:id>/edit", methods=["GET", "POST"])
+@admin_required
+def admin_edit_financial_account(id):
+    """Edit an existing financial account."""
+    account = FinancialAccount.query.get_or_404(id)
+
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        opening_balance_str = request.form.get("opening_balance", "0").strip()
+        is_active = request.form.get("is_active", "").strip() == "on"
+        parent_id = request.form.get("parent_id", "").strip() or None
+
+        if not name:
+            flash("Account name is required!", "danger")
+        else:
+            try:
+                opening_balance = Decimal(opening_balance_str) if opening_balance_str else Decimal("0")
+            except (InvalidOperation, ValueError):
+                flash("Invalid opening balance!", "danger")
+                return render_template("admin_edit_financial_account.html",
+                                      account=account,
+                                      control_accounts=get_active_control_accounts())
+
+            account.name = name
+            account.opening_balance = opening_balance
+            account.is_active = is_active
+            if not account.is_control:
+                account.parent_id = int(parent_id) if parent_id else None
+
+            db.session.commit()
+            record_audit("edit", "FinancialAccount", account.id, f"Updated account '{name}'")
+            flash(f"Account '{name}' updated successfully!", "success")
+            return redirect(url_for("admin_financial_accounts"))
+
+    control_accounts = get_active_control_accounts()
+    return render_template("admin_edit_financial_account.html",
+                         account=account,
+                         control_accounts=control_accounts)
+
+@app.route("/admin/financial-accounts/<int:id>/delete", methods=["POST"])
+@admin_required
+def admin_delete_financial_account(id):
+    """Delete a financial account (only if it has no transactions)."""
+    account = FinancialAccount.query.get_or_404(id)
+
+    # Check if account has any transactions
+    has_children = FinancialAccount.query.filter_by(parent_id=id).count() > 0
+    has_transactions = (
+        SupplierPayment.query.filter_by(account_id=id).count() > 0 or
+        CustomerPayment.query.filter_by(account_id=id).count() > 0 or
+        Expense.query.filter_by(account_id=id).count() > 0
+    )
+
+    if has_children:
+        flash(f"Cannot delete account '{account.name}' - it has subsidiary accounts!", "danger")
+    elif has_transactions:
+        flash(f"Cannot delete account '{account.name}' - it has transactions!", "danger")
+    else:
+        name = account.name
+        db.session.delete(account)
+        db.session.commit()
+        record_audit("delete", "FinancialAccount", id, f"Deleted account '{name}'")
+        flash(f"Account '{name}' deleted successfully!", "success")
+
+    return redirect(url_for("admin_financial_accounts"))
+
 @app.route("/admin/audit")
 @admin_required
 def admin_audit():
@@ -9534,25 +9721,92 @@ def seed_data_cmd(yes, demo_user):
     # The seeder builds a demo company from nothing, so it cannot assume the cash and bank
     # accounts are already there — it used to, and died on a KeyError against a database
     # that did not happen to have been booted first.
-    if FinancialAccount.query.count() == 0:
-        types = {"Cash": "Cash", "Bank": "Bank", "Cheque": "Bank", "Online": "Bank"}
-        for m in PAYMENT_METHODS:
-            db.session.add(FinancialAccount(name=m, method=m, account_type=types.get(m, "Bank"),
-                                            opening_balance=0))
-        db.session.commit()
-    seed_financial_account_links()
+    # Hierarchical structure: control accounts (headers) with subsidiary accounts (selectable)
 
-    # A "Card" account, so the demo POS shows card payment alongside cash — a payment type
-    # every visitor understands, wherever they are. Deliberately not JazzCash / Easypaisa:
-    # the demo is shown to buyers worldwide, and a local wallet name would only puzzle them.
-    # A shop's own local methods are added on its own site, by its admin.
-    if not FinancialAccount.query.filter_by(name="Card").first():
-        card = FinancialAccount(name="Card", method=new_account_method_token(),
-                                account_type="Bank", opening_balance=0)
-        db.session.add(card)
-        db.session.flush()
-        ensure_gl_account_for_financial(card)
+    # Check if hierarchical structure exists (by looking for Cash control account)
+    if not FinancialAccount.query.filter_by(name="Cash", is_control=True).first():
+        # Clear old flat accounts if they exist (migration from old structure)
+        FinancialAccount.query.delete()
         db.session.commit()
+
+        # Cash Control Account
+        cash_control = FinancialAccount(
+            name="Cash", method="cash", account_type="Cash",
+            opening_balance=0, is_control=True
+        )
+        db.session.add(cash_control)
+        db.session.flush()  # Need ID before using it as parent
+
+        # Cash subsidiaries
+        cash_subsidiaries = [
+            ("Cash in Hand", 0),
+            ("Cash at Cashier", 0),
+        ]
+        for sub_name, opening_bal in cash_subsidiaries:
+            subsidiary = FinancialAccount(
+                name=sub_name, method=new_account_method_token(),
+                account_type="Cash", opening_balance=opening_bal,
+                is_control=False, parent_id=cash_control.id
+            )
+            db.session.add(subsidiary)
+
+        # Banks Control Account
+        banks_control = FinancialAccount(
+            name="Banks", method="bank", account_type="Bank",
+            opening_balance=0, is_control=True
+        )
+        db.session.add(banks_control)
+        db.session.flush()  # Need ID before using it as parent
+
+        # Bank subsidiaries
+        bank_subsidiaries = [
+            ("HBL", 0),
+            ("UBL", 0),
+            ("ABL", 0),
+            ("MCB", 0),
+        ]
+        for bank_name, opening_bal in bank_subsidiaries:
+            subsidiary = FinancialAccount(
+                name=bank_name, method=new_account_method_token(),
+                account_type="Bank", opening_balance=opening_bal,
+                is_control=False, parent_id=banks_control.id
+            )
+            db.session.add(subsidiary)
+
+        # Cheque (standalone for legacy compatibility)
+        cheque = FinancialAccount(
+            name="Cheque", method="cheque", account_type="Bank",
+            opening_balance=0, is_control=False
+        )
+        db.session.add(cheque)
+
+        # Online (standalone for legacy compatibility)
+        online = FinancialAccount(
+            name="Online", method="online", account_type="Bank",
+            opening_balance=0, is_control=False
+        )
+        db.session.add(online)
+        db.session.commit()
+
+        # Card Control Account
+        card_control = FinancialAccount(
+            name="Card", method="card", account_type="Bank",
+            opening_balance=0, is_control=True
+        )
+        db.session.add(card_control)
+        db.session.flush()  # Need ID before using it as parent
+
+        # Add a default Visa subsidiary
+        visa = FinancialAccount(
+            name="Visa Card", method=new_account_method_token(),
+            account_type="Bank", opening_balance=0,
+            is_control=False, parent_id=card_control.id
+        )
+        db.session.add(visa)
+        db.session.commit()
+
+    # Create GL accounts for all financial accounts at once (idempotent)
+    seed_financial_account_links()
 
     closed = [fy.name for fy in FiscalYear.query.filter_by(is_closed=True).all()]
     if closed:
@@ -9610,16 +9864,19 @@ def seed_data_cmd(yes, demo_user):
     click.echo(f"  {len(cats)} categories, {len(items)} items, "
                f"{len(suppliers)} suppliers, {len(customers)} customers.")
 
-    accounts = {fa.method: fa for fa in FinancialAccount.query.all()}
+    # Build account lookup - use name for hierarchical structure (not method, which is now unique per account)
+    accounts = {fa.name: fa for fa in FinancialAccount.query.all()}
 
     # -- What was already in the till and the bank on day one ------------------
     # A funded business, so the demo does not open on an overdraft. These post to the
     # ledger like any other opening balance (Dr the account, Cr Opening Balance Equity),
     # which is also the only reason they show up on the balance sheet at all.
-    for method, opening in (("Cash", 400000), ("Bank", 4500000)):
-        fa = accounts[method]
-        fa.opening_balance = Decimal(str(opening))
-        post_account_opening(fa)
+    # Use the first subsidiary of each control account for opening balance
+    for acct_name, opening in (("Cash in Hand", 400000), ("HBL", 4500000)):
+        fa = accounts.get(acct_name)
+        if fa:
+            fa.opening_balance = Decimal(str(opening))
+            post_account_opening(fa)
     db.session.commit()
 
     # -- Capital injection, so the ledger has a manual journal entry in it ------
@@ -9723,8 +9980,20 @@ def seed_data_cmd(yes, demo_user):
     click.echo(f"  {len(sales)} sales.")
 
     # -- Payments and receipts, across all four methods ----------------------
+    # Map old payment method names to actual account names (for hierarchical structure)
+    method_to_account = {
+        "Bank": "HBL",           # Bank payments go to HBL subsidiary
+        "Cash": "Cash in Hand",  # Cash payments go to Cash in Hand subsidiary
+        "Cheque": "Cheque",      # Standalone
+        "Online": "Online"       # Standalone
+    }
+
     def pay(supplier, date, amount, method="Bank"):
-        acct = accounts[method]
+        acct_name = method_to_account.get(method, method)
+        acct = accounts.get(acct_name)
+        if not acct:
+            click.echo(f"WARNING: Account '{acct_name}' not found for payment method '{method}', skipping payment")
+            return
         p = SupplierPayment(supplier_id=suppliers[supplier].id, amount=amount,
                             payment_date=date, payment_method=method,
                             account_id=acct.id, reference_no=f"PAY-{date:%m%d}")
@@ -9732,7 +10001,11 @@ def seed_data_cmd(yes, demo_user):
         sync_supplier_payment(p); post_document("payment", p); db.session.commit()
 
     def receipt(customer, date, amount, method="Cash"):
-        acct = accounts[method]
+        acct_name = method_to_account.get(method, method)
+        acct = accounts.get(acct_name)
+        if not acct:
+            click.echo(f"WARNING: Account '{acct_name}' not found for payment method '{method}', skipping receipt")
+            return
         r = CustomerPayment(customer_id=customers[customer].id, amount=amount,
                             payment_date=date, payment_method=method,
                             account_id=acct.id, reference_no=f"RCT-{date:%m%d}")
@@ -9775,10 +10048,13 @@ def seed_data_cmd(yes, demo_user):
         ("Salaries & Wages", "Staff salaries - Jun", 66000, D(6, 30), "Bank"),
     ]
     for cat, desc, amount, date, method in demo_expenses:
-        e = Expense(category_id=exp_cats[cat].id, description=desc, amount=amount,
-                    date=date, payment_method=method, account_id=accounts[method].id)
-        db.session.add(e); db.session.flush()
-        post_document("expense", e); db.session.commit()
+        acct_name = method_to_account.get(method, method)
+        acct = accounts.get(acct_name)
+        if acct:
+            e = Expense(category_id=exp_cats[cat].id, description=desc, amount=amount,
+                        date=date, payment_method=method, account_id=acct.id)
+            db.session.add(e); db.session.flush()
+            post_document("expense", e); db.session.commit()
     click.echo(f"  {len(demo_expenses)} expenses.")
 
     # -- Fixed assets, and depreciation charged every month so far -------------
@@ -9791,13 +10067,16 @@ def seed_data_cmd(yes, demo_user):
         ("Shop Fit-out",    "FIT-01",   400_000,       0, "Reducing Balance", None, 15, D(2, 5),  "Bank"),
     ]
     for name, tag, cost, salvage, method, life, rate, acq, pay_method in demo_assets:
-        asset = FixedAsset(name=name, tag=tag, acquisition_date=acq, cost=cost,
-                           salvage_value=salvage, method=method,
-                           useful_life_months=life, rate_percent=rate)
-        db.session.add(asset)
-        db.session.flush()
-        post_asset_acquisition(asset, accounts[pay_method].gl_account_id)
-        db.session.commit()
+        acct_name = method_to_account.get(pay_method, pay_method)
+        acct = accounts.get(acct_name)
+        if acct:
+            asset = FixedAsset(name=name, tag=tag, acquisition_date=acq, cost=cost,
+                               salvage_value=salvage, method=method,
+                               useful_life_months=life, rate_percent=rate)
+            db.session.add(asset)
+            db.session.flush()
+            post_asset_acquisition(asset, acct.gl_account_id)
+            db.session.commit()
 
     charged = 0
     for m in range(1, now_local().month + 1):

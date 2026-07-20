@@ -134,6 +134,7 @@
                         </a>
                         <ul class="dropdown-menu">
                             {{ perm_item('admin_users', 'bi-people', 'Users', current_user.is_admin) }}
+                            {{ perm_item('admin_financial_accounts', 'bi-bank', 'Financial Accounts', current_user.is_admin) }}
                             {{ perm_item('admin_audit', 'bi-clock-history', 'Audit Log', current_user.is_admin) }}
                             {{ perm_item('admin_system', 'bi-hdd', 'Backup & Restore', current_user.is_admin) }}
                         </ul>
