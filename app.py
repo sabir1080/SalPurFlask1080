@@ -4115,7 +4115,7 @@ def signup():
             flash("Password must be at least 6 characters!", "danger")
             return render_template("signup.html")
         hashed_password = pwd_context.hash(password)
-        user = User(name=name, email=email, password=hashed_password, verified=False, role="admin")
+        user = User(name=name, email=email, password=hashed_password, verified=False)
         try:
             db.session.add(user)
             db.session.commit()
@@ -4139,18 +4139,12 @@ def signup():
         {app.config['APP_NAME']} Team
         """
 
-        # Temporarily skip email verification for demo
-        # if send_email(email, f"Verify Your Email - {app.config['APP_NAME']}", body):
-        #    flash(f"A verification email has been sent to {email}. Please check your inbox.", "success")
-        # else:
-        #     db.session.delete(user)
-        #     db.session.commit()
-        #     return render_template("signup.html")
-
-        # Auto-verify for demo
-        user.verified = True
-        db.session.commit()
-        flash(f"Account created successfully! You can now sign in.", "success")
+        if send_email(email, f"Verify Your Email - {app.config['APP_NAME']}", body):
+           flash(f"A verification email has been sent to {email}. Please check your inbox.", "success")
+        else:
+            db.session.delete(user)
+            db.session.commit()
+            return render_template("signup.html")
         return redirect(url_for("signin"))
     return render_template("signup.html")
 
