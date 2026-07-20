@@ -4590,6 +4590,11 @@ def edit_item(id):
         else:
             new_os = int(opening_stock)
             stock_adjustment = new_os - item.opening_stock
+            # Guard: Cannot edit opening stock after transactions exist (accounting period integrity)
+            if stock_adjustment != 0 and (item.purchases or item.sales):
+                flash("Cannot edit opening stock after transactions have been recorded! "
+                      "Create a stock adjustment instead to change inventory.", "danger")
+                return render_template("edit_item.html", item=item, categories=categories)
             # The opening entry is about to be reversed and re-posted, so the
             # inventory value must move by the same amount the GL does.
             old_opening_value = (Decimal(str(item.opening_stock or 0))
@@ -4627,6 +4632,9 @@ def delete_item(id):
         flash("Cannot delete item with associated purchases or sales!", "danger")
     else:
         item_name = item.name
+        # Clear GL entries for this item's opening balance before deletion
+        _repost_opening("item_opening", item.id, _opening_date(),
+                       f"Opening stock — {item.name}", [])
         db.session.delete(item)
         db.session.commit()
         record_audit("delete", "Item", id, f"Item '{item_name}' deleted")
@@ -4960,12 +4968,13 @@ def edit_purchase(id):
         else:
             try:
                 old_supplier_id = pur.supplier_id
-                # Reverse old stock
+                # Reverse old stock (with inventory_value sync)
                 touched_items = {}
                 for pi in pur.line_items:
                     old_item = db.session.get(Item, pi.item_id)
                     if old_item:
-                        old_item.stock -= line_base_qty(pi)
+                        cost_removed = pi.amount - pi.tax_amount
+                        item_remove_stock(old_item, line_base_qty(pi), cost_total=cost_removed)
                         touched_items[old_item.id] = old_item
                 # Delete old line items
                 PurchaseItem.query.filter_by(purchase_id=pur.id).delete()
@@ -5039,7 +5048,8 @@ def delete_purchase(id):
     for pi in pur.line_items:
         item_obj = db.session.get(Item, pi.item_id)
         if item_obj:
-            item_obj.stock -= line_base_qty(pi)
+            cost_removed = pi.amount - pi.tax_amount
+            item_remove_stock(item_obj, line_base_qty(pi), cost_total=cost_removed)
     audit_summary = f"Purchase #{pur.id} ({pur.id_supplier.name if pur.id_supplier else 'supplier'}) deleted"
     supplier_id = remove_supplier_ledger_entry("purchase", pur.id)
     db.session.delete(pur)
@@ -5458,11 +5468,12 @@ def edit_sale(id):
         else:
             try:
                 old_customer_id = sal.customer_id
-                # Restore old stock
+                # Restore old stock (with inventory_value sync)
                 for si in sal.line_items:
                     old_item = db.session.get(Item, si.item_id)
                     if old_item:
-                        old_item.stock += line_base_qty(si)
+                        cost_returned = si.cost_price * line_base_qty(si)
+                        item_add_stock(old_item, line_base_qty(si), cost_total=cost_returned)
                 # Check new stock
                 stock_errors = []
                 for iid, qty, price, d_type, d_val, tax, unit_key in rows:
@@ -5472,11 +5483,12 @@ def edit_sale(id):
                         if item_obj.stock < int(qty) * factor:
                             stock_errors.append(f"{item_obj.name}: only {item_obj.stock} {item_obj.unit} available")
                 if stock_errors:
-                    # Undo stock restoration
+                    # Undo stock restoration (with inventory_value sync)
                     for si in sal.line_items:
                         old_item = db.session.get(Item, si.item_id)
                         if old_item:
-                            old_item.stock -= line_base_qty(si)
+                            cost_removed = si.cost_price * line_base_qty(si)
+                            item_remove_stock(old_item, line_base_qty(si), cost_total=cost_removed)
                     flash("Insufficient stock — " + "; ".join(stock_errors), "danger")
                 else:
                     # Delete old line items, update header
@@ -5541,7 +5553,8 @@ def delete_sale(id):
     for si in sal.line_items:
         item_obj = db.session.get(Item, si.item_id)
         if item_obj:
-            item_obj.stock += line_base_qty(si)
+            cost_returned = si.cost_price * line_base_qty(si)
+            item_add_stock(item_obj, line_base_qty(si), cost_total=cost_returned)
     audit_summary = f"Sale #{sal.id} ({sal.id_customer.name if sal.id_customer else 'customer'}) deleted"
     customer_id = remove_customer_ledger_entry("sale", sal.id)
     db.session.delete(sal)
@@ -7363,9 +7376,9 @@ def delete_stock_adjustment(id):
     item_obj = db.session.get(Item, adj.item_id)
     if item_obj:
         if adj.direction == "out":
-            item_obj.stock += adj.quantity
+            item_add_stock(item_obj, adj.quantity, cost_total=adj.cost_value or 0)
         else:
-            item_obj.stock -= adj.quantity
+            item_remove_stock(item_obj, adj.quantity, cost_total=adj.cost_value or 0)
     db.session.delete(adj)
     db.session.commit()
     flash("Adjustment deleted and stock reversed.", "success")
