@@ -3489,7 +3489,7 @@ def migrate_database():
         cols = {col["name"] for col in inspector.get_columns("financial_account")}
         if "is_control" not in cols:
             with db.engine.begin() as conn:
-                conn.execute(text("ALTER TABLE financial_account ADD COLUMN is_control BOOLEAN NOT NULL DEFAULT 0"))
+                conn.execute(text("ALTER TABLE financial_account ADD COLUMN is_control BOOLEAN NOT NULL DEFAULT FALSE"))
         if "parent_id" not in cols:
             with db.engine.begin() as conn:
                 conn.execute(text("ALTER TABLE financial_account ADD COLUMN parent_id INTEGER REFERENCES financial_account(id)"))
