@@ -1,0 +1,190 @@
+{% extends 'base.html' %}
+{% block title %}Bulk Import — {{ app_name }}{% endblock %}
+{% block content %}
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2><i class="bi bi-cloud-upload"></i> Bulk Import</h2>
+            <a href="{{ url_for('item') }}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left"></i> Back
+            </a>
+        </div>
+
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('process_import') }}" enctype="multipart/form-data">
+
+                    <!-- Import Type Selection -->
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">What do you want to import?</label>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="import_type" id="items" value="items" checked>
+                                <label class="form-check-label" for="items">
+                                    <i class="bi bi-box-seam"></i> Items / Products
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="import_type" id="customers" value="customers">
+                                <label class="form-check-label" for="customers">
+                                    <i class="bi bi-person-check"></i> Customers
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="import_type" id="suppliers" value="suppliers">
+                                <label class="form-check-label" for="suppliers">
+                                    <i class="bi bi-truck"></i> Suppliers
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- File Upload -->
+                    <div class="mb-4">
+                        <label for="file" class="form-label fw-bold">Choose File</label>
+                        <div class="input-group">
+                            <input type="file" class="form-control" id="file" name="file"
+                                   accept=".csv,.xlsx,.xls,.json" required>
+                            <small class="form-text text-muted d-block mt-2">
+                                Supported formats: CSV, Excel (.xlsx, .xls), JSON
+                            </small>
+                        </div>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-upload"></i> Import Now
+                        </button>
+                        <button type="reset" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-clockwise"></i> Clear
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Templates Section -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-header" style="background-color: var(--bs-light-bg-subtle, #f8f9fa); color: var(--bs-body-color);">
+                <h5 class="mb-0"><i class="bi bi-file-earmark-text"></i> CSV Template Examples</h5>
+            </div>
+            <div class="card-body">
+
+                <!-- Items Template -->
+                <div class="mb-4">
+                    <h6 class="fw-bold">Items (CSV)</h6>
+                    <div class="p-3 rounded font-monospace small overflow-x-auto" style="background-color: var(--bs-gray-200, #e9ecef); color: var(--bs-body-color);">
+                        <div>name,category,unit,opening_stock,stock,reorder_level,purchase_price,sale_price,barcode</div>
+                        <div>Milk Bottle,Dairy,pcs,100,100,20,50,75,BRK001</div>
+                        <div>Butter,Dairy,kg,10,10,5,300,450,BRK002</div>
+                        <div>Bread,Bakery,pcs,50,50,15,30,50,BRK003</div>
+                    </div>
+                </div>
+
+                <!-- Customers Template -->
+                <div class="mb-4">
+                    <h6 class="fw-bold">Customers (CSV)</h6>
+                    <div class="p-3 rounded font-monospace small overflow-x-auto" style="background-color: var(--bs-gray-200, #e9ecef); color: var(--bs-body-color);">
+                        <div>name,contact,address,opening_balance</div>
+                        <div>Ali Store,03001234567,Street 5 Main Bazaar,10000</div>
+                        <div>Hassan Retail,03009876543,Mall Road,5000</div>
+                    </div>
+                </div>
+
+                <!-- Suppliers Template -->
+                <div class="mb-4">
+                    <h6 class="fw-bold">Suppliers (CSV)</h6>
+                    <div class="p-3 rounded font-monospace small overflow-x-auto" style="background-color: var(--bs-gray-200, #e9ecef); color: var(--bs-body-color);">
+                        <div>name,contact,address,opening_balance</div>
+                        <div>Punjab Dairy,03051234567,Factory Road Lahore,50000</div>
+                        <div>Karachi Imports,03009876543,Port Industrial Area,75000</div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar: Recent Imports -->
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header" style="background-color: var(--bs-light-bg-subtle, #f8f9fa); color: var(--bs-body-color);">
+                <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Imports</h5>
+            </div>
+            <div class="card-body p-0">
+                {% if import_history %}
+                <div class="list-group list-group-flush">
+                    {% for log in import_history %}
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <h6 class="mb-1">
+                                    {{ log.import_type | capitalize }}
+                                    <span class="badge bg-{{ 'success' if log.status == 'completed' else 'danger' if log.status == 'failed' else 'warning' }}">
+                                        {{ log.status | capitalize }}
+                                    </span>
+                                </h6>
+                                <small class="text-muted">{{ log.file_name }}</small>
+                                <div class="small text-muted mt-1">
+                                    {{ log.successful }} success
+                                    {% if log.failed > 0 %} · {{ log.failed }} failed{% endif %}
+                                </div>
+                            </div>
+                            <small class="text-muted text-nowrap">
+                                {{ log.created_at.strftime('%m/%d %H:%M') }}
+                            </small>
+                        </div>
+                        {% if log.errors %}
+                        <details class="mt-2">
+                            <summary class="small text-danger">View errors</summary>
+                            <div class="small text-muted mt-2 p-2 rounded" style="background-color: var(--bs-gray-200, #e9ecef);">
+                                {% set error_list = log.errors | fromjson %}
+                                {% for error in error_list[:5] %}
+                                <div>{{ error }}</div>
+                                {% endfor %}
+                                {% if error_list | length > 5 %}
+                                <div class="text-muted">... and {{ error_list | length - 5 }} more</div>
+                                {% endif %}
+                            </div>
+                        </details>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="p-3 text-center text-muted">
+                    <p>No imports yet</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Help Card -->
+        <div class="card border-0 shadow-sm mt-3">
+            <div class="card-header" style="background-color: var(--bs-light-bg-subtle, #f8f9fa); color: var(--bs-body-color);">
+                <h5 class="mb-0"><i class="bi bi-question-circle"></i> Tips</h5>
+            </div>
+            <div class="card-body small">
+                <ul class="list-unstyled">
+                    <li class="mb-2">✓ Use CSV for best compatibility</li>
+                    <li class="mb-2">✓ Headers must match exactly</li>
+                    <li class="mb-2">✓ Optional fields can be left blank</li>
+                    <li class="mb-2">✓ Numbers without quotes (e.g., 100 not "100")</li>
+                    <li class="mb-2">✓ Date format: YYYY-MM-DD</li>
+                    <li class="mb-2">✓ Max 10,000 rows per import</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.overflow-x-auto {
+    overflow-x: auto;
+    white-space: nowrap;
+}
+</style>
+
+{% endblock %}

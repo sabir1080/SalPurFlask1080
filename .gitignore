@@ -15,9 +15,11 @@ desktop.ini
 .pytest_cache/
 ForMyUseOnly/
 notes.txt
+test_data/
 # Large media — keep videos out of git (GitHub 100MB limit)
 docs/screenshots/*.mp4
 *.mp4
+docs/
 
 # Personal CV — never in the repo
 Sabir_Shah_CV.html

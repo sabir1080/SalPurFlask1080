@@ -2563,6 +2563,22 @@ class AuditLog(db.Model):
     entity_id  = db.Column(db.Integer, nullable=True)
     summary    = db.Column(db.String(300), nullable=False, default="")
 
+class ImportLog(db.Model):
+    """Track all bulk imports - CSV, Excel, JSON files."""
+    __tablename__ = "import_log"
+    id              = db.Column(db.Integer, primary_key=True)
+    created_at      = db.Column(db.DateTime, nullable=False, index=True, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    user_id         = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    import_type     = db.Column(db.String(50), nullable=False)  # items, customers, suppliers, purchases, sales
+    file_name       = db.Column(db.String(255), nullable=False)
+    file_type       = db.Column(db.String(10), nullable=False)  # csv, xlsx, json
+    total_records   = db.Column(db.Integer, nullable=False, default=0)
+    successful      = db.Column(db.Integer, nullable=False, default=0)
+    failed          = db.Column(db.Integer, nullable=False, default=0)
+    status          = db.Column(db.String(20), nullable=False, default="pending")  # pending, processing, completed, failed
+    errors          = db.Column(db.Text, nullable=True)  # JSON with error details
+    user            = db.relationship('User', backref='imports')
+
 def record_audit(action, entity, entity_id=None, summary=""):
     """Write an audit entry in its own transaction. Called AFTER the business
     change has committed, so a failure here can never roll back or break the real
@@ -3693,6 +3709,189 @@ def handle_posting_error(e):
     app.logger.info("Posting refused: %s", e)
     return redirect(request.referrer or url_for("dashboard"))
 
+# ─── BULK IMPORT FUNCTIONS ─────────────────────────────────────────────────────
+
+def parse_import_file(file):
+    """Parse CSV/Excel/JSON file and return list of dictionaries."""
+    if not file:
+        return None, "No file provided"
+
+    filename = file.filename
+    file_ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+
+    try:
+        if file_ext == 'csv':
+            stream = StringIO(file.read().decode('utf-8'))
+            reader = csv.DictReader(stream)
+            return list(reader), file_ext
+
+        elif file_ext in ('xlsx', 'xls'):
+            wb = openpyxl.load_workbook(file)
+            ws = wb.active
+            headers = [cell.value for cell in ws[1]]
+            data = []
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                data.append(dict(zip(headers, row)))
+            return data, file_ext
+
+        elif file_ext == 'json':
+            data = json.loads(file.read().decode('utf-8'))
+            return data if isinstance(data, list) else [data], file_ext
+
+        else:
+            return None, f"Unsupported file type: {file_ext}"
+
+    except Exception as e:
+        return None, f"Error parsing file: {str(e)}"
+
+def import_items(data):
+    """Bulk import items from parsed data."""
+    success, failed, errors = 0, 0, []
+
+    for idx, row in enumerate(data, 1):
+        try:
+            name = row.get('name', '').strip()
+            if not name:
+                errors.append(f"Row {idx}: Missing item name")
+                failed += 1
+                continue
+
+            category_name = row.get('category', '').strip()
+            category = None
+            if category_name:
+                category = Category.query.filter_by(name=category_name).first()
+                if not category:
+                    category = Category(name=category_name)
+                    db.session.add(category)
+                    db.session.flush()
+
+            item = Item(
+                name=name,
+                category_id=category.id if category else None,
+                unit=row.get('unit', 'pcs').strip(),
+                opening_stock=int(row.get('opening_stock', 0)) if row.get('opening_stock') else 0,
+                stock=int(row.get('stock', 0)) if row.get('stock') else 0,
+                reorder_level=int(row.get('reorder_level', 0)) if row.get('reorder_level') else 0,
+                purchase_price=float(row.get('purchase_price', 0)) if row.get('purchase_price') else None,
+                sale_price=float(row.get('sale_price', 0)) if row.get('sale_price') else None,
+                barcode=row.get('barcode', '').strip() or None
+            )
+
+            db.session.add(item)
+            db.session.flush()
+
+            # Post opening balance to GL if opening stock > 0
+            if item.opening_stock > 0:
+                post_item_opening(item)
+
+            db.session.commit()
+            success += 1
+
+        except Exception as e:
+            db.session.rollback()
+            failed += 1
+            errors.append(f"Row {idx}: {str(e)}")
+
+    return success, failed, errors
+
+def import_customers(data):
+    """Bulk import customers from parsed data."""
+    success, failed, errors = 0, 0, []
+
+    for idx, row in enumerate(data, 1):
+        try:
+            name = row.get('name', '').strip()
+            if not name:
+                errors.append(f"Row {idx}: Missing customer name")
+                failed += 1
+                continue
+
+            customer = Customer(
+                name=name,
+                contact=row.get('contact', row.get('phone', '')).strip() or '',
+                address=row.get('address', '').strip() or '',
+                opening_balance=float(row.get('opening_balance', 0)) if row.get('opening_balance') else 0
+            )
+
+            db.session.add(customer)
+            db.session.flush()
+
+            # Post opening balance to ledger
+            if customer.opening_balance != 0:
+                entry = CustomerLedgerEntry(
+                    customer_id=customer.id,
+                    entry_date=date.today(),
+                    entry_type='debit',
+                    source_type='opening',
+                    source_id=customer.id,
+                    description='Opening balance',
+                    debit=customer.opening_balance,
+                    credit=0,
+                    balance_after=0
+                )
+                db.session.add(entry)
+
+            db.session.commit()
+            if customer.opening_balance != 0:
+                recalculate_customer_ledger(customer.id)
+            success += 1
+
+        except Exception as e:
+            db.session.rollback()
+            failed += 1
+            errors.append(f"Row {idx}: {str(e)}")
+
+    return success, failed, errors
+
+def import_suppliers(data):
+    """Bulk import suppliers from parsed data."""
+    success, failed, errors = 0, 0, []
+
+    for idx, row in enumerate(data, 1):
+        try:
+            name = row.get('name', '').strip()
+            if not name:
+                errors.append(f"Row {idx}: Missing supplier name")
+                failed += 1
+                continue
+
+            supplier = Supplier(
+                name=name,
+                contact=row.get('contact', row.get('phone', '')).strip() or '',
+                address=row.get('address', '').strip() or '',
+                opening_balance=float(row.get('opening_balance', 0)) if row.get('opening_balance') else 0
+            )
+
+            db.session.add(supplier)
+            db.session.flush()
+
+            # Post opening balance to ledger
+            if supplier.opening_balance != 0:
+                entry = SupplierLedgerEntry(
+                    supplier_id=supplier.id,
+                    entry_date=date.today(),
+                    entry_type='credit',
+                    source_type='opening',
+                    source_id=supplier.id,
+                    description='Opening balance',
+                    debit=0,
+                    credit=supplier.opening_balance,
+                    balance_after=0
+                )
+                db.session.add(entry)
+
+            db.session.commit()
+            if supplier.opening_balance != 0:
+                recalculate_supplier_ledger(supplier.id)
+            success += 1
+
+        except Exception as e:
+            db.session.rollback()
+            failed += 1
+            errors.append(f"Row {idx}: {str(e)}")
+
+    return success, failed, errors
+
 @app.route("/health")
 def health():
     """Lightweight, unauthenticated health check for uptime monitors and Render.
@@ -3711,6 +3910,14 @@ def fmt_num(value):
         value = float(value)
         return f"{value:,.2f}"
     except (TypeError, ValueError):
+        return value
+
+@app.template_filter('fromjson')
+def fromjson(value):
+    """Parse JSON string to Python object."""
+    try:
+        return json.loads(value) if isinstance(value, str) else value
+    except (json.JSONDecodeError, TypeError):
         return value
 
 @app.template_filter("pct")
@@ -4818,6 +5025,80 @@ def export_item_ledger_excel(id):
         rows=excel_rows,
         extra_info=f"Item: {item.name} | Unit: {item.unit or 'Pcs'}",
     )
+
+# ─── BULK IMPORT ROUTES ───────────────────────────────────────────────────────
+
+@app.route("/import", methods=["GET"])
+@verified_required
+def bulk_import():
+    """Show bulk import form."""
+    import_history = ImportLog.query.filter_by(user_id=current_user.id).order_by(ImportLog.created_at.desc()).limit(10).all()
+    return render_template("bulk_import.html", import_history=import_history)
+
+@app.route("/import/process", methods=["POST"])
+@verified_required
+def process_import():
+    """Process bulk import file."""
+    import_type = request.form.get("import_type", "").lower()
+    file = request.files.get("file")
+
+    if not import_type or import_type not in ("items", "customers", "suppliers"):
+        flash("Invalid import type selected", "danger")
+        return redirect(url_for("bulk_import"))
+
+    if not file:
+        flash("No file selected", "danger")
+        return redirect(url_for("bulk_import"))
+
+    data, file_type = parse_import_file(file)
+    if data is None:
+        flash(file_type, "danger")  # file_type contains error message
+        return redirect(url_for("bulk_import"))
+
+    if not data:
+        flash("File is empty", "danger")
+        return redirect(url_for("bulk_import"))
+
+    # Create import log entry
+    import_log = ImportLog(
+        user_id=current_user.id,
+        import_type=import_type,
+        file_name=file.filename,
+        file_type=file_type,
+        total_records=len(data),
+        status="processing"
+    )
+    db.session.add(import_log)
+    db.session.commit()
+
+    # Process based on type
+    try:
+        if import_type == "items":
+            success, failed, errors = import_items(data)
+        elif import_type == "customers":
+            success, failed, errors = import_customers(data)
+        elif import_type == "suppliers":
+            success, failed, errors = import_suppliers(data)
+
+        import_log.successful = success
+        import_log.failed = failed
+        import_log.status = "completed"
+        if errors:
+            import_log.errors = json.dumps(errors[:100])  # Store first 100 errors
+        db.session.commit()
+
+        message = f"{success} records imported successfully"
+        if failed > 0:
+            message += f", {failed} failed"
+        flash(message, "success" if failed == 0 else "warning")
+
+    except Exception as e:
+        import_log.status = "failed"
+        import_log.errors = json.dumps([str(e)])
+        db.session.commit()
+        flash(f"Import failed: {str(e)}", "danger")
+
+    return redirect(url_for("bulk_import"))
 
 @app.route("/api/item/<int:id>")
 @verified_required

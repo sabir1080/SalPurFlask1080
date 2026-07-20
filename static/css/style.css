@@ -1829,3 +1829,70 @@ body {
 [data-theme="dark"] .theme-btn.active {
     box-shadow: 0 2px 10px rgba(167, 139, 250, 0.45);
 }
+
+/* Badge Dark Theme Support */
+[data-theme="dark"] .badge {
+    filter: brightness(1.15) saturate(1.1);
+}
+
+[data-theme="dark"] .badge.bg-success {
+    background-color: #10b981 !important;
+    color: #fff !important;
+}
+
+[data-theme="dark"] .badge.bg-warning {
+    background-color: #f59e0b !important;
+    color: #fff !important;
+}
+
+[data-theme="dark"] .badge.text-dark {
+    color: #fff !important;
+}
+
+/* Current user row (table-warning) contrast fix */
+.table-warning,
+.table-warning td {
+    background-color: #ffd966 !important;
+    color: #1a1a1a !important;
+}
+
+.table-warning td a {
+    color: #0052cc !important;
+    font-weight: 500;
+}
+
+.table-warning .badge {
+    filter: brightness(0.95);
+}
+
+[data-theme="dark"] .table-warning,
+[data-theme="dark"] .table-warning td {
+    background-color: #8b6f47 !important;
+    color: #ffffff !important;
+}
+
+[data-theme="dark"] .table-warning td a {
+    color: #4da6ff !important;
+}
+
+/* Bulk Import Dark Theme Support */
+[data-theme="dark"] .card-header {
+    background-color: var(--surface) !important;
+    color: var(--text-dark) !important;
+    border-bottom: 1px solid var(--border);
+}
+
+/* CSV Template boxes - dark theme support */
+@media (prefers-color-scheme: dark), [data-theme="dark"] {
+    --bs-gray-200: #2d3748;
+}
+
+[data-theme="dark"] div[style*="background-color: var(--bs-gray-200"]  {
+    background-color: #2d3748 !important;
+    color: var(--text-dark) !important;
+}
+
+/* Fallback for inline styles with --bs-gray-200 */
+[data-theme="dark"] [style*="--bs-gray-200"] {
+    --bs-gray-200: #2d3748 !important;
+}
