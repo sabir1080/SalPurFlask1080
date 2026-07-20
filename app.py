@@ -10213,4 +10213,7 @@ if __name__ == "__main__":
         debug_mode = _debug_env.lower() in ("1", "true", "yes", "on")
     else:
         debug_mode = not DATABASE_URL
-    app.run(debug=debug_mode, host="127.0.0.1", port=5172)
+    # On Render, listen on PORT env var and 0.0.0.0. Local dev: port 5172 on localhost
+    port = int(os.getenv("PORT", 5172))
+    host = "0.0.0.0" if DATABASE_URL else "127.0.0.1"
+    app.run(debug=debug_mode, host=host, port=port)
