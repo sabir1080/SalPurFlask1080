@@ -202,6 +202,30 @@ body {
     opacity: 0.5;
 }
 
+/* Tooltips - visible in both light and dark themes */
+.tooltip-inner {
+    background-color: #1f2937;
+    color: #f3f4f6;
+    font-size: 0.875rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.5rem;
+    max-width: 250px;
+}
+
+[data-theme="dark"] .tooltip-inner {
+    background-color: #e5e7eb;
+    color: #111827;
+}
+
+.tooltip.show {
+    opacity: 1;
+}
+
+/* For title attributes (native browser tooltips) */
+[title] {
+    cursor: help;
+}
+
 .alert {
     margin-bottom: 20px;
     border: none;
