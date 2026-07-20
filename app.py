@@ -7140,7 +7140,7 @@ def delete_purchase_return(id):
     assert_not_posted("purchase_return", pr.id, f"Purchase return #{pr.id}")
     item = db.session.get(Item, pr.item_id)
     if item:
-        item.stock += line_base_qty(pr)
+        item_add_stock(item, line_base_qty(pr), cost_total=pr.cost_removed or 0)
     supplier_id = remove_supplier_ledger_entry("purchase_return", pr.id)
     db.session.delete(pr)
     db.session.commit()
@@ -7261,7 +7261,7 @@ def delete_sale_return(id):
     assert_not_posted("sale_return", sr.id, f"Sale return #{sr.id}")
     item = db.session.get(Item, sr.item_id)
     if item:
-        item.stock -= line_base_qty(sr)
+        item_remove_stock(item, line_base_qty(sr), cost_total=sr.cost_restored or 0)
     customer_id = remove_customer_ledger_entry("sale_return", sr.id)
     db.session.delete(sr)
     db.session.commit()
