@@ -4603,14 +4603,17 @@ def edit_item(id):
             item.category_id = int(category_id)
             item.unit = unit
             item.opening_stock = new_os
-            item.stock = item.stock + stock_adjustment
             item.reorder_level = int(reorder_level)
             item.purchase_price = float(purchase_price) if purchase_price else None
             item.sale_price = float(sale_price) if sale_price else None
             item.barcode = barcode
             new_opening_value = (Decimal(str(new_os)) * Decimal(str(item.purchase_price or 0))).quantize(MONEY)
-            item.inventory_value = (Decimal(str(item.inventory_value or 0))
-                                    - old_opening_value + new_opening_value)
+            value_adjustment = new_opening_value - old_opening_value
+            # Update stock and inventory_value atomically
+            if stock_adjustment > 0:
+                item_add_stock(item, stock_adjustment, cost_total=value_adjustment)
+            elif stock_adjustment < 0:
+                item_remove_stock(item, -stock_adjustment, cost_total=-value_adjustment)
             unit_error = save_item_units(item)
             if unit_error:
                 db.session.rollback()
