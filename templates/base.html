@@ -64,6 +64,8 @@
                             {{ perm_item('item', 'bi-box-seam', 'Items', true) }}
                             {{ perm_item('labels', 'bi-upc-scan', 'Print Labels', current_user.is_manager) }}
                             {{ perm_item('stock_adjustment', 'bi-arrow-left-right', 'Stock Adjustments', current_user.is_manager) }}
+                            <li><hr class="dropdown-divider"></li>
+                            {{ perm_item('bulk_import', 'bi-cloud-upload', 'Bulk Import', current_user.is_manager) }}
                         </ul>
                     </li>
 
@@ -134,6 +136,7 @@
                         </a>
                         <ul class="dropdown-menu">
                             {{ perm_item('admin_users', 'bi-people', 'Users', current_user.is_admin) }}
+                            {{ perm_item('admin_financial_accounts', 'bi-bank', 'Financial Accounts', current_user.is_admin) }}
                             {{ perm_item('admin_audit', 'bi-clock-history', 'Audit Log', current_user.is_admin) }}
                             {{ perm_item('admin_system', 'bi-hdd', 'Backup & Restore', current_user.is_admin) }}
                         </ul>

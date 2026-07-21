@@ -5,8 +5,8 @@
     <h2><i class="bi bi-bank text-dark"></i> Cash &amp; Bank Accounts</h2>
     <div class="d-flex gap-2">
         {% if current_user.is_admin %}
-        <a href="{{ url_for('new_account') }}" class="btn btn-primary btn-sm">
-            <i class="bi bi-plus-lg"></i> New Account
+        <a href="{{ url_for('admin_financial_accounts') }}" class="btn btn-primary btn-sm">
+            <i class="bi bi-gear"></i> Manage Accounts
         </a>
         {% endif %}
         <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary btn-sm">
@@ -30,9 +30,7 @@
         <div class="alert alert-info mb-0 h-100 d-flex align-items-center">
             <i class="bi bi-info-circle me-2"></i>
             <small>Balances are computed from each account's opening balance, plus customer
-            receipts, minus supplier payments and expenses assigned to it. The four built-in
-            accounts also pick up older records that were saved with their payment method
-            before accounts existed. Set opening balances by editing an account.</small>
+            receipts, minus supplier payments and expenses assigned to it. Control accounts show the sum of their subsidiary accounts.</small>
         </div>
     </div>
 </div>
@@ -52,18 +50,29 @@
             </thead>
             <tbody>
                 {% for r in rows %}
-                <tr>
-                    <td class="fw-semibold">{{ r.acct.name }}</td>
+                {% if r.is_control %}
+                <tr class="table-light fw-bold">
+                    <td class="text-dark">
+                        <i class="bi bi-folder-fill text-info"></i> {{ r.acct.name }} <span class="badge bg-secondary ms-1">Control</span>
+                    </td>
+                    <td><span class="badge bg-{{ 'success' if r.acct.account_type == 'Cash' else 'primary' }}">{{ r.acct.account_type }}</span></td>
+                    <td class="text-end">—</td>
+                    <td class="text-end fw-bold {{ 'text-success' if r.balance >= 0 else 'text-danger' }}">{{ r.balance | fmt_num }}</td>
+                    <td class="text-end text-nowrap"></td>
+                </tr>
+                {% else %}
+                <tr {% if r.level > 0 %}class="table-light"{% endif %}>
+                    <td class="{% if r.level > 0 %}ps-4{% endif %}">
+                        {% if r.level > 0 %}<i class="bi bi-dash-circle text-muted"></i>{% endif %} {{ r.acct.name }}
+                    </td>
                     <td><span class="badge bg-{{ 'success' if r.acct.account_type == 'Cash' else 'primary' }}">{{ r.acct.account_type }}</span></td>
                     <td class="text-end">{{ r.acct.opening_balance | fmt_num }}</td>
                     <td class="text-end fw-bold {{ 'text-success' if r.balance >= 0 else 'text-danger' }}">{{ r.balance | fmt_num }}</td>
                     <td class="text-end text-nowrap">
                         <a href="{{ url_for('account_ledger', id=r.acct.id) }}" class="btn btn-sm btn-outline-primary" title="Ledger"><i class="bi bi-journal-text"></i></a>
-                        {% if current_user.is_admin %}
-                        <a href="{{ url_for('edit_account', id=r.acct.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>
-                        {% endif %}
                     </td>
                 </tr>
+                {% endif %}
                 {% else %}
                 <tr><td colspan="5" class="text-center text-muted py-4">No accounts found.</td></tr>
                 {% endfor %}

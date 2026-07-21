@@ -809,9 +809,12 @@ class FinancialAccount(db.Model):
     account_type    = db.Column(db.String(10), nullable=False, default="Cash")  # Cash / Bank
     opening_balance = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     is_active       = db.Column(db.Boolean, nullable=False, default=True)
+    is_control      = db.Column(db.Boolean, nullable=False, default=False)  # True = control account (header), False = selectable
+    parent_id       = db.Column(db.Integer, db.ForeignKey("financial_account.id"), nullable=True)  # parent control account
     # Every cash/bank account is a GL account too — that is what a payment credits.
     gl_account_id   = db.Column(db.Integer, db.ForeignKey("account.id"), nullable=True)
     gl_account      = db.relationship("Account", lazy="joined")
+    parent          = db.relationship("FinancialAccount", remote_side=[id], backref="children", lazy=True)  # hierarchical relationship
 
 def new_account_method_token():
     """A `method` value for a user-created account: unique, ≤20 chars, and
@@ -2581,6 +2584,22 @@ class AuditLog(db.Model):
     entity_id  = db.Column(db.Integer, nullable=True)
     summary    = db.Column(db.String(300), nullable=False, default="")
 
+class ImportLog(db.Model):
+    """Track all bulk imports - CSV, Excel, JSON files."""
+    __tablename__ = "import_log"
+    id              = db.Column(db.Integer, primary_key=True)
+    created_at      = db.Column(db.DateTime, nullable=False, index=True, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    user_id         = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    import_type     = db.Column(db.String(50), nullable=False)  # items, customers, suppliers, purchases, sales
+    file_name       = db.Column(db.String(255), nullable=False)
+    file_type       = db.Column(db.String(10), nullable=False)  # csv, xlsx, json
+    total_records   = db.Column(db.Integer, nullable=False, default=0)
+    successful      = db.Column(db.Integer, nullable=False, default=0)
+    failed          = db.Column(db.Integer, nullable=False, default=0)
+    status          = db.Column(db.String(20), nullable=False, default="pending")  # pending, processing, completed, failed
+    errors          = db.Column(db.Text, nullable=True)  # JSON with error details
+    user            = db.relationship('User', backref='imports')
+
 def record_audit(action, entity, entity_id=None, summary=""):
     """Write an audit entry in its own transaction. Called AFTER the business
     change has committed, so a failure here can never roll back or break the real
@@ -2802,6 +2821,15 @@ def get_account_balance(account):
 def total_cash_bank_balance():
     return sum(get_account_balance(a) for a in FinancialAccount.query.all())
 
+def get_selectable_accounts():
+    """Return only leaf/subsidiary accounts (is_control=False), ordered hierarchically.
+    These are the accounts shown in POS and payment forms."""
+    return FinancialAccount.query.filter_by(is_control=False).order_by(FinancialAccount.parent_id, FinancialAccount.name).all()
+
+def get_active_control_accounts():
+    """Return only active control accounts (is_control=True) for admin hierarchies."""
+    return FinancialAccount.query.filter_by(is_control=True, is_active=True).order_by(FinancialAccount.name).all()
+
 def account_transactions(account):
     """Chronological list of movements for an account's ledger view, read off the
     account's GL leaf — the same place get_account_balance reads, so the rows always
@@ -2823,8 +2851,10 @@ def account_transactions(account):
     return rows
 
 def active_accounts():
-    return (FinancialAccount.query.filter_by(is_active=True)
-            .order_by(FinancialAccount.account_type, FinancialAccount.name).all())
+    """Return active selectable accounts (is_control=False) for POS and payment forms.
+    Control accounts are headers only and not selectable."""
+    return (FinancialAccount.query.filter_by(is_active=True, is_control=False)
+            .order_by(FinancialAccount.parent_id, FinancialAccount.name).all())
 
 def parse_account_id(raw):
     """Form value → (account_id or None, error or None). Blank means 'untagged',
@@ -3534,6 +3564,16 @@ def migrate_database():
                         "REFERENCES account(id)"
                     ))
 
+    # Hierarchical financial accounts: control accounts (headers) with subsidiary accounts (selectable)
+    if "financial_account" in inspector.get_table_names():
+        cols = {col["name"] for col in inspector.get_columns("financial_account")}
+        if "is_control" not in cols:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE financial_account ADD COLUMN is_control BOOLEAN NOT NULL DEFAULT FALSE"))
+        if "parent_id" not in cols:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE financial_account ADD COLUMN parent_id INTEGER REFERENCES financial_account(id)"))
+
     # Weighted-average costing: what the stock on hand actually cost.
     if "item" in inspector.get_table_names():
         cols = {col["name"] for col in inspector.get_columns("item")}
@@ -3733,6 +3773,189 @@ def handle_posting_error(e):
     app.logger.info("Posting refused: %s", e)
     return redirect(request.referrer or url_for("dashboard"))
 
+# ─── BULK IMPORT FUNCTIONS ─────────────────────────────────────────────────────
+
+def parse_import_file(file):
+    """Parse CSV/Excel/JSON file and return list of dictionaries."""
+    if not file:
+        return None, "No file provided"
+
+    filename = file.filename
+    file_ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+
+    try:
+        if file_ext == 'csv':
+            stream = StringIO(file.read().decode('utf-8'))
+            reader = csv.DictReader(stream)
+            return list(reader), file_ext
+
+        elif file_ext in ('xlsx', 'xls'):
+            wb = openpyxl.load_workbook(file)
+            ws = wb.active
+            headers = [cell.value for cell in ws[1]]
+            data = []
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                data.append(dict(zip(headers, row)))
+            return data, file_ext
+
+        elif file_ext == 'json':
+            data = json.loads(file.read().decode('utf-8'))
+            return data if isinstance(data, list) else [data], file_ext
+
+        else:
+            return None, f"Unsupported file type: {file_ext}"
+
+    except Exception as e:
+        return None, f"Error parsing file: {str(e)}"
+
+def import_items(data):
+    """Bulk import items from parsed data."""
+    success, failed, errors = 0, 0, []
+
+    for idx, row in enumerate(data, 1):
+        try:
+            name = row.get('name', '').strip()
+            if not name:
+                errors.append(f"Row {idx}: Missing item name")
+                failed += 1
+                continue
+
+            category_name = row.get('category', '').strip()
+            category = None
+            if category_name:
+                category = Category.query.filter_by(name=category_name).first()
+                if not category:
+                    category = Category(name=category_name)
+                    db.session.add(category)
+                    db.session.flush()
+
+            item = Item(
+                name=name,
+                category_id=category.id if category else None,
+                unit=row.get('unit', 'pcs').strip(),
+                opening_stock=int(row.get('opening_stock', 0)) if row.get('opening_stock') else 0,
+                stock=int(row.get('stock', 0)) if row.get('stock') else 0,
+                reorder_level=int(row.get('reorder_level', 0)) if row.get('reorder_level') else 0,
+                purchase_price=float(row.get('purchase_price', 0)) if row.get('purchase_price') else None,
+                sale_price=float(row.get('sale_price', 0)) if row.get('sale_price') else None,
+                barcode=row.get('barcode', '').strip() or None
+            )
+
+            db.session.add(item)
+            db.session.flush()
+
+            # Post opening balance to GL if opening stock > 0
+            if item.opening_stock > 0:
+                post_item_opening(item)
+
+            db.session.commit()
+            success += 1
+
+        except Exception as e:
+            db.session.rollback()
+            failed += 1
+            errors.append(f"Row {idx}: {str(e)}")
+
+    return success, failed, errors
+
+def import_customers(data):
+    """Bulk import customers from parsed data."""
+    success, failed, errors = 0, 0, []
+
+    for idx, row in enumerate(data, 1):
+        try:
+            name = row.get('name', '').strip()
+            if not name:
+                errors.append(f"Row {idx}: Missing customer name")
+                failed += 1
+                continue
+
+            customer = Customer(
+                name=name,
+                contact=row.get('contact', row.get('phone', '')).strip() or '',
+                address=row.get('address', '').strip() or '',
+                opening_balance=float(row.get('opening_balance', 0)) if row.get('opening_balance') else 0
+            )
+
+            db.session.add(customer)
+            db.session.flush()
+
+            # Post opening balance to ledger
+            if customer.opening_balance != 0:
+                entry = CustomerLedgerEntry(
+                    customer_id=customer.id,
+                    entry_date=date.today(),
+                    entry_type='debit',
+                    source_type='opening',
+                    source_id=customer.id,
+                    description='Opening balance',
+                    debit=customer.opening_balance,
+                    credit=0,
+                    balance_after=0
+                )
+                db.session.add(entry)
+
+            db.session.commit()
+            if customer.opening_balance != 0:
+                recalculate_customer_ledger(customer.id)
+            success += 1
+
+        except Exception as e:
+            db.session.rollback()
+            failed += 1
+            errors.append(f"Row {idx}: {str(e)}")
+
+    return success, failed, errors
+
+def import_suppliers(data):
+    """Bulk import suppliers from parsed data."""
+    success, failed, errors = 0, 0, []
+
+    for idx, row in enumerate(data, 1):
+        try:
+            name = row.get('name', '').strip()
+            if not name:
+                errors.append(f"Row {idx}: Missing supplier name")
+                failed += 1
+                continue
+
+            supplier = Supplier(
+                name=name,
+                contact=row.get('contact', row.get('phone', '')).strip() or '',
+                address=row.get('address', '').strip() or '',
+                opening_balance=float(row.get('opening_balance', 0)) if row.get('opening_balance') else 0
+            )
+
+            db.session.add(supplier)
+            db.session.flush()
+
+            # Post opening balance to ledger
+            if supplier.opening_balance != 0:
+                entry = SupplierLedgerEntry(
+                    supplier_id=supplier.id,
+                    entry_date=date.today(),
+                    entry_type='credit',
+                    source_type='opening',
+                    source_id=supplier.id,
+                    description='Opening balance',
+                    debit=0,
+                    credit=supplier.opening_balance,
+                    balance_after=0
+                )
+                db.session.add(entry)
+
+            db.session.commit()
+            if supplier.opening_balance != 0:
+                recalculate_supplier_ledger(supplier.id)
+            success += 1
+
+        except Exception as e:
+            db.session.rollback()
+            failed += 1
+            errors.append(f"Row {idx}: {str(e)}")
+
+    return success, failed, errors
+
 @app.route("/health")
 def health():
     """Lightweight, unauthenticated health check for uptime monitors and Render.
@@ -3751,6 +3974,14 @@ def fmt_num(value):
         value = float(value)
         return f"{value:,.2f}"
     except (TypeError, ValueError):
+        return value
+
+@app.template_filter('fromjson')
+def fromjson(value):
+    """Parse JSON string to Python object."""
+    try:
+        return json.loads(value) if isinstance(value, str) else value
+    except (json.JSONDecodeError, TypeError):
         return value
 
 @app.template_filter("pct")
@@ -3972,8 +4203,9 @@ def signup():
         Regards,
         {app.config['APP_NAME']} Team
         """
+
         if send_email(email, f"Verify Your Email - {app.config['APP_NAME']}", body):
-            flash(f"A verification email has been sent to {email}. Please check your inbox.", "success")
+           flash(f"A verification email has been sent to {email}. Please check your inbox.", "success")
         else:
             db.session.delete(user)
             db.session.commit()
@@ -4631,6 +4863,11 @@ def edit_item(id):
         else:
             new_os = int(opening_stock)
             stock_adjustment = new_os - item.opening_stock
+            # Guard: Cannot edit opening stock after transactions exist (accounting period integrity)
+            if stock_adjustment != 0 and (item.purchases or item.sales):
+                flash("Cannot edit opening stock after transactions have been recorded! "
+                      "Create a stock adjustment instead to change inventory.", "danger")
+                return render_template("edit_item.html", item=item, categories=categories)
             # The opening entry is about to be reversed and re-posted, so the
             # inventory value must move by the same amount the GL does.
             old_opening_value = (Decimal(str(item.opening_stock or 0))
@@ -4639,14 +4876,17 @@ def edit_item(id):
             item.category_id = int(category_id)
             item.unit = unit
             item.opening_stock = new_os
-            item.stock = item.stock + stock_adjustment
             item.reorder_level = int(reorder_level)
             item.purchase_price = float(purchase_price) if purchase_price else None
             item.sale_price = float(sale_price) if sale_price else None
             item.barcode = barcode
             new_opening_value = (Decimal(str(new_os)) * Decimal(str(item.purchase_price or 0))).quantize(MONEY)
-            item.inventory_value = (Decimal(str(item.inventory_value or 0))
-                                    - old_opening_value + new_opening_value)
+            value_adjustment = new_opening_value - old_opening_value
+            # Update stock and inventory_value atomically
+            if stock_adjustment > 0:
+                item_add_stock(item, stock_adjustment, cost_total=value_adjustment)
+            elif stock_adjustment < 0:
+                item_remove_stock(item, -stock_adjustment, cost_total=-value_adjustment)
             unit_error = save_item_units(item)
             if unit_error:
                 db.session.rollback()
@@ -4668,6 +4908,9 @@ def delete_item(id):
         flash("Cannot delete item with associated purchases or sales!", "danger")
     else:
         item_name = item.name
+        # Clear GL entries for this item's opening balance before deletion
+        _repost_opening("item_opening", item.id, _opening_date(),
+                       f"Opening stock — {item.name}", [])
         db.session.delete(item)
         db.session.commit()
         record_audit("delete", "Item", id, f"Item '{item_name}' deleted")
@@ -4853,6 +5096,80 @@ def export_item_ledger_excel(id):
         extra_info=f"Item: {item.name} | Unit: {item.unit or 'Pcs'}",
     )
 
+# ─── BULK IMPORT ROUTES ───────────────────────────────────────────────────────
+
+@app.route("/import", methods=["GET"])
+@verified_required
+def bulk_import():
+    """Show bulk import form."""
+    import_history = ImportLog.query.filter_by(user_id=current_user.id).order_by(ImportLog.created_at.desc()).limit(10).all()
+    return render_template("bulk_import.html", import_history=import_history)
+
+@app.route("/import/process", methods=["POST"])
+@verified_required
+def process_import():
+    """Process bulk import file."""
+    import_type = request.form.get("import_type", "").lower()
+    file = request.files.get("file")
+
+    if not import_type or import_type not in ("items", "customers", "suppliers"):
+        flash("Invalid import type selected", "danger")
+        return redirect(url_for("bulk_import"))
+
+    if not file:
+        flash("No file selected", "danger")
+        return redirect(url_for("bulk_import"))
+
+    data, file_type = parse_import_file(file)
+    if data is None:
+        flash(file_type, "danger")  # file_type contains error message
+        return redirect(url_for("bulk_import"))
+
+    if not data:
+        flash("File is empty", "danger")
+        return redirect(url_for("bulk_import"))
+
+    # Create import log entry
+    import_log = ImportLog(
+        user_id=current_user.id,
+        import_type=import_type,
+        file_name=file.filename,
+        file_type=file_type,
+        total_records=len(data),
+        status="processing"
+    )
+    db.session.add(import_log)
+    db.session.commit()
+
+    # Process based on type
+    try:
+        if import_type == "items":
+            success, failed, errors = import_items(data)
+        elif import_type == "customers":
+            success, failed, errors = import_customers(data)
+        elif import_type == "suppliers":
+            success, failed, errors = import_suppliers(data)
+
+        import_log.successful = success
+        import_log.failed = failed
+        import_log.status = "completed"
+        if errors:
+            import_log.errors = json.dumps(errors[:100])  # Store first 100 errors
+        db.session.commit()
+
+        message = f"{success} records imported successfully"
+        if failed > 0:
+            message += f", {failed} failed"
+        flash(message, "success" if failed == 0 else "warning")
+
+    except Exception as e:
+        import_log.status = "failed"
+        import_log.errors = json.dumps([str(e)])
+        db.session.commit()
+        flash(f"Import failed: {str(e)}", "danger")
+
+    return redirect(url_for("bulk_import"))
+
 @app.route("/api/item/<int:id>")
 @verified_required
 def get_item(id):
@@ -5005,12 +5322,13 @@ def edit_purchase(id):
         else:
             try:
                 old_supplier_id = pur.supplier_id
-                # Reverse old stock
+                # Reverse old stock (with inventory_value sync)
                 touched_items = {}
                 for pi in pur.line_items:
                     old_item = db.session.get(Item, pi.item_id)
                     if old_item:
-                        old_item.stock -= line_base_qty(pi)
+                        cost_removed = pi.amount - pi.tax_amount
+                        item_remove_stock(old_item, line_base_qty(pi), cost_total=cost_removed)
                         touched_items[old_item.id] = old_item
                 # Delete old line items
                 PurchaseItem.query.filter_by(purchase_id=pur.id).delete()
@@ -5057,6 +5375,7 @@ def edit_purchase(id):
                     remove_supplier_ledger_entry("purchase", pur.id)
                     recalculate_supplier_ledger(old_supplier_id)
                 sync_supplier_purchase(pur)
+                post_document("purchase", pur)
                 db.session.commit()
                 record_audit("update", "Purchase", pur.id, f"Purchase #{pur.id} edited")
                 flash("Purchase updated successfully!", "success")
@@ -5084,7 +5403,8 @@ def delete_purchase(id):
     for pi in pur.line_items:
         item_obj = db.session.get(Item, pi.item_id)
         if item_obj:
-            item_obj.stock -= line_base_qty(pi)
+            cost_removed = pi.amount - pi.tax_amount
+            item_remove_stock(item_obj, line_base_qty(pi), cost_total=cost_removed)
     audit_summary = f"Purchase #{pur.id} ({pur.id_supplier.name if pur.id_supplier else 'supplier'}) deleted"
     supplier_id = remove_supplier_ledger_entry("purchase", pur.id)
     db.session.delete(pur)
@@ -5503,11 +5823,12 @@ def edit_sale(id):
         else:
             try:
                 old_customer_id = sal.customer_id
-                # Restore old stock
+                # Restore old stock (with inventory_value sync)
                 for si in sal.line_items:
                     old_item = db.session.get(Item, si.item_id)
                     if old_item:
-                        old_item.stock += line_base_qty(si)
+                        cost_returned = si.cost_price * line_base_qty(si)
+                        item_add_stock(old_item, line_base_qty(si), cost_total=cost_returned)
                 # Check new stock
                 stock_errors = []
                 for iid, qty, price, d_type, d_val, tax, unit_key in rows:
@@ -5517,11 +5838,12 @@ def edit_sale(id):
                         if item_obj.stock < int(qty) * factor:
                             stock_errors.append(f"{item_obj.name}: only {item_obj.stock} {item_obj.unit} available")
                 if stock_errors:
-                    # Undo stock restoration
+                    # Undo stock restoration (with inventory_value sync)
                     for si in sal.line_items:
                         old_item = db.session.get(Item, si.item_id)
                         if old_item:
-                            old_item.stock -= line_base_qty(si)
+                            cost_removed = si.cost_price * line_base_qty(si)
+                            item_remove_stock(old_item, line_base_qty(si), cost_total=cost_removed)
                     flash("Insufficient stock — " + "; ".join(stock_errors), "danger")
                 else:
                     # Delete old line items, update header
@@ -5562,6 +5884,7 @@ def edit_sale(id):
                         remove_customer_ledger_entry("sale", sal.id)
                         recalculate_customer_ledger(old_customer_id)
                     sync_customer_sale(sal)
+                    post_document("sale", sal)
                     db.session.commit()
                     record_audit("update", "Sale", sal.id, f"Sale #{sal.id} edited")
                     flash("Sale updated successfully!", "success")
@@ -5586,7 +5909,8 @@ def delete_sale(id):
     for si in sal.line_items:
         item_obj = db.session.get(Item, si.item_id)
         if item_obj:
-            item_obj.stock += line_base_qty(si)
+            cost_returned = si.cost_price * line_base_qty(si)
+            item_add_stock(item_obj, line_base_qty(si), cost_total=cost_returned)
     audit_summary = f"Sale #{sal.id} ({sal.id_customer.name if sal.id_customer else 'customer'}) deleted"
     customer_id = remove_customer_ledger_entry("sale", sal.id)
     db.session.delete(sal)
@@ -5701,6 +6025,7 @@ def edit_supplier_payment(id):
                     remove_supplier_ledger_entry("payment", payment.id)
                     recalculate_supplier_ledger(old_supplier_id)
                 sync_supplier_payment(payment)
+                post_document("payment", payment)
                 db.session.commit()
                 record_audit("update", "SupplierPayment", payment.id, f"Supplier payment #{payment.id} edited (amount {float(payment.amount):,.2f})")
                 flash("Supplier payment updated successfully!", "success")
@@ -6131,6 +6456,7 @@ def edit_customer_receipt(id):
                     remove_customer_ledger_entry("receipt", receipt.id)
                     recalculate_customer_ledger(old_customer_id)
                 sync_customer_receipt(receipt)
+                post_document("receipt", receipt)
                 db.session.commit()
                 record_audit("update", "CustomerReceipt", receipt.id, f"Customer receipt #{receipt.id} edited (amount {float(receipt.amount):,.2f})")
                 flash("Customer receipt updated successfully!", "success")
@@ -7173,7 +7499,7 @@ def delete_purchase_return(id):
     assert_not_posted("purchase_return", pr.id, f"Purchase return #{pr.id}")
     item = db.session.get(Item, pr.item_id)
     if item:
-        item.stock += line_base_qty(pr)
+        item_add_stock(item, line_base_qty(pr), cost_total=pr.cost_removed or 0)
     supplier_id = remove_supplier_ledger_entry("purchase_return", pr.id)
     db.session.delete(pr)
     db.session.commit()
@@ -7295,7 +7621,7 @@ def delete_sale_return(id):
     assert_not_posted("sale_return", sr.id, f"Sale return #{sr.id}")
     item = db.session.get(Item, sr.item_id)
     if item:
-        item.stock -= line_base_qty(sr)
+        item_remove_stock(item, line_base_qty(sr), cost_total=sr.cost_restored or 0)
     customer_id = remove_customer_ledger_entry("sale_return", sr.id)
     db.session.delete(sr)
     db.session.commit()
@@ -7410,9 +7736,9 @@ def delete_stock_adjustment(id):
     item_obj = db.session.get(Item, adj.item_id)
     if item_obj:
         if adj.direction == "out":
-            item_obj.stock += adj.quantity
+            item_add_stock(item_obj, adj.quantity, cost_total=adj.cost_value or 0)
         else:
-            item_obj.stock -= adj.quantity
+            item_remove_stock(item_obj, adj.quantity, cost_total=adj.cost_value or 0)
     db.session.delete(adj)
     db.session.commit()
     flash("Adjustment deleted and stock reversed.", "success")
@@ -8057,10 +8383,52 @@ def report_cash_book():
 @app.route("/accounts")
 @manager_required
 def accounts():
-    accts = FinancialAccount.query.order_by(FinancialAccount.id).all()
-    rows = [{"acct": a, "balance": get_account_balance(a)} for a in accts]
-    total = sum(r["balance"] for r in rows)
-    return render_template("accounts.html", rows=rows, total=total)
+    """Display financial accounts hierarchically with balances."""
+    control_accounts = get_active_control_accounts()
+    standalone_accounts = FinancialAccount.query.filter_by(is_control=False, parent_id=None, is_active=True).order_by(FinancialAccount.name).all()
+
+    rows = []
+    total = Decimal("0")
+
+    # Add control accounts with their subsidiaries
+    for control in control_accounts:
+        control_balance = Decimal("0")
+        control_row_idx = len(rows)  # Remember where we added the control account
+        rows.append({
+            "acct": control,
+            "balance": None,  # Will be calculated from children
+            "is_control": True,
+            "level": 0
+        })
+
+        # Add subsidiaries and calculate control balance
+        for subsidiary in control.children:
+            if subsidiary.is_active:
+                balance = get_account_balance(subsidiary)
+                control_balance += Decimal(str(balance))
+                rows.append({
+                    "acct": subsidiary,
+                    "balance": balance,
+                    "is_control": False,
+                    "level": 1
+                })
+
+        # Set control account balance to sum of children
+        rows[control_row_idx]["balance"] = float(control_balance)
+        total += control_balance
+
+    # Add standalone accounts
+    for standalone in standalone_accounts:
+        balance = get_account_balance(standalone)
+        rows.append({
+            "acct": standalone,
+            "balance": balance,
+            "is_control": False,
+            "level": 0
+        })
+        total += Decimal(str(balance))
+
+    return render_template("accounts.html", rows=rows, total=float(total))
 
 def account_name_taken(name, exclude_id=None):
     """Two accounts with the same name are indistinguishable in every dropdown,
@@ -9030,6 +9398,127 @@ def admin_toggle_verify(id):
     flash(f"User '{user.name}' is now {state}.", "success")
     return redirect(url_for("admin_users"))
 
+# ─── Financial Account Hierarchy Management ────────────────────────────────────
+@app.route("/admin/financial-accounts")
+@admin_required
+def admin_financial_accounts():
+    """List all financial accounts in hierarchical view."""
+    control_accounts = get_active_control_accounts()
+    standalone_accounts = FinancialAccount.query.filter_by(is_control=False, parent_id=None, is_active=True).order_by(FinancialAccount.name).all()
+    return render_template("admin_financial_accounts.html",
+                         control_accounts=control_accounts,
+                         standalone_accounts=standalone_accounts)
+
+@app.route("/admin/financial-accounts/create", methods=["GET", "POST"])
+@admin_required
+def admin_create_financial_account():
+    """Create a new financial account (control or subsidiary)."""
+    if request.method == "POST":
+        account_type = request.form.get("account_type", "").strip()  # "control" or "subsidiary" or "standalone"
+        name = request.form.get("name", "").strip()
+        opening_balance_str = request.form.get("opening_balance", "0").strip()
+        parent_id = request.form.get("parent_id", "").strip() or None
+        account_subtype = request.form.get("account_subtype", "Cash").strip()
+
+        if not name:
+            flash("Account name is required!", "danger")
+        else:
+            try:
+                opening_balance = Decimal(opening_balance_str) if opening_balance_str else Decimal("0")
+            except (InvalidOperation, ValueError):
+                flash("Invalid opening balance!", "danger")
+                return render_template("admin_create_financial_account.html",
+                                      control_accounts=get_active_control_accounts())
+
+            is_control = (account_type == "control")
+
+            account = FinancialAccount(
+                name=name,
+                method=new_account_method_token(),
+                account_type=account_subtype,
+                opening_balance=opening_balance,
+                is_control=is_control,
+                parent_id=int(parent_id) if parent_id else None,
+                is_active=True
+            )
+            db.session.add(account)
+            db.session.flush()
+            ensure_gl_account_for_financial(account)
+            db.session.commit()
+            record_audit("create", "FinancialAccount", account.id, f"Created {'control account' if is_control else 'account'} '{name}'")
+            flash(f"{'Control account' if is_control else 'Account'} '{name}' created successfully!", "success")
+            return redirect(url_for("admin_financial_accounts"))
+
+    control_accounts = get_active_control_accounts()
+    return render_template("admin_create_financial_account.html",
+                         control_accounts=control_accounts)
+
+@app.route("/admin/financial-accounts/<int:id>/edit", methods=["GET", "POST"])
+@admin_required
+def admin_edit_financial_account(id):
+    """Edit an existing financial account."""
+    account = FinancialAccount.query.get_or_404(id)
+
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        opening_balance_str = request.form.get("opening_balance", "0").strip()
+        is_active = request.form.get("is_active", "").strip() == "on"
+        parent_id = request.form.get("parent_id", "").strip() or None
+
+        if not name:
+            flash("Account name is required!", "danger")
+        else:
+            try:
+                opening_balance = Decimal(opening_balance_str) if opening_balance_str else Decimal("0")
+            except (InvalidOperation, ValueError):
+                flash("Invalid opening balance!", "danger")
+                return render_template("admin_edit_financial_account.html",
+                                      account=account,
+                                      control_accounts=get_active_control_accounts())
+
+            account.name = name
+            account.opening_balance = opening_balance
+            account.is_active = is_active
+            if not account.is_control:
+                account.parent_id = int(parent_id) if parent_id else None
+
+            db.session.commit()
+            record_audit("edit", "FinancialAccount", account.id, f"Updated account '{name}'")
+            flash(f"Account '{name}' updated successfully!", "success")
+            return redirect(url_for("admin_financial_accounts"))
+
+    control_accounts = get_active_control_accounts()
+    return render_template("admin_edit_financial_account.html",
+                         account=account,
+                         control_accounts=control_accounts)
+
+@app.route("/admin/financial-accounts/<int:id>/delete", methods=["POST"])
+@admin_required
+def admin_delete_financial_account(id):
+    """Delete a financial account (only if it has no transactions)."""
+    account = FinancialAccount.query.get_or_404(id)
+
+    # Check if account has any transactions
+    has_children = FinancialAccount.query.filter_by(parent_id=id).count() > 0
+    has_transactions = (
+        SupplierPayment.query.filter_by(account_id=id).count() > 0 or
+        CustomerPayment.query.filter_by(account_id=id).count() > 0 or
+        Expense.query.filter_by(account_id=id).count() > 0
+    )
+
+    if has_children:
+        flash(f"Cannot delete account '{account.name}' - it has subsidiary accounts!", "danger")
+    elif has_transactions:
+        flash(f"Cannot delete account '{account.name}' - it has transactions!", "danger")
+    else:
+        name = account.name
+        db.session.delete(account)
+        db.session.commit()
+        record_audit("delete", "FinancialAccount", id, f"Deleted account '{name}'")
+        flash(f"Account '{name}' deleted successfully!", "success")
+
+    return redirect(url_for("admin_financial_accounts"))
+
 @app.route("/admin/audit")
 @admin_required
 def admin_audit():
@@ -9601,25 +10090,92 @@ def seed_data_cmd(yes, demo_user):
     # The seeder builds a demo company from nothing, so it cannot assume the cash and bank
     # accounts are already there — it used to, and died on a KeyError against a database
     # that did not happen to have been booted first.
-    if FinancialAccount.query.count() == 0:
-        types = {"Cash": "Cash", "Bank": "Bank", "Cheque": "Bank", "Online": "Bank"}
-        for m in PAYMENT_METHODS:
-            db.session.add(FinancialAccount(name=m, method=m, account_type=types.get(m, "Bank"),
-                                            opening_balance=0))
-        db.session.commit()
-    seed_financial_account_links()
+    # Hierarchical structure: control accounts (headers) with subsidiary accounts (selectable)
 
-    # A "Card" account, so the demo POS shows card payment alongside cash — a payment type
-    # every visitor understands, wherever they are. Deliberately not JazzCash / Easypaisa:
-    # the demo is shown to buyers worldwide, and a local wallet name would only puzzle them.
-    # A shop's own local methods are added on its own site, by its admin.
-    if not FinancialAccount.query.filter_by(name="Card").first():
-        card = FinancialAccount(name="Card", method=new_account_method_token(),
-                                account_type="Bank", opening_balance=0)
-        db.session.add(card)
-        db.session.flush()
-        ensure_gl_account_for_financial(card)
+    # Check if hierarchical structure exists (by looking for Cash control account)
+    if not FinancialAccount.query.filter_by(name="Cash", is_control=True).first():
+        # Clear old flat accounts if they exist (migration from old structure)
+        FinancialAccount.query.delete()
         db.session.commit()
+
+        # Cash Control Account
+        cash_control = FinancialAccount(
+            name="Cash", method="cash", account_type="Cash",
+            opening_balance=0, is_control=True
+        )
+        db.session.add(cash_control)
+        db.session.flush()  # Need ID before using it as parent
+
+        # Cash subsidiaries
+        cash_subsidiaries = [
+            ("Cash in Hand", 0),
+            ("Cash at Cashier", 0),
+        ]
+        for sub_name, opening_bal in cash_subsidiaries:
+            subsidiary = FinancialAccount(
+                name=sub_name, method=new_account_method_token(),
+                account_type="Cash", opening_balance=opening_bal,
+                is_control=False, parent_id=cash_control.id
+            )
+            db.session.add(subsidiary)
+
+        # Banks Control Account
+        banks_control = FinancialAccount(
+            name="Banks", method="bank", account_type="Bank",
+            opening_balance=0, is_control=True
+        )
+        db.session.add(banks_control)
+        db.session.flush()  # Need ID before using it as parent
+
+        # Bank subsidiaries
+        bank_subsidiaries = [
+            ("HBL", 0),
+            ("UBL", 0),
+            ("ABL", 0),
+            ("MCB", 0),
+        ]
+        for bank_name, opening_bal in bank_subsidiaries:
+            subsidiary = FinancialAccount(
+                name=bank_name, method=new_account_method_token(),
+                account_type="Bank", opening_balance=opening_bal,
+                is_control=False, parent_id=banks_control.id
+            )
+            db.session.add(subsidiary)
+
+        # Cheque (standalone for legacy compatibility)
+        cheque = FinancialAccount(
+            name="Cheque", method="cheque", account_type="Bank",
+            opening_balance=0, is_control=False
+        )
+        db.session.add(cheque)
+
+        # Online (standalone for legacy compatibility)
+        online = FinancialAccount(
+            name="Online", method="online", account_type="Bank",
+            opening_balance=0, is_control=False
+        )
+        db.session.add(online)
+        db.session.commit()
+
+        # Card Control Account
+        card_control = FinancialAccount(
+            name="Card", method="card", account_type="Bank",
+            opening_balance=0, is_control=True
+        )
+        db.session.add(card_control)
+        db.session.flush()  # Need ID before using it as parent
+
+        # Add a default Visa subsidiary
+        visa = FinancialAccount(
+            name="Visa Card", method=new_account_method_token(),
+            account_type="Bank", opening_balance=0,
+            is_control=False, parent_id=card_control.id
+        )
+        db.session.add(visa)
+        db.session.commit()
+
+    # Create GL accounts for all financial accounts at once (idempotent)
+    seed_financial_account_links()
 
     closed = [fy.name for fy in FiscalYear.query.filter_by(is_closed=True).all()]
     if closed:
@@ -9677,16 +10233,19 @@ def seed_data_cmd(yes, demo_user):
     click.echo(f"  {len(cats)} categories, {len(items)} items, "
                f"{len(suppliers)} suppliers, {len(customers)} customers.")
 
-    accounts = {fa.method: fa for fa in FinancialAccount.query.all()}
+    # Build account lookup - use name for hierarchical structure (not method, which is now unique per account)
+    accounts = {fa.name: fa for fa in FinancialAccount.query.all()}
 
     # -- What was already in the till and the bank on day one ------------------
     # A funded business, so the demo does not open on an overdraft. These post to the
     # ledger like any other opening balance (Dr the account, Cr Opening Balance Equity),
     # which is also the only reason they show up on the balance sheet at all.
-    for method, opening in (("Cash", 400000), ("Bank", 4500000)):
-        fa = accounts[method]
-        fa.opening_balance = Decimal(str(opening))
-        post_account_opening(fa)
+    # Use the first subsidiary of each control account for opening balance
+    for acct_name, opening in (("Cash in Hand", 400000), ("HBL", 4500000)):
+        fa = accounts.get(acct_name)
+        if fa:
+            fa.opening_balance = Decimal(str(opening))
+            post_account_opening(fa)
     db.session.commit()
 
     # -- Capital injection, so the ledger has a manual journal entry in it ------
@@ -9790,8 +10349,20 @@ def seed_data_cmd(yes, demo_user):
     click.echo(f"  {len(sales)} sales.")
 
     # -- Payments and receipts, across all four methods ----------------------
+    # Map old payment method names to actual account names (for hierarchical structure)
+    method_to_account = {
+        "Bank": "HBL",           # Bank payments go to HBL subsidiary
+        "Cash": "Cash in Hand",  # Cash payments go to Cash in Hand subsidiary
+        "Cheque": "Cheque",      # Standalone
+        "Online": "Online"       # Standalone
+    }
+
     def pay(supplier, date, amount, method="Bank"):
-        acct = accounts[method]
+        acct_name = method_to_account.get(method, method)
+        acct = accounts.get(acct_name)
+        if not acct:
+            click.echo(f"WARNING: Account '{acct_name}' not found for payment method '{method}', skipping payment")
+            return
         p = SupplierPayment(supplier_id=suppliers[supplier].id, amount=amount,
                             payment_date=date, payment_method=method,
                             account_id=acct.id, reference_no=f"PAY-{date:%m%d}")
@@ -9799,7 +10370,11 @@ def seed_data_cmd(yes, demo_user):
         sync_supplier_payment(p); post_document("payment", p); db.session.commit()
 
     def receipt(customer, date, amount, method="Cash"):
-        acct = accounts[method]
+        acct_name = method_to_account.get(method, method)
+        acct = accounts.get(acct_name)
+        if not acct:
+            click.echo(f"WARNING: Account '{acct_name}' not found for payment method '{method}', skipping receipt")
+            return
         r = CustomerPayment(customer_id=customers[customer].id, amount=amount,
                             payment_date=date, payment_method=method,
                             account_id=acct.id, reference_no=f"RCT-{date:%m%d}")
@@ -9842,10 +10417,13 @@ def seed_data_cmd(yes, demo_user):
         ("Salaries & Wages", "Staff salaries - Jun", 66000, D(6, 30), "Bank"),
     ]
     for cat, desc, amount, date, method in demo_expenses:
-        e = Expense(category_id=exp_cats[cat].id, description=desc, amount=amount,
-                    date=date, payment_method=method, account_id=accounts[method].id)
-        db.session.add(e); db.session.flush()
-        post_document("expense", e); db.session.commit()
+        acct_name = method_to_account.get(method, method)
+        acct = accounts.get(acct_name)
+        if acct:
+            e = Expense(category_id=exp_cats[cat].id, description=desc, amount=amount,
+                        date=date, payment_method=method, account_id=acct.id)
+            db.session.add(e); db.session.flush()
+            post_document("expense", e); db.session.commit()
     click.echo(f"  {len(demo_expenses)} expenses.")
 
     # -- Fixed assets, and depreciation charged every month so far -------------
@@ -9858,13 +10436,16 @@ def seed_data_cmd(yes, demo_user):
         ("Shop Fit-out",    "FIT-01",   400_000,       0, "Reducing Balance", None, 15, D(2, 5),  "Bank"),
     ]
     for name, tag, cost, salvage, method, life, rate, acq, pay_method in demo_assets:
-        asset = FixedAsset(name=name, tag=tag, acquisition_date=acq, cost=cost,
-                           salvage_value=salvage, method=method,
-                           useful_life_months=life, rate_percent=rate)
-        db.session.add(asset)
-        db.session.flush()
-        post_asset_acquisition(asset, accounts[pay_method].gl_account_id)
-        db.session.commit()
+        acct_name = method_to_account.get(pay_method, pay_method)
+        acct = accounts.get(acct_name)
+        if acct:
+            asset = FixedAsset(name=name, tag=tag, acquisition_date=acq, cost=cost,
+                               salvage_value=salvage, method=method,
+                               useful_life_months=life, rate_percent=rate)
+            db.session.add(asset)
+            db.session.flush()
+            post_asset_acquisition(asset, acct.gl_account_id)
+            db.session.commit()
 
     charged = 0
     for m in range(1, now_local().month + 1):
@@ -9981,4 +10562,7 @@ if __name__ == "__main__":
         debug_mode = _debug_env.lower() in ("1", "true", "yes", "on")
     else:
         debug_mode = not DATABASE_URL
-    app.run(debug=debug_mode, host="127.0.0.1", port=5172)
+    # On Render, listen on PORT env var and 0.0.0.0. Local dev: port 5172 on localhost
+    port = int(os.getenv("PORT", 5172))
+    host = "0.0.0.0" if DATABASE_URL else "127.0.0.1"
+    app.run(debug=debug_mode, host=host, port=port)
