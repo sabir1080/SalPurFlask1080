@@ -4924,10 +4924,14 @@ def item_ledger(id):
     start_date_str = request.args.get("start_date", "")
     end_date_str   = request.args.get("end_date", "")
 
-    purchase_items   = PurchaseItem.query.filter_by(item_id=id).all()
-    sale_items       = SaleItem.query.filter_by(item_id=id).all()
-    purchase_returns = PurchaseReturn.query.filter_by(item_id=id).all()
-    sale_returns     = SaleReturn.query.filter_by(item_id=id).all()
+    # A reversed document never happened, so it must not still count here — its
+    # stock effect was already undone, but its row still exists for the audit trail.
+    purchase_items   = (PurchaseItem.query.join(Purchase)
+                        .filter(PurchaseItem.item_id == id, Purchase.is_reversed.is_(False)).all())
+    sale_items       = (SaleItem.query.join(Sale)
+                        .filter(SaleItem.item_id == id, Sale.is_reversed.is_(False)).all())
+    purchase_returns = PurchaseReturn.query.filter_by(item_id=id, is_reversed=False).all()
+    sale_returns     = SaleReturn.query.filter_by(item_id=id, is_reversed=False).all()
 
     # stock_in/out are in the item's base unit — the only unit item.stock (and this
     # ledger's running balance) is ever tracked in, whatever unit the line was actually
@@ -5031,10 +5035,13 @@ def item_ledger(id):
 @verified_required
 def export_item_ledger(id):
     item = db.session.get(Item, id) or abort(404)
-    purchase_items   = PurchaseItem.query.filter_by(item_id=id).all()
-    sale_items       = SaleItem.query.filter_by(item_id=id).all()
-    purchase_returns = PurchaseReturn.query.filter_by(item_id=id).all()
-    sale_returns     = SaleReturn.query.filter_by(item_id=id).all()
+    # A reversed document never happened, so it must not still count here.
+    purchase_items   = (PurchaseItem.query.join(Purchase)
+                        .filter(PurchaseItem.item_id == id, Purchase.is_reversed.is_(False)).all())
+    sale_items       = (SaleItem.query.join(Sale)
+                        .filter(SaleItem.item_id == id, Sale.is_reversed.is_(False)).all())
+    purchase_returns = PurchaseReturn.query.filter_by(item_id=id, is_reversed=False).all()
+    sale_returns     = SaleReturn.query.filter_by(item_id=id, is_reversed=False).all()
 
     # Stock In/Out are in the item's base unit, exactly like the on-screen ledger
     # (item_ledger() above) — whatever unit a line was actually transacted in.
@@ -5064,10 +5071,13 @@ def export_item_ledger(id):
 @verified_required
 def export_item_ledger_excel(id):
     item = db.session.get(Item, id) or abort(404)
-    purchase_items   = PurchaseItem.query.filter_by(item_id=id).all()
-    sale_items       = SaleItem.query.filter_by(item_id=id).all()
-    purchase_returns = PurchaseReturn.query.filter_by(item_id=id).all()
-    sale_returns     = SaleReturn.query.filter_by(item_id=id).all()
+    # A reversed document never happened, so it must not still count here.
+    purchase_items   = (PurchaseItem.query.join(Purchase)
+                        .filter(PurchaseItem.item_id == id, Purchase.is_reversed.is_(False)).all())
+    sale_items       = (SaleItem.query.join(Sale)
+                        .filter(SaleItem.item_id == id, Sale.is_reversed.is_(False)).all())
+    purchase_returns = PurchaseReturn.query.filter_by(item_id=id, is_reversed=False).all()
+    sale_returns     = SaleReturn.query.filter_by(item_id=id, is_reversed=False).all()
 
     # Stock In/Out are in the item's base unit, exactly like the on-screen ledger
     # (item_ledger() above) — whatever unit a line was actually transacted in.
