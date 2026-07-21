@@ -401,6 +401,25 @@
           shows in your profit. Choose the type honestly — a shortfall found at stocktake is a
           count correction, not damage.
         </p>
+        <h5>Bulk import</h5>
+        <p>
+          <span class="mn-path">Inventory → Bulk Import</span> — add many Items, Customers or
+          Suppliers at once from a CSV, Excel, or JSON file, instead of typing each one in by
+          hand. Column headers must match the sample shown on the page exactly.
+        </p>
+        <div class="mn-why">
+          <strong>An imported item is treated exactly like one added by hand</strong>
+          Category is required, prices cannot be negative, a barcode already used by another
+          item is rejected, and the <span class="mn-path">stock</span> column becomes both the
+          item's opening stock and its opening accounting value — so a bulk-imported item's cost
+          and Stock Valuation are correct from the first sale, the same as an item you type in
+          yourself.
+        </div>
+        <p class="mb-0 small">
+          A file is capped at 10,000 rows. Every import is logged with a success/failure count
+          and, for any row that failed, the reason why — visible under
+          <span class="mn-path">Recent Imports</span> on the same page.
+        </p>
       </section>
 
       <section id="s9" class="mn-sec">
@@ -458,6 +477,20 @@
         <p class="mb-0">
           Open it and press <strong>Reverse</strong>. A mirror entry is posted; both stay in the
           books. A reversal cannot itself be reversed, and an entry cannot be reversed twice.
+        </p>
+        <h5>Cash &amp; bank account hierarchy</h5>
+        <p>
+          <span class="mn-path">Admin → Financial Accounts</span> (admin only) — group related
+          cash or bank accounts under one heading. A <strong>Control Account</strong> (e.g.
+          "Banks") is a header only; you never post to it directly. A
+          <strong>Subsidiary Account</strong> (e.g. "HBL", "UBL") sits under a control account
+          and is what actually appears in payment, receipt and POS dropdowns. A
+          <strong>Standalone Account</strong> is not grouped at all.
+        </p>
+        <p class="mb-0">
+          Deactivating an account removes it from every selection dropdown without deleting its
+          history; it still appears, greyed out, at the bottom of the Financial Accounts page,
+          where it can be edited and reactivated at any time.
         </p>
       </section>
 
@@ -996,6 +1029,25 @@
           ke munafe par asar daalti hai. Qism <strong>sach ke mutabiq</strong> chunein: ginti mein kami
           nikalna "Count Correction" hai, "Damage" nahi.
         </p>
+        <h5>Bulk Import</h5>
+        <p>
+          <span class="mn-path">Inventory → Bulk Import</span> — Items, Customers ya Suppliers ek
+          sath, bohat saari, CSV, Excel ya JSON file se add karein, ek ek karke type karne ki
+          bajaye. Column headers page par diye gaye sample se hoo-ba-hoo match hone chahiye.
+        </p>
+        <div class="mn-why">
+          <strong>Import kiya hua item bilkul waisa hi hai jaise hath se add kiya ho</strong>
+          Category zaroori hai, price negative nahi ho sakti, aisa barcode jo pehle se kisi aur
+          item par ho reject ho jata hai, aur <span class="mn-path">stock</span> column hi item
+          ka opening stock aur uski opening accounting value dono ban jata hai — isliye bulk-import
+          kiye gaye item ki cost aur Stock Valuation pehli sale se hi sahi hoti hai, bilkul waisa
+          jaisa aap khud item add karte waqt hota hai.
+        </div>
+        <p class="mb-0 small">
+          Ek file mein zyada se zyada 10,000 rows ho sakti hain. Har import log hoti hai — kitne
+          successful, kitne failed, aur jo row fail hui uski wajah bhi — <span class="mn-path">Recent
+          Imports</span> mein isi page par dikhti hai.
+        </p>
       </section>
 
       <section id="u9" class="mn-sec">
@@ -1054,6 +1106,20 @@
         <p class="mb-0">
           Entry kholein aur <strong>Reverse</strong> dabayein. Ulti entry post ho jaayegi; dono kitabon
           mein rahengi. Reversal khud reverse nahi ho sakti, aur ek entry do bar reverse nahi hoti.
+        </p>
+        <h5>Cash aur Bank Accounts ki Hierarchy</h5>
+        <p>
+          <span class="mn-path">Admin → Financial Accounts</span> (sirf admin) — mila-julay cash ya
+          bank accounts ko ek heading ke neeche group karein. <strong>Control Account</strong>
+          (misaal: "Banks") sirf ek header hota hai; usay direct kabhi select nahi karte.
+          <strong>Subsidiary Account</strong> (misaal: "HBL", "UBL") control account ke neeche hota
+          hai aur wohi payment, receipt aur POS dropdowns mein nazar aata hai. <strong>Standalone
+          Account</strong> kisi group mein nahi hota.
+        </p>
+        <p class="mb-0">
+          Account ko deactivate karne se wo har dropdown se hat jata hai, lekin uski history delete
+          nahi hoti — wo Financial Accounts page ke neeche, halke rang mein, dikhta rehta hai, jahan
+          se usay edit karke wapas active bhi kiya ja sakta hai.
         </p>
       </section>
 

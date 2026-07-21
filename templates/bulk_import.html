@@ -76,11 +76,18 @@
                 <div class="mb-4">
                     <h6 class="fw-bold">Items (CSV)</h6>
                     <div class="p-3 rounded font-monospace small overflow-x-auto" style="background-color: var(--bs-gray-200, #e9ecef); color: var(--bs-body-color);">
-                        <div>name,category,unit,opening_stock,stock,reorder_level,purchase_price,sale_price,barcode</div>
-                        <div>Milk Bottle,Dairy,pcs,100,100,20,50,75,BRK001</div>
-                        <div>Butter,Dairy,kg,10,10,5,300,450,BRK002</div>
-                        <div>Bread,Bakery,pcs,50,50,15,30,50,BRK003</div>
+                        <div>name,category,unit,stock,reorder_level,purchase_price,sale_price,barcode</div>
+                        <div>Milk Bottle,Dairy,pcs,100,20,50,75,BRK001</div>
+                        <div>Butter,Dairy,kg,10,5,300,450,BRK002</div>
+                        <div>Bread,Bakery,pcs,50,15,30,50,BRK003</div>
                     </div>
+                    <small class="text-muted d-block mt-2">
+                        <code>category</code> is required. <code>stock</code> is the quantity you currently
+                        have on hand — the app records it as the item's opening balance, valued at
+                        <code>purchase_price</code>, so both stock and its accounting value start in sync.
+                        An <code>opening_stock</code> column is still accepted for older files but is
+                        ignored if <code>stock</code> is present.
+                    </small>
                 </div>
 
                 <!-- Customers Template -->

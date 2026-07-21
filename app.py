@@ -486,6 +486,53 @@ def item_units_for_js(items):
         for it in items
     }
 
+def purchase_item_options_for_js(items):
+    """Item-picker rows for purchase forms' dynamically-added lines, as plain JSON.
+
+    The item name must never be interpolated straight into a JS template literal
+    (see purchase.html/edit_purchase.html) — a backtick or ${...} in the name would
+    break out of the string and run as script. Feeding it through |tojson and letting
+    JS set it via textContent, like ITEM_UNITS already does, closes that off."""
+    return [
+        {"id": it.id,
+         "label": it.name + (f" ({it.id_category.name})" if it.id_category else ""),
+         "price": float(it.purchase_price) if it.purchase_price is not None else None}
+        for it in items
+    ]
+
+def sale_item_options_for_js(items):
+    """Item-picker rows for sale forms' dynamically-added lines. See purchase_item_options_for_js."""
+    return [
+        {"id": it.id,
+         "label": it.name + (f" ({it.id_category.name})" if it.id_category else ""),
+         "price": float(it.sale_price) if it.sale_price is not None else None,
+         "stock": it.stock,
+         "unit": it.unit or "Pcs"}
+        for it in items
+    ]
+
+def purchase_return_options_for_js(rows):
+    """Line-picker rows for the purchase return form. See purchase_item_options_for_js."""
+    return [
+        {"id": row["pi"].id,
+         "label": f"#PUR-{row['pi'].purchase_header.id} — {row['pi'].purchase_header.id_supplier.name} — "
+                  f"{row['pi'].item.name} (Rem: {row['remaining']} {row['pi'].display_unit})",
+         "price": float(row["pi"].purchase_price),
+         "remaining": row["remaining"]}
+        for row in rows
+    ]
+
+def sale_return_options_for_js(rows):
+    """Line-picker rows for the sale return form. See purchase_item_options_for_js."""
+    return [
+        {"id": row["si"].id,
+         "label": f"#SAL-{row['si'].sale_header.id} — {row['si'].sale_header.id_customer.name} — "
+                  f"{row['si'].item.name} (Rem: {row['remaining']} {row['si'].display_unit})",
+         "price": float(row["si"].sale_price),
+         "remaining": row["remaining"]}
+        for row in rows
+    ]
+
 def resolve_item_unit(item, unit_key):
     """Resolve a submitted unit key to (unit_name, factor).
 
@@ -2865,7 +2912,7 @@ def parse_account_id(raw):
     if not raw.isdigit():
         return None, "Invalid account!"
     acct = db.session.get(FinancialAccount, int(raw))
-    if acct is None or not acct.is_active:
+    if acct is None or not acct.is_active or acct.is_control:
         return None, "Invalid account!"
     return acct.id, None
 
@@ -3775,6 +3822,8 @@ def handle_posting_error(e):
 
 # ─── BULK IMPORT FUNCTIONS ─────────────────────────────────────────────────────
 
+IMPORT_MAX_ROWS = 10000
+
 def parse_import_file(file):
     """Parse CSV/Excel/JSON file and return list of dictionaries."""
     if not file:
@@ -3787,7 +3836,7 @@ def parse_import_file(file):
         if file_ext == 'csv':
             stream = StringIO(file.read().decode('utf-8'))
             reader = csv.DictReader(stream)
-            return list(reader), file_ext
+            data = list(reader)
 
         elif file_ext in ('xlsx', 'xls'):
             wb = openpyxl.load_workbook(file)
@@ -3796,20 +3845,25 @@ def parse_import_file(file):
             data = []
             for row in ws.iter_rows(min_row=2, values_only=True):
                 data.append(dict(zip(headers, row)))
-            return data, file_ext
 
         elif file_ext == 'json':
-            data = json.loads(file.read().decode('utf-8'))
-            return data if isinstance(data, list) else [data], file_ext
+            parsed = json.loads(file.read().decode('utf-8'))
+            data = parsed if isinstance(parsed, list) else [parsed]
 
         else:
             return None, f"Unsupported file type: {file_ext}"
+
+        if len(data) > IMPORT_MAX_ROWS:
+            return None, f"File has {len(data)} rows — the maximum is {IMPORT_MAX_ROWS} per import."
+        return data, file_ext
 
     except Exception as e:
         return None, f"Error parsing file: {str(e)}"
 
 def import_items(data):
-    """Bulk import items from parsed data."""
+    """Bulk import items from parsed data. Mirrors the validation and GL/valuation
+    behavior of the manual /item route so imported items are not silently missing
+    their cost basis or accounting entry."""
     success, failed, errors = 0, 0, []
 
     for idx, row in enumerate(data, 1):
@@ -3821,27 +3875,60 @@ def import_items(data):
                 continue
 
             category_name = row.get('category', '').strip()
-            category = None
-            if category_name:
-                category = Category.query.filter_by(name=category_name).first()
-                if not category:
-                    category = Category(name=category_name)
-                    db.session.add(category)
-                    db.session.flush()
+            if not category_name:
+                errors.append(f"Row {idx}: Missing category")
+                failed += 1
+                continue
+            category = Category.query.filter_by(name=category_name).first()
+            if not category:
+                category = Category(name=category_name)
+                db.session.add(category)
+                db.session.flush()
+
+            unit = (row.get('unit', 'Pcs') or 'Pcs').strip()
+            if unit not in ITEM_UNITS:
+                unit = "Pcs"
+
+            purchase_price_raw = row.get('purchase_price', '')
+            sale_price_raw = row.get('sale_price', '')
+            purchase_price = float(purchase_price_raw) if purchase_price_raw else None
+            sale_price = float(sale_price_raw) if sale_price_raw else None
+            if purchase_price is not None and purchase_price < 0:
+                errors.append(f"Row {idx}: Purchase price cannot be negative")
+                failed += 1
+                continue
+            if sale_price is not None and sale_price < 0:
+                errors.append(f"Row {idx}: Sale price cannot be negative")
+                failed += 1
+                continue
+
+            barcode = row.get('barcode', '').strip() or None
+            if barcode_taken(barcode):
+                errors.append(f"Row {idx}: Barcode '{barcode}' is already used by another item")
+                failed += 1
+                continue
+
+            # `stock` is the item's actual on-hand quantity at import time; since the
+            # system has no purchase history for it yet, that quantity IS the opening
+            # balance — same as the manual /item form, where opening_stock and stock
+            # are always the same number.
+            qty = int(row.get('stock', 0) or row.get('opening_stock', 0) or 0)
 
             item = Item(
                 name=name,
-                category_id=category.id if category else None,
-                unit=row.get('unit', 'pcs').strip(),
-                opening_stock=int(row.get('opening_stock', 0)) if row.get('opening_stock') else 0,
-                stock=int(row.get('stock', 0)) if row.get('stock') else 0,
+                category_id=category.id,
+                unit=unit,
+                opening_stock=qty,
+                stock=qty,
                 reorder_level=int(row.get('reorder_level', 0)) if row.get('reorder_level') else 0,
-                purchase_price=float(row.get('purchase_price', 0)) if row.get('purchase_price') else None,
-                sale_price=float(row.get('sale_price', 0)) if row.get('sale_price') else None,
-                barcode=row.get('barcode', '').strip() or None
+                purchase_price=purchase_price,
+                sale_price=sale_price,
+                barcode=barcode,
             )
 
             db.session.add(item)
+            item.inventory_value = (Decimal(str(item.opening_stock or 0))
+                                    * Decimal(str(item.purchase_price or 0))).quantize(MONEY)
             db.session.flush()
 
             # Post opening balance to GL if opening stock > 0
@@ -3879,25 +3966,10 @@ def import_customers(data):
 
             db.session.add(customer)
             db.session.flush()
-
-            # Post opening balance to ledger
+            sync_customer_opening(customer)
             if customer.opening_balance != 0:
-                entry = CustomerLedgerEntry(
-                    customer_id=customer.id,
-                    entry_date=date.today(),
-                    entry_type='debit',
-                    source_type='opening',
-                    source_id=customer.id,
-                    description='Opening balance',
-                    debit=customer.opening_balance,
-                    credit=0,
-                    balance_after=0
-                )
-                db.session.add(entry)
-
+                post_customer_opening(customer)
             db.session.commit()
-            if customer.opening_balance != 0:
-                recalculate_customer_ledger(customer.id)
             success += 1
 
         except Exception as e:
@@ -3928,25 +4000,10 @@ def import_suppliers(data):
 
             db.session.add(supplier)
             db.session.flush()
-
-            # Post opening balance to ledger
+            sync_supplier_opening(supplier)
             if supplier.opening_balance != 0:
-                entry = SupplierLedgerEntry(
-                    supplier_id=supplier.id,
-                    entry_date=date.today(),
-                    entry_type='credit',
-                    source_type='opening',
-                    source_id=supplier.id,
-                    description='Opening balance',
-                    debit=0,
-                    credit=supplier.opening_balance,
-                    balance_after=0
-                )
-                db.session.add(entry)
-
+                post_supplier_opening(supplier)
             db.session.commit()
-            if supplier.opening_balance != 0:
-                recalculate_supplier_ledger(supplier.id)
             success += 1
 
         except Exception as e:
@@ -4124,6 +4181,10 @@ def inject_form_defaults():
         "demo_mode": is_demo_mode(),
         "default_tax_rate": get_standard_tax_rate(),
         "item_units_for_js": item_units_for_js,
+        "purchase_item_options_for_js": purchase_item_options_for_js,
+        "sale_item_options_for_js": sale_item_options_for_js,
+        "purchase_return_options_for_js": purchase_return_options_for_js,
+        "sale_return_options_for_js": sale_return_options_for_js,
         "quotation_total": quotation_total,
         "purchase_total": purchase_total,
         "sale_total": sale_total,
@@ -5335,7 +5396,7 @@ def edit_purchase(id):
                 # Reverse old stock (with inventory_value sync)
                 touched_items = {}
                 for pi in pur.line_items:
-                    old_item = db.session.get(Item, pi.item_id)
+                    old_item = get_item_locked(pi.item_id)
                     if old_item:
                         cost_removed = pi.amount - pi.tax_amount
                         item_remove_stock(old_item, line_base_qty(pi), cost_total=cost_removed)
@@ -5354,7 +5415,7 @@ def edit_purchase(id):
                 pur.notes          = notes or None
                 # Create new line items
                 for iid, qty, price, d_type, d_val, tax, unit_key in rows:
-                    item_obj = db.session.get(Item, int(iid)) or abort(404)
+                    item_obj = touched_items.get(int(iid)) or get_item_locked(int(iid)) or abort(404)
                     qty_i = int(qty); price_f = float(price)
                     d_val_f = float(d_val or 0); tax_f = float(tax or 0)
                     gross = qty_i * price_f
@@ -5835,14 +5896,14 @@ def edit_sale(id):
                 old_customer_id = sal.customer_id
                 # Restore old stock (with inventory_value sync)
                 for si in sal.line_items:
-                    old_item = db.session.get(Item, si.item_id)
+                    old_item = get_item_locked(si.item_id)
                     if old_item:
                         cost_returned = si.cost_price * line_base_qty(si)
                         item_add_stock(old_item, line_base_qty(si), cost_total=cost_returned)
                 # Check new stock
                 stock_errors = []
                 for iid, qty, price, d_type, d_val, tax, unit_key in rows:
-                    item_obj = db.session.get(Item, int(iid))
+                    item_obj = get_item_locked(int(iid))
                     if item_obj:
                         _, factor = resolve_item_unit(item_obj, unit_key)
                         if item_obj.stock < int(qty) * factor:
@@ -5850,7 +5911,7 @@ def edit_sale(id):
                 if stock_errors:
                     # Undo stock restoration (with inventory_value sync)
                     for si in sal.line_items:
-                        old_item = db.session.get(Item, si.item_id)
+                        old_item = get_item_locked(si.item_id)
                         if old_item:
                             cost_removed = si.cost_price * line_base_qty(si)
                             item_remove_stock(old_item, line_base_qty(si), cost_total=cost_removed)
@@ -5867,7 +5928,7 @@ def edit_sale(id):
                     sal.date = datetime.strptime(date_str, "%Y-%m-%d")
                     sal.notes = notes or None
                     for iid, qty, price, d_type, d_val, tax, unit_key in rows:
-                        item_obj = db.session.get(Item, int(iid)) or abort(404)
+                        item_obj = get_item_locked(int(iid)) or abort(404)
                         qty_i = int(qty); price_f = float(price)
                         d_val_f = float(d_val or 0); tax_f = float(tax or 0)
                         gross = qty_i * price_f
@@ -6926,9 +6987,9 @@ def reports():
                 net_sale_amt        = total_sale_amt - total_sale_return_amt
                 net_purchase_cost   = total_purchase_cost - total_purchase_return_amt
                 gross_profit        = total_profit_amt
-                purchase_qty_total  = sum(pi.quantity for p in purchase_report for pi in p.line_items)
+                purchase_qty_total  = sum(pi.base_quantity for p in purchase_report for pi in p.line_items)
                 purchase_amt_total  = sum(purchase_total(p) for p in purchase_report)
-                sale_qty_total      = sum(si.quantity for s in sale_report for si in s.line_items)
+                sale_qty_total      = sum(si.base_quantity for s in sale_report for si in s.line_items)
                 sale_amt_total      = sum(sale_total(s) for s in sale_report)
                 supplier_balances = [
                     {
@@ -7012,19 +7073,21 @@ def export_purchase_report():
     try:
         start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
         end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
-        purchases = (
-            Purchase.query.join(Supplier)
-            .join(Item)
+        purchase_items = (
+            PurchaseItem.query.join(Purchase, PurchaseItem.purchase_id == Purchase.id)
+            .join(Supplier, Purchase.supplier_id == Supplier.id)
+            .join(Item, PurchaseItem.item_id == Item.id)
             .filter(Purchase.date.between(start_date, end_date))
+            .order_by(Purchase.id)
             .all()
         )
         col_headers = ["ID", "Supplier", "Item", "Category", "Quantity", "Purchase Price", "Total", "Date"]
         rows = [
-            [p.id, p.id_supplier.name, p.id_item.name,
-             p.id_item.id_category.name if p.id_item.id_category else "N/A",
-             p.quantity, round(p.purchase_price, 2),
-             round(p.quantity * p.purchase_price, 2), p.date.strftime("%Y-%m-%d")]
-            for p in purchases
+            [pi.purchase_id, pi.purchase_header.id_supplier.name, pi.item.name,
+             pi.item.id_category.name if pi.item.id_category else "N/A",
+             pi.base_quantity, round(float(pi.purchase_price), 2),
+             round(float(pi.amount), 2), pi.purchase_header.date.strftime("%Y-%m-%d")]
+            for pi in purchase_items
         ]
         if request.form.get("format") == "xlsx":
             return excel_response("purchase_report.xlsx", "Purchase History", col_headers, rows, start_date_str, end_date_str)
@@ -7044,19 +7107,21 @@ def export_sale_report():
     try:
         start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
         end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
-        sales = (
-            Sale.query.join(Customer)
-            .join(Item)
+        sale_items = (
+            SaleItem.query.join(Sale, SaleItem.sale_id == Sale.id)
+            .join(Customer, Sale.customer_id == Customer.id)
+            .join(Item, SaleItem.item_id == Item.id)
             .filter(Sale.date.between(start_date, end_date))
+            .order_by(Sale.id)
             .all()
         )
         col_headers = ["ID", "Customer", "Item", "Category", "Quantity", "Sale Price", "Total", "Date"]
         rows = [
-            [s.id, s.id_customer.name, s.id_item.name,
-             s.id_item.id_category.name if s.id_item.id_category else "N/A",
-             s.quantity, round(s.sale_price, 2),
-             round(s.quantity * s.sale_price, 2), s.date.strftime("%Y-%m-%d")]
-            for s in sales
+            [si.sale_id, si.sale_header.id_customer.name, si.item.name,
+             si.item.id_category.name if si.item.id_category else "N/A",
+             si.base_quantity, round(float(si.sale_price), 2),
+             round(float(si.amount), 2), si.sale_header.date.strftime("%Y-%m-%d")]
+            for si in sale_items
         ]
         if request.form.get("format") == "xlsx":
             return excel_response("sale_report.xlsx", "Sale History", col_headers, rows, start_date_str, end_date_str)
@@ -7467,7 +7532,7 @@ def purchase_return():
                 else:
                     for pi, qty, price, reason_val in rows:
                         purchase = pi.purchase_header
-                        item = db.session.get(Item, pi.item_id)
+                        item = get_item_locked(pi.item_id)
                         # A return is always in the original line's unit, never chosen separately.
                         pr = PurchaseReturn(
                             purchase_id=purchase.id,
@@ -7507,7 +7572,7 @@ def purchase_return():
 def delete_purchase_return(id):
     pr = db.session.get(PurchaseReturn, id) or abort(404)
     assert_not_posted("purchase_return", pr.id, f"Purchase return #{pr.id}")
-    item = db.session.get(Item, pr.item_id)
+    item = get_item_locked(pr.item_id)
     if item:
         item_add_stock(item, line_base_qty(pr), cost_total=pr.cost_removed or 0)
     supplier_id = remove_supplier_ledger_entry("purchase_return", pr.id)
@@ -7585,7 +7650,7 @@ def sale_return():
                 else:
                     for si, qty, price, reason_val in rows:
                         sale = si.sale_header
-                        item = db.session.get(Item, si.item_id)
+                        item = get_item_locked(si.item_id)
                         # A return is always in the original line's unit, never chosen separately.
                         sr = SaleReturn(
                             sale_id=sale.id,
@@ -7629,7 +7694,7 @@ def sale_return():
 def delete_sale_return(id):
     sr = db.session.get(SaleReturn, id) or abort(404)
     assert_not_posted("sale_return", sr.id, f"Sale return #{sr.id}")
-    item = db.session.get(Item, sr.item_id)
+    item = get_item_locked(sr.item_id)
     if item:
         item_remove_stock(item, line_base_qty(sr), cost_total=sr.cost_restored or 0)
     customer_id = remove_customer_ledger_entry("sale_return", sr.id)
@@ -7700,14 +7765,13 @@ def stock_adjustment():
             flash("Item, type, quantity and date are required.", "danger")
         elif not qty_str.isdigit() or int(qty_str) <= 0:
             flash("Quantity must be a positive integer.", "danger")
-        elif not db.session.get(Item, int(item_id)):
+        elif not (item_obj := get_item_locked(int(item_id))):
             flash("Item not found.", "danger")
         elif adj_type not in ADJUSTMENT_DIRECTIONS:
             # Never guess. An unrecognised type used to fall through to "in" and add
             # stock that nobody asked for.
             flash("Unknown adjustment type.", "danger")
         else:
-            item_obj = db.session.get(Item, int(item_id))
             qty = int(qty_str)
             direction = ADJUSTMENT_DIRECTIONS[adj_type]
             if direction == "out" and item_obj.stock < qty:
@@ -7743,7 +7807,7 @@ def stock_adjustment():
 def delete_stock_adjustment(id):
     adj = db.session.get(StockAdjustment, id) or abort(404)
     assert_not_posted("stock_adjustment", adj.id, f"Stock adjustment #{adj.id}")
-    item_obj = db.session.get(Item, adj.item_id)
+    item_obj = get_item_locked(adj.item_id)
     if item_obj:
         if adj.direction == "out":
             item_add_stock(item_obj, adj.quantity, cost_total=adj.cost_value or 0)
@@ -9415,9 +9479,11 @@ def admin_financial_accounts():
     """List all financial accounts in hierarchical view."""
     control_accounts = get_active_control_accounts()
     standalone_accounts = FinancialAccount.query.filter_by(is_control=False, parent_id=None, is_active=True).order_by(FinancialAccount.name).all()
+    inactive_accounts = FinancialAccount.query.filter_by(is_active=False).order_by(FinancialAccount.name).all()
     return render_template("admin_financial_accounts.html",
                          control_accounts=control_accounts,
-                         standalone_accounts=standalone_accounts)
+                         standalone_accounts=standalone_accounts,
+                         inactive_accounts=inactive_accounts)
 
 @app.route("/admin/financial-accounts/create", methods=["GET", "POST"])
 @admin_required
@@ -9427,11 +9493,22 @@ def admin_create_financial_account():
         account_type = request.form.get("account_type", "").strip()  # "control" or "subsidiary" or "standalone"
         name = request.form.get("name", "").strip()
         opening_balance_str = request.form.get("opening_balance", "0").strip()
-        parent_id = request.form.get("parent_id", "").strip() or None
+        parent_raw = request.form.get("parent_id", "").strip()
         account_subtype = request.form.get("account_subtype", "Cash").strip()
+        is_control = (account_type == "control")
+        needs_parent = (account_type == "subsidiary")
 
+        parent = None
         if not name:
             flash("Account name is required!", "danger")
+        elif account_name_taken(name):
+            flash(f"An account named '{name}' already exists!", "danger")
+        elif needs_parent and not parent_raw.isdigit():
+            flash("Please select a valid control account for this subsidiary!", "danger")
+        elif needs_parent and not (parent := db.session.get(FinancialAccount, int(parent_raw))):
+            flash("Selected control account was not found!", "danger")
+        elif needs_parent and not parent.is_control:
+            flash("A subsidiary account must belong to a control account!", "danger")
         else:
             try:
                 opening_balance = Decimal(opening_balance_str) if opening_balance_str else Decimal("0")
@@ -9440,28 +9517,31 @@ def admin_create_financial_account():
                 return render_template("admin_create_financial_account.html",
                                       control_accounts=get_active_control_accounts())
 
-            is_control = (account_type == "control")
-
             account = FinancialAccount(
                 name=name,
                 method=new_account_method_token(),
                 account_type=account_subtype,
                 opening_balance=opening_balance,
                 is_control=is_control,
-                parent_id=int(parent_id) if parent_id else None,
+                parent_id=parent.id if needs_parent else None,
                 is_active=True
             )
             db.session.add(account)
             db.session.flush()
             ensure_gl_account_for_financial(account)
+            post_account_opening(account)
             db.session.commit()
             record_audit("create", "FinancialAccount", account.id, f"Created {'control account' if is_control else 'account'} '{name}'")
             flash(f"{'Control account' if is_control else 'Account'} '{name}' created successfully!", "success")
             return redirect(url_for("admin_financial_accounts"))
 
+    parent_id_prefill = request.args.get("parent_id", "")
+    account_type_prefill = request.args.get("type", "")
     control_accounts = get_active_control_accounts()
     return render_template("admin_create_financial_account.html",
-                         control_accounts=control_accounts)
+                         control_accounts=control_accounts,
+                         parent_id_prefill=parent_id_prefill,
+                         account_type_prefill=account_type_prefill)
 
 @app.route("/admin/financial-accounts/<int:id>/edit", methods=["GET", "POST"])
 @admin_required
@@ -9473,10 +9553,21 @@ def admin_edit_financial_account(id):
         name = request.form.get("name", "").strip()
         opening_balance_str = request.form.get("opening_balance", "0").strip()
         is_active = request.form.get("is_active", "").strip() == "on"
-        parent_id = request.form.get("parent_id", "").strip() or None
+        parent_raw = request.form.get("parent_id", "").strip()
 
+        parent = None
         if not name:
             flash("Account name is required!", "danger")
+        elif account_name_taken(name, exclude_id=account.id):
+            flash(f"An account named '{name}' already exists!", "danger")
+        elif not account.is_control and parent_raw and not parent_raw.isdigit():
+            flash("Please select a valid control account!", "danger")
+        elif not account.is_control and parent_raw and not (parent := db.session.get(FinancialAccount, int(parent_raw))):
+            flash("Selected control account was not found!", "danger")
+        elif not account.is_control and parent_raw and parent and not parent.is_control:
+            flash("A subsidiary account must belong to a control account!", "danger")
+        elif not account.is_control and parent_raw and parent and parent.id == account.id:
+            flash("An account cannot be its own parent!", "danger")
         else:
             try:
                 opening_balance = Decimal(opening_balance_str) if opening_balance_str else Decimal("0")
@@ -9490,8 +9581,10 @@ def admin_edit_financial_account(id):
             account.opening_balance = opening_balance
             account.is_active = is_active
             if not account.is_control:
-                account.parent_id = int(parent_id) if parent_id else None
+                account.parent_id = parent.id if parent_raw else None
 
+            db.session.flush()
+            post_account_opening(account)
             db.session.commit()
             record_audit("edit", "FinancialAccount", account.id, f"Updated account '{name}'")
             flash(f"Account '{name}' updated successfully!", "success")

@@ -17,13 +17,13 @@
                     <div class="mb-3">
                         <label for="account_type" class="form-label">Account Type</label>
                         <div class="btn-group w-100" role="group">
-                            <input type="radio" class="btn-check" name="account_type" id="type_control" value="control" onchange="updateForm()">
+                            <input type="radio" class="btn-check" name="account_type" id="type_control" value="control" onchange="updateForm()" {% if account_type_prefill == 'control' %}checked{% endif %}>
                             <label class="btn btn-outline-primary" for="type_control">Control Account</label>
 
-                            <input type="radio" class="btn-check" name="account_type" id="type_subsidiary" value="subsidiary" onchange="updateForm()">
+                            <input type="radio" class="btn-check" name="account_type" id="type_subsidiary" value="subsidiary" onchange="updateForm()" {% if account_type_prefill == 'subsidiary' %}checked{% endif %}>
                             <label class="btn btn-outline-primary" for="type_subsidiary">Subsidiary Account</label>
 
-                            <input type="radio" class="btn-check" name="account_type" id="type_standalone" value="standalone" onchange="updateForm()">
+                            <input type="radio" class="btn-check" name="account_type" id="type_standalone" value="standalone" onchange="updateForm()" {% if account_type_prefill == 'standalone' %}checked{% endif %}>
                             <label class="btn btn-outline-primary" for="type_standalone">Standalone Account</label>
                         </div>
                         <small class="form-text text-muted d-block mt-2">
@@ -51,7 +51,7 @@
                         <select class="form-select" id="parent_id" name="parent_id">
                             <option value="">-- Select Parent Account --</option>
                             {% for control in control_accounts %}
-                            <option value="{{ control.id }}">{{ control.name }}</option>
+                            <option value="{{ control.id }}" {% if parent_id_prefill and parent_id_prefill|string == control.id|string %}selected{% endif %}>{{ control.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
