@@ -345,6 +345,28 @@
 
       <section id="s8" class="mn-sec">
         <h3>8. Inventory</h3>
+        <h5>Multiple units</h5>
+        <p>
+          <span class="mn-path">Inventory → Items → Add / Edit</span> — every item has one
+          <strong>base unit</strong> (its <span class="mn-path">Unit of Measure</span>), which is
+          the only unit stock is ever counted in. Below that, an <strong>Alternate Units</strong>
+          table lets you add other units the item can be bought or sold in — a name, and how many
+          base units it equals. A medicine's base unit might be Tablet, with Strip (= 10) and Box
+          (= 100) as alternates; a cloth's base unit might be Meter, with Thaan as an alternate.
+        </p>
+        <p>
+          Once an item has alternate units, every line on a Purchase, Sale, Quotation, Purchase
+          Order, and the POS counter shows a <span class="mn-path">Unit</span> dropdown. Buy in
+          Box, sell in Strip — whichever unit is picked, the quantity and price on that line stay
+          in that unit, but stock always moves in the base unit behind the scenes (quantity ×
+          factor). Purchase/Sale Returns are not asked for a unit — they always return in the
+          same unit the original line was in.
+        </p>
+        <div class="mn-why">
+          <strong>An item with no alternate units behaves exactly as before</strong>
+          There is nothing to set up for a single-unit item — it just has a base unit, same as
+          always.
+        </div>
         <h5>Stock Valuation</h5>
         <p>
           <span class="mn-path">Reports → Stock Valuation</span> — what is in the warehouse right
@@ -917,6 +939,29 @@
 
       <section id="u8" class="mn-sec">
         <h3>8. Inventory</h3>
+        <h5>Multiple Units (Ek se zyada units)</h5>
+        <p>
+          <span class="mn-path">Inventory → Items → Add / Edit</span> — har item ka ek
+          <strong>base unit</strong> hota hai (uska <span class="mn-path">Unit of Measure</span>),
+          jismein hamesha stock ginti hoti hai. Uske neeche <strong>Alternate Units</strong> wala
+          table hota hai jahan aap us item ke doosre units add kar sakte hain jin mein wo khareeda
+          ya becha ja sakta hai — ek naam, aur ye batana ke wo kitne base units ke barabar hai.
+          Misaal: dawai ka base unit Tablet ho sakta hai, aur Strip (= 10) aur Box (= 100) uske
+          alternate units; kapre ka base unit Meter ho sakta hai, aur Thaan uska alternate unit.
+        </p>
+        <p>
+          Jab item ke alternate units set ho jayein, to Purchase, Sale, Quotation, Purchase Order,
+          aur POS counter — har jagah har line par ek <span class="mn-path">Unit</span> dropdown
+          nazar aata hai. Box mein khareedein, Strip mein bechein — jo bhi unit chunein, us line ki
+          quantity aur price usi unit mein rahegi, lekin stock hamesha base unit mein hi move hota
+          hai (quantity × factor). Purchase/Sale Return mein unit poocha nahi jata — wo hamesha
+          usi unit mein hota hai jis mein asal transaction hua tha.
+        </p>
+        <div class="mn-why">
+          <strong>Jis item ka koi alternate unit nahi, wo bilkul pehle jaisa hi chalta hai</strong>
+          Single-unit item ke liye kuch alag se set up nahi karna — uska bas ek base unit hota hai,
+          jaisa hamesha se tha.
+        </div>
         <h5>Stock Valuation</h5>
         <p>
           <span class="mn-path">Reports → Stock Valuation</span> — abhi godown mein kya para hai aur

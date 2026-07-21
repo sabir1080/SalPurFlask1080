@@ -110,11 +110,7 @@
                     <td>{{ q.customer.name }}</td>
                     <td class="text-nowrap">{{ q.quote_date.strftime('%d %b %Y') }}</td>
                     <td class="text-nowrap">{{ q.valid_until.strftime('%d %b %Y') if q.valid_until else '—' }}</td>
-                    <td class="text-end">
-                        {% set ns = namespace(t=0) %}
-                        {% for qi in q.line_items %}{% set ns.t = ns.t + qi.quantity * qi.sale_price %}{% endfor %}
-                        {{ ns.t | fmt_num }}
-                    </td>
+                    <td class="text-end">{{ quotation_total(q) | fmt_num }}</td>
                     <td class="text-center">
                         <span class="badge
                             {% if q.status == 'Accepted' or q.status == 'Converted' %}bg-success

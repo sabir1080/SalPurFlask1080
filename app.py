@@ -601,6 +601,13 @@ class PurchaseItem(db.Model):
     def display_unit(self):
         return self.unit_name or (self.item.unit if self.item else "Pcs")
 
+    @property
+    def base_quantity(self):
+        """This line's quantity converted to the item's base unit — the only
+        quantity that is ever safe to sum across lines transacted in different
+        units. See line_base_qty()."""
+        return self.quantity * (self.unit_factor or 1)
+
 class SaleItem(db.Model):
     __tablename__   = "sale_item"
     id              = db.Column(db.Integer, primary_key=True)
@@ -623,6 +630,11 @@ class SaleItem(db.Model):
     @property
     def display_unit(self):
         return self.unit_name or (self.item.unit if self.item else "Pcs")
+
+    @property
+    def base_quantity(self):
+        """See PurchaseItem.base_quantity."""
+        return self.quantity * (self.unit_factor or 1)
 
 PAYMENT_METHODS = ("Cash", "Bank", "Cheque", "Online")
 ITEM_UNITS = ("Pcs", "Dozen", "Meter", "Kg", "Gram", "Liter", "Box", "Carton", "Bag", "Yard", "Foot", "Set", "Pair", "Roll", "Sheet", "Pack")
@@ -679,6 +691,13 @@ class PurchaseReturn(db.Model):
     # PurchaseItem.unit_name/unit_factor.
     unit_name    = db.Column(db.String(20), nullable=True)
     unit_factor  = db.Column(db.Integer, nullable=False, default=1)
+    # Which specific PurchaseItem line this return was made against. Needed because
+    # the same item can appear on a purchase more than once in different units (e.g.
+    # 5 loose Pcs and 3 Box) — without this, "how much of THIS line is still
+    # returnable" could only be tracked per (purchase, item), which mixes unrelated
+    # units together. Nullable for rows written before this column existed; those
+    # fall back to the old, coarser (purchase_id, item_id) grouping.
+    purchase_item_id = db.Column(db.Integer, db.ForeignKey("purchase_item.id"), nullable=True)
     supplier     = db.relationship("Supplier", backref="purchase_returns", lazy=True)
     item         = db.relationship("Item", backref="purchase_returns", lazy=True)
 
@@ -699,6 +718,8 @@ class SaleReturn(db.Model):
     # Copied from the SaleItem line being returned against. See PurchaseReturn.unit_name.
     unit_name    = db.Column(db.String(20), nullable=True)
     unit_factor  = db.Column(db.Integer, nullable=False, default=1)
+    # See PurchaseReturn.purchase_item_id.
+    sale_item_id = db.Column(db.Integer, db.ForeignKey("sale_item.id"), nullable=True)
     customer     = db.relationship("Customer", backref="sale_returns", lazy=True)
     item         = db.relationship("Item", backref="sale_returns", lazy=True)
 
@@ -1994,8 +2015,8 @@ def item_remove_stock(item, qty, cost_total=None):
 def sale_line_cost(sale_return):
     """What the returned goods cost when they were sold. Recorded on the original
     sale line, so a return never re-values stock at today's average."""
-    si = SaleItem.query.filter_by(sale_id=sale_return.sale_id,
-                                  item_id=sale_return.item_id).first()
+    si = (db.session.get(SaleItem, sale_return.sale_item_id) if sale_return.sale_item_id
+          else SaleItem.query.filter_by(sale_id=sale_return.sale_id, item_id=sale_return.item_id).first())
     unit = Decimal(str(si.cost_price)) if si else Decimal(str(sale_return.item.avg_cost if sale_return.item else 0))
     return (unit * Decimal(str(line_base_qty(sale_return)))).quantize(MONEY)
 
@@ -2639,6 +2660,14 @@ def sale_total(sale):
         return net
     return 0.0
 
+def quotation_item_net(qi):
+    gross = float(qi.quantity * qi.sale_price)
+    _, _, net = calc_discount_tax(gross, qi.discount_type or "percent", qi.discount_value or 0, qi.tax_percent or 0)
+    return net
+
+def quotation_total(q):
+    return sum(quotation_item_net(qi) for qi in q.line_items)
+
 def get_purchase_paid(purchase_id, exclude_payment_id=None):
     query = (db.session.query(func.sum(SupplierPayment.amount))
              .filter(SupplierPayment.purchase_id == purchase_id,
@@ -3084,22 +3113,43 @@ def get_purchase_returned_qty(purchase_id):
         PurchaseReturn.purchase_id == purchase_id
     ).scalar() or 0)
 
-def get_purchase_item_returned_qty(purchase_id, item_id):
-    return int(db.session.query(func.sum(PurchaseReturn.quantity)).filter(
-        PurchaseReturn.purchase_id == purchase_id,
-        PurchaseReturn.item_id == item_id,
-    ).scalar() or 0)
+def get_purchase_item_returned_qty(pi):
+    """How much of this specific PurchaseItem line has already been returned.
+
+    Keyed to the line, not just (purchase, item), because the same item can appear
+    twice on one purchase in different units (5 loose Pcs and 3 Box) — grouping by
+    item alone would mix their 'remaining' pools together."""
+    direct = db.session.query(func.sum(PurchaseReturn.quantity)).filter(
+        PurchaseReturn.purchase_item_id == pi.id
+    ).scalar() or 0
+    # Returns recorded before purchase_item_id existed aren't tagged to a line.
+    # Only fold them in when this item appears on the purchase exactly once, so
+    # there is no ambiguity about which line they belonged to.
+    if PurchaseItem.query.filter_by(purchase_id=pi.purchase_id, item_id=pi.item_id).count() == 1:
+        direct += db.session.query(func.sum(PurchaseReturn.quantity)).filter(
+            PurchaseReturn.purchase_id == pi.purchase_id,
+            PurchaseReturn.item_id == pi.item_id,
+            PurchaseReturn.purchase_item_id.is_(None),
+        ).scalar() or 0
+    return int(direct)
 
 def get_sale_returned_qty(sale_id):
     return int(db.session.query(func.sum(SaleReturn.quantity)).filter(
         SaleReturn.sale_id == sale_id
     ).scalar() or 0)
 
-def get_sale_item_returned_qty(sale_id, item_id):
-    return int(db.session.query(func.sum(SaleReturn.quantity)).filter(
-        SaleReturn.sale_id == sale_id,
-        SaleReturn.item_id == item_id,
-    ).scalar() or 0)
+def get_sale_item_returned_qty(si):
+    """See get_purchase_item_returned_qty — the sale-side equivalent."""
+    direct = db.session.query(func.sum(SaleReturn.quantity)).filter(
+        SaleReturn.sale_item_id == si.id
+    ).scalar() or 0
+    if SaleItem.query.filter_by(sale_id=si.sale_id, item_id=si.item_id).count() == 1:
+        direct += db.session.query(func.sum(SaleReturn.quantity)).filter(
+            SaleReturn.sale_id == si.sale_id,
+            SaleReturn.item_id == si.item_id,
+            SaleReturn.sale_item_id.is_(None),
+        ).scalar() or 0
+    return int(direct)
 
 def purchase_return_total(pr):
     return float(pr.quantity * pr.return_price)
@@ -3198,6 +3248,20 @@ def migrate_database():
                     conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN unit_name VARCHAR(20)"))
                 if "unit_factor" not in cols:
                     conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN unit_factor INTEGER DEFAULT 1"))
+
+    # Which specific line a return was made against — lets "how much is still
+    # returnable" be tracked per line instead of mixing every unit an item was
+    # ever bought/sold in on one document into a single pool.
+    if "purchase_return" in inspector.get_table_names():
+        cols = {col["name"] for col in inspector.get_columns("purchase_return")}
+        if "purchase_item_id" not in cols:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE purchase_return ADD COLUMN purchase_item_id INTEGER REFERENCES purchase_item(id)"))
+    if "sale_return" in inspector.get_table_names():
+        cols = {col["name"] for col in inspector.get_columns("sale_return")}
+        if "sale_item_id" not in cols:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE sale_return ADD COLUMN sale_item_id INTEGER REFERENCES sale_item(id)"))
 
     for table, column in (("supplier", "opening_balance"), ("customer", "opening_balance")):
         if table in inspector.get_table_names():
@@ -3829,6 +3893,7 @@ def inject_form_defaults():
         "demo_mode": is_demo_mode(),
         "default_tax_rate": get_standard_tax_rate(),
         "item_units_for_js": item_units_for_js,
+        "quotation_total": quotation_total,
         "purchase_total": purchase_total,
         "sale_total": sale_total,
         "get_purchase_paid": get_purchase_paid,
@@ -4728,15 +4793,17 @@ def export_item_ledger(id):
     purchase_returns = PurchaseReturn.query.filter_by(item_id=id).all()
     sale_returns     = SaleReturn.query.filter_by(item_id=id).all()
 
+    # Stock In/Out are in the item's base unit, exactly like the on-screen ledger
+    # (item_ledger() above) — whatever unit a line was actually transacted in.
     rows = []
     for pi in purchase_items:
-        rows.append((pi.purchase_header.date, "Purchase", f"PO #{pi.purchase_header.id}", pi.purchase_header.id_supplier.name, pi.quantity, 0, pi.purchase_price, purchase_item_total(pi)))
+        rows.append((pi.purchase_header.date, "Purchase", f"PO #{pi.purchase_header.id}", pi.purchase_header.id_supplier.name, line_base_qty(pi), 0, float(pi.purchase_price) / (pi.unit_factor or 1), purchase_item_total(pi)))
     for si in sale_items:
-        rows.append((si.sale_header.date, "Sale", f"SO #{si.sale_header.id}", si.sale_header.id_customer.name, 0, si.quantity, si.sale_price, sale_item_total(si)))
+        rows.append((si.sale_header.date, "Sale", f"SO #{si.sale_header.id}", si.sale_header.id_customer.name, 0, line_base_qty(si), float(si.sale_price) / (si.unit_factor or 1), sale_item_total(si)))
     for pr in purchase_returns:
-        rows.append((pr.date, "Purchase Return", f"PR #{pr.id}", pr.supplier.name, 0, pr.quantity, pr.return_price, round(pr.quantity * pr.return_price, 2)))
+        rows.append((pr.date, "Purchase Return", f"PR #{pr.id}", pr.supplier.name, 0, line_base_qty(pr), float(pr.return_price) / (pr.unit_factor or 1), round(pr.quantity * pr.return_price, 2)))
     for sr in sale_returns:
-        rows.append((sr.date, "Sale Return", f"SR #{sr.id}", sr.customer.name, sr.quantity, 0, sr.return_price, round(sr.quantity * sr.return_price, 2)))
+        rows.append((sr.date, "Sale Return", f"SR #{sr.id}", sr.customer.name, line_base_qty(sr), 0, float(sr.return_price) / (sr.unit_factor or 1), round(sr.quantity * sr.return_price, 2)))
 
     rows.sort(key=lambda x: x[0])
     balance = 0
@@ -4759,15 +4826,17 @@ def export_item_ledger_excel(id):
     purchase_returns = PurchaseReturn.query.filter_by(item_id=id).all()
     sale_returns     = SaleReturn.query.filter_by(item_id=id).all()
 
+    # Stock In/Out are in the item's base unit, exactly like the on-screen ledger
+    # (item_ledger() above) — whatever unit a line was actually transacted in.
     raw = []
     for pi in purchase_items:
-        raw.append((pi.purchase_header.date, "Purchase", f"PO #{pi.purchase_header.id}", pi.purchase_header.id_supplier.name, pi.quantity, 0, pi.purchase_price, purchase_item_total(pi)))
+        raw.append((pi.purchase_header.date, "Purchase", f"PO #{pi.purchase_header.id}", pi.purchase_header.id_supplier.name, line_base_qty(pi), 0, float(pi.purchase_price) / (pi.unit_factor or 1), purchase_item_total(pi)))
     for si in sale_items:
-        raw.append((si.sale_header.date, "Sale", f"SO #{si.sale_header.id}", si.sale_header.id_customer.name, 0, si.quantity, si.sale_price, sale_item_total(si)))
+        raw.append((si.sale_header.date, "Sale", f"SO #{si.sale_header.id}", si.sale_header.id_customer.name, 0, line_base_qty(si), float(si.sale_price) / (si.unit_factor or 1), sale_item_total(si)))
     for pr in purchase_returns:
-        raw.append((pr.date, "Purchase Return", f"PR #{pr.id}", pr.supplier.name, 0, pr.quantity, pr.return_price, round(pr.quantity * pr.return_price, 2)))
+        raw.append((pr.date, "Purchase Return", f"PR #{pr.id}", pr.supplier.name, 0, line_base_qty(pr), float(pr.return_price) / (pr.unit_factor or 1), round(pr.quantity * pr.return_price, 2)))
     for sr in sale_returns:
-        raw.append((sr.date, "Sale Return", f"SR #{sr.id}", sr.customer.name, sr.quantity, 0, sr.return_price, round(sr.quantity * sr.return_price, 2)))
+        raw.append((sr.date, "Sale Return", f"SR #{sr.id}", sr.customer.name, line_base_qty(sr), 0, float(sr.return_price) / (sr.unit_factor or 1), round(sr.quantity * sr.return_price, 2)))
 
     raw.sort(key=lambda x: x[0])
     balance = item.opening_stock
@@ -6491,7 +6560,7 @@ def reports():
                     db.session.query(
                         Supplier.name.label("name"),
                         db.func.count(db.func.distinct(Purchase.id)).label("bill_count"),
-                        db.func.sum(PurchaseItem.quantity).label("total_qty"),
+                        db.func.sum(PurchaseItem.quantity * PurchaseItem.unit_factor).label("total_qty"),
                         db.func.sum(_pur_net).label("total_amt"),
                     )
                     .select_from(PurchaseItem)
@@ -6893,7 +6962,7 @@ def export_supplier_purchase_report():
             db.session.query(
                 Supplier.name.label("name"),
                 db.func.count(db.func.distinct(Purchase.id)).label("bill_count"),
-                db.func.sum(PurchaseItem.quantity).label("total_qty"),
+                db.func.sum(PurchaseItem.quantity * PurchaseItem.unit_factor).label("total_qty"),
                 db.func.sum(PurchaseItem.amount).label("total_amt"),
             )
             .select_from(PurchaseItem)
@@ -7010,9 +7079,9 @@ def purchase_return():
                .filter(Purchase.is_reversed.is_(False))
                .order_by(Purchase.date.desc(), PurchaseItem.id).all())
     items_available = [
-        {"pi": pi, "remaining": pi.quantity - get_purchase_item_returned_qty(pi.purchase_id, pi.item_id)}
+        {"pi": pi, "remaining": pi.quantity - get_purchase_item_returned_qty(pi)}
         for pi in all_pis
-        if pi.quantity - get_purchase_item_returned_qty(pi.purchase_id, pi.item_id) > 0
+        if pi.quantity - get_purchase_item_returned_qty(pi) > 0
     ]
     if request.method == "POST":
         pi_ids        = request.form.getlist("purchase_item_id[]")
@@ -7048,7 +7117,7 @@ def purchase_return():
                     if not pi:
                         errors.append(f"Row {idx}: purchase item not found.")
                         continue
-                    remaining = pi.quantity - get_purchase_item_returned_qty(pi.purchase_id, pi.item_id)
+                    remaining = pi.quantity - get_purchase_item_returned_qty(pi)
                     if int(qty_s) > remaining:
                         errors.append(f"Row {idx} ({pi.item.name}): cannot return {qty_s}, only {remaining} remaining.")
                         continue
@@ -7073,6 +7142,7 @@ def purchase_return():
                             date=ret_date,
                             reason=reason_val,
                             unit_name=pi.unit_name, unit_factor=pi.unit_factor or 1,
+                            purchase_item_id=pi.id,
                         )
                         if item:
                             # Goods leave at what they cost us, not at the agreed
@@ -7130,9 +7200,9 @@ def sale_return():
                .filter(Sale.is_reversed.is_(False))
                .order_by(Sale.date.desc(), SaleItem.id).all())
     items_available = [
-        {"si": si, "remaining": si.quantity - get_sale_item_returned_qty(si.sale_id, si.item_id)}
+        {"si": si, "remaining": si.quantity - get_sale_item_returned_qty(si)}
         for si in all_sis
-        if si.quantity - get_sale_item_returned_qty(si.sale_id, si.item_id) > 0
+        if si.quantity - get_sale_item_returned_qty(si) > 0
     ]
     if request.method == "POST":
         si_ids        = request.form.getlist("sale_item_id[]")
@@ -7168,7 +7238,7 @@ def sale_return():
                     if not si:
                         errors.append(f"Row {idx}: sale item not found.")
                         continue
-                    remaining = si.quantity - get_sale_item_returned_qty(si.sale_id, si.item_id)
+                    remaining = si.quantity - get_sale_item_returned_qty(si)
                     if int(qty_s) > remaining:
                         errors.append(f"Row {idx} ({si.item.name}): cannot return {qty_s}, only {remaining} remaining.")
                         continue
@@ -7190,6 +7260,7 @@ def sale_return():
                             date=ret_date,
                             reason=reason_val,
                             unit_name=si.unit_name, unit_factor=si.unit_factor or 1,
+                            sale_item_id=si.id,
                         )
                         if item:
                             # Back into stock at the cost they left at, taken from the
@@ -7665,13 +7736,9 @@ def quotations():
 @manager_required
 def quotation_detail(id):
     q = db.session.get(Quotation, id) or abort(404)
-    def q_item_net(qi):
-        gross = qi.quantity * qi.sale_price
-        _, _, net = calc_discount_tax(gross, qi.discount_type, qi.discount_value, qi.tax_percent)
-        return net
-    total = sum(q_item_net(qi) for qi in q.line_items)
+    total = quotation_total(q)
     return render_template("quotation_detail.html", q=q, total=total,
-                           q_item_net=q_item_net, quote_statuses=QUOTATION_STATUSES)
+                           q_item_net=quotation_item_net, quote_statuses=QUOTATION_STATUSES)
 
 @app.route("/quotations/<int:id>/status", methods=["POST"])
 @manager_required

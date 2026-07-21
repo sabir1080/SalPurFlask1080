@@ -98,7 +98,6 @@
             </thead>
             <tbody>
                 {% for po in orders %}
-                {% set po_total = po.line_items | sum(attribute='quantity') %}
                 <tr>
                     <td><strong>#{{ po.id }}</strong></td>
                     <td>{{ po.supplier.name }}</td>

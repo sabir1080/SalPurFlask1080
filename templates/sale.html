@@ -142,7 +142,7 @@
                     <small class="text-muted d-block">{{ s.line_items | map(attribute='item.name') | list | join(', ') | truncate(40) }}</small>
                 {% endif %}
             </td>
-            <td class="text-end">{{ s.line_items | sum(attribute='quantity') | fmt_num }}</td>
+            <td class="text-end">{{ s.line_items | sum(attribute='base_quantity') | fmt_num }}</td>
             <td class="text-end fw-semibold">{{ s_total | fmt_num }}</td>
             <td class="text-end">{{ s_recv | fmt_num }}</td>
             <td class="text-end {% if s_due > 0 %}text-danger{% endif %}">{{ s_due | fmt_num }}</td>

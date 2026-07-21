@@ -211,10 +211,12 @@
                 <td class="text-end">+ {{ ns.total_tax | fmt_num }}</td>
             </tr>
             {% endif %}
-            {% if returned_qty > 0 %}
+            {% if sale.returns %}
+            {% set ns2 = namespace(returned_amt=0) %}
+            {% for r in sale.returns %}{% set ns2.returned_amt = ns2.returned_amt + sale_return_total(r) %}{% endfor %}
             <tr class="text-warning">
-                <td>Sale Return ({{ returned_qty }} units)</td>
-                <td class="text-end">− {{ (returned_qty * sale.sale_price) | fmt_num }}</td>
+                <td>Sale Return ({{ sale.returns | length }} return{{ 's' if sale.returns | length != 1 else '' }})</td>
+                <td class="text-end">− {{ ns2.returned_amt | fmt_num }}</td>
             </tr>
             {% endif %}
             <tr class="total-final">

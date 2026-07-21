@@ -39,7 +39,7 @@
         </span>
         {% if current_user.is_admin and not fy.is_closed %}
         <form method="POST" action="{{ url_for('close_year', id=fy.id) }}"
-              onsubmit="return confirm('Close {{ fy.name }}? A closing entry moves the year\'s profit into Retained Earnings and every period is locked. This cannot be undone.')">
+              data-confirm="Close {{ fy.name }}? A closing entry moves the year's profit into Retained Earnings and every period is locked. This cannot be undone.">
             <button class="btn btn-sm btn-warning"><i class="bi bi-lock"></i> Close Year</button>
         </form>
         {% endif %}

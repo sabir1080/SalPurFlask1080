@@ -93,7 +93,7 @@
 
         {% if not is_system %}
         <form method="POST" action="{{ url_for('delete_gl_account', id=acct.id) }}" class="mt-3"
-              onsubmit="return confirm('Delete {{ acct.code }} — {{ acct.name }}?')">
+              data-confirm="Delete {{ acct.code }} — {{ acct.name }}?">
             <button class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> Delete this account</button>
             <span class="text-muted small ms-2">Only possible while it has no journal entries.</span>
         </form>

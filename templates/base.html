@@ -236,6 +236,19 @@
                     csrfInput.value = csrfToken;
                     form.prepend(csrfInput);
                 }
+                // A form with data-confirm asks before submitting. The message comes
+                // from a plain HTML attribute (auto-escaped by Jinja like any other),
+                // never built by interpolating a name into a JS string literal — that
+                // pattern breaks (and is exploitable) the moment a name contains a
+                // quote character, e.g. "O'Brien" or a crafted account/fiscal-year name.
+                if (form.dataset.confirm) {
+                    form.addEventListener('submit', function (e) {
+                        if (!confirm(form.dataset.confirm)) {
+                            e.preventDefault();
+                            e.stopImmediatePropagation();
+                        }
+                    });
+                }
                 form.addEventListener('submit', function () {
                     form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(function (btn) {
                         btn.disabled = true;

@@ -190,8 +190,11 @@ document.addEventListener('DOMContentLoaded', function () {
                         {% for p in purchases %}
                         <tr>
                             <td>{{ p.id_supplier.name }}</td>
-                            <td>{{ p.id_item.name }}</td>
-                            <td class="text-end">{{ (p.quantity * p.purchase_price) | fmt_num }}</td>
+                            <td>
+                                {% if p.line_items | length == 1 %}{{ p.line_items[0].item.name }}
+                                {% else %}<span class="badge bg-info text-dark">{{ p.line_items | length }} items</span>{% endif %}
+                            </td>
+                            <td class="text-end">{{ purchase_total(p) | fmt_num }}</td>
                             <td>{{ p.date.strftime('%Y-%m-%d') }}</td>
                         </tr>
                         {% else %}
@@ -217,8 +220,11 @@ document.addEventListener('DOMContentLoaded', function () {
                         {% for s in sales %}
                         <tr>
                             <td>{{ s.id_customer.name }}</td>
-                            <td>{{ s.id_item.name }}</td>
-                            <td class="text-end">{{ (s.quantity * s.sale_price) | fmt_num }}</td>
+                            <td>
+                                {% if s.line_items | length == 1 %}{{ s.line_items[0].item.name }}
+                                {% else %}<span class="badge bg-info text-dark">{{ s.line_items | length }} items</span>{% endif %}
+                            </td>
+                            <td class="text-end">{{ sale_total(s) | fmt_num }}</td>
                             <td>{{ s.date.strftime('%Y-%m-%d') }}</td>
                         </tr>
                         {% else %}

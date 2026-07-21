@@ -429,11 +429,17 @@ ${tblClone.outerHTML}
                     <tr>
                         <td>{{ p.id }}</td>
                         <td>{{ p.id_supplier.name }}</td>
-                        <td>{{ p.id_item.name }}</td>
-                        <td>{{ p.id_item.id_category.name if p.id_item.id_category else 'N/A' }}</td>
-                        <td class="text-end">{{ p.quantity | fmt_num }}</td>
-                        <td class="text-end">{{ p.purchase_price | fmt_num }}</td>
-                        <td class="text-end fw-semibold">{{ (p.quantity * p.purchase_price) | fmt_num }}</td>
+                        <td>
+                            {% if p.line_items | length == 1 %}{{ p.line_items[0].item.name }}
+                            {% else %}<span class="badge bg-info text-dark">{{ p.line_items | length }} items</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if p.line_items | length == 1 %}{{ p.line_items[0].item.id_category.name if p.line_items[0].item.id_category else 'N/A' }}
+                            {% else %}—{% endif %}
+                        </td>
+                        <td class="text-end">{{ p.line_items | sum(attribute='base_quantity') | fmt_num }}</td>
+                        <td class="text-end">{% if p.line_items | length == 1 %}{{ p.line_items[0].purchase_price | fmt_num }}{% else %}—{% endif %}</td>
+                        <td class="text-end fw-semibold">{{ purchase_total(p) | fmt_num }}</td>
                         <td>{{ p.date.strftime('%Y-%m-%d') }}</td>
                     </tr>
                     {% else %}
@@ -518,11 +524,17 @@ ${tblClone.outerHTML}
                     <tr>
                         <td>{{ s.id }}</td>
                         <td>{{ s.id_customer.name }}</td>
-                        <td>{{ s.id_item.name }}</td>
-                        <td>{{ s.id_item.id_category.name if s.id_item.id_category else 'N/A' }}</td>
-                        <td class="text-end">{{ s.quantity | fmt_num }}</td>
-                        <td class="text-end">{{ s.sale_price | fmt_num }}</td>
-                        <td class="text-end fw-semibold">{{ (s.quantity * s.sale_price) | fmt_num }}</td>
+                        <td>
+                            {% if s.line_items | length == 1 %}{{ s.line_items[0].item.name }}
+                            {% else %}<span class="badge bg-info text-dark">{{ s.line_items | length }} items</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if s.line_items | length == 1 %}{{ s.line_items[0].item.id_category.name if s.line_items[0].item.id_category else 'N/A' }}
+                            {% else %}—{% endif %}
+                        </td>
+                        <td class="text-end">{{ s.line_items | sum(attribute='base_quantity') | fmt_num }}</td>
+                        <td class="text-end">{% if s.line_items | length == 1 %}{{ s.line_items[0].sale_price | fmt_num }}{% else %}—{% endif %}</td>
+                        <td class="text-end fw-semibold">{{ sale_total(s) | fmt_num }}</td>
                         <td>{{ s.date.strftime('%Y-%m-%d') }}</td>
                     </tr>
                     {% else %}

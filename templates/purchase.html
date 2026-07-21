@@ -60,7 +60,7 @@
                     <select class="form-select form-select-sm item-select" name="item_id[]" required onchange="fetchPrice(this)">
                         <option value="">Select Item</option>
                         {% for it in items %}
-                        <option value="{{ it.id }}" data-price="{{ it.purchase_price or '' }}" data-unit="{{ it.unit or 'Pcs' }}">{{ it.name }}{% if it.id_category %} ({{ it.id_category.name }}){% endif %}</option>
+                        <option value="{{ it.id }}" data-price="{{ it.purchase_price or '' }}">{{ it.name }}{% if it.id_category %} ({{ it.id_category.name }}){% endif %}</option>
                         {% endfor %}
                     </select>
                 </td>
@@ -138,7 +138,7 @@
                     <small class="text-muted d-block">{{ p.line_items | map(attribute='item.name') | list | join(', ') | truncate(40) }}</small>
                 {% endif %}
             </td>
-            <td class="text-end">{{ p.line_items | sum(attribute='quantity') | fmt_num }}</td>
+            <td class="text-end">{{ p.line_items | sum(attribute='base_quantity') | fmt_num }}</td>
             <td class="text-end fw-semibold">{{ p_total | fmt_num }}</td>
             <td class="text-end">{{ p_paid | fmt_num }}</td>
             <td class="text-end {% if p_due > 0 %}text-danger{% endif %}">{{ p_due | fmt_num }}</td>
@@ -162,7 +162,7 @@
 <div class="pagination">{{ pagination.links }}</div>
 
 <script>
-const itemOptions = `{% for it in items %}<option value="{{ it.id }}" data-price="{{ it.purchase_price or '' }}" data-unit="{{ it.unit or 'Pcs' }}">{{ it.name }}{% if it.id_category %} ({{ it.id_category.name }}){% endif %}</option>{% endfor %}`;
+const itemOptions = `{% for it in items %}<option value="{{ it.id }}" data-price="{{ it.purchase_price or '' }}">{{ it.name }}{% if it.id_category %} ({{ it.id_category.name }}){% endif %}</option>{% endfor %}`;
 const DEFAULT_TAX_RATE = {{ '%.2f' | format(default_tax_rate) }};
 const ITEM_UNITS = {{ item_units_for_js(items) | tojson }};
 
