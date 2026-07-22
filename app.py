@@ -224,7 +224,8 @@ from salpurflask.inventory.routes import (
     category, edit_category, delete_category,
     export_item_ledger, export_item_ledger_excel,
     bulk_import, process_import,
-    stock_adjustment, delete_stock_adjustment
+    stock_adjustment, delete_stock_adjustment,
+    labels, labels_assign, send_low_stock_alert
 )
 app.add_url_rule("/item/<int:id>/ledger", "item_ledger", item_ledger)
 app.add_url_rule("/api/item/<int:id>", "get_item", get_item)
@@ -241,6 +242,9 @@ app.add_url_rule("/import", "bulk_import", bulk_import, methods=["GET"])
 app.add_url_rule("/import/process", "process_import", process_import, methods=["POST"])
 app.add_url_rule("/stock_adjustment", "stock_adjustment", stock_adjustment, methods=["GET", "POST"])
 app.add_url_rule("/stock_adjustment/delete/<int:id>", "delete_stock_adjustment", delete_stock_adjustment, methods=["POST"])
+app.add_url_rule("/labels", "labels", labels, methods=["GET"])
+app.add_url_rule("/labels/assign", "labels_assign", labels_assign, methods=["POST"])
+app.add_url_rule("/low_stock_alert", "send_low_stock_alert", send_low_stock_alert, methods=["POST"])
 
 def sql_date_fmt(col, fmt="%Y-%m"):
     if db.engine.dialect.name == "postgresql":
@@ -2465,48 +2469,8 @@ def code_svg(value, kind="barcode"):
         app.logger.exception("Could not render a %s for %r", kind, value)
         return ""
 
-@app.route("/labels")
-@manager_required
-def labels():
-    """Printable barcode / QR labels to stick on stock.
-
-    Pick how many of each item, barcode or QR, and print a sheet. Only items that have a
-    code get a label; items without one are listed with a one-click way to assign codes."""
-    items = Item.query.outerjoin(Category, Item.category_id == Category.id) \
-        .order_by(Category.name, Item.name).all()
-    kind = "qr" if request.args.get("type") == "qr" else "barcode"
-    show_price = request.args.get("price", "1") != "0"
-
-    sheet = []
-    for it in items:
-        try:
-            copies = int(request.args.get(f"copies_{it.id}", "0") or 0)
-        except ValueError:
-            copies = 0
-        if copies > 0 and it.barcode:
-            svg = code_svg(it.barcode, kind)
-            for _ in range(min(copies, 200)):        # a sane cap per print run
-                sheet.append({"name": it.name, "price": it.sale_price,
-                              "code": it.barcode, "svg": svg})
-
-    missing = [it for it in items if not it.barcode]
-    return render_template("labels.html", items=items, sheet=sheet, kind=kind,
-                           show_price=show_price, missing=missing)
-
-@app.route("/labels/assign", methods=["POST"])
-@manager_required
-def labels_assign():
-    """Give every item that has no code a stable numeric one, so it can be labelled and
-    scanned. Numeric (not the name) because the cheapest scanners read digits most
-    reliably, and the id makes it unique and repeatable."""
-    n = 0
-    for it in Item.query.filter(or_(Item.barcode.is_(None), Item.barcode == "")).all():
-        it.barcode = f"{it.id:012d}"
-        n += 1
-    if n:
-        db.session.commit()
-    flash(f"Assigned a code to {n} item(s) that had none.", "success")
-    return redirect(url_for("labels"))
+# Routes /labels and /labels/assign moved to salpurflask.inventory.routes
+# (labels() and labels_assign() functions)
 
 @app.route("/sale/edit/<int:id>", methods=["GET", "POST"])
 @manager_required
@@ -5822,28 +5786,8 @@ def report_gst():
 
 # ─── Low Stock Alert ───────────────────────────────────────────────────────────
 
-@app.route("/low_stock_alert", methods=["POST"])
-@manager_required
-def send_low_stock_alert():
-    low_items = Item.query.filter(Item.stock <= Item.reorder_level).order_by(Item.stock).all()
-    if not low_items:
-        flash("No items are below reorder level — no alert sent.", "info")
-        return redirect(url_for("item"))
-    lines = [f"LOW STOCK ALERT — {app.config['COMPANY_NAME']}\n"]
-    lines.append(f"Generated: {now_local().strftime('%Y-%m-%d %H:%M')}\n")
-    lines.append(f"{'Item':<30} {'Stock':>8} {'Reorder':>8}")
-    lines.append("-" * 50)
-    for it in low_items:
-        lines.append(f"{it.name:<30} {it.stock:>8} {it.reorder_level:>8}")
-    body = "\n".join(lines)
-    mail_user = app.config.get("MAIL_USERNAME", "").strip()
-    if not mail_user:
-        flash("Email not configured — cannot send alert.", "danger")
-        return redirect(url_for("item"))
-    ok = send_email(mail_user, f"Low Stock Alert — {len(low_items)} items", body)
-    if ok:
-        flash(f"Low stock alert sent for {len(low_items)} item(s).", "success")
-    return redirect(url_for("item"))
+# Route /low_stock_alert moved to salpurflask.inventory.routes
+# (send_low_stock_alert() function)
 
 @app.cli.command("seed-accounting")
 def seed_accounting_cmd():

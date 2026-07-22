@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from flask import abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 
 from salpurflask.extensions import db
 from salpurflask.models import (
@@ -822,3 +822,82 @@ def delete_stock_adjustment(id):
     db.session.commit()
     flash("Adjustment deleted and stock reversed.", "success")
     return redirect(url_for("stock_adjustment"))
+
+
+# ─── LABEL ROUTES ──────────────────────────────────────────────────────────────
+
+
+@manager_required
+def labels():
+    """Printable barcode / QR labels to stick on stock.
+
+    Pick how many of each item, barcode or QR, and print a sheet. Only items that have a
+    code get a label; items without one are listed with a one-click way to assign codes.
+    """
+    from app import code_svg
+
+    items = Item.query.outerjoin(Category, Item.category_id == Category.id) \
+        .order_by(Category.name, Item.name).all()
+    kind = "qr" if request.args.get("type") == "qr" else "barcode"
+    show_price = request.args.get("price", "1") != "0"
+
+    sheet = []
+    for it in items:
+        try:
+            copies = int(request.args.get(f"copies_{it.id}", "0") or 0)
+        except ValueError:
+            copies = 0
+        if copies > 0 and it.barcode:
+            svg = code_svg(it.barcode, kind)
+            for _ in range(min(copies, 200)):        # a sane cap per print run
+                sheet.append({"name": it.name, "price": it.sale_price,
+                              "code": it.barcode, "svg": svg})
+
+    missing = [it for it in items if not it.barcode]
+    return render_template("labels.html", items=items, sheet=sheet, kind=kind,
+                           show_price=show_price, missing=missing)
+
+
+@manager_required
+def labels_assign():
+    """Give every item that has no code a stable numeric one, so it can be labelled and
+    scanned. Numeric (not the name) because the cheapest scanners read digits most
+    reliably, and the id makes it unique and repeatable.
+    """
+    n = 0
+    for it in Item.query.filter(or_(Item.barcode.is_(None), Item.barcode == "")).all():
+        it.barcode = f"{it.id:012d}"
+        n += 1
+    if n:
+        db.session.commit()
+    flash(f"Assigned a code to {n} item(s) that had none.", "success")
+    return redirect(url_for("labels"))
+
+
+# ─── LOW STOCK ALERT ROUTE ────────────────────────────────────────────────────────
+
+
+@manager_required
+def send_low_stock_alert():
+    """Send email alert for items below reorder level."""
+    from app import send_email, app as flask_app
+
+    low_items = Item.query.filter(Item.stock <= Item.reorder_level).order_by(Item.stock).all()
+    if not low_items:
+        flash("No items are below reorder level — no alert sent.", "info")
+        return redirect(url_for("item"))
+    lines = [f"LOW STOCK ALERT — {flask_app.config['COMPANY_NAME']}\n"]
+    lines.append(f"Generated: {now_local().strftime('%Y-%m-%d %H:%M')}\n")
+    lines.append(f"{'Item':<30} {'Stock':>8} {'Reorder':>8}")
+    lines.append("-" * 50)
+    for it in low_items:
+        lines.append(f"{it.name:<30} {it.stock:>8} {it.reorder_level:>8}")
+    body = "\n".join(lines)
+    mail_user = flask_app.config.get("MAIL_USERNAME", "").strip()
+    if not mail_user:
+        flash("Email not configured — cannot send alert.", "danger")
+        return redirect(url_for("item"))
+    ok = send_email(mail_user, f"Low Stock Alert — {len(low_items)} items", body)
+    if ok:
+        flash(f"Low stock alert sent for {len(low_items)} item(s).", "success")
+    return redirect(url_for("item"))
