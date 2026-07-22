@@ -227,6 +227,11 @@ from salpurflask.inventory.routes import (
     stock_adjustment, delete_stock_adjustment,
     labels, labels_assign, send_low_stock_alert
 )
+
+# Register purchase routes directly (not via blueprint, to preserve endpoint names)
+from salpurflask.purchase.routes import (
+    purchase, edit_purchase, delete_purchase
+)
 app.add_url_rule("/item/<int:id>/ledger", "item_ledger", item_ledger)
 app.add_url_rule("/api/item/<int:id>", "get_item", get_item)
 app.add_url_rule("/reports/stock", "report_stock", report_stock)
@@ -245,6 +250,9 @@ app.add_url_rule("/stock_adjustment/delete/<int:id>", "delete_stock_adjustment",
 app.add_url_rule("/labels", "labels", labels, methods=["GET"])
 app.add_url_rule("/labels/assign", "labels_assign", labels_assign, methods=["POST"])
 app.add_url_rule("/low_stock_alert", "send_low_stock_alert", send_low_stock_alert, methods=["POST"])
+app.add_url_rule("/purchase", "purchase", purchase, methods=["GET", "POST"])
+app.add_url_rule("/purchase/edit/<int:id>", "edit_purchase", edit_purchase, methods=["GET", "POST"])
+app.add_url_rule("/purchase/delete/<int:id>", "delete_purchase", delete_purchase, methods=["POST"])
 
 def sql_date_fmt(col, fmt="%Y-%m"):
     if db.engine.dialect.name == "postgresql":
@@ -1910,240 +1918,11 @@ def export_customers_excel():
 
 # Route /api/item/<id> moved to salpurflask.inventory.routes.get_item
 
-@app.route("/purchase", methods=["GET", "POST"])
-@verified_required
-def purchase():
-    search = request.args.get("search", "").strip()
-    query = Purchase.query
-    if search:
-        query = query.join(Supplier).filter(Supplier.name.ilike(f"%{search}%"))
-    purchases, pagination = get_paginated_results(query.order_by(Purchase.date.desc(), Purchase.id.desc()))
-    suppliers = Supplier.query.order_by(Supplier.name).all()
-    items = Item.query.order_by(Item.name).all()
-    if request.method == "POST":
-        if current_user.role not in ("admin", "manager"):
-            flash("Access denied. Only managers and admins can add purchases.", "danger")
-            return redirect(url_for("purchase"))
-        supplier_id  = request.form.get("supplier_id", "").strip()
-        date_str     = request.form.get("date", "").strip()
-        notes        = request.form.get("notes", "").strip()
-        item_ids     = request.form.getlist("item_id[]")
-        quantities   = request.form.getlist("quantity[]")
-        prices       = request.form.getlist("purchase_price[]")
-        disc_types   = request.form.getlist("discount_type[]")
-        disc_values  = request.form.getlist("discount_value[]")
-        tax_pcts     = request.form.getlist("tax_percent[]")
-        unit_ids     = request.form.getlist("unit_id[]")
+# Routes /purchase, /purchase/edit, /purchase/delete moved to salpurflask.purchase.routes
+# (purchase, edit_purchase, delete_purchase functions)
 
-        rows = []
-        for i, (iid, qty, price) in enumerate(zip(item_ids, quantities, prices)):
-            if iid.strip() and qty.strip() and price.strip():
-                rows.append((
-                    iid.strip(), qty.strip(), price.strip(),
-                    disc_types[i] if i < len(disc_types) else "percent",
-                    disc_values[i] if i < len(disc_values) else "0",
-                    tax_pcts[i] if i < len(tax_pcts) else "0",
-                    unit_ids[i] if i < len(unit_ids) else "",
-                ))
-
-        row_error = validate_line_rows(rows) if rows else None
-        if not supplier_id or not date_str:
-            flash("Supplier and date are required!", "danger")
-        elif not rows:
-            flash("At least one item is required!", "danger")
-        elif row_error:
-            flash(row_error, "danger")
-        else:
-            try:
-                purchase_date = datetime.strptime(date_str, "%Y-%m-%d")
-                first_iid, first_qty, first_price = rows[0][0], rows[0][1], rows[0][2]
-                pur = Purchase(
-                    supplier_id=int(supplier_id),
-                    item_id=int(first_iid),
-                    quantity=int(first_qty),
-                    purchase_price=float(first_price),
-                    discount_type="percent", discount_value=0, discount_amount=0,
-                    tax_percent=0, tax_amount=0,
-                    date=purchase_date, notes=notes or None,
-                )
-                db.session.add(pur)
-                db.session.flush()
-                for iid, qty, price, d_type, d_val, tax, unit_key in rows:
-                    item_obj = get_item_locked(int(iid)) or abort(404)   # lock: no lost stock updates
-                    qty_i  = int(qty)
-                    price_f = float(price)
-                    d_val_f = float(d_val or 0)
-                    tax_f   = float(tax or 0)
-                    gross   = qty_i * price_f
-                    disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
-                    unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
-                    pi = PurchaseItem(
-                        purchase_id=pur.id, item_id=int(iid),
-                        quantity=qty_i, purchase_price=price_f,
-                        discount_type=d_type or "percent", discount_value=d_val_f,
-                        discount_amount=disc_amt, tax_percent=tax_f,
-                        tax_amount=tax_amt, amount=net,
-                        unit_name=unit_name, unit_factor=unit_factor,
-                    )
-                    db.session.add(pi)
-                    # Tax is recoverable, so it is not part of what the goods cost.
-                    # Stock moves in the item's base unit, however this line was priced.
-                    item_add_stock(item_obj, qty_i * unit_factor, net - tax_amt)
-                db.session.flush()
-                db.session.refresh(pur)
-                pur.invoice_no = allocate_document_number("purchase", pur.date)
-                sync_supplier_purchase(pur)
-                post_document("purchase", pur)
-                db.session.commit()
-                record_audit("create", "Purchase", pur.id,
-                             f"Purchase {pur.invoice_no}, total {purchase_total(pur):,.2f}")
-                flash(f"Purchase {pur.invoice_no} added successfully!", "success")
-                return redirect(url_for("purchase"))
-            except ValueError as e:
-                flash(f"Invalid data: {e}", "danger")
-    return render_template(
-        "purchase.html",
-        suppliers=suppliers,
-        items=items,
-        purchases=purchases,
-        pagination=pagination,
-        search=search,
-        today=now_local().strftime("%Y-%m-%d"),
-    )
-
-@app.route("/purchase/edit/<int:id>", methods=["GET", "POST"])
-@manager_required
-def edit_purchase(id):
-    pur = db.session.get(Purchase, id) or abort(404)
-    assert_not_posted("purchase", pur.id, f"Purchase #{pur.id}")
-    suppliers = Supplier.query.order_by(Supplier.name).all()
-    items_all = Item.query.order_by(Item.name).all()
-    if request.method == "POST":
-        supplier_id = request.form.get("supplier_id", "").strip()
-        date_str    = request.form.get("date", "").strip()
-        notes       = request.form.get("notes", "").strip()
-        item_ids    = request.form.getlist("item_id[]")
-        quantities  = request.form.getlist("quantity[]")
-        prices      = request.form.getlist("purchase_price[]")
-        disc_types  = request.form.getlist("discount_type[]")
-        disc_values = request.form.getlist("discount_value[]")
-        tax_pcts    = request.form.getlist("tax_percent[]")
-        unit_ids    = request.form.getlist("unit_id[]")
-
-        rows = []
-        for i, (iid, qty, price) in enumerate(zip(item_ids, quantities, prices)):
-            if iid.strip() and qty.strip() and price.strip():
-                rows.append((
-                    iid.strip(), qty.strip(), price.strip(),
-                    disc_types[i] if i < len(disc_types) else "percent",
-                    disc_values[i] if i < len(disc_values) else "0",
-                    tax_pcts[i] if i < len(tax_pcts) else "0",
-                    unit_ids[i] if i < len(unit_ids) else "",
-                ))
-
-        row_error = validate_line_rows(rows) if rows else None
-        if not supplier_id or not date_str:
-            flash("Supplier and date are required!", "danger")
-        elif not rows:
-            flash("At least one item is required!", "danger")
-        elif row_error:
-            flash(row_error, "danger")
-        else:
-            try:
-                old_supplier_id = pur.supplier_id
-                # Reverse old stock (with inventory_value sync)
-                touched_items = {}
-                for pi in pur.line_items:
-                    old_item = get_item_locked(pi.item_id)
-                    if old_item:
-                        cost_removed = pi.amount - pi.tax_amount
-                        item_remove_stock(old_item, line_base_qty(pi), cost_total=cost_removed)
-                        touched_items[old_item.id] = old_item
-                # Delete old line items
-                PurchaseItem.query.filter_by(purchase_id=pur.id).delete()
-                # Update header
-                first_iid, first_qty, first_price = rows[0][0], rows[0][1], rows[0][2]
-                pur.supplier_id    = int(supplier_id)
-                pur.item_id        = int(first_iid)
-                pur.quantity       = int(first_qty)
-                pur.purchase_price = float(first_price)
-                pur.discount_type  = "percent"; pur.discount_value = 0
-                pur.discount_amount= 0; pur.tax_percent = 0; pur.tax_amount = 0
-                pur.date           = datetime.strptime(date_str, "%Y-%m-%d")
-                pur.notes          = notes or None
-                # Create new line items
-                for iid, qty, price, d_type, d_val, tax, unit_key in rows:
-                    item_obj = touched_items.get(int(iid)) or get_item_locked(int(iid)) or abort(404)
-                    qty_i = int(qty); price_f = float(price)
-                    d_val_f = float(d_val or 0); tax_f = float(tax or 0)
-                    gross = qty_i * price_f
-                    disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
-                    unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
-                    pi = PurchaseItem(
-                        purchase_id=pur.id, item_id=int(iid),
-                        quantity=qty_i, purchase_price=price_f,
-                        discount_type=d_type or "percent", discount_value=d_val_f,
-                        discount_amount=disc_amt, tax_percent=tax_f,
-                        tax_amount=tax_amt, amount=net,
-                        unit_name=unit_name, unit_factor=unit_factor,
-                    )
-                    db.session.add(pi)
-                    item_add_stock(item_obj, qty_i * unit_factor, net - tax_amt)
-                    touched_items[item_obj.id] = item_obj
-
-                negative_items = [it for it in touched_items.values() if it.stock < 0]
-                if negative_items:
-                    names = ", ".join(f"{it.name} ({it.stock})" for it in negative_items)
-                    db.session.rollback()
-                    flash(f"Cannot save — this change would make stock negative for: {names}", "danger")
-                    return render_template("edit_purchase.html", purchase=pur, suppliers=suppliers, items=items_all)
-
-                db.session.flush()
-                db.session.refresh(pur)
-                if old_supplier_id != int(supplier_id):
-                    remove_supplier_ledger_entry("purchase", pur.id)
-                    recalculate_supplier_ledger(old_supplier_id)
-                sync_supplier_purchase(pur)
-                post_document("purchase", pur)
-                db.session.commit()
-                record_audit("update", "Purchase", pur.id, f"Purchase #{pur.id} edited")
-                flash("Purchase updated successfully!", "success")
-                return redirect(url_for("purchase"))
-            except ValueError as e:
-                flash(f"Invalid data: {e}", "danger")
-    return render_template("edit_purchase.html", purchase=pur, suppliers=suppliers, items=items_all)
-
-@app.route("/purchase/delete/<int:id>", methods=["POST"])
-@admin_required
-def delete_purchase(id):
-    pur = db.session.get(Purchase, id) or abort(404)
-    assert_not_posted("purchase", pur.id, f"Purchase #{pur.id}")
-    assert_not_numbered(pur, "Purchase")
-    if pur.supplier_payments:
-        flash("Cannot delete purchase with associated payments! Delete payments first.", "danger")
-        return redirect(url_for("purchase"))
-    if pur.returns:
-        flash("Cannot delete purchase with associated returns! Delete returns first.", "danger")
-        return redirect(url_for("purchase"))
-    linked_po = PurchaseOrder.query.filter_by(converted_purchase_id=pur.id).first()
-    if linked_po:
-        flash(f"Cannot delete purchase — it was created from Purchase Order #{linked_po.id}.", "danger")
-        return redirect(url_for("purchase"))
-    for pi in pur.line_items:
-        item_obj = db.session.get(Item, pi.item_id)
-        if item_obj:
-            cost_removed = pi.amount - pi.tax_amount
-            item_remove_stock(item_obj, line_base_qty(pi), cost_total=cost_removed)
-    audit_summary = f"Purchase #{pur.id} ({pur.id_supplier.name if pur.id_supplier else 'supplier'}) deleted"
-    supplier_id = remove_supplier_ledger_entry("purchase", pur.id)
-    db.session.delete(pur)
-    db.session.commit()
-    if supplier_id:
-        recalculate_supplier_ledger(supplier_id)
-        db.session.commit()
-    record_audit("delete", "Purchase", id, audit_summary)
-    flash("Purchase deleted successfully!", "success")
-    return redirect(url_for("purchase"))
+# Routes /purchase/edit and /purchase/delete moved to salpurflask.purchase.routes
+# (edit_purchase and delete_purchase functions)
 
 @app.route("/sale", methods=["GET", "POST"])
 @verified_required
