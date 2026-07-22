@@ -171,13 +171,13 @@
                             <span class="badge ms-1 {% if current_user.role == 'admin' %}bg-danger{% elif current_user.role == 'manager' %}bg-primary{% else %}bg-secondary{% endif %}" style="font-size:0.65rem">{{ current_user.role|capitalize }}</span>
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end">
-                            <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="bi bi-person-gear"></i> My Profile</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('auth.profile') }}"><i class="bi bi-person-gear"></i> My Profile</a></li>
                             <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item text-danger" href="{{ url_for('signout') }}"><i class="bi bi-box-arrow-right"></i> Sign Out</a></li>
+                            <li><a class="dropdown-item text-danger" href="{{ url_for('auth.signout') }}"><i class="bi bi-box-arrow-right"></i> Sign Out</a></li>
                         </ul>
                     </li>
                     {% else %}
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('signin') }}">Sign In</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('auth.signin') }}">Sign In</a></li>
                     {% endif %}
                 </ul>
             </div>
