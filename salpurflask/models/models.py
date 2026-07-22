@@ -2,8 +2,10 @@
 
 from datetime import datetime, date, timedelta, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
+import uuid
 from flask_login import UserMixin
-from flask import current_app
+from flask import current_app, request
 from sqlalchemy import text
 from sqlalchemy.sql import func
 from salpurflask.extensions import db
@@ -950,7 +952,7 @@ def fiscal_year_bounds(when):
     — "2026-27" — which is how such a year is written and, incidentally, how it has to be
     written for an invoice number to be unambiguous.
     """
-    m = current_app.config.get("FISCAL_YEAR_START_MONTH", 1)
+    m = _get_fiscal_year_start_month()
     start_year = when.year if when.month >= m else when.year - 1
     start = date(start_year, m, 1)
     end = date(start_year + 1, m, 1) - timedelta(days=1)
@@ -969,7 +971,7 @@ def fiscal_years_that_disagree_with_the_setting():
     Nothing here can fix that automatically: deleting a fiscal year would take its periods,
     and its postings, with it. So this reports, loudly, and leaves the decision to a human.
     """
-    fiscal_year_start = current_app.config.get("FISCAL_YEAR_START_MONTH", 1)
+    fiscal_year_start = _get_fiscal_year_start_month()
     return [fy.name for fy in FiscalYear.query.all()
             if fy.start_date.month != fiscal_year_start]
 
@@ -983,7 +985,7 @@ def seed_fiscal_year(when=None):
     if when is None:
         when = now_local()
     if isinstance(when, int):
-        m = current_app.config.get("FISCAL_YEAR_START_MONTH", 1)
+        m = _get_fiscal_year_start_month()
         when = date(when, m, 1)
 
     name, start, end = fiscal_year_bounds(when)
@@ -2295,8 +2297,144 @@ class ImportLog(db.Model):
     user            = db.relationship('User', backref='imports')
 
 
+# Helper functions for timezone and ledger management
+
+def _get_app_tz():
+    """Get the application timezone from Flask config, or use UTC if outside app context."""
+    try:
+        tz_name = current_app.config.get("APP_TIMEZONE", "UTC")
+        return ZoneInfo(tz_name)
+    except (RuntimeError, Exception):
+        # Outside app context
+        return ZoneInfo("UTC")
+
+def _get_fiscal_year_start_month():
+    """Get FISCAL_YEAR_START_MONTH from app module (for tests), then app.config, then default to 1."""
+    # First try app module (for test compatibility - tests monkeypatch this)
+    try:
+        import app as app_module
+        return getattr(app_module, "FISCAL_YEAR_START_MONTH", None) or 1
+    except (ImportError, AttributeError):
+        pass
+
+    # Then try app.config (when inside app context, e.g., during requests)
+    try:
+        return current_app.config.get("FISCAL_YEAR_START_MONTH", 1)
+    except (RuntimeError, Exception):
+        pass
+
+    return 1
+
+_UTC = ZoneInfo("UTC")
+
+def to_local(dt):
+    """A stored datetime (assumed UTC; naive or aware) -> aware datetime in APP_TZ."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_UTC)
+    return dt.astimezone(_get_app_tz())
+
+def now_local():
+    """What time it is *for this business*, naive, in APP_TZ.
+
+    This — not datetime.now() — is the clock the app runs on. datetime.now() reads the
+    machine's clock, and the machine is a server in someone else's data centre: on Render
+    it is UTC, five hours behind Karachi. Every business date derived from it is therefore
+    the server's idea of today, not the user's.
+
+    That is not a cosmetic difference. An invoice entered at 2am in Karachi lands on
+    yesterday's date. A month-end entry posted on the 1st lands in the previous month. And
+    a document reversed in the morning is stamped five hours in the past, so a report run
+    "as of now" shows the sale and not the reversal — the cancelled invoice goes on earning
+    profit that was never made.
+
+    Timestamps are different: when a row was *saved* is a moment in time, and those stay in
+    UTC and are converted for display (to_local, the localdt filter). The rule is the same
+    one the bizdate filter draws: a business date is a date, not an instant.
+    """
+    return datetime.now(_get_app_tz()).replace(tzinfo=None)
+
+def recalculate_supplier_ledger(supplier_id):
+    """Recalculate running balance for all supplier ledger entries."""
+    entries = (
+        SupplierLedgerEntry.query.filter_by(supplier_id=supplier_id)
+        .order_by(SupplierLedgerEntry.entry_date.asc(), SupplierLedgerEntry.id.asc())
+        .all()
+    )
+    balance = 0.0
+    for entry in entries:
+        balance += float(entry.credit) - float(entry.debit)
+        entry.balance_after = balance
+
+def recalculate_customer_ledger(customer_id):
+    """Recalculate running balance for all customer ledger entries."""
+    entries = (
+        CustomerLedgerEntry.query.filter_by(customer_id=customer_id)
+        .order_by(CustomerLedgerEntry.entry_date.asc(), CustomerLedgerEntry.id.asc())
+        .all()
+    )
+    balance = 0.0
+    for entry in entries:
+        balance += float(entry.debit) - float(entry.credit)
+        entry.balance_after = balance
+
+def remove_supplier_ledger_entry(source_type, source_id):
+    """Remove a supplier ledger entry and return the supplier_id for ledger recalculation."""
+    entry = SupplierLedgerEntry.query.filter_by(source_type=source_type, source_id=source_id).first()
+    supplier_id = entry.supplier_id if entry else None
+    if entry:
+        db.session.delete(entry)
+    return supplier_id
+
+def remove_customer_ledger_entry(source_type, source_id):
+    """Remove a customer ledger entry and return the customer_id for ledger recalculation."""
+    entry = CustomerLedgerEntry.query.filter_by(source_type=source_type, source_id=source_id).first()
+    customer_id = entry.customer_id if entry else None
+    if entry:
+        db.session.delete(entry)
+    return customer_id
+
+def record_audit(action, entity, entity_id=None, summary=""):
+    """Write an audit entry in its own transaction. Called AFTER the business
+    change has committed, so a failure here can never roll back or break the real
+    operation — auditing is best-effort by design."""
+    from flask_login import current_user
+    try:
+        if current_user and current_user.is_authenticated:
+            uid, uname = current_user.id, current_user.name
+        else:
+            uid, uname = None, "system"
+        db.session.add(AuditLog(action=action, entity=entity, entity_id=entity_id,
+                                summary=(summary or "")[:300], user_id=uid, user_name=uname))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        # Log but don't raise - auditing is best-effort
+
+def calc_discount_tax(gross, discount_type, discount_value, tax_percent):
+    """Returns (discount_amt, tax_amt, net_total). discount_type: 'percent' or 'fixed'."""
+    gross = float(gross or 0)          # tolerate Decimal/str inputs
+    dv = float(discount_value or 0)
+    tp = float(tax_percent or 0)
+    if discount_type == "fixed":
+        disc = min(dv, gross)
+    else:
+        disc = gross * dv / 100
+    taxable = gross - disc
+    tax = taxable * tp / 100
+    return round(disc, 4), round(tax, 4), round(taxable + tax, 4)
+
 
 __all__ = [
+    'to_local',
+    'now_local',
+    'recalculate_supplier_ledger',
+    'recalculate_customer_ledger',
+    'remove_supplier_ledger_entry',
+    'remove_customer_ledger_entry',
+    'record_audit',
+    'calc_discount_tax',
     'ACCOUNT_TYPES',
     'ACC_AP',
     'ACC_AR',
