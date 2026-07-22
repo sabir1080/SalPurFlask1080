@@ -218,13 +218,19 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(dashboard_bp)
 
 # Register inventory routes directly (not via blueprint, to preserve endpoint names)
-from salpurflask.inventory.routes import item_ledger, get_item, report_stock, item, edit_item, delete_item
+from salpurflask.inventory.routes import (
+    item_ledger, get_item, report_stock, item, edit_item, delete_item,
+    category, edit_category, delete_category
+)
 app.add_url_rule("/item/<int:id>/ledger", "item_ledger", item_ledger)
 app.add_url_rule("/api/item/<int:id>", "get_item", get_item)
 app.add_url_rule("/reports/stock", "report_stock", report_stock)
 app.add_url_rule("/item", "item", item, methods=["GET", "POST"])
 app.add_url_rule("/item/edit/<int:id>", "edit_item", edit_item, methods=["GET", "POST"])
 app.add_url_rule("/item/delete/<int:id>", "delete_item", delete_item, methods=["POST"])
+app.add_url_rule("/category", "category", category, methods=["GET", "POST"])
+app.add_url_rule("/category/edit/<int:id>", "edit_category", edit_category, methods=["GET", "POST"])
+app.add_url_rule("/category/delete/<int:id>", "delete_category", delete_category, methods=["POST"])
 
 def sql_date_fmt(col, fmt="%Y-%m"):
     if db.engine.dialect.name == "postgresql":
@@ -2090,57 +2096,10 @@ def export_customers_excel():
         rows=rows,
     )
 
-@app.route("/category", methods=["GET", "POST"])
-@verified_required
-def category():
-    search = request.args.get("search", "")
-    query = Category.query.filter(Category.name.ilike(f"%{search}%")) if search else Category.query
-    categories, pagination = get_paginated_results(query)
-    if request.method == "POST":
-        if current_user.role not in ("admin", "manager"):
-            flash("You do not have permission to add categories.", "danger")
-            return redirect(url_for("category"))
-        name = request.form.get("name", "").strip()
-        if not name:
-            flash("Category name is required!", "danger")
-        elif Category.query.filter_by(name=name).first():
-            flash("Category already exists!", "warning")
-            return redirect(url_for("category"))
-        else:
-            db.session.add(Category(name=name))
-            db.session.commit()
-            flash("Category added successfully!", "success")
-            return redirect(url_for("category"))
-    return render_template("category.html", categories=categories, pagination=pagination, search=search)
-
-@app.route("/category/edit/<int:id>", methods=["GET", "POST"])
-@manager_required
-def edit_category(id):
-    category = db.session.get(Category, id) or abort(404)
-    if request.method == "POST":
-        name = request.form.get("name", "").strip()
-        if not name:
-            flash("Category name is required!", "danger")
-        elif Category.query.filter(Category.name == name, Category.id != id).first():
-            flash("Category already exists!", "warning")
-        else:
-            category.name = name
-            db.session.commit()
-            flash("Category updated successfully!", "success")
-            return redirect(url_for("category"))
-    return render_template("edit_category.html", category=category)
-
-@app.route("/category/delete/<int:id>", methods=["POST"])
-@admin_required
-def delete_category(id):
-    category = db.session.get(Category, id) or abort(404)
-    if category.items:
-        flash("Cannot delete category with associated items!", "danger")
-    else:
-        db.session.delete(category)
-        db.session.commit()
-        flash("Category deleted successfully!", "success")
-    return redirect(url_for("category"))
+# Category CRUD routes moved to salpurflask.inventory.routes
+# - /category (GET/POST) → category()
+# - /category/edit/<id> (GET/POST) → edit_category()
+# - /category/delete/<id> (POST) → delete_category()
 
 # barcode_taken moved to salpurflask/utils/inventory_utils.py
 

@@ -359,3 +359,58 @@ def delete_item(id):
         record_audit("delete", "Item", id, f"Item '{item_name}' deleted")
         flash("Item deleted successfully!", "success")
     return redirect(url_for("item"))
+
+
+@verified_required
+def category():
+    """Display categories with search and handle category creation."""
+    search = request.args.get("search", "")
+    query = Category.query.filter(Category.name.ilike(f"%{search}%")) if search else Category.query
+    categories, pagination = get_paginated_results(query)
+    if request.method == "POST":
+        if current_user.role not in ("admin", "manager"):
+            flash("You do not have permission to add categories.", "danger")
+            return redirect(url_for("category"))
+        name = request.form.get("name", "").strip()
+        if not name:
+            flash("Category name is required!", "danger")
+        elif Category.query.filter_by(name=name).first():
+            flash("Category already exists!", "warning")
+            return redirect(url_for("category"))
+        else:
+            db.session.add(Category(name=name))
+            db.session.commit()
+            flash("Category added successfully!", "success")
+            return redirect(url_for("category"))
+    return render_template("category.html", categories=categories, pagination=pagination, search=search)
+
+
+@manager_required
+def edit_category(id):
+    """Edit an existing category."""
+    category_obj = db.session.get(Category, id) or abort(404)
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        if not name:
+            flash("Category name is required!", "danger")
+        elif Category.query.filter(Category.name == name, Category.id != id).first():
+            flash("Category already exists!", "warning")
+        else:
+            category_obj.name = name
+            db.session.commit()
+            flash("Category updated successfully!", "success")
+            return redirect(url_for("category"))
+    return render_template("edit_category.html", category=category_obj)
+
+
+@admin_required
+def delete_category(id):
+    """Delete an existing category."""
+    category_obj = db.session.get(Category, id) or abort(404)
+    if category_obj.items:
+        flash("Cannot delete category with associated items!", "danger")
+    else:
+        db.session.delete(category_obj)
+        db.session.commit()
+        flash("Category deleted successfully!", "success")
+    return redirect(url_for("category"))
