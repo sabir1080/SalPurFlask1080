@@ -218,12 +218,13 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(dashboard_bp)
 
 # Register inventory routes directly (not via blueprint, to preserve endpoint names)
-from salpurflask.inventory.routes import item_ledger, get_item, report_stock, item, edit_item
+from salpurflask.inventory.routes import item_ledger, get_item, report_stock, item, edit_item, delete_item
 app.add_url_rule("/item/<int:id>/ledger", "item_ledger", item_ledger)
 app.add_url_rule("/api/item/<int:id>", "get_item", get_item)
 app.add_url_rule("/reports/stock", "report_stock", report_stock)
 app.add_url_rule("/item", "item", item, methods=["GET", "POST"])
 app.add_url_rule("/item/edit/<int:id>", "edit_item", edit_item, methods=["GET", "POST"])
+app.add_url_rule("/item/delete/<int:id>", "delete_item", delete_item, methods=["POST"])
 
 def sql_date_fmt(col, fmt="%Y-%m"):
     if db.engine.dialect.name == "postgresql":
@@ -2147,22 +2148,7 @@ def delete_category(id):
 
 # Route /item/edit/<id> moved to salpurflask.inventory.routes.edit_item
 
-@app.route("/item/delete/<int:id>", methods=["POST"])
-@admin_required
-def delete_item(id):
-    item = db.session.get(Item, id) or abort(404)
-    if item.purchases or item.sales:
-        flash("Cannot delete item with associated purchases or sales!", "danger")
-    else:
-        item_name = item.name
-        # Clear GL entries for this item's opening balance before deletion
-        _repost_opening("item_opening", item.id, _opening_date(),
-                       f"Opening stock — {item.name}", [])
-        db.session.delete(item)
-        db.session.commit()
-        record_audit("delete", "Item", id, f"Item '{item_name}' deleted")
-        flash("Item deleted successfully!", "success")
-    return redirect(url_for("item"))
+# Route /item/delete/<id> moved to salpurflask.inventory.routes.delete_item
 
 # Route /item/<id>/ledger moved to salpurflask.inventory.routes.item_ledger
 

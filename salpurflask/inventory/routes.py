@@ -14,7 +14,7 @@ from salpurflask.models import (
     ITEM_UNITS, MONEY, save_item_units, post_item_opening,
     item_add_stock, item_remove_stock, _repost_opening, _opening_date,
 )
-from salpurflask.auth import verified_required, manager_required
+from salpurflask.auth import verified_required, manager_required, admin_required
 from salpurflask.utils import now_local, barcode_taken, get_paginated_results
 def line_base_qty(line):
     """Get quantity in base unit."""
@@ -339,3 +339,23 @@ def edit_item(id):
             flash("Item updated successfully!", "success")
             return redirect(url_for("item"))
     return render_template("edit_item.html", item=item, categories=categories)
+
+
+@admin_required
+def delete_item(id):
+    """Delete an existing item."""
+    item = db.session.get(Item, id) or abort(404)
+    if item.purchases or item.sales:
+        flash("Cannot delete item with associated purchases or sales!", "danger")
+    else:
+        item_name = item.name
+        # Clear GL entries for this item's opening balance before deletion
+        _repost_opening("item_opening", item.id, _opening_date(),
+                       f"Opening stock — {item.name}", [])
+        db.session.delete(item)
+        db.session.commit()
+        # Import record_audit locally to avoid circular imports
+        from app import record_audit
+        record_audit("delete", "Item", id, f"Item '{item_name}' deleted")
+        flash("Item deleted successfully!", "success")
+    return redirect(url_for("item"))
