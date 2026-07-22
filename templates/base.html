@@ -18,7 +18,7 @@
 <body class="{% block body_class %}{% endblock %}">
     <nav class="navbar navbar-expand-lg {% block navbar_class %}navbar-light bg-light{% endblock %}">
         <div class="{% block nav_container_class %}container-fluid{% endblock %}">
-            <a class="navbar-brand" href="{{ url_for('index') }}">
+            <a class="navbar-brand" href="{{ url_for('dashboard.index') }}">
                 <i class="bi bi-box-seam-fill brand-icon"></i> {{ company_name }}
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
@@ -43,7 +43,7 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     {% if current_user.is_authenticated %}
-                    {{ perm_link('dashboard', 'bi-speedometer2', 'Dashboard', current_user.is_manager) }}
+                    {{ perm_link('dashboard.dashboard', 'bi-speedometer2', 'Dashboard', current_user.is_manager) }}
 
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
@@ -142,8 +142,8 @@
                         </ul>
                     </li>
                     {% endif %}
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('manual') }}"><i class="bi bi-book"></i> Manual</a></li>
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('about') }}"><i class="bi bi-info-circle"></i> About</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard.manual') }}"><i class="bi bi-book"></i> Manual</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard.about') }}"><i class="bi bi-info-circle"></i> About</a></li>
                 </ul>
 
                 {% if current_user.is_authenticated %}

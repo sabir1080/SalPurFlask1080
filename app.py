@@ -226,8 +226,9 @@ login_manager.init_app(app)
 from salpurflask.models import *
 
 # Register blueprints
-from salpurflask.routes import auth_bp
+from salpurflask.routes import auth_bp, dashboard_bp
 app.register_blueprint(auth_bp)
+app.register_blueprint(dashboard_bp)
 
 def sql_date_fmt(col, fmt="%Y-%m"):
     if db.engine.dialect.name == "postgresql":
@@ -356,7 +357,7 @@ def role_required(*roles):
         def decorated(*args, **kwargs):
             if not current_user.verified:
                 flash(f"Please verify {current_user.email} to access this page.", "danger")
-                return redirect(url_for("signin"))
+                return redirect(url_for("auth.signin"))
             if current_user.role not in roles:
                 flash("You do not have permission to access this page.", "danger")
                 return redirect(url_for("purchase"))
@@ -1557,7 +1558,7 @@ def handle_posting_error(e):
     db.session.rollback()
     flash(str(e), "danger")
     app.logger.info("Posting refused: %s", e)
-    return redirect(request.referrer or url_for("dashboard"))
+    return redirect(request.referrer or url_for("dashboard.dashboard"))
 
 # ─── BULK IMPORT FUNCTIONS ─────────────────────────────────────────────────────
 
@@ -1996,84 +1997,7 @@ def get_paginated_results(query, per_page=10):
 # Auth routes have been moved to salpurflask/routes/auth.py blueprint
 
 
-@app.route("/")
-def index():
-    if current_user.is_authenticated:
-        return render_template("index.html")
-    return redirect(url_for("signin"))
-
-@app.route("/about")
-def about():
-    return render_template("about2.html")
-
-@app.route("/manual")
-def manual():
-    """The user manual. Public, like About — someone evaluating the system should be able
-    to read what it does and what it refuses to do before they have an account."""
-    return render_template("manual.html")
-
-@app.route('/dashboard')
-@manager_required
-def dashboard():
-    items = Item.query.all()
-    purchases = Purchase.query.order_by(Purchase.date.desc()).limit(5).all()
-    sales = Sale.query.order_by(Sale.date.desc()).limit(5).all()
-    total_purchase_cost = db.session.query(func.sum(PurchaseItem.amount)).scalar() or 0.0
-    total_sale_revenue = db.session.query(func.sum(SaleItem.amount)).scalar() or 0.0
-    _profit_expr = SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.unit_factor * SaleItem.cost_price
-    total_gross_profit = db.session.query(func.sum(_profit_expr)).scalar() or 0.0
-    total_purchase_returns = db.session.query(func.sum(PurchaseReturn.quantity * PurchaseReturn.return_price)).scalar() or 0.0
-    total_sale_returns = db.session.query(func.sum(SaleReturn.quantity * SaleReturn.return_price)).scalar() or 0.0
-    low_stock_count = Item.query.filter(Item.stock <= Item.reorder_level).count()
-    total_payable = get_total_payable()
-    total_paid_suppliers = get_total_paid_suppliers()
-    total_receivable = get_total_receivable()
-    total_received_customers = get_total_received_customers()
-    total_payable_balance = total_supplier_ledger_balance()
-    total_receivable_balance = total_customer_ledger_balance()
-    monthly_sales = (
-        db.session.query(
-            sql_date_fmt(Sale.date).label("month"),
-            db.func.sum(SaleItem.amount).label("sale_amt"),
-            db.func.sum(_profit_expr).label("profit_amt"),
-        )
-        .join(SaleItem, SaleItem.sale_id == Sale.id)
-        .group_by(sql_date_fmt(Sale.date))
-        .order_by(sql_date_fmt(Sale.date))
-        .limit(12)
-        .all()
-    )
-    monthly_purchases = (
-        db.session.query(
-            sql_date_fmt(Purchase.date).label("month"),
-            db.func.sum(PurchaseItem.amount).label("purchase_amt"),
-        )
-        .join(PurchaseItem, PurchaseItem.purchase_id == Purchase.id)
-        .group_by(sql_date_fmt(Purchase.date))
-        .order_by(sql_date_fmt(Purchase.date))
-        .limit(12)
-        .all()
-    )
-    return render_template(
-        'dashboard.html',
-        items=items,
-        purchases=purchases,
-        sales=sales,
-        total_purchase_cost=total_purchase_cost,
-        total_sale_revenue=total_sale_revenue,
-        total_gross_profit=total_gross_profit,
-        total_purchase_returns=total_purchase_returns,
-        total_sale_returns=total_sale_returns,
-        low_stock_count=low_stock_count,
-        total_payable=total_payable,
-        total_paid_suppliers=total_paid_suppliers,
-        total_payable_balance=total_payable_balance,
-        total_receivable=total_receivable,
-        total_received_customers=total_received_customers,
-        total_receivable_balance=total_receivable_balance,
-        monthly_sales=monthly_sales,
-        monthly_purchases=monthly_purchases,
-    )
+# Dashboard routes have been moved to salpurflask/routes/dashboard.py blueprint
 
 @app.route("/supplier", methods=["GET", "POST"])
 @verified_required
@@ -3198,7 +3122,7 @@ def get_walkin_customer():
 def pos():
     if current_user.role not in ("admin", "manager"):
         flash("Access denied. Only managers and admins can use the POS.", "danger")
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("dashboard.dashboard"))
     return render_template(
         "pos.html",
         customers=Customer.query.order_by(Customer.name).all(),

@@ -37,7 +37,7 @@
 
                     <div class="nh-actions">
                         {% if current_user.is_manager %}
-                        <a href="{{ url_for('dashboard') }}" class="nh-btn-primary">
+                        <a href="{{ url_for('dashboard.dashboard') }}" class="nh-btn-primary">
                             <i class="bi bi-speedometer2"></i> Open Dashboard
                         </a>
                         <a href="{{ url_for('reports') }}" class="nh-btn-ghost">
@@ -248,17 +248,17 @@
                 <p>Start recording transactions now — inventory and accounts stay in sync automatically from day one.</p>
                 <div class="nh-actions">
                     {% if current_user.is_manager %}
-                    <a href="{{ url_for('dashboard') }}" class="nh-btn-primary">
+                    <a href="{{ url_for('dashboard.dashboard') }}" class="nh-btn-primary">
                         <i class="bi bi-rocket-takeoff"></i> Launch Dashboard
                     </a>
-                    <a href="{{ url_for('about') }}" class="nh-btn-ghost">
+                    <a href="{{ url_for('dashboard.about') }}" class="nh-btn-ghost">
                         <i class="bi bi-info-circle"></i> Learn More
                     </a>
                     {% else %}
                     <a href="{{ url_for('purchase') }}" class="nh-btn-primary">
                         <i class="bi bi-cart-plus"></i> Add First Purchase
                     </a>
-                    <a href="{{ url_for('about') }}" class="nh-btn-ghost">
+                    <a href="{{ url_for('dashboard.about') }}" class="nh-btn-ghost">
                         <i class="bi bi-info-circle"></i> Learn More
                     </a>
                     {% endif %}
