@@ -20,11 +20,6 @@ def valid_phone(raw):
         return False
     return True
 
-def barcode_taken(barcode):
-    """Check if barcode is already used (imported from models)."""
-    # This will be implemented when models are moved
-    pass
-
 def account_name_taken(name):
     """Check if account name is taken (imported from models)."""
     # This will be implemented when models are moved
@@ -40,8 +35,13 @@ def to_local(dt):
     return dt.astimezone(tz)
 
 def now_local():
-    """Get current datetime in local timezone."""
-    return to_local(datetime.now(timezone.utc))
+    """Get current datetime in local timezone (naive).
+
+    What time it is *for this business*, naive, in APP_TIMEZONE.
+    This — not datetime.now() — is the clock the app runs on.
+    """
+    tz = ZoneInfo(APP_TIMEZONE)
+    return datetime.now(tz).replace(tzinfo=None)
 
 def localdt_filter(dt, fmt="%Y-%m-%d %H:%M"):
     """Jinja filter to format datetime in local timezone."""

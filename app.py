@@ -172,25 +172,7 @@ def to_local(dt):
         dt = dt.replace(tzinfo=_UTC)
     return dt.astimezone(APP_TZ)
 
-def now_local():
-    """What time it is *for this business*, naive, in APP_TZ.
-
-    This — not datetime.now() — is the clock the app runs on. datetime.now() reads the
-    machine's clock, and the machine is a server in someone else's data centre: on Render
-    it is UTC, five hours behind Karachi. Every business date derived from it is therefore
-    the server's idea of today, not the user's.
-
-    That is not a cosmetic difference. An invoice entered at 2am in Karachi lands on
-    yesterday's date. A month-end entry posted on the 1st lands in the previous month. And
-    a document reversed in the morning is stamped five hours in the past, so a report run
-    "as of now" shows the sale and not the reversal — the cancelled invoice goes on earning
-    profit that was never made.
-
-    Timestamps are different: when a row was *saved* is a moment in time, and those stay in
-    UTC and are converted for display (to_local, the localdt filter). The rule is the same
-    one the bizdate filter draws: a business date is a date, not an instant.
-    """
-    return datetime.now(APP_TZ).replace(tzinfo=None)
+# now_local() moved to salpurflask/utils/helpers.py
 
 @app.template_filter("localdt")
 def localdt_filter(dt, fmt="%Y-%m-%d %H:%M"):
@@ -224,6 +206,10 @@ login_manager.init_app(app)
 # Must happen AFTER db.init_app(app)
 # Wildcard import is safe here because salpurflask.models explicitly defines __all__
 from salpurflask.models import *
+from salpurflask.utils import (
+    now_local, get_paginated_results, csv_response, excel_response,
+    is_demo_mode, barcode_taken, write_csv_header
+)
 
 # Register blueprints
 from salpurflask.routes import auth_bp, dashboard_bp
@@ -238,8 +224,7 @@ def sql_date_fmt(col, fmt="%Y-%m"):
 def is_signup_allowed():
     return os.getenv("ALLOW_SIGNUP", "false").lower() in ("1", "true", "yes")
 
-def is_demo_mode():
-    return os.getenv("DEMO_MODE", "false").lower() in ("1", "true", "yes")
+# is_demo_mode() moved to salpurflask/utils/config_utils.py
 
 def get_standard_tax_rate():
     """The single rate an admin sets on /tax_codes for their own country (17% Pakistan
@@ -1844,99 +1829,7 @@ def money_filter(value):
     symbol = app.config.get("CURRENCY", "")
     return f"{symbol} {fmt_num(value)}".strip()
 
-def write_csv_header(writer, report_title, start_date_str=None, end_date_str=None, extra_info=None):
-    company = app.config["COMPANY_NAME"]
-    tagline = app.config["COMPANY_TAGLINE"]
-    writer.writerow([company, tagline])
-    writer.writerow(["Report:", report_title])
-    if start_date_str and end_date_str:
-        writer.writerow(["Period:", f"{start_date_str}  to  {end_date_str}"])
-    if extra_info:
-        writer.writerow(["Info:", extra_info])
-    writer.writerow(["Generated On:", now_local().strftime("%Y-%m-%d %H:%M")])
-    writer.writerow([])
-
-
-def csv_response(filename, title, col_headers, rows, start_date_str=None, end_date_str=None, extra_info=None):
-    """Build a CSV entirely in memory and return it as a download — no shared file on disk,
-    so concurrent exports from different users/tabs can never race or overwrite each other."""
-    buf = StringIO()
-    writer = csv.writer(buf)
-    write_csv_header(writer, title, start_date_str, end_date_str, extra_info)
-    writer.writerow(col_headers)
-    writer.writerows(rows)
-    return Response(
-        buf.getvalue(),
-        mimetype="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-def excel_response(filename, title, col_headers, rows, start_date_str=None, end_date_str=None, extra_info=None):
-    """Create a styled .xlsx file and return as a Flask file download response."""
-    company = app.config["COMPANY_NAME"]
-    tagline = app.config["COMPANY_TAGLINE"]
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = title[:31]
-
-    # --- Metadata rows (row counter tracks real rows so blank row is guaranteed) ---
-    r = 1
-    ws.cell(row=r, column=1, value=company)
-    ws.cell(row=r, column=2, value=tagline)
-    ws["A1"].font = Font(bold=True, size=13, color="1E3A5F")
-    r += 1
-
-    ws.cell(row=r, column=1, value="Report:")
-    ws.cell(row=r, column=2, value=title)
-    r += 1
-
-    if start_date_str and end_date_str:
-        ws.cell(row=r, column=1, value="Period:")
-        ws.cell(row=r, column=2, value=f"{start_date_str}  to  {end_date_str}")
-        r += 1
-
-    if extra_info:
-        ws.cell(row=r, column=1, value="Info:")
-        ws.cell(row=r, column=2, value=extra_info)
-        r += 1
-
-    ws.cell(row=r, column=1, value="Generated On:")
-    ws.cell(row=r, column=2, value=now_local().strftime("%Y-%m-%d %H:%M"))
-    r += 1
-
-    r += 1  # genuine blank row — no cell written here
-
-    # --- Column header row ---
-    header_row_num = r
-    for col_i, h in enumerate(col_headers, 1):
-        cell = ws.cell(row=header_row_num, column=col_i, value=h)
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = PatternFill("solid", fgColor="1E3A5F")
-        cell.alignment = Alignment(horizontal="center", wrap_text=True)
-    r += 1
-
-    # --- Data rows ---
-    for row_data in rows:
-        for col_i, val in enumerate(row_data, 1):
-            ws.cell(row=r, column=col_i, value=val)
-        r += 1
-
-    # --- Auto-fit column widths ---
-    for col in ws.columns:
-        max_len = max((len(str(cell.value)) if cell.value is not None else 0) for cell in col)
-        ws.column_dimensions[col[0].column_letter].width = min(max_len + 3, 45)
-
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
-    return send_file(
-        output,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        as_attachment=True,
-        download_name=filename,
-    )
+# write_csv_header, csv_response, excel_response moved to salpurflask/utils/export_utils.py
 
 @app.context_processor
 def inject_form_defaults():
@@ -1986,13 +1879,7 @@ def inject_form_defaults():
         ctx["form_data"] = data
     return ctx
 
-# Helper function for pagination
-def get_paginated_results(query, per_page=10):
-    page, _, offset = get_page_args(page_parameter="page", per_page_parameter="per_page")
-    total = query.count()
-    results = query.offset(offset).limit(per_page).all()
-    pagination = Pagination(page=page, per_page=per_page, total=total, css_framework="bootstrap5")
-    return results, pagination
+# get_paginated_results moved to salpurflask/utils/pagination.py
 
 # Auth routes have been moved to salpurflask/routes/auth.py blueprint
 
@@ -2277,20 +2164,7 @@ def delete_category(id):
         flash("Category deleted successfully!", "success")
     return redirect(url_for("category"))
 
-def barcode_taken(barcode, exclude_id=None):
-    """True if another item already carries this barcode.
-
-    A barcode has to point at one item and one only — the whole point of scanning is that
-    the code names the product with no ambiguity. Two items sharing a code (a mistyped
-    company barcode, the same number pasted twice) would make the POS pick whichever it
-    found first, silently ringing up the wrong thing. Blank is never 'taken': any number of
-    items may have no code."""
-    if not barcode:
-        return False
-    q = Item.query.filter(Item.barcode == barcode)
-    if exclude_id is not None:
-        q = q.filter(Item.id != exclude_id)
-    return db.session.query(q.exists()).scalar()
+# barcode_taken moved to salpurflask/utils/inventory_utils.py
 
 @app.route("/item", methods=["GET", "POST"])
 @verified_required
