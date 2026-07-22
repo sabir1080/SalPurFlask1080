@@ -4854,7 +4854,7 @@ def item():
             flash("Purchase price must be a non-negative number!", "danger")
         elif sale_price and (not sale_price.replace(".", "", 1).isdigit() or float(sale_price) < 0):
             flash("Sale price must be a non-negative number!", "danger")
-        elif int(opening_stock) > 0 and (not purchase_price or float(purchase_price) == 0):
+        elif int(opening_stock) > 0 and (not purchase_price or float(purchase_price or 0) == 0):
             flash("Opening stock requires a purchase price greater than 0!", "danger")
         elif barcode_taken(barcode):
             flash(f"Barcode '{barcode}' is already used by another item. "
@@ -4925,7 +4925,7 @@ def edit_item(id):
             flash("Purchase price must be a non-negative number!", "danger")
         elif sale_price and (not sale_price.replace(".", "", 1).isdigit() or float(sale_price) < 0):
             flash("Sale price must be a non-negative number!", "danger")
-        elif int(opening_stock) > 0 and (not purchase_price or float(purchase_price) == 0):
+        elif int(opening_stock) > 0 and (not purchase_price or float(purchase_price or 0) == 0):
             flash("Opening stock requires a purchase price greater than 0!", "danger")
         elif barcode_taken(barcode, exclude_id=item.id):
             flash(f"Barcode '{barcode}' is already used by another item. "
