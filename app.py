@@ -209,7 +209,8 @@ login_manager.init_app(app)
 from salpurflask.models import *
 from salpurflask.utils import (
     now_local, get_paginated_results, csv_response, excel_response,
-    is_demo_mode, barcode_taken, write_csv_header
+    is_demo_mode, barcode_taken, write_csv_header,
+    line_base_qty
 )
 
 # Register blueprints

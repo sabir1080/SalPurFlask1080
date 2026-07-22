@@ -15,19 +15,16 @@ from salpurflask.models import (
     item_add_stock, item_remove_stock, _repost_opening, _opening_date,
 )
 from salpurflask.auth import verified_required, manager_required, admin_required
-from salpurflask.utils import now_local, barcode_taken, get_paginated_results
-def line_base_qty(line):
-    """Get quantity in base unit."""
-    return line.quantity * (line.unit_factor or 1)
+from salpurflask.utils import now_local, barcode_taken, get_paginated_results, line_base_qty
 
 
-def purchase_item_total(pi):
-    """Calculate purchase item total."""
+def _purchase_line_value(pi):
+    """Calculate purchase line value for ledger display (simple, no discount/tax)."""
     return pi.quantity * pi.purchase_price * (pi.unit_factor or 1)
 
 
-def sale_item_total(si):
-    """Calculate sale item total."""
+def _sale_line_value(si):
+    """Calculate sale line value for ledger display (simple, no discount/tax)."""
     return si.quantity * si.sale_price * (si.unit_factor or 1)
 
 
@@ -59,7 +56,7 @@ def item_ledger(id):
             "date": pi.purchase_header.date, "type": "Purchase", "badge": "success",
             "ref": f"PO #{pi.purchase_header.id}", "party": pi.purchase_header.id_supplier.name,
             "stock_in": line_base_qty(pi), "stock_out": 0,
-            "rate": pi.purchase_price / factor, "value": purchase_item_total(pi),
+            "rate": pi.purchase_price / factor, "value": _purchase_line_value(pi),
         })
     for si in sale_items:
         factor = si.unit_factor or 1
@@ -67,7 +64,7 @@ def item_ledger(id):
             "date": si.sale_header.date, "type": "Sale", "badge": "primary",
             "ref": f"SO #{si.sale_header.id}", "party": si.sale_header.id_customer.name,
             "stock_in": 0, "stock_out": line_base_qty(si),
-            "rate": si.sale_price / factor, "value": sale_item_total(si),
+            "rate": si.sale_price / factor, "value": _sale_line_value(si),
         })
     for pr in purchase_returns:
         factor = pr.unit_factor or 1

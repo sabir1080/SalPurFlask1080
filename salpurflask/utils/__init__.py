@@ -32,6 +32,11 @@ from salpurflask.utils.inventory_utils import (
     barcode_taken,
 )
 
+# Inventory helper calculations
+from salpurflask.utils.inventory_helpers import (
+    line_base_qty,
+)
+
 __all__ = [
     # From helpers
     'valid_phone',
