@@ -1308,7 +1308,7 @@ body {
 .auth-form .form-label {
     font-weight: 600;
     font-size: 0.88rem;
-    color: #e2e8f0;
+    color: var(--bs-body-color);
     margin-bottom: 0.45rem;
 }
 
@@ -1329,22 +1329,22 @@ body {
 
 .auth-input {
     padding: 0.85rem 1rem 0.85rem 2.75rem;
-    background: #363c45;
-    border: 1.5px solid rgba(255, 255, 255, 0.12);
+    background: var(--bs-body-bg);
+    border: 1.5px solid var(--bs-border-color);
     border-radius: 12px;
-    color: #f1f5f9;
+    color: var(--bs-body-color);
     font-size: 0.95rem;
     transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
 }
 
 .auth-input::placeholder {
-    color: #64748b;
+    color: var(--bs-secondary-color);
 }
 
 .auth-input:focus {
-    background: #363c45;
+    background: var(--bs-body-bg);
     border-color: #6366f1;
-    color: #f1f5f9;
+    color: var(--bs-body-color);
     box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.18);
 }
 
@@ -1352,9 +1352,9 @@ body {
 .auth-input:-webkit-autofill,
 .auth-input:-webkit-autofill:hover,
 .auth-input:-webkit-autofill:focus {
-    -webkit-text-fill-color: #f1f5f9;
-    -webkit-box-shadow: 0 0 0 1000px #363c45 inset;
-    caret-color: #f1f5f9;
+    -webkit-text-fill-color: var(--bs-body-color);
+    -webkit-box-shadow: 0 0 0 1000px var(--bs-body-bg) inset;
+    caret-color: var(--bs-body-color);
 }
 
 .btn-auth-submit {
