@@ -37,6 +37,11 @@ from salpurflask.utils.inventory_helpers import (
     line_base_qty,
 )
 
+# Import utilities (file parsing)
+from salpurflask.utils.import_utils import (
+    parse_import_file,
+)
+
 __all__ = [
     # From helpers
     'valid_phone',
@@ -55,4 +60,6 @@ __all__ = [
     'is_demo_mode',
     # From inventory
     'barcode_taken',
+    # From import
+    'parse_import_file',
 ]

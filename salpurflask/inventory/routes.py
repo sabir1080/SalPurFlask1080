@@ -1,5 +1,6 @@
 """Inventory routes (CRUD and read-only)."""
 
+import json
 from datetime import datetime
 from decimal import Decimal
 
@@ -11,11 +12,13 @@ from salpurflask.extensions import db
 from salpurflask.models import (
     Item, Category, PurchaseItem, Purchase, SaleItem, Sale,
     PurchaseReturn, SaleReturn, StockAdjustment,
+    ImportLog, Customer, Supplier,
     ITEM_UNITS, MONEY, save_item_units, post_item_opening,
+    post_customer_opening, post_supplier_opening,
     item_add_stock, item_remove_stock, _repost_opening, _opening_date,
 )
 from salpurflask.auth import verified_required, manager_required, admin_required
-from salpurflask.utils import now_local, barcode_taken, get_paginated_results, line_base_qty, csv_response, excel_response
+from salpurflask.utils import now_local, barcode_taken, get_paginated_results, line_base_qty, csv_response, excel_response, parse_import_file
 
 
 def _purchase_line_value(pi):
@@ -494,3 +497,243 @@ def export_item_ledger_excel(id):
         rows=excel_rows,
         extra_info=f"Item: {item.name} | Unit: {item.unit or 'Pcs'}",
     )
+
+
+# ─── BULK IMPORT ROUTES ────────────────────────────────────────────────────────
+
+
+def import_items(data):
+    """Bulk import items from parsed data. Mirrors the validation and GL/valuation
+    behavior of the manual /item route so imported items are not silently missing
+    their cost basis or accounting entry."""
+    success, failed, errors = 0, 0, []
+
+    for idx, row in enumerate(data, 1):
+        try:
+            name = row.get('name', '').strip()
+            if not name:
+                errors.append(f"Row {idx}: Missing item name")
+                failed += 1
+                continue
+
+            category_name = row.get('category', '').strip()
+            if not category_name:
+                errors.append(f"Row {idx}: Missing category")
+                failed += 1
+                continue
+            category = Category.query.filter_by(name=category_name).first()
+            if not category:
+                category = Category(name=category_name)
+                db.session.add(category)
+                db.session.flush()
+
+            unit = (row.get('unit', 'Pcs') or 'Pcs').strip()
+            if unit not in ITEM_UNITS:
+                unit = "Pcs"
+
+            purchase_price_raw = row.get('purchase_price', '')
+            sale_price_raw = row.get('sale_price', '')
+            purchase_price = float(purchase_price_raw) if purchase_price_raw else None
+            sale_price = float(sale_price_raw) if sale_price_raw else None
+            if purchase_price is not None and purchase_price < 0:
+                errors.append(f"Row {idx}: Purchase price cannot be negative")
+                failed += 1
+                continue
+            if sale_price is not None and sale_price < 0:
+                errors.append(f"Row {idx}: Sale price cannot be negative")
+                failed += 1
+                continue
+
+            barcode = row.get('barcode', '').strip() or None
+            if barcode_taken(barcode):
+                errors.append(f"Row {idx}: Barcode '{barcode}' is already used by another item")
+                failed += 1
+                continue
+
+            # `stock` is the item's actual on-hand quantity at import time; since the
+            # system has no purchase history for it yet, that quantity IS the opening
+            # balance — same as the manual /item form, where opening_stock and stock
+            # are always the same number.
+            qty = int(row.get('stock', 0) or row.get('opening_stock', 0) or 0)
+
+            if qty > 0 and purchase_price <= 0:
+                errors.append(f"Row {idx}: Opening stock {qty} requires purchase_price > 0")
+                failed += 1
+                continue
+
+            item = Item(
+                name=name,
+                category_id=category.id,
+                unit=unit,
+                opening_stock=qty,
+                stock=qty,
+                reorder_level=int(row.get('reorder_level', 0)) if row.get('reorder_level') else 0,
+                purchase_price=purchase_price,
+                sale_price=sale_price,
+                barcode=barcode,
+            )
+
+            db.session.add(item)
+            item.inventory_value = (Decimal(str(item.opening_stock or 0))
+                                    * Decimal(str(item.purchase_price or 0))).quantize(MONEY)
+            db.session.flush()
+
+            # Post opening balance to GL if opening stock > 0
+            if item.opening_stock > 0:
+                post_item_opening(item)
+
+            db.session.commit()
+            success += 1
+
+        except Exception as e:
+            db.session.rollback()
+            failed += 1
+            errors.append(f"Row {idx}: {str(e)}")
+
+    return success, failed, errors
+
+
+def import_customers(data):
+    """Bulk import customers from parsed data."""
+    from app import sync_customer_opening
+
+    success, failed, errors = 0, 0, []
+
+    for idx, row in enumerate(data, 1):
+        try:
+            name = row.get('name', '').strip()
+            if not name:
+                errors.append(f"Row {idx}: Missing customer name")
+                failed += 1
+                continue
+
+            customer = Customer(
+                name=name,
+                contact=row.get('contact', row.get('phone', '')).strip() or '',
+                address=row.get('address', '').strip() or '',
+                opening_balance=float(row.get('opening_balance', 0)) if row.get('opening_balance') else 0
+            )
+
+            db.session.add(customer)
+            db.session.flush()
+            sync_customer_opening(customer)
+            if customer.opening_balance != 0:
+                post_customer_opening(customer)
+            db.session.commit()
+            success += 1
+
+        except Exception as e:
+            db.session.rollback()
+            failed += 1
+            errors.append(f"Row {idx}: {str(e)}")
+
+    return success, failed, errors
+
+
+def import_suppliers(data):
+    """Bulk import suppliers from parsed data."""
+    from app import sync_supplier_opening
+
+    success, failed, errors = 0, 0, []
+
+    for idx, row in enumerate(data, 1):
+        try:
+            name = row.get('name', '').strip()
+            if not name:
+                errors.append(f"Row {idx}: Missing supplier name")
+                failed += 1
+                continue
+
+            supplier = Supplier(
+                name=name,
+                contact=row.get('contact', row.get('phone', '')).strip() or '',
+                address=row.get('address', '').strip() or '',
+                opening_balance=float(row.get('opening_balance', 0)) if row.get('opening_balance') else 0
+            )
+
+            db.session.add(supplier)
+            db.session.flush()
+            sync_supplier_opening(supplier)
+            if supplier.opening_balance != 0:
+                post_supplier_opening(supplier)
+            db.session.commit()
+            success += 1
+
+        except Exception as e:
+            db.session.rollback()
+            failed += 1
+            errors.append(f"Row {idx}: {str(e)}")
+
+    return success, failed, errors
+
+
+@verified_required
+def bulk_import():
+    """Show bulk import form."""
+    import_history = ImportLog.query.filter_by(user_id=current_user.id).order_by(ImportLog.created_at.desc()).limit(10).all()
+    return render_template("bulk_import.html", import_history=import_history)
+
+
+@verified_required
+def process_import():
+    """Process bulk import file."""
+    import_type = request.form.get("import_type", "").lower()
+    file = request.files.get("file")
+
+    if not import_type or import_type not in ("items", "customers", "suppliers"):
+        flash("Invalid import type selected", "danger")
+        return redirect(url_for("bulk_import"))
+
+    if not file:
+        flash("No file selected", "danger")
+        return redirect(url_for("bulk_import"))
+
+    data, file_type = parse_import_file(file)
+    if data is None:
+        flash(file_type, "danger")
+        return redirect(url_for("bulk_import"))
+
+    if not data:
+        flash("File is empty", "danger")
+        return redirect(url_for("bulk_import"))
+
+    # Create import log entry
+    import_log = ImportLog(
+        user_id=current_user.id,
+        import_type=import_type,
+        file_name=file.filename,
+        file_type=file_type,
+        total_records=len(data),
+        status="processing"
+    )
+    db.session.add(import_log)
+    db.session.commit()
+
+    # Process based on type
+    try:
+        if import_type == "items":
+            success, failed, errors = import_items(data)
+        elif import_type == "customers":
+            success, failed, errors = import_customers(data)
+        elif import_type == "suppliers":
+            success, failed, errors = import_suppliers(data)
+
+        import_log.successful = success
+        import_log.failed = failed
+        import_log.status = "completed"
+        if errors:
+            import_log.errors = json.dumps(errors[:100])  # Store first 100 errors
+        db.session.commit()
+
+        message = f"{success} records imported successfully"
+        if failed > 0:
+            message += f", {failed} failed"
+        flash(message, "success" if failed == 0 else "warning")
+
+    except Exception as e:
+        import_log.status = "failed"
+        import_log.errors = json.dumps([str(e)])
+        db.session.commit()
+        flash(f"Import failed: {str(e)}", "danger")
+
+    return redirect(url_for("bulk_import"))

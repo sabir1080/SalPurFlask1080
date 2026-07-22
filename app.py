@@ -222,7 +222,8 @@ app.register_blueprint(dashboard_bp)
 from salpurflask.inventory.routes import (
     item_ledger, get_item, report_stock, item, edit_item, delete_item,
     category, edit_category, delete_category,
-    export_item_ledger, export_item_ledger_excel
+    export_item_ledger, export_item_ledger_excel,
+    bulk_import, process_import
 )
 app.add_url_rule("/item/<int:id>/ledger", "item_ledger", item_ledger)
 app.add_url_rule("/api/item/<int:id>", "get_item", get_item)
@@ -235,6 +236,8 @@ app.add_url_rule("/category/edit/<int:id>", "edit_category", edit_category, meth
 app.add_url_rule("/category/delete/<int:id>", "delete_category", delete_category, methods=["POST"])
 app.add_url_rule("/item/<int:id>/ledger/export", "export_item_ledger", export_item_ledger)
 app.add_url_rule("/item/<int:id>/ledger/export/excel", "export_item_ledger_excel", export_item_ledger_excel)
+app.add_url_rule("/import", "bulk_import", bulk_import, methods=["GET"])
+app.add_url_rule("/import/process", "process_import", process_import, methods=["POST"])
 
 def sql_date_fmt(col, fmt="%Y-%m"):
     if db.engine.dialect.name == "postgresql":
@@ -1533,233 +1536,7 @@ def handle_posting_error(e):
     app.logger.info("Posting refused: %s", e)
     return redirect(request.referrer or url_for("dashboard.dashboard"))
 
-# ─── BULK IMPORT FUNCTIONS ─────────────────────────────────────────────────────
-
-IMPORT_MAX_ROWS = 10000
-
-# Allowed MIME types for bulk import
-ALLOWED_MIME_TYPES = {
-    'text/csv',
-    'text/plain',  # CSV may be reported as plain text
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',  # .xlsx
-    'application/vnd.ms-excel',  # .xls
-    'application/json',
-}
-
-# Maximum file size: 50 MB (prevents DoS)
-MAX_IMPORT_FILE_SIZE = 50 * 1024 * 1024
-
-def parse_import_file(file):
-    """Parse CSV/Excel/JSON file and return list of dictionaries."""
-    if not file:
-        return None, "No file provided"
-
-    filename = file.filename
-    file_ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
-
-    # Validate file extension
-    if file_ext not in ('csv', 'xlsx', 'xls', 'json'):
-        return None, f"Invalid file extension: {file_ext}. Allowed: CSV, Excel (.xlsx, .xls), JSON"
-
-    # Validate MIME type
-    mime_type = file.content_type or ''
-    if mime_type not in ALLOWED_MIME_TYPES:
-        # Log warning but don't block if extension is valid
-        # (Some file systems may report MIME types differently)
-        pass
-
-    # Check file size (prevent DoS)
-    file.seek(0, 2)  # Seek to end
-    file_size = file.tell()
-    file.seek(0)  # Reset to beginning
-    if file_size > MAX_IMPORT_FILE_SIZE:
-        return None, f"File is too large ({file_size / 1024 / 1024:.1f} MB). Maximum size is 50 MB."
-
-    try:
-        if file_ext == 'csv':
-            stream = StringIO(file.read().decode('utf-8'))
-            reader = csv.DictReader(stream)
-            data = list(reader)
-
-        elif file_ext in ('xlsx', 'xls'):
-            wb = openpyxl.load_workbook(file)
-            ws = wb.active
-            headers = [cell.value for cell in ws[1]]
-            data = []
-            for row in ws.iter_rows(min_row=2, values_only=True):
-                data.append(dict(zip(headers, row)))
-
-        elif file_ext == 'json':
-            parsed = json.loads(file.read().decode('utf-8'))
-            data = parsed if isinstance(parsed, list) else [parsed]
-
-        else:
-            return None, f"Unsupported file type: {file_ext}"
-
-        if len(data) > IMPORT_MAX_ROWS:
-            return None, f"File has {len(data)} rows — the maximum is {IMPORT_MAX_ROWS} per import."
-        return data, file_ext
-
-    except Exception as e:
-        return None, f"Error parsing file: {str(e)}"
-
-def import_items(data):
-    """Bulk import items from parsed data. Mirrors the validation and GL/valuation
-    behavior of the manual /item route so imported items are not silently missing
-    their cost basis or accounting entry."""
-    success, failed, errors = 0, 0, []
-
-    for idx, row in enumerate(data, 1):
-        try:
-            name = row.get('name', '').strip()
-            if not name:
-                errors.append(f"Row {idx}: Missing item name")
-                failed += 1
-                continue
-
-            category_name = row.get('category', '').strip()
-            if not category_name:
-                errors.append(f"Row {idx}: Missing category")
-                failed += 1
-                continue
-            category = Category.query.filter_by(name=category_name).first()
-            if not category:
-                category = Category(name=category_name)
-                db.session.add(category)
-                db.session.flush()
-
-            unit = (row.get('unit', 'Pcs') or 'Pcs').strip()
-            if unit not in ITEM_UNITS:
-                unit = "Pcs"
-
-            purchase_price_raw = row.get('purchase_price', '')
-            sale_price_raw = row.get('sale_price', '')
-            purchase_price = float(purchase_price_raw) if purchase_price_raw else None
-            sale_price = float(sale_price_raw) if sale_price_raw else None
-            if purchase_price is not None and purchase_price < 0:
-                errors.append(f"Row {idx}: Purchase price cannot be negative")
-                failed += 1
-                continue
-            if sale_price is not None and sale_price < 0:
-                errors.append(f"Row {idx}: Sale price cannot be negative")
-                failed += 1
-                continue
-
-            barcode = row.get('barcode', '').strip() or None
-            if barcode_taken(barcode):
-                errors.append(f"Row {idx}: Barcode '{barcode}' is already used by another item")
-                failed += 1
-                continue
-
-            # `stock` is the item's actual on-hand quantity at import time; since the
-            # system has no purchase history for it yet, that quantity IS the opening
-            # balance — same as the manual /item form, where opening_stock and stock
-            # are always the same number.
-            qty = int(row.get('stock', 0) or row.get('opening_stock', 0) or 0)
-
-            if qty > 0 and purchase_price <= 0:
-                errors.append(f"Row {idx}: Opening stock {qty} requires purchase_price > 0")
-                failed += 1
-                continue
-
-            item = Item(
-                name=name,
-                category_id=category.id,
-                unit=unit,
-                opening_stock=qty,
-                stock=qty,
-                reorder_level=int(row.get('reorder_level', 0)) if row.get('reorder_level') else 0,
-                purchase_price=purchase_price,
-                sale_price=sale_price,
-                barcode=barcode,
-            )
-
-            db.session.add(item)
-            item.inventory_value = (Decimal(str(item.opening_stock or 0))
-                                    * Decimal(str(item.purchase_price or 0))).quantize(MONEY)
-            db.session.flush()
-
-            # Post opening balance to GL if opening stock > 0
-            if item.opening_stock > 0:
-                post_item_opening(item)
-
-            db.session.commit()
-            success += 1
-
-        except Exception as e:
-            db.session.rollback()
-            failed += 1
-            errors.append(f"Row {idx}: {str(e)}")
-
-    return success, failed, errors
-
-def import_customers(data):
-    """Bulk import customers from parsed data."""
-    success, failed, errors = 0, 0, []
-
-    for idx, row in enumerate(data, 1):
-        try:
-            name = row.get('name', '').strip()
-            if not name:
-                errors.append(f"Row {idx}: Missing customer name")
-                failed += 1
-                continue
-
-            customer = Customer(
-                name=name,
-                contact=row.get('contact', row.get('phone', '')).strip() or '',
-                address=row.get('address', '').strip() or '',
-                opening_balance=float(row.get('opening_balance', 0)) if row.get('opening_balance') else 0
-            )
-
-            db.session.add(customer)
-            db.session.flush()
-            sync_customer_opening(customer)
-            if customer.opening_balance != 0:
-                post_customer_opening(customer)
-            db.session.commit()
-            success += 1
-
-        except Exception as e:
-            db.session.rollback()
-            failed += 1
-            errors.append(f"Row {idx}: {str(e)}")
-
-    return success, failed, errors
-
-def import_suppliers(data):
-    """Bulk import suppliers from parsed data."""
-    success, failed, errors = 0, 0, []
-
-    for idx, row in enumerate(data, 1):
-        try:
-            name = row.get('name', '').strip()
-            if not name:
-                errors.append(f"Row {idx}: Missing supplier name")
-                failed += 1
-                continue
-
-            supplier = Supplier(
-                name=name,
-                contact=row.get('contact', row.get('phone', '')).strip() or '',
-                address=row.get('address', '').strip() or '',
-                opening_balance=float(row.get('opening_balance', 0)) if row.get('opening_balance') else 0
-            )
-
-            db.session.add(supplier)
-            db.session.flush()
-            sync_supplier_opening(supplier)
-            if supplier.opening_balance != 0:
-                post_supplier_opening(supplier)
-            db.session.commit()
-            success += 1
-
-        except Exception as e:
-            db.session.rollback()
-            failed += 1
-            errors.append(f"Row {idx}: {str(e)}")
-
-    return success, failed, errors
+# Routes /import and /import/process moved to salpurflask.inventory.routes
 
 @app.route("/health")
 def health():
@@ -2121,77 +1898,8 @@ def export_customers_excel():
 
 # ─── BULK IMPORT ROUTES ───────────────────────────────────────────────────────
 
-@app.route("/import", methods=["GET"])
-@verified_required
-def bulk_import():
-    """Show bulk import form."""
-    import_history = ImportLog.query.filter_by(user_id=current_user.id).order_by(ImportLog.created_at.desc()).limit(10).all()
-    return render_template("bulk_import.html", import_history=import_history)
-
-@app.route("/import/process", methods=["POST"])
-@verified_required
-def process_import():
-    """Process bulk import file."""
-    import_type = request.form.get("import_type", "").lower()
-    file = request.files.get("file")
-
-    if not import_type or import_type not in ("items", "customers", "suppliers"):
-        flash("Invalid import type selected", "danger")
-        return redirect(url_for("bulk_import"))
-
-    if not file:
-        flash("No file selected", "danger")
-        return redirect(url_for("bulk_import"))
-
-    data, file_type = parse_import_file(file)
-    if data is None:
-        flash(file_type, "danger")  # file_type contains error message
-        return redirect(url_for("bulk_import"))
-
-    if not data:
-        flash("File is empty", "danger")
-        return redirect(url_for("bulk_import"))
-
-    # Create import log entry
-    import_log = ImportLog(
-        user_id=current_user.id,
-        import_type=import_type,
-        file_name=file.filename,
-        file_type=file_type,
-        total_records=len(data),
-        status="processing"
-    )
-    db.session.add(import_log)
-    db.session.commit()
-
-    # Process based on type
-    try:
-        if import_type == "items":
-            success, failed, errors = import_items(data)
-        elif import_type == "customers":
-            success, failed, errors = import_customers(data)
-        elif import_type == "suppliers":
-            success, failed, errors = import_suppliers(data)
-
-        import_log.successful = success
-        import_log.failed = failed
-        import_log.status = "completed"
-        if errors:
-            import_log.errors = json.dumps(errors[:100])  # Store first 100 errors
-        db.session.commit()
-
-        message = f"{success} records imported successfully"
-        if failed > 0:
-            message += f", {failed} failed"
-        flash(message, "success" if failed == 0 else "warning")
-
-    except Exception as e:
-        import_log.status = "failed"
-        import_log.errors = json.dumps([str(e)])
-        db.session.commit()
-        flash(f"Import failed: {str(e)}", "danger")
-
-    return redirect(url_for("bulk_import"))
+# Routes /import and /import/process moved to salpurflask.inventory.routes
+# (bulk_import() and process_import() functions)
 
 # Route /api/item/<id> moved to salpurflask.inventory.routes.get_item
 
