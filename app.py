@@ -218,10 +218,11 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(dashboard_bp)
 
 # Register inventory routes directly (not via blueprint, to preserve endpoint names)
-from salpurflask.inventory.routes import item_ledger, get_item, report_stock
+from salpurflask.inventory.routes import item_ledger, get_item, report_stock, item
 app.add_url_rule("/item/<int:id>/ledger", "item_ledger", item_ledger)
 app.add_url_rule("/api/item/<int:id>", "get_item", get_item)
 app.add_url_rule("/reports/stock", "report_stock", report_stock)
+app.add_url_rule("/item", "item", item, methods=["GET", "POST"])
 
 def sql_date_fmt(col, fmt="%Y-%m"):
     if db.engine.dialect.name == "postgresql":
@@ -2141,86 +2142,7 @@ def delete_category(id):
 
 # barcode_taken moved to salpurflask/utils/inventory_utils.py
 
-@app.route("/item", methods=["GET", "POST"])
-@verified_required
-def item():
-    search = request.args.get("search", "")
-    category_filter = request.args.get("category_id", "")
-    query = Item.query.outerjoin(Category)
-    if search:
-        query = query.filter((Item.name.ilike(f"%{search}%")) | (Category.name.ilike(f"%{search}%")))
-    if category_filter.isdigit():
-        query = query.filter(Item.category_id == int(category_filter))
-    items, pagination = get_paginated_results(query)
-    categories = Category.query.order_by(Category.name).all()
-    if request.method == "POST":
-        if current_user.role not in ("admin", "manager"):
-            flash("You do not have permission to add items.", "danger")
-            return redirect(url_for("item"))
-        name = request.form.get("name", "").strip()
-        category_id = request.form.get("category_id", "").strip()
-        unit = request.form.get("unit", "Pcs").strip()
-        opening_stock = request.form.get("opening_stock", "0").strip() or "0"
-        reorder_level = request.form.get("reorder_level", "").strip()
-        purchase_price = request.form.get("purchase_price", "").strip()
-        sale_price = request.form.get("sale_price", "").strip()
-        barcode = request.form.get("barcode", "").strip() or None
-        if unit not in ITEM_UNITS:
-            unit = "Pcs"
-        if not categories:
-            flash("Please add a category first before adding items!", "danger")
-        elif not name or not reorder_level or not category_id:
-            flash("Name, Category, and Reorder Level are required!", "danger")
-        elif not category_id.isdigit() or not db.session.get(Category, int(category_id)):
-            flash("Please select a valid category!", "danger")
-        elif not opening_stock.lstrip("-").isdigit() or not reorder_level.isdigit():
-            flash("Opening Stock and Reorder Level must be numbers!", "danger")
-        elif purchase_price and (not purchase_price.replace(".", "", 1).isdigit() or float(purchase_price) < 0):
-            flash("Purchase price must be a non-negative number!", "danger")
-        elif sale_price and (not sale_price.replace(".", "", 1).isdigit() or float(sale_price) < 0):
-            flash("Sale price must be a non-negative number!", "danger")
-        elif int(opening_stock) > 0 and (not purchase_price or float(purchase_price or 0) == 0):
-            flash("Opening stock requires a purchase price greater than 0!", "danger")
-        elif barcode_taken(barcode):
-            flash(f"Barcode '{barcode}' is already used by another item. "
-                  "A code must point at one item only.", "danger")
-        else:
-            os_val = int(opening_stock)
-            item = Item(
-                name=name,
-                category_id=int(category_id),
-                unit=unit,
-                opening_stock=os_val,
-                stock=os_val,
-                reorder_level=int(reorder_level),
-                purchase_price=float(purchase_price) if purchase_price else None,
-                sale_price=float(sale_price) if sale_price else None,
-                barcode=barcode,
-            )
-            db.session.add(item)
-            item.inventory_value = (Decimal(str(item.opening_stock or 0))
-                                    * Decimal(str(item.purchase_price or 0))).quantize(MONEY)
-            db.session.flush()
-            unit_error = save_item_units(item)
-            if unit_error:
-                db.session.rollback()
-                flash(unit_error, "danger")
-                return render_template("item.html", items=items, categories=categories,
-                                       pagination=pagination, search=search,
-                                       category_filter=category_filter)
-            post_item_opening(item)
-            db.session.commit()
-            record_audit("create", "Item", item.id, f"Item '{item.name}' added")
-            flash("Item added successfully!", "success")
-            return redirect(url_for("item"))
-    return render_template(
-        "item.html",
-        items=items,
-        categories=categories,
-        pagination=pagination,
-        search=search,
-        category_filter=category_filter,
-    )
+# Route /item moved to salpurflask.inventory.routes.item
 
 @app.route("/item/edit/<int:id>", methods=["GET", "POST"])
 @manager_required

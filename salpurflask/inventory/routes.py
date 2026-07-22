@@ -1,18 +1,20 @@
-"""Inventory read-only routes (ledger, API, reports)."""
+"""Inventory routes (CRUD and read-only)."""
 
 from datetime import datetime
 from decimal import Decimal
 
-from flask import abort, flash, render_template, request
+from flask import abort, flash, redirect, render_template, request, url_for
+from flask_login import current_user
 from sqlalchemy import and_
 
 from salpurflask.extensions import db
 from salpurflask.models import (
     Item, Category, PurchaseItem, Purchase, SaleItem, Sale,
     PurchaseReturn, SaleReturn, StockAdjustment,
+    ITEM_UNITS, MONEY, save_item_units, post_item_opening,
 )
 from salpurflask.auth import verified_required, manager_required
-from salpurflask.utils import now_local
+from salpurflask.utils import now_local, barcode_taken, get_paginated_results
 def line_base_qty(line):
     """Get quantity in base unit."""
     return line.quantity * (line.unit_factor or 1)
@@ -175,4 +177,88 @@ def report_stock():
         items_in_stock=sum(1 for i in items if i.stock and i.stock > 0),
         reorder_report=[i for i in items if i.stock <= i.reorder_level],
         as_of=now_local().strftime("%d %B %Y"),
+    )
+
+
+@verified_required
+def item():
+    """Display items with filters and handle item creation."""
+    search = request.args.get("search", "")
+    category_filter = request.args.get("category_id", "")
+    query = Item.query.outerjoin(Category)
+    if search:
+        query = query.filter((Item.name.ilike(f"%{search}%")) | (Category.name.ilike(f"%{search}%")))
+    if category_filter.isdigit():
+        query = query.filter(Item.category_id == int(category_filter))
+    items, pagination = get_paginated_results(query)
+    categories = Category.query.order_by(Category.name).all()
+    if request.method == "POST":
+        if current_user.role not in ("admin", "manager"):
+            flash("You do not have permission to add items.", "danger")
+            return redirect(url_for("item"))
+        name = request.form.get("name", "").strip()
+        category_id = request.form.get("category_id", "").strip()
+        unit = request.form.get("unit", "Pcs").strip()
+        opening_stock = request.form.get("opening_stock", "0").strip() or "0"
+        reorder_level = request.form.get("reorder_level", "").strip()
+        purchase_price = request.form.get("purchase_price", "").strip()
+        sale_price = request.form.get("sale_price", "").strip()
+        barcode = request.form.get("barcode", "").strip() or None
+        if unit not in ITEM_UNITS:
+            unit = "Pcs"
+        if not categories:
+            flash("Please add a category first before adding items!", "danger")
+        elif not name or not reorder_level or not category_id:
+            flash("Name, Category, and Reorder Level are required!", "danger")
+        elif not category_id.isdigit() or not db.session.get(Category, int(category_id)):
+            flash("Please select a valid category!", "danger")
+        elif not opening_stock.lstrip("-").isdigit() or not reorder_level.isdigit():
+            flash("Opening Stock and Reorder Level must be numbers!", "danger")
+        elif purchase_price and (not purchase_price.replace(".", "", 1).isdigit() or float(purchase_price) < 0):
+            flash("Purchase price must be a non-negative number!", "danger")
+        elif sale_price and (not sale_price.replace(".", "", 1).isdigit() or float(sale_price) < 0):
+            flash("Sale price must be a non-negative number!", "danger")
+        elif int(opening_stock) > 0 and (not purchase_price or float(purchase_price or 0) == 0):
+            flash("Opening stock requires a purchase price greater than 0!", "danger")
+        elif barcode_taken(barcode):
+            flash(f"Barcode '{barcode}' is already used by another item. "
+                  "A code must point at one item only.", "danger")
+        else:
+            os_val = int(opening_stock)
+            item_obj = Item(
+                name=name,
+                category_id=int(category_id),
+                unit=unit,
+                opening_stock=os_val,
+                stock=os_val,
+                reorder_level=int(reorder_level),
+                purchase_price=float(purchase_price) if purchase_price else None,
+                sale_price=float(sale_price) if sale_price else None,
+                barcode=barcode,
+            )
+            db.session.add(item_obj)
+            item_obj.inventory_value = (Decimal(str(item_obj.opening_stock or 0))
+                                        * Decimal(str(item_obj.purchase_price or 0))).quantize(MONEY)
+            db.session.flush()
+            unit_error = save_item_units(item_obj)
+            if unit_error:
+                db.session.rollback()
+                flash(unit_error, "danger")
+                return render_template("item.html", items=items, categories=categories,
+                                       pagination=pagination, search=search,
+                                       category_filter=category_filter)
+            post_item_opening(item_obj)
+            db.session.commit()
+            # Import record_audit locally to avoid circular imports
+            from app import record_audit
+            record_audit("create", "Item", item_obj.id, f"Item '{item_obj.name}' added")
+            flash("Item added successfully!", "success")
+            return redirect(url_for("item"))
+    return render_template(
+        "item.html",
+        items=items,
+        categories=categories,
+        pagination=pagination,
+        search=search,
+        category_filter=category_filter,
     )
