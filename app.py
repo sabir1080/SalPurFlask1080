@@ -388,7 +388,7 @@ class User(db.Model, UserMixin):
 
 class Supplier(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
-    name                = db.Column(db.String(100), nullable=False)
+    name                = db.Column(db.String(100), nullable=False, index=True)
     contact             = db.Column(db.String(15), nullable=False)
     address             = db.Column(db.String(200), nullable=False)
     opening_balance     = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
@@ -396,7 +396,7 @@ class Supplier(db.Model):
 
 class Customer(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
-    name                = db.Column(db.String(100), nullable=False)
+    name                = db.Column(db.String(100), nullable=False, index=True)
     contact             = db.Column(db.String(15), nullable=False)
     address             = db.Column(db.String(200), nullable=False)
     opening_balance     = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
@@ -596,7 +596,7 @@ class Purchase(db.Model):
     tax_percent         = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     discount_amount     = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     tax_amount          = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
-    date                = db.Column(db.DateTime, default=lambda: now_local(), nullable=False)
+    date                = db.Column(db.DateTime, default=lambda: now_local(), nullable=False, index=True)
     notes               = db.Column(db.String(300), nullable=True)
     line_items          = db.relationship("PurchaseItem", backref="purchase_header", lazy=True, cascade="all,delete-orphan")
     is_reversed         = db.Column(db.Boolean, nullable=False, default=False)
@@ -616,7 +616,7 @@ class Sale(db.Model):
     tax_percent         = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     discount_amount     = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     tax_amount          = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
-    date                = db.Column(db.DateTime, default=lambda: now_local(), nullable=False)
+    date                = db.Column(db.DateTime, default=lambda: now_local(), nullable=False, index=True)
     notes               = db.Column(db.String(300), nullable=True)
     line_items          = db.relationship("SaleItem", backref="sale_header", lazy=True, cascade="all,delete-orphan")
     is_reversed         = db.Column(db.Boolean, nullable=False, default=False)
@@ -2227,7 +2227,7 @@ class JournalEntry(db.Model):
     __tablename__ = "journal_entry"
     id             = db.Column(db.Integer, primary_key=True)
     entry_date     = db.Column(db.DateTime, nullable=False,
-                               default=lambda: now_local())
+                               default=lambda: now_local(), index=True)
     reference      = db.Column(db.String(50), nullable=True)
     description    = db.Column(db.String(300), nullable=False)
     source_type    = db.Column(db.String(20), nullable=False, default="manual")
@@ -2584,7 +2584,7 @@ OPENING_LEDGER_DATE = datetime(1900, 1, 1)
 class SupplierLedgerEntry(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
     supplier_id         = db.Column(db.Integer, db.ForeignKey("supplier.id"), nullable=False)
-    entry_date          = db.Column(db.DateTime, nullable=False)
+    entry_date          = db.Column(db.DateTime, nullable=False, index=True)
     entry_type          = db.Column(db.String(30), nullable=False)
     source_type         = db.Column(db.String(20), nullable=False)
     source_id           = db.Column(db.Integer, nullable=True)
@@ -2597,7 +2597,7 @@ class SupplierLedgerEntry(db.Model):
 class CustomerLedgerEntry(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
     customer_id         = db.Column(db.Integer, db.ForeignKey("customer.id"), nullable=False)
-    entry_date          = db.Column(db.DateTime, nullable=False)
+    entry_date          = db.Column(db.DateTime, nullable=False, index=True)
     entry_type          = db.Column(db.String(30), nullable=False)
     source_type         = db.Column(db.String(20), nullable=False)
     source_id           = db.Column(db.Integer, nullable=True)
