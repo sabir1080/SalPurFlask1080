@@ -221,7 +221,8 @@ app.register_blueprint(dashboard_bp)
 # Register inventory routes directly (not via blueprint, to preserve endpoint names)
 from salpurflask.inventory.routes import (
     item_ledger, get_item, report_stock, item, edit_item, delete_item,
-    category, edit_category, delete_category
+    category, edit_category, delete_category,
+    export_item_ledger, export_item_ledger_excel
 )
 app.add_url_rule("/item/<int:id>/ledger", "item_ledger", item_ledger)
 app.add_url_rule("/api/item/<int:id>", "get_item", get_item)
@@ -232,6 +233,8 @@ app.add_url_rule("/item/delete/<int:id>", "delete_item", delete_item, methods=["
 app.add_url_rule("/category", "category", category, methods=["GET", "POST"])
 app.add_url_rule("/category/edit/<int:id>", "edit_category", edit_category, methods=["GET", "POST"])
 app.add_url_rule("/category/delete/<int:id>", "delete_category", delete_category, methods=["POST"])
+app.add_url_rule("/item/<int:id>/ledger/export", "export_item_ledger", export_item_ledger)
+app.add_url_rule("/item/<int:id>/ledger/export/excel", "export_item_ledger_excel", export_item_ledger_excel)
 
 def sql_date_fmt(col, fmt="%Y-%m"):
     if db.engine.dialect.name == "postgresql":
@@ -2112,80 +2115,9 @@ def export_customers_excel():
 
 # Route /item/<id>/ledger moved to salpurflask.inventory.routes.item_ledger
 
-@app.route("/item/<int:id>/ledger/export")
-@verified_required
-def export_item_ledger(id):
-    item = db.session.get(Item, id) or abort(404)
-    # A reversed document never happened, so it must not still count here.
-    purchase_items   = (PurchaseItem.query.join(Purchase)
-                        .filter(PurchaseItem.item_id == id, Purchase.is_reversed.is_(False)).all())
-    sale_items       = (SaleItem.query.join(Sale)
-                        .filter(SaleItem.item_id == id, Sale.is_reversed.is_(False)).all())
-    purchase_returns = PurchaseReturn.query.filter_by(item_id=id, is_reversed=False).all()
-    sale_returns     = SaleReturn.query.filter_by(item_id=id, is_reversed=False).all()
-
-    # Stock In/Out are in the item's base unit, exactly like the on-screen ledger
-    # (item_ledger() above) — whatever unit a line was actually transacted in.
-    rows = []
-    for pi in purchase_items:
-        rows.append((pi.purchase_header.date, "Purchase", f"PO #{pi.purchase_header.id}", pi.purchase_header.id_supplier.name, line_base_qty(pi), 0, float(pi.purchase_price) / (pi.unit_factor or 1), purchase_item_total(pi)))
-    for si in sale_items:
-        rows.append((si.sale_header.date, "Sale", f"SO #{si.sale_header.id}", si.sale_header.id_customer.name, 0, line_base_qty(si), float(si.sale_price) / (si.unit_factor or 1), sale_item_total(si)))
-    for pr in purchase_returns:
-        rows.append((pr.date, "Purchase Return", f"PR #{pr.id}", pr.supplier.name, 0, line_base_qty(pr), float(pr.return_price) / (pr.unit_factor or 1), round(pr.quantity * pr.return_price, 2)))
-    for sr in sale_returns:
-        rows.append((sr.date, "Sale Return", f"SR #{sr.id}", sr.customer.name, line_base_qty(sr), 0, float(sr.return_price) / (sr.unit_factor or 1), round(sr.quantity * sr.return_price, 2)))
-
-    rows.sort(key=lambda x: x[0])
-    balance = 0
-    csv_rows = []
-    for date, typ, ref, party, sin, sout, rate, value in rows:
-        balance += sin - sout
-        csv_rows.append([date.strftime("%Y-%m-%d"), typ, ref, party, sin, sout, round(rate, 2), round(value, 2), balance])
-    return csv_response(
-        f"{item.name}_ledger.csv", "Item Stock Ledger",
-        ["Date", "Type", "Reference", "Party", "Stock In", "Stock Out", "Rate", "Value", "Balance"],
-        csv_rows, extra_info=f"Item: {item.name}",
-    )
-
-@app.route("/item/<int:id>/ledger/export/excel")
-@verified_required
-def export_item_ledger_excel(id):
-    item = db.session.get(Item, id) or abort(404)
-    # A reversed document never happened, so it must not still count here.
-    purchase_items   = (PurchaseItem.query.join(Purchase)
-                        .filter(PurchaseItem.item_id == id, Purchase.is_reversed.is_(False)).all())
-    sale_items       = (SaleItem.query.join(Sale)
-                        .filter(SaleItem.item_id == id, Sale.is_reversed.is_(False)).all())
-    purchase_returns = PurchaseReturn.query.filter_by(item_id=id, is_reversed=False).all()
-    sale_returns     = SaleReturn.query.filter_by(item_id=id, is_reversed=False).all()
-
-    # Stock In/Out are in the item's base unit, exactly like the on-screen ledger
-    # (item_ledger() above) — whatever unit a line was actually transacted in.
-    raw = []
-    for pi in purchase_items:
-        raw.append((pi.purchase_header.date, "Purchase", f"PO #{pi.purchase_header.id}", pi.purchase_header.id_supplier.name, line_base_qty(pi), 0, float(pi.purchase_price) / (pi.unit_factor or 1), purchase_item_total(pi)))
-    for si in sale_items:
-        raw.append((si.sale_header.date, "Sale", f"SO #{si.sale_header.id}", si.sale_header.id_customer.name, 0, line_base_qty(si), float(si.sale_price) / (si.unit_factor or 1), sale_item_total(si)))
-    for pr in purchase_returns:
-        raw.append((pr.date, "Purchase Return", f"PR #{pr.id}", pr.supplier.name, 0, line_base_qty(pr), float(pr.return_price) / (pr.unit_factor or 1), round(pr.quantity * pr.return_price, 2)))
-    for sr in sale_returns:
-        raw.append((sr.date, "Sale Return", f"SR #{sr.id}", sr.customer.name, line_base_qty(sr), 0, float(sr.return_price) / (sr.unit_factor or 1), round(sr.quantity * sr.return_price, 2)))
-
-    raw.sort(key=lambda x: x[0])
-    balance = item.opening_stock
-    excel_rows = [["Opening", "Opening Stock", "", "", item.opening_stock, 0, 0, 0, balance]]
-    for date, typ, ref, party, sin, sout, rate, value in raw:
-        balance += sin - sout
-        excel_rows.append([date.strftime("%Y-%m-%d"), typ, ref, party, sin, sout, round(rate, 2), round(value, 2), balance])
-
-    return excel_response(
-        filename=f"{item.name}_ledger.xlsx",
-        title="Item Stock Ledger",
-        col_headers=["Date", "Type", "Reference", "Party", "Stock In", "Stock Out", "Rate", "Value", "Balance"],
-        rows=excel_rows,
-        extra_info=f"Item: {item.name} | Unit: {item.unit or 'Pcs'}",
-    )
+# Export routes moved to salpurflask.inventory.routes
+# - /item/<id>/ledger/export → export_item_ledger()
+# - /item/<id>/ledger/export/excel → export_item_ledger_excel()
 
 # ─── BULK IMPORT ROUTES ───────────────────────────────────────────────────────
 

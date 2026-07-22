@@ -15,7 +15,7 @@ from salpurflask.models import (
     item_add_stock, item_remove_stock, _repost_opening, _opening_date,
 )
 from salpurflask.auth import verified_required, manager_required, admin_required
-from salpurflask.utils import now_local, barcode_taken, get_paginated_results, line_base_qty
+from salpurflask.utils import now_local, barcode_taken, get_paginated_results, line_base_qty, csv_response, excel_response
 
 
 def _purchase_line_value(pi):
@@ -411,3 +411,86 @@ def delete_category(id):
         db.session.commit()
         flash("Category deleted successfully!", "success")
     return redirect(url_for("category"))
+
+
+@verified_required
+def export_item_ledger(id):
+    """Export item stock ledger as CSV."""
+    # Import these locally to avoid circular imports (they're defined in app.py with discount/tax logic)
+    from app import purchase_item_total, sale_item_total
+
+    item = db.session.get(Item, id) or abort(404)
+    # A reversed document never happened, so it must not still count here.
+    purchase_items   = (PurchaseItem.query.join(Purchase)
+                        .filter(PurchaseItem.item_id == id, Purchase.is_reversed.is_(False)).all())
+    sale_items       = (SaleItem.query.join(Sale)
+                        .filter(SaleItem.item_id == id, Sale.is_reversed.is_(False)).all())
+    purchase_returns = PurchaseReturn.query.filter_by(item_id=id, is_reversed=False).all()
+    sale_returns     = SaleReturn.query.filter_by(item_id=id, is_reversed=False).all()
+
+    # Stock In/Out are in the item's base unit, exactly like the on-screen ledger
+    # (item_ledger() above) — whatever unit a line was actually transacted in.
+    rows = []
+    for pi in purchase_items:
+        rows.append((pi.purchase_header.date, "Purchase", f"PO #{pi.purchase_header.id}", pi.purchase_header.id_supplier.name, line_base_qty(pi), 0, float(pi.purchase_price) / (pi.unit_factor or 1), purchase_item_total(pi)))
+    for si in sale_items:
+        rows.append((si.sale_header.date, "Sale", f"SO #{si.sale_header.id}", si.sale_header.id_customer.name, 0, line_base_qty(si), float(si.sale_price) / (si.unit_factor or 1), sale_item_total(si)))
+    for pr in purchase_returns:
+        rows.append((pr.date, "Purchase Return", f"PR #{pr.id}", pr.supplier.name, 0, line_base_qty(pr), float(pr.return_price) / (pr.unit_factor or 1), round(pr.quantity * pr.return_price, 2)))
+    for sr in sale_returns:
+        rows.append((sr.date, "Sale Return", f"SR #{sr.id}", sr.customer.name, line_base_qty(sr), 0, float(sr.return_price) / (sr.unit_factor or 1), round(sr.quantity * sr.return_price, 2)))
+
+    rows.sort(key=lambda x: x[0])
+    balance = 0
+    csv_rows = []
+    for date, typ, ref, party, sin, sout, rate, value in rows:
+        balance += sin - sout
+        csv_rows.append([date.strftime("%Y-%m-%d"), typ, ref, party, sin, sout, round(rate, 2), round(value, 2), balance])
+    return csv_response(
+        f"{item.name}_ledger.csv", "Item Stock Ledger",
+        ["Date", "Type", "Reference", "Party", "Stock In", "Stock Out", "Rate", "Value", "Balance"],
+        csv_rows, extra_info=f"Item: {item.name}",
+    )
+
+
+@verified_required
+def export_item_ledger_excel(id):
+    """Export item stock ledger as Excel."""
+    # Import these locally to avoid circular imports (they're defined in app.py with discount/tax logic)
+    from app import purchase_item_total, sale_item_total
+
+    item = db.session.get(Item, id) or abort(404)
+    # A reversed document never happened, so it must not still count here.
+    purchase_items   = (PurchaseItem.query.join(Purchase)
+                        .filter(PurchaseItem.item_id == id, Purchase.is_reversed.is_(False)).all())
+    sale_items       = (SaleItem.query.join(Sale)
+                        .filter(SaleItem.item_id == id, Sale.is_reversed.is_(False)).all())
+    purchase_returns = PurchaseReturn.query.filter_by(item_id=id, is_reversed=False).all()
+    sale_returns     = SaleReturn.query.filter_by(item_id=id, is_reversed=False).all()
+
+    # Stock In/Out are in the item's base unit, exactly like the on-screen ledger
+    # (item_ledger() above) — whatever unit a line was actually transacted in.
+    raw = []
+    for pi in purchase_items:
+        raw.append((pi.purchase_header.date, "Purchase", f"PO #{pi.purchase_header.id}", pi.purchase_header.id_supplier.name, line_base_qty(pi), 0, float(pi.purchase_price) / (pi.unit_factor or 1), purchase_item_total(pi)))
+    for si in sale_items:
+        raw.append((si.sale_header.date, "Sale", f"SO #{si.sale_header.id}", si.sale_header.id_customer.name, 0, line_base_qty(si), float(si.sale_price) / (si.unit_factor or 1), sale_item_total(si)))
+    for pr in purchase_returns:
+        raw.append((pr.date, "Purchase Return", f"PR #{pr.id}", pr.supplier.name, 0, line_base_qty(pr), float(pr.return_price) / (pr.unit_factor or 1), round(pr.quantity * pr.return_price, 2)))
+    for sr in sale_returns:
+        raw.append((sr.date, "Sale Return", f"SR #{sr.id}", sr.customer.name, line_base_qty(sr), 0, float(sr.return_price) / (sr.unit_factor or 1), round(sr.quantity * sr.return_price, 2)))
+
+    raw.sort(key=lambda x: x[0])
+    balance = item.opening_stock
+    excel_rows = [["Opening", "Opening Stock", "", "", item.opening_stock, 0, 0, 0, balance]]
+    for date, typ, ref, party, sin, sout, rate, value in raw:
+        balance += sin - sout
+        excel_rows.append([date.strftime("%Y-%m-%d"), typ, ref, party, sin, sout, round(rate, 2), round(value, 2), balance])
+
+    return excel_response(
+        filename=f"{item.name}_ledger.xlsx",
+        title="Item Stock Ledger",
+        col_headers=["Date", "Type", "Reference", "Party", "Stock In", "Stock Out", "Rate", "Value", "Balance"],
+        rows=excel_rows,
+        extra_info=f"Item: {item.name} | Unit: {item.unit or 'Pcs'}",
+    )
