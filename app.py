@@ -8353,11 +8353,21 @@ def report_aging():
         elif days <= 90: return "61-90"
         else:            return "90+"
 
-    # AP Aging (Suppliers)
+    # AP Aging (Suppliers) - Optimized: fetch all data at once to avoid N+1 queries
+    suppliers = Supplier.query.order_by(Supplier.name).all()
+    purchases = Purchase.query.filter_by(is_reversed=False).all()  # Fetch all at once
+
+    # Group purchases by supplier in memory
+    purchases_by_supplier = {}
+    for pur in purchases:
+        if pur.supplier_id not in purchases_by_supplier:
+            purchases_by_supplier[pur.supplier_id] = []
+        purchases_by_supplier[pur.supplier_id].append(pur)
+
     ap_rows = []
-    for sup in Supplier.query.order_by(Supplier.name).all():
+    for sup in suppliers:
         buckets = {"0-30": 0, "31-60": 0, "61-90": 0, "90+": 0}
-        for pur in Purchase.query.filter_by(supplier_id=sup.id, is_reversed=False).all():
+        for pur in purchases_by_supplier.get(sup.id, []):
             due = purchase_total(pur) - get_purchase_paid(pur.id)
             if due > 0.01:
                 buckets[age_bucket(pur.date)] += due
@@ -8365,11 +8375,21 @@ def report_aging():
         if total_due > 0.01:
             ap_rows.append({"name": sup.name, "buckets": buckets, "total": total_due})
 
-    # AR Aging (Customers)
+    # AR Aging (Customers) - Optimized: fetch all data at once to avoid N+1 queries
+    customers = Customer.query.order_by(Customer.name).all()
+    sales = Sale.query.filter_by(is_reversed=False).all()  # Fetch all at once
+
+    # Group sales by customer in memory
+    sales_by_customer = {}
+    for sal in sales:
+        if sal.customer_id not in sales_by_customer:
+            sales_by_customer[sal.customer_id] = []
+        sales_by_customer[sal.customer_id].append(sal)
+
     ar_rows = []
-    for cust in Customer.query.order_by(Customer.name).all():
+    for cust in customers:
         buckets = {"0-30": 0, "31-60": 0, "61-90": 0, "90+": 0}
-        for sal in Sale.query.filter_by(customer_id=cust.id, is_reversed=False).all():
+        for sal in sales_by_customer.get(cust.id, []):
             due = sale_total(sal) - get_sale_received(sal.id)
             if due > 0.01:
                 buckets[age_bucket(sal.date)] += due
@@ -8455,7 +8475,8 @@ def report_cash_book():
     # Every journal line that touches a cash or bank GL account — so a manual
     # journal entry that moves cash appears here too, which the old
     # payments-and-expenses version could never show.
-    cash_gl_ids = [fa.gl_account_id for fa in FinancialAccount.query.all() if fa.gl_account_id]
+    # Optimized: Use query filter instead of Python loop to avoid N+1
+    cash_gl_ids = [fa.gl_account_id for fa in FinancialAccount.query.filter(FinancialAccount.gl_account_id.isnot(None)).all()]
     account_names = {fa.gl_account_id: fa.name for fa in FinancialAccount.query.all()}
 
     q = (db.session.query(JournalLine, JournalEntry)
