@@ -3914,6 +3914,11 @@ def import_items(data):
             # are always the same number.
             qty = int(row.get('stock', 0) or row.get('opening_stock', 0) or 0)
 
+            if qty > 0 and purchase_price <= 0:
+                errors.append(f"Row {idx}: Opening stock {qty} requires purchase_price > 0")
+                failed += 1
+                continue
+
             item = Item(
                 name=name,
                 category_id=category.id,
@@ -4849,6 +4854,8 @@ def item():
             flash("Purchase price must be a non-negative number!", "danger")
         elif sale_price and (not sale_price.replace(".", "", 1).isdigit() or float(sale_price) < 0):
             flash("Sale price must be a non-negative number!", "danger")
+        elif int(opening_stock) > 0 and (not purchase_price or float(purchase_price) == 0):
+            flash("Opening stock requires a purchase price greater than 0!", "danger")
         elif barcode_taken(barcode):
             flash(f"Barcode '{barcode}' is already used by another item. "
                   "A code must point at one item only.", "danger")
