@@ -223,7 +223,8 @@ from salpurflask.inventory.routes import (
     item_ledger, get_item, report_stock, item, edit_item, delete_item,
     category, edit_category, delete_category,
     export_item_ledger, export_item_ledger_excel,
-    bulk_import, process_import
+    bulk_import, process_import,
+    stock_adjustment, delete_stock_adjustment
 )
 app.add_url_rule("/item/<int:id>/ledger", "item_ledger", item_ledger)
 app.add_url_rule("/api/item/<int:id>", "get_item", get_item)
@@ -238,6 +239,8 @@ app.add_url_rule("/item/<int:id>/ledger/export", "export_item_ledger", export_it
 app.add_url_rule("/item/<int:id>/ledger/export/excel", "export_item_ledger_excel", export_item_ledger_excel)
 app.add_url_rule("/import", "bulk_import", bulk_import, methods=["GET"])
 app.add_url_rule("/import/process", "process_import", process_import, methods=["POST"])
+app.add_url_rule("/stock_adjustment", "stock_adjustment", stock_adjustment, methods=["GET", "POST"])
+app.add_url_rule("/stock_adjustment/delete/<int:id>", "delete_stock_adjustment", delete_stock_adjustment, methods=["POST"])
 
 def sql_date_fmt(col, fmt="%Y-%m"):
     if db.engine.dialect.name == "postgresql":
@@ -4370,79 +4373,8 @@ def sale_invoice(id):
 
 # ─── Stock Adjustment ──────────────────────────────────────────────────────────
 
-@app.route("/stock_adjustment", methods=["GET", "POST"])
-@manager_required
-def stock_adjustment():
-    search = request.args.get("search", "").strip()
-    query = StockAdjustment.query.join(Item)
-    if search:
-        query = query.filter(Item.name.ilike(f"%{search}%"))
-    adjustments, pagination = get_paginated_results(
-        query.order_by(StockAdjustment.date.desc(), StockAdjustment.id.desc())
-    )
-    items = Item.query.order_by(Item.name).all()
-    if request.method == "POST":
-        item_id  = request.form.get("item_id", "").strip()
-        adj_type = request.form.get("adj_type", "").strip()
-        qty_str  = request.form.get("quantity", "").strip()
-        reason   = request.form.get("reason", "").strip()
-        date_str = request.form.get("date", "").strip()
-        if not item_id or not adj_type or not qty_str or not date_str:
-            flash("Item, type, quantity and date are required.", "danger")
-        elif not qty_str.isdigit() or int(qty_str) <= 0:
-            flash("Quantity must be a positive integer.", "danger")
-        elif not (item_obj := get_item_locked(int(item_id))):
-            flash("Item not found.", "danger")
-        elif adj_type not in ADJUSTMENT_DIRECTIONS:
-            # Never guess. An unrecognised type used to fall through to "in" and add
-            # stock that nobody asked for.
-            flash("Unknown adjustment type.", "danger")
-        else:
-            qty = int(qty_str)
-            direction = ADJUSTMENT_DIRECTIONS[adj_type]
-            if direction == "out" and item_obj.stock < qty:
-                flash(f"Insufficient stock. Available: {item_obj.stock}", "danger")
-            else:
-                adj = StockAdjustment(
-                    item_id=int(item_id), adj_type=adj_type, quantity=qty,
-                    direction=direction,
-                    date=datetime.strptime(date_str, "%Y-%m-%d"),
-                    reason=reason or None,
-                )
-                db.session.add(adj)
-                # Both directions are valued at the average: stock found is worth
-                # what the rest of the stock is worth, stock lost costs the same.
-                unit = item_obj.avg_cost
-                if direction == "out":
-                    adj.cost_value = item_remove_stock(item_obj, qty)
-                else:
-                    adj.cost_value = (unit * Decimal(str(qty))).quantize(MONEY)
-                    item_add_stock(item_obj, qty, adj.cost_value)
-                db.session.flush()
-                post_document("stock_adjustment", adj)
-                db.session.commit()
-                flash(f"Stock {'reduced' if direction=='out' else 'increased'} by {qty} for {item_obj.name}.", "success")
-                return redirect(url_for("stock_adjustment"))
-    return render_template("stock_adjustment.html",
-        adjustments=adjustments, items=items, pagination=pagination,
-        search=search, adj_types=ADJUSTMENT_TYPES,
-        today=now_local().strftime("%Y-%m-%d"))
-
-@app.route("/stock_adjustment/delete/<int:id>", methods=["POST"])
-@admin_required
-def delete_stock_adjustment(id):
-    adj = db.session.get(StockAdjustment, id) or abort(404)
-    assert_not_posted("stock_adjustment", adj.id, f"Stock adjustment #{adj.id}")
-    item_obj = get_item_locked(adj.item_id)
-    if item_obj:
-        if adj.direction == "out":
-            item_add_stock(item_obj, adj.quantity, cost_total=adj.cost_value or 0)
-        else:
-            item_remove_stock(item_obj, adj.quantity, cost_total=adj.cost_value or 0)
-    db.session.delete(adj)
-    db.session.commit()
-    flash("Adjustment deleted and stock reversed.", "success")
-    return redirect(url_for("stock_adjustment"))
+# Routes /stock_adjustment and /stock_adjustment/delete moved to salpurflask.inventory.routes
+# (stock_adjustment() and delete_stock_adjustment() functions)
 
 # ─── Expense Tracking ──────────────────────────────────────────────────────────
 

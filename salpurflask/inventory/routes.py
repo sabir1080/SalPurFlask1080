@@ -13,9 +13,11 @@ from salpurflask.models import (
     Item, Category, PurchaseItem, Purchase, SaleItem, Sale,
     PurchaseReturn, SaleReturn, StockAdjustment,
     ImportLog, Customer, Supplier,
-    ITEM_UNITS, MONEY, save_item_units, post_item_opening,
+    ITEM_UNITS, MONEY, ADJUSTMENT_DIRECTIONS, ADJUSTMENT_TYPES,
+    save_item_units, post_item_opening,
     post_customer_opening, post_supplier_opening,
     item_add_stock, item_remove_stock, _repost_opening, _opening_date,
+    assert_not_posted, post_document,
 )
 from salpurflask.auth import verified_required, manager_required, admin_required
 from salpurflask.utils import now_local, barcode_taken, get_paginated_results, line_base_qty, csv_response, excel_response, parse_import_file
@@ -737,3 +739,86 @@ def process_import():
         flash(f"Import failed: {str(e)}", "danger")
 
     return redirect(url_for("bulk_import"))
+
+
+# ─── STOCK ADJUSTMENT ROUTES ──────────────────────────────────────────────────────
+
+
+@manager_required
+def stock_adjustment():
+    """List and create stock adjustments."""
+    search = request.args.get("search", "").strip()
+    query = StockAdjustment.query.join(Item)
+    if search:
+        query = query.filter(Item.name.ilike(f"%{search}%"))
+    adjustments, pagination = get_paginated_results(
+        query.order_by(StockAdjustment.date.desc(), StockAdjustment.id.desc())
+    )
+    items = Item.query.order_by(Item.name).all()
+    if request.method == "POST":
+        from app import get_item_locked
+
+        item_id  = request.form.get("item_id", "").strip()
+        adj_type = request.form.get("adj_type", "").strip()
+        qty_str  = request.form.get("quantity", "").strip()
+        reason   = request.form.get("reason", "").strip()
+        date_str = request.form.get("date", "").strip()
+        if not item_id or not adj_type or not qty_str or not date_str:
+            flash("Item, type, quantity and date are required.", "danger")
+        elif not qty_str.isdigit() or int(qty_str) <= 0:
+            flash("Quantity must be a positive integer.", "danger")
+        elif not (item_obj := get_item_locked(int(item_id))):
+            flash("Item not found.", "danger")
+        elif adj_type not in ADJUSTMENT_DIRECTIONS:
+            # Never guess. An unrecognised type used to fall through to "in" and add
+            # stock that nobody asked for.
+            flash("Unknown adjustment type.", "danger")
+        else:
+            qty = int(qty_str)
+            direction = ADJUSTMENT_DIRECTIONS[adj_type]
+            if direction == "out" and item_obj.stock < qty:
+                flash(f"Insufficient stock. Available: {item_obj.stock}", "danger")
+            else:
+                adj = StockAdjustment(
+                    item_id=int(item_id), adj_type=adj_type, quantity=qty,
+                    direction=direction,
+                    date=datetime.strptime(date_str, "%Y-%m-%d"),
+                    reason=reason or None,
+                )
+                db.session.add(adj)
+                # Both directions are valued at the average: stock found is worth
+                # what the rest of the stock is worth, stock lost costs the same.
+                unit = item_obj.avg_cost
+                if direction == "out":
+                    adj.cost_value = item_remove_stock(item_obj, qty)
+                else:
+                    adj.cost_value = (unit * Decimal(str(qty))).quantize(MONEY)
+                    item_add_stock(item_obj, qty, adj.cost_value)
+                db.session.flush()
+                post_document("stock_adjustment", adj)
+                db.session.commit()
+                flash(f"Stock {'reduced' if direction=='out' else 'increased'} by {qty} for {item_obj.name}.", "success")
+                return redirect(url_for("stock_adjustment"))
+    return render_template("stock_adjustment.html",
+        adjustments=adjustments, items=items, pagination=pagination,
+        search=search, adj_types=ADJUSTMENT_TYPES,
+        today=now_local().strftime("%Y-%m-%d"))
+
+
+@admin_required
+def delete_stock_adjustment(id):
+    """Delete a stock adjustment and reverse its effect."""
+    from app import get_item_locked
+
+    adj = db.session.get(StockAdjustment, id) or abort(404)
+    assert_not_posted("stock_adjustment", adj.id, f"Stock adjustment #{adj.id}")
+    item_obj = get_item_locked(adj.item_id)
+    if item_obj:
+        if adj.direction == "out":
+            item_add_stock(item_obj, adj.quantity, cost_total=adj.cost_value or 0)
+        else:
+            item_remove_stock(item_obj, adj.quantity, cost_total=adj.cost_value or 0)
+    db.session.delete(adj)
+    db.session.commit()
+    flash("Adjustment deleted and stock reversed.", "success")
+    return redirect(url_for("stock_adjustment"))
