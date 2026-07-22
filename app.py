@@ -230,7 +230,8 @@ from salpurflask.inventory.routes import (
 
 # Register purchase routes directly (not via blueprint, to preserve endpoint names)
 from salpurflask.purchase.routes import (
-    purchase, edit_purchase, delete_purchase
+    purchase, edit_purchase, delete_purchase,
+    purchase_return, delete_purchase_return, purchase_invoice
 )
 app.add_url_rule("/item/<int:id>/ledger", "item_ledger", item_ledger)
 app.add_url_rule("/api/item/<int:id>", "get_item", get_item)
@@ -253,6 +254,9 @@ app.add_url_rule("/low_stock_alert", "send_low_stock_alert", send_low_stock_aler
 app.add_url_rule("/purchase", "purchase", purchase, methods=["GET", "POST"])
 app.add_url_rule("/purchase/edit/<int:id>", "edit_purchase", edit_purchase, methods=["GET", "POST"])
 app.add_url_rule("/purchase/delete/<int:id>", "delete_purchase", delete_purchase, methods=["POST"])
+app.add_url_rule("/purchase_return", "purchase_return", purchase_return, methods=["GET", "POST"])
+app.add_url_rule("/purchase_return/delete/<int:id>", "delete_purchase_return", delete_purchase_return, methods=["POST"])
+app.add_url_rule("/purchase/<int:id>/invoice", "purchase_invoice", purchase_invoice, methods=["GET"])
 
 def sql_date_fmt(col, fmt="%Y-%m"):
     if db.engine.dialect.name == "postgresql":
@@ -3835,126 +3839,8 @@ def export_customer_receipt_history():
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
 
-@app.route("/purchase_return", methods=["GET", "POST"])
-@verified_required
-def purchase_return():
-    search = request.args.get("search", "").strip()
-    query = PurchaseReturn.query.order_by(PurchaseReturn.date.desc())
-    if search:
-        query = (
-            query.join(Supplier, PurchaseReturn.supplier_id == Supplier.id)
-            .join(Item, PurchaseReturn.item_id == Item.id)
-            .filter((Supplier.name.ilike(f"%{search}%")) | (Item.name.ilike(f"%{search}%")))
-        )
-    returns, pagination = get_paginated_results(query)
-    # A reversed purchase never happened, so nothing can be returned against it.
-    all_pis = (PurchaseItem.query.join(Purchase)
-               .filter(Purchase.is_reversed.is_(False))
-               .order_by(Purchase.date.desc(), PurchaseItem.id).all())
-    items_available = [
-        {"pi": pi, "remaining": pi.quantity - get_purchase_item_returned_qty(pi)}
-        for pi in all_pis
-        if pi.quantity - get_purchase_item_returned_qty(pi) > 0
-    ]
-    if request.method == "POST":
-        pi_ids        = request.form.getlist("purchase_item_id[]")
-        quantities    = request.form.getlist("quantity[]")
-        return_prices = request.form.getlist("return_price[]")
-        reasons       = request.form.getlist("reason[]")
-        date_str      = request.form.get("date", "").strip()
-        if not date_str:
-            flash("Date is required!", "danger")
-        elif not pi_ids:
-            flash("At least one item row is required!", "danger")
-        else:
-            try:
-                ret_date = datetime.strptime(date_str, "%Y-%m-%d")
-                errors = []
-                rows = []
-                for idx, (pi_id, qty_s, price_s, reason_s) in enumerate(zip(pi_ids, quantities, return_prices, reasons), 1):
-                    if not pi_id or not qty_s or not price_s:
-                        errors.append(f"Row {idx}: item, quantity and price are required.")
-                        continue
-                    if not qty_s.isdigit() or int(qty_s) <= 0:
-                        errors.append(f"Row {idx}: quantity must be a positive integer.")
-                        continue
-                    try:
-                        price_f = float(price_s)
-                        if price_f < 0:
-                            errors.append(f"Row {idx}: return price cannot be negative.")
-                            continue
-                    except ValueError:
-                        errors.append(f"Row {idx}: invalid return price.")
-                        continue
-                    pi = db.session.get(PurchaseItem, int(pi_id))
-                    if not pi:
-                        errors.append(f"Row {idx}: purchase item not found.")
-                        continue
-                    remaining = pi.quantity - get_purchase_item_returned_qty(pi)
-                    if int(qty_s) > remaining:
-                        errors.append(f"Row {idx} ({pi.item.name}): cannot return {qty_s}, only {remaining} remaining.")
-                        continue
-                    if pi.item and pi.item.stock < int(qty_s) * (pi.unit_factor or 1):
-                        errors.append(f"Row {idx} ({pi.item.name}): only {pi.item.stock} in current stock, cannot return {qty_s}.")
-                        continue
-                    rows.append((pi, int(qty_s), price_f, reason_s.strip() or None))
-                if errors:
-                    for e in errors:
-                        flash(e, "danger")
-                else:
-                    for pi, qty, price, reason_val in rows:
-                        purchase = pi.purchase_header
-                        item = get_item_locked(pi.item_id)
-                        # A return is always in the original line's unit, never chosen separately.
-                        pr = PurchaseReturn(
-                            purchase_id=purchase.id,
-                            supplier_id=purchase.supplier_id,
-                            item_id=pi.item_id,
-                            quantity=qty,
-                            return_price=price,
-                            date=ret_date,
-                            reason=reason_val,
-                            unit_name=pi.unit_name, unit_factor=pi.unit_factor or 1,
-                            purchase_item_id=pi.id,
-                        )
-                        if item:
-                            # Goods leave at what they cost us, not at the agreed
-                            # credit note — the difference is a gain or loss.
-                            pr.cost_removed = item_remove_stock(item, qty * (pi.unit_factor or 1))
-                        db.session.add(pr)
-                        db.session.flush()
-                        sync_supplier_purchase_return(pr)
-                        post_document("purchase_return", pr)
-                    db.session.commit()
-                    flash(f"{len(rows)} purchase return(s) recorded successfully!", "success")
-                    return redirect(url_for("purchase_return"))
-            except ValueError:
-                flash("Invalid date format! Use YYYY-MM-DD.", "danger")
-    return render_template(
-        "purchase_return.html",
-        returns=returns,
-        items_available=items_available,
-        pagination=pagination,
-        search=search,
-        today=now_local().strftime("%Y-%m-%d"),
-    )
-
-@app.route("/purchase_return/delete/<int:id>", methods=["POST"])
-@admin_required
-def delete_purchase_return(id):
-    pr = db.session.get(PurchaseReturn, id) or abort(404)
-    assert_not_posted("purchase_return", pr.id, f"Purchase return #{pr.id}")
-    item = get_item_locked(pr.item_id)
-    if item:
-        item_add_stock(item, line_base_qty(pr), cost_total=pr.cost_removed or 0)
-    supplier_id = remove_supplier_ledger_entry("purchase_return", pr.id)
-    db.session.delete(pr)
-    db.session.commit()
-    if supplier_id:
-        recalculate_supplier_ledger(supplier_id)
-        db.session.commit()
-    flash("Purchase return deleted successfully!", "success")
-    return redirect(url_for("purchase_return"))
+# Routes /purchase_return and /purchase_return/delete moved to salpurflask.purchase.routes
+# (purchase_return and delete_purchase_return functions)
 
 @app.route("/sale_return", methods=["GET", "POST"])
 @verified_required
@@ -4078,23 +3964,8 @@ def delete_sale_return(id):
     flash("Sale return deleted successfully!", "success")
     return redirect(url_for("sale_return"))
 
-@app.route("/purchase/<int:id>/invoice")
-@verified_required
-def purchase_invoice(id):
-    purchase = db.session.get(Purchase, id) or abort(404)
-    paid     = get_purchase_paid(id)
-    total    = purchase_total(purchase)
-    status   = get_payment_status(total, paid)
-    returned_qty = get_purchase_returned_qty(id)
-    return render_template(
-        "invoice_purchase.html",
-        purchase=purchase,
-        paid=paid,
-        total=total,
-        balance=total - paid,
-        status=status,
-        returned_qty=returned_qty,
-    )
+# Route /purchase/<id>/invoice moved to salpurflask.purchase.routes
+# (purchase_invoice function)
 
 @app.route("/sale/<int:id>/invoice")
 @verified_required
