@@ -12,6 +12,7 @@ from salpurflask.models import (
     Item, Category, PurchaseItem, Purchase, SaleItem, Sale,
     PurchaseReturn, SaleReturn, StockAdjustment,
     ITEM_UNITS, MONEY, save_item_units, post_item_opening,
+    item_add_stock, item_remove_stock, _repost_opening, _opening_date,
 )
 from salpurflask.auth import verified_required, manager_required
 from salpurflask.utils import now_local, barcode_taken, get_paginated_results
@@ -262,3 +263,79 @@ def item():
         search=search,
         category_filter=category_filter,
     )
+
+
+@manager_required
+def edit_item(id):
+    """Edit an existing item."""
+    item = db.session.get(Item, id) or abort(404)
+    categories = Category.query.order_by(Category.name).all()
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        category_id = request.form.get("category_id", "").strip()
+        unit = request.form.get("unit", "Pcs").strip()
+        opening_stock = request.form.get("opening_stock", str(item.opening_stock)).strip()
+        reorder_level = request.form.get("reorder_level", "").strip()
+        purchase_price = request.form.get("purchase_price", "").strip()
+        sale_price = request.form.get("sale_price", "").strip()
+        barcode = request.form.get("barcode", "").strip() or None
+        if unit not in ITEM_UNITS:
+            unit = "Pcs"
+        if not categories:
+            flash("Please add a category first before editing items!", "danger")
+        elif not name or not reorder_level or not category_id:
+            flash("Name, Category, and Reorder Level are required!", "danger")
+        elif not category_id.isdigit() or not db.session.get(Category, int(category_id)):
+            flash("Please select a valid category!", "danger")
+        elif not opening_stock.lstrip("-").isdigit() or not reorder_level.isdigit():
+            flash("Opening Stock and Reorder Level must be numbers!", "danger")
+        elif purchase_price and (not purchase_price.replace(".", "", 1).isdigit() or float(purchase_price) < 0):
+            flash("Purchase price must be a non-negative number!", "danger")
+        elif sale_price and (not sale_price.replace(".", "", 1).isdigit() or float(sale_price) < 0):
+            flash("Sale price must be a non-negative number!", "danger")
+        elif int(opening_stock) > 0 and (not purchase_price or float(purchase_price or 0) == 0):
+            flash("Opening stock requires a purchase price greater than 0!", "danger")
+        elif barcode_taken(barcode, exclude_id=item.id):
+            flash(f"Barcode '{barcode}' is already used by another item. "
+                  "A code must point at one item only.", "danger")
+        else:
+            new_os = int(opening_stock)
+            stock_adjustment = new_os - item.opening_stock
+            # Guard: Cannot edit opening stock after transactions exist (accounting period integrity)
+            if stock_adjustment != 0 and (item.purchases or item.sales):
+                flash("Cannot edit opening stock after transactions have been recorded! "
+                      "Create a stock adjustment instead to change inventory.", "danger")
+                return render_template("edit_item.html", item=item, categories=categories)
+            # The opening entry is about to be reversed and re-posted, so the
+            # inventory value must move by the same amount the GL does.
+            old_opening_value = (Decimal(str(item.opening_stock or 0))
+                                 * Decimal(str(item.purchase_price or 0))).quantize(MONEY)
+            item.name = name
+            item.category_id = int(category_id)
+            item.unit = unit
+            item.opening_stock = new_os
+            item.reorder_level = int(reorder_level)
+            item.purchase_price = float(purchase_price) if purchase_price else None
+            item.sale_price = float(sale_price) if sale_price else None
+            item.barcode = barcode
+            new_opening_value = (Decimal(str(new_os)) * Decimal(str(item.purchase_price or 0))).quantize(MONEY)
+            value_adjustment = new_opening_value - old_opening_value
+            # Update stock and inventory_value atomically
+            if stock_adjustment > 0:
+                item_add_stock(item, stock_adjustment, cost_total=value_adjustment)
+            elif stock_adjustment < 0:
+                item_remove_stock(item, -stock_adjustment, cost_total=-value_adjustment)
+            unit_error = save_item_units(item)
+            if unit_error:
+                db.session.rollback()
+                flash(unit_error, "danger")
+                return render_template("edit_item.html", item=item, categories=categories)
+            db.session.flush()
+            post_item_opening(item)
+            db.session.commit()
+            # Import record_audit locally to avoid circular imports
+            from app import record_audit
+            record_audit("update", "Item", item.id, f"Item '{item.name}' edited")
+            flash("Item updated successfully!", "success")
+            return redirect(url_for("item"))
+    return render_template("edit_item.html", item=item, categories=categories)
