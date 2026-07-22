@@ -2,6 +2,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session, abort, Response
 from flask_paginate import Pagination, get_page_args
 from flask_login import UserMixin, login_user, logout_user, login_required, current_user
+from salpurflask.auth import verified_required, role_required, admin_required, manager_required
 import click
 from datetime import datetime, timedelta, timezone, date
 from functools import wraps
@@ -216,6 +217,12 @@ from salpurflask.routes import auth_bp, dashboard_bp
 app.register_blueprint(auth_bp)
 app.register_blueprint(dashboard_bp)
 
+# Register inventory routes directly (not via blueprint, to preserve endpoint names)
+from salpurflask.inventory.routes import item_ledger, get_item, report_stock
+app.add_url_rule("/item/<int:id>/ledger", "item_ledger", item_ledger)
+app.add_url_rule("/api/item/<int:id>", "get_item", get_item)
+app.add_url_rule("/reports/stock", "report_stock", report_stock)
+
 def sql_date_fmt(col, fmt="%Y-%m"):
     if db.engine.dialect.name == "postgresql":
         return db.func.to_char(col, fmt.replace("%Y", "YYYY").replace("%m", "MM"))
@@ -323,38 +330,6 @@ def check_rate_limit(key, max_attempts=5, window_seconds=300):
         db.session.rollback()
         app.logger.exception("Rate-limit check failed; allowing request (fail-open)")
         return True
-
-def verified_required(f):
-    @wraps(f)
-    @login_required
-    def decorated_function(*args, **kwargs):
-        if not current_user.verified:
-            flash(f"Please verify {current_user.email} to access this page.", "danger")
-            return redirect(url_for("signin"))
-        return f(*args, **kwargs)
-    return decorated_function
-
-def role_required(*roles):
-    """Decorator: user must be verified AND have one of the given roles."""
-    def decorator(f):
-        @wraps(f)
-        @login_required
-        def decorated(*args, **kwargs):
-            if not current_user.verified:
-                flash(f"Please verify {current_user.email} to access this page.", "danger")
-                return redirect(url_for("auth.signin"))
-            if current_user.role not in roles:
-                flash("You do not have permission to access this page.", "danger")
-                return redirect(url_for("purchase"))
-            return f(*args, **kwargs)
-        return decorated
-    return decorator
-
-def admin_required(f):
-    return role_required("admin")(f)
-
-def manager_required(f):
-    return role_required("admin", "manager")(f)
 
 # Models
 ROLES = ("admin", "manager", "staff")
@@ -2337,119 +2312,7 @@ def delete_item(id):
         flash("Item deleted successfully!", "success")
     return redirect(url_for("item"))
 
-@app.route("/item/<int:id>/ledger")
-@verified_required
-def item_ledger(id):
-    item = db.session.get(Item, id) or abort(404)
-    start_date_str = request.args.get("start_date", "")
-    end_date_str   = request.args.get("end_date", "")
-
-    # A reversed document never happened, so it must not still count here — its
-    # stock effect was already undone, but its row still exists for the audit trail.
-    purchase_items   = (PurchaseItem.query.join(Purchase)
-                        .filter(PurchaseItem.item_id == id, Purchase.is_reversed.is_(False)).all())
-    sale_items       = (SaleItem.query.join(Sale)
-                        .filter(SaleItem.item_id == id, Sale.is_reversed.is_(False)).all())
-    purchase_returns = PurchaseReturn.query.filter_by(item_id=id, is_reversed=False).all()
-    sale_returns     = SaleReturn.query.filter_by(item_id=id, is_reversed=False).all()
-
-    # stock_in/out are in the item's base unit — the only unit item.stock (and this
-    # ledger's running balance) is ever tracked in, whatever unit the line was actually
-    # bought/sold in. Rate follows it down to a per-base-unit price so it still lines
-    # up with stock_in/out (Rate × qty ≈ Value); Value itself is a total and needs no
-    # conversion either way.
-    entries = []
-    for pi in purchase_items:
-        factor = pi.unit_factor or 1
-        entries.append({
-            "date": pi.purchase_header.date, "type": "Purchase", "badge": "success",
-            "ref": f"PO #{pi.purchase_header.id}", "party": pi.purchase_header.id_supplier.name,
-            "stock_in": line_base_qty(pi), "stock_out": 0,
-            "rate": pi.purchase_price / factor, "value": purchase_item_total(pi),
-        })
-    for si in sale_items:
-        factor = si.unit_factor or 1
-        entries.append({
-            "date": si.sale_header.date, "type": "Sale", "badge": "primary",
-            "ref": f"SO #{si.sale_header.id}", "party": si.sale_header.id_customer.name,
-            "stock_in": 0, "stock_out": line_base_qty(si),
-            "rate": si.sale_price / factor, "value": sale_item_total(si),
-        })
-    for pr in purchase_returns:
-        factor = pr.unit_factor or 1
-        entries.append({
-            "date": pr.date, "type": "Purchase Return", "badge": "warning",
-            "ref": f"PR #{pr.id}", "party": pr.supplier.name,
-            "stock_in": 0, "stock_out": line_base_qty(pr),
-            "rate": pr.return_price / factor, "value": round(pr.quantity * pr.return_price, 2),
-        })
-    for sr in sale_returns:
-        factor = sr.unit_factor or 1
-        entries.append({
-            "date": sr.date, "type": "Sale Return", "badge": "secondary",
-            "ref": f"SR #{sr.id}", "party": sr.customer.name,
-            "stock_in": line_base_qty(sr), "stock_out": 0,
-            "rate": sr.return_price / factor, "value": round(sr.quantity * sr.return_price, 2),
-        })
-
-    adjustments = StockAdjustment.query.filter_by(item_id=id).all()
-    for adj in adjustments:
-        stock_in = adj.quantity if adj.direction == "in" else 0
-        stock_out = adj.quantity if adj.direction == "out" else 0
-        entries.append({
-            "date": adj.date, "type": f"Adjustment ({adj.adj_type})", "badge": "info",
-            "ref": f"ADJ #{adj.id}", "party": adj.reason or "—",
-            "stock_in": stock_in, "stock_out": stock_out,
-            "rate": 0, "value": 0,
-        })
-
-    entries.sort(key=lambda x: (x["date"], x["ref"]))
-
-    date_filtered = False
-    if start_date_str and end_date_str:
-        try:
-            sd = datetime.strptime(start_date_str, "%Y-%m-%d")
-            ed = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59, microsecond=999999)
-            entries = [e for e in entries if sd <= e["date"] <= ed]
-            date_filtered = True
-        except ValueError:
-            flash("Invalid date format!", "danger")
-
-    # Opening stock entry — prepend when not date-filtered (or always as starting balance)
-    opening = item.opening_stock or 0
-    if not date_filtered:
-        opening_entry = {
-            "date": None, "type": "Opening Stock", "badge": "dark",
-            "ref": "—", "party": "—",
-            "stock_in": opening, "stock_out": 0,
-            "rate": 0, "value": 0,
-            "balance": opening, "is_opening": True,
-        }
-        entries = [opening_entry] + entries
-        balance = opening
-    else:
-        balance = 0
-
-    for e in entries:
-        if e.get("is_opening"):
-            continue
-        balance += e["stock_in"] - e["stock_out"]
-        e["balance"] = balance
-
-    total_in  = sum(e["stock_in"]  for e in entries if not e.get("is_opening"))
-    total_out = sum(e["stock_out"] for e in entries if not e.get("is_opening"))
-
-    return render_template(
-        "item_ledger.html",
-        item=item,
-        entries=entries,
-        total_in=total_in,
-        total_out=total_out,
-        opening_stock=opening,
-        current_stock=item.stock,
-        start_date=start_date_str,
-        end_date=end_date_str,
-    )
+# Route /item/<id>/ledger moved to salpurflask.inventory.routes.item_ledger
 
 @app.route("/item/<int:id>/ledger/export")
 @verified_required
@@ -2600,16 +2463,7 @@ def process_import():
 
     return redirect(url_for("bulk_import"))
 
-@app.route("/api/item/<int:id>")
-@verified_required
-def get_item(id):
-    item = db.session.get(Item, id) or abort(404)
-    return {
-        "purchase_price": item.purchase_price,
-        "sale_price": item.sale_price,
-        "unit": item.unit or "Pcs",
-        "category": item.id_category.name if item.id_category else None,
-    }
+# Route /api/item/<id> moved to salpurflask.inventory.routes.get_item
 
 @app.route("/purchase", methods=["GET", "POST"])
 @verified_required
@@ -5974,26 +5828,7 @@ def accounting_position(as_of=None):
         difference=total_assets - (total_liabilities + total_equity),
     )
 
-@app.route("/reports/stock")
-@manager_required
-def report_stock():
-    """What is in the warehouse right now, and what it cost.
-
-    A snapshot, not a period — so unlike the sales and purchase reports it takes no
-    date range. It is an accounting report, not just a stock list: the total is valued
-    at weighted-average cost, which is the amount the Inventory account was debited
-    when the goods came in, so it is the Inventory line on the balance sheet and can
-    be read straight across."""
-    items = (Item.query.outerjoin(Category, Item.category_id == Category.id)
-             .order_by(Category.name, Item.name).all())
-    return render_template(
-        "report_stock.html",
-        stock_report=items,
-        stock_value_total=sum(Decimal(str(i.inventory_value or 0)) for i in items),
-        items_in_stock=sum(1 for i in items if i.stock and i.stock > 0),
-        reorder_report=[i for i in items if i.stock <= i.reorder_level],
-        as_of=now_local().strftime("%d %B %Y"),
-    )
+# Route /reports/stock moved to salpurflask.inventory.routes.report_stock
 
 @app.route("/reports/balance_sheet")
 @manager_required
