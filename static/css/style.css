@@ -1357,6 +1357,35 @@ body {
     caret-color: var(--bs-body-color);
 }
 
+/* Dark theme: Ensure auth inputs are always dark grey */
+[data-theme="dark"] .auth-input {
+    background: #2d3139;
+    border-color: #4a5065;
+    color: #f1f5f9;
+}
+
+[data-theme="dark"] .auth-input::placeholder {
+    color: #9ca3af;
+}
+
+[data-theme="dark"] .auth-input:focus {
+    background: #2d3139;
+    border-color: #6366f1;
+    color: #f1f5f9;
+}
+
+[data-theme="dark"] .auth-input:-webkit-autofill,
+[data-theme="dark"] .auth-input:-webkit-autofill:hover,
+[data-theme="dark"] .auth-input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #f1f5f9;
+    -webkit-box-shadow: 0 0 0 1000px #2d3139 inset;
+    caret-color: #f1f5f9;
+}
+
+[data-theme="dark"] .auth-form .form-label {
+    color: #f1f5f9;
+}
+
 .btn-auth-submit {
     position: relative;
     overflow: hidden;
