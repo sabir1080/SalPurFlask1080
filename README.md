@@ -92,18 +92,8 @@ TradeFlow ERP is a comprehensive, open-source enterprise resource planning syste
 
 ## 🖼️ Screenshots
 
-> *Screenshots coming soon - Full visual documentation at `/docs/screenshots`*
+https://github.com/sabir1080/SalPurFlask1080/tree/main/docs/screenshots
 
-| Feature | Status |
-|---------|--------|
-| Dashboard & Overview | ✓ Available |
-| Inventory Management | ✓ Available |
-| Purchase Orders | ✓ Available |
-| Point of Sale | ✓ Available |
-| General Ledger | ✓ Available |
-| Financial Reports | ✓ Available |
-
----
 
 ## 🎬 Live Demo
 
