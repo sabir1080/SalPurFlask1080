@@ -232,7 +232,8 @@ from salpurflask.inventory.routes import (
 from salpurflask.purchase.routes import (
     purchase, edit_purchase, delete_purchase,
     purchase_return, delete_purchase_return, purchase_invoice,
-    purchase_orders, purchase_order_detail, update_po_status, convert_po_to_purchase, delete_purchase_order
+    purchase_orders, purchase_order_detail, update_po_status, convert_po_to_purchase, delete_purchase_order,
+    export_purchase_report, export_purchase_return_report, export_supplier_purchase_report
 )
 app.add_url_rule("/item/<int:id>/ledger", "item_ledger", item_ledger)
 app.add_url_rule("/api/item/<int:id>", "get_item", get_item)
@@ -263,6 +264,9 @@ app.add_url_rule("/purchase_orders/<int:id>", "purchase_order_detail", purchase_
 app.add_url_rule("/purchase_orders/<int:id>/status", "update_po_status", update_po_status, methods=["POST"])
 app.add_url_rule("/purchase_orders/<int:id>/convert", "convert_po_to_purchase", convert_po_to_purchase, methods=["POST"])
 app.add_url_rule("/purchase_orders/<int:id>/delete", "delete_purchase_order", delete_purchase_order, methods=["POST"])
+app.add_url_rule("/export_purchase_report", "export_purchase_report", export_purchase_report, methods=["POST"])
+app.add_url_rule("/export_purchase_return_report", "export_purchase_return_report", export_purchase_return_report, methods=["POST"])
+app.add_url_rule("/export_supplier_purchase_report", "export_supplier_purchase_report", export_supplier_purchase_report, methods=["POST"])
 
 def sql_date_fmt(col, fmt="%Y-%m"):
     if db.engine.dialect.name == "postgresql":
@@ -3444,39 +3448,6 @@ def reports():
         end_date=end_date_str,
     )
 
-@app.route("/export_purchase_report", methods=["POST"])
-@manager_required
-def export_purchase_report():
-    start_date_str = request.form.get("start_date", "")
-    end_date_str = request.form.get("end_date", "")
-    if not start_date_str or not end_date_str:
-        flash("Both dates are required!", "danger")
-        return redirect(url_for("reports"))
-    try:
-        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
-        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
-        purchase_items = (
-            PurchaseItem.query.join(Purchase, PurchaseItem.purchase_id == Purchase.id)
-            .join(Supplier, Purchase.supplier_id == Supplier.id)
-            .join(Item, PurchaseItem.item_id == Item.id)
-            .filter(Purchase.date.between(start_date, end_date))
-            .order_by(Purchase.id)
-            .all()
-        )
-        col_headers = ["ID", "Supplier", "Item", "Category", "Quantity", "Purchase Price", "Total", "Date"]
-        rows = [
-            [pi.purchase_id, pi.purchase_header.id_supplier.name, pi.item.name,
-             pi.item.id_category.name if pi.item.id_category else "N/A",
-             pi.base_quantity, round(float(pi.purchase_price), 2),
-             round(float(pi.amount), 2), pi.purchase_header.date.strftime("%Y-%m-%d")]
-            for pi in purchase_items
-        ]
-        if request.form.get("format") == "xlsx":
-            return excel_response("purchase_report.xlsx", "Purchase History", col_headers, rows, start_date_str, end_date_str)
-        return csv_response("purchase_report.csv", "Purchase History", col_headers, rows, start_date_str, end_date_str)
-    except ValueError:
-        flash("Invalid date format! Use YYYY-MM-DD.", "danger")
-        return redirect(url_for("reports"))
 
 @app.route("/export_sale_report", methods=["POST"])
 @manager_required
@@ -3678,31 +3649,6 @@ def export_customer_receivable():
         return excel_response("customer_receivable_report.xlsx", "Customer Receivable Report", col_headers, rows)
     return csv_response("customer_receivable_report.csv", "Customer Receivable Report", col_headers, rows)
 
-@app.route("/export_purchase_return_report", methods=["POST"])
-@manager_required
-def export_purchase_return_report():
-    start_date_str = request.form.get("start_date", "")
-    end_date_str = request.form.get("end_date", "")
-    if not start_date_str or not end_date_str:
-        flash("Both dates are required!", "danger")
-        return redirect(url_for("reports"))
-    try:
-        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
-        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
-        returns = PurchaseReturn.query.filter(PurchaseReturn.date.between(start_date, end_date)).order_by(PurchaseReturn.date.desc()).all()
-        col_headers = ["ID", "Purchase #", "Supplier", "Item", "Quantity", "Return Price", "Total", "Date", "Reason"]
-        rows = [
-            [r.id, r.purchase_id, r.supplier.name, r.item.name,
-             r.quantity, round(r.return_price, 2), round(r.quantity * r.return_price, 2),
-             r.date.strftime("%Y-%m-%d"), r.reason or ""]
-            for r in returns
-        ]
-        if request.form.get("format") == "xlsx":
-            return excel_response("purchase_return_report.xlsx", "Purchase Returns Report", col_headers, rows, start_date_str, end_date_str)
-        return csv_response("purchase_return_report.csv", "Purchase Returns Report", col_headers, rows, start_date_str, end_date_str)
-    except ValueError:
-        flash("Invalid date format! Use YYYY-MM-DD.", "danger")
-        return redirect(url_for("reports"))
 
 @app.route("/export_sale_return_report", methods=["POST"])
 @manager_required
@@ -3730,40 +3676,6 @@ def export_sale_return_report():
         flash("Invalid date format! Use YYYY-MM-DD.", "danger")
         return redirect(url_for("reports"))
 
-@app.route("/export_supplier_purchase_report", methods=["POST"])
-@manager_required
-def export_supplier_purchase_report():
-    start_date_str = request.form.get("start_date", "")
-    end_date_str = request.form.get("end_date", "")
-    if not start_date_str or not end_date_str:
-        flash("Both dates are required!", "danger")
-        return redirect(url_for("reports"))
-    try:
-        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
-        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
-        data = (
-            db.session.query(
-                Supplier.name.label("name"),
-                db.func.count(db.func.distinct(Purchase.id)).label("bill_count"),
-                db.func.sum(PurchaseItem.quantity * PurchaseItem.unit_factor).label("total_qty"),
-                db.func.sum(PurchaseItem.amount).label("total_amt"),
-            )
-            .select_from(PurchaseItem)
-            .join(Purchase, PurchaseItem.purchase_id == Purchase.id)
-            .join(Supplier, Purchase.supplier_id == Supplier.id)
-            .filter(Purchase.date.between(start_date, end_date))
-            .group_by(Supplier.name)
-            .order_by(db.func.sum(PurchaseItem.amount).desc())
-            .all()
-        )
-        col_headers = ["Supplier", "Bills", "Total Qty", "Total Amount"]
-        rows = [[row.name, row.bill_count, row.total_qty, round(row.total_amt, 2)] for row in data]
-        if request.form.get("format") == "xlsx":
-            return excel_response("supplier_purchase_report.xlsx", "Supplier-wise Purchase Report", col_headers, rows, start_date_str, end_date_str)
-        return csv_response("supplier_purchase_report.csv", "Supplier-wise Purchase Report", col_headers, rows, start_date_str, end_date_str)
-    except ValueError:
-        flash("Invalid date format! Use YYYY-MM-DD.", "danger")
-        return redirect(url_for("reports"))
 
 @app.route("/export_stock_report")
 @manager_required
