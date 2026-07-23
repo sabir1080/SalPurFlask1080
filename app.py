@@ -235,6 +235,9 @@ from salpurflask.purchase.routes import (
     purchase_orders, purchase_order_detail, update_po_status, convert_po_to_purchase, delete_purchase_order,
     export_purchase_report, export_purchase_return_report, export_supplier_purchase_report
 )
+from salpurflask.sales.routes import (
+    sale, edit_sale, delete_sale
+)
 app.add_url_rule("/item/<int:id>/ledger", "item_ledger", item_ledger)
 app.add_url_rule("/api/item/<int:id>", "get_item", get_item)
 app.add_url_rule("/reports/stock", "report_stock", report_stock)
@@ -267,6 +270,9 @@ app.add_url_rule("/purchase_orders/<int:id>/delete", "delete_purchase_order", de
 app.add_url_rule("/export_purchase_report", "export_purchase_report", export_purchase_report, methods=["POST"])
 app.add_url_rule("/export_purchase_return_report", "export_purchase_return_report", export_purchase_return_report, methods=["POST"])
 app.add_url_rule("/export_supplier_purchase_report", "export_supplier_purchase_report", export_supplier_purchase_report, methods=["POST"])
+app.add_url_rule("/sale", "sale", sale, methods=["GET", "POST"])
+app.add_url_rule("/sale/edit/<int:id>", "edit_sale", edit_sale, methods=["GET", "POST"])
+app.add_url_rule("/sale/delete/<int:id>", "delete_sale", delete_sale, methods=["POST"])
 
 def sql_date_fmt(col, fmt="%Y-%m"):
     if db.engine.dialect.name == "postgresql":
@@ -1938,127 +1944,6 @@ def export_customers_excel():
 # Routes /purchase/edit and /purchase/delete moved to salpurflask.purchase.routes
 # (edit_purchase and delete_purchase functions)
 
-@app.route("/sale", methods=["GET", "POST"])
-@verified_required
-def sale():
-    search = request.args.get("search", "").strip()
-    query = Sale.query
-    if search:
-        query = query.join(Customer).filter(Customer.name.ilike(f"%{search}%"))
-    sales, pagination = get_paginated_results(query.order_by(Sale.date.desc(), Sale.id.desc()))
-    customers = Customer.query.order_by(Customer.name).all()
-    items = Item.query.order_by(Item.name).all()
-    if request.method == "POST":
-        if current_user.role not in ("admin", "manager"):
-            flash("Access denied. Only managers and admins can add sales.", "danger")
-            return redirect(url_for("sale"))
-        customer_id = request.form.get("customer_id", "").strip()
-        date_str    = request.form.get("date", "").strip()
-        notes       = request.form.get("notes", "").strip()
-        item_ids    = request.form.getlist("item_id[]")
-        quantities  = request.form.getlist("quantity[]")
-        prices      = request.form.getlist("sale_price[]")
-        disc_types  = request.form.getlist("discount_type[]")
-        disc_values = request.form.getlist("discount_value[]")
-        tax_pcts    = request.form.getlist("tax_percent[]")
-        unit_ids    = request.form.getlist("unit_id[]")
-
-        rows = []
-        for i, (iid, qty, price) in enumerate(zip(item_ids, quantities, prices)):
-            if iid.strip() and qty.strip() and price.strip():
-                rows.append((
-                    iid.strip(), qty.strip(), price.strip(),
-                    disc_types[i] if i < len(disc_types) else "percent",
-                    disc_values[i] if i < len(disc_values) else "0",
-                    tax_pcts[i] if i < len(tax_pcts) else "0",
-                    unit_ids[i] if i < len(unit_ids) else "",
-                ))
-
-        row_error = validate_line_rows(rows) if rows else None
-        if not customer_id or not date_str:
-            flash("Customer and date are required!", "danger")
-        elif not rows:
-            flash("At least one item is required!", "danger")
-        elif row_error:
-            flash(row_error, "danger")
-        else:
-            try:
-                sale_date = datetime.strptime(date_str, "%Y-%m-%d")
-                # Check stock for all items first
-                stock_errors = []
-                for iid, qty, price, d_type, d_val, tax, unit_key in rows:
-                    item_obj = db.session.get(Item, int(iid))
-                    if item_obj:
-                        _, factor = resolve_item_unit(item_obj, unit_key)
-                        if item_obj.stock < int(qty) * factor:
-                            stock_errors.append(f"{item_obj.name}: only {item_obj.stock} {item_obj.unit} available")
-                if stock_errors:
-                    flash("Insufficient stock — " + "; ".join(stock_errors), "danger")
-                else:
-                    first_iid, first_qty, first_price = rows[0][0], rows[0][1], rows[0][2]
-                    sal = Sale(
-                        customer_id=int(customer_id),
-                        item_id=int(first_iid),
-                        quantity=int(first_qty),
-                        sale_price=float(first_price),
-                        cost_price=0.0,
-                        discount_type="percent", discount_value=0, discount_amount=0,
-                        tax_percent=0, tax_amount=0,
-                        date=sale_date, notes=notes or None,
-                    )
-                    db.session.add(sal)
-                    db.session.flush()
-                    for iid, qty, price, d_type, d_val, tax, unit_key in rows:
-                        item_obj = get_item_locked(int(iid)) or abort(404)
-                        qty_i = int(qty); price_f = float(price)
-                        unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
-                        base_qty = qty_i * unit_factor
-                        # Authoritative check under the row lock — a concurrent sale
-                        # may have reduced stock since the pre-check above.
-                        if item_obj.stock < base_qty:
-                            db.session.rollback()
-                            flash(f"Insufficient stock for {item_obj.name}: only {item_obj.stock} "
-                                  "available now (it changed while saving). Please try again.", "danger")
-                            return redirect(url_for("sale"))
-                        d_val_f = float(d_val or 0); tax_f = float(tax or 0)
-                        gross = qty_i * price_f
-                        disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
-                        # Cost is the weighted average at the moment of sale, captured
-                        # on the line so a later purchase never re-values a past sale.
-                        # avg_cost is per base unit, so the total needs the base qty.
-                        unit_cost = item_obj.avg_cost
-                        si = SaleItem(
-                            sale_id=sal.id, item_id=int(iid),
-                            quantity=qty_i, sale_price=price_f,
-                            cost_price=float(unit_cost),
-                            discount_type=d_type or "percent", discount_value=d_val_f,
-                            discount_amount=disc_amt, tax_percent=tax_f,
-                            tax_amount=tax_amt, amount=net,
-                            unit_name=unit_name, unit_factor=unit_factor,
-                        )
-                        db.session.add(si)
-                        item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)))
-                    db.session.flush()
-                    db.session.refresh(sal)
-                    sal.invoice_no = allocate_document_number("sale", sal.date)
-                    sync_customer_sale(sal)
-                    post_document("sale", sal)
-                    db.session.commit()
-                    record_audit("create", "Sale", sal.id,
-                                 f"Sale {sal.invoice_no}, total {sale_total(sal):,.2f}")
-                    flash(f"Sale {sal.invoice_no} recorded successfully!", "success")
-                    return redirect(url_for("sale"))
-            except ValueError as e:
-                flash(f"Invalid data: {e}", "danger")
-    return render_template(
-        "sale.html",
-        customers=customers,
-        items=items,
-        sales=sales,
-        pagination=pagination,
-        search=search,
-        today=now_local().strftime("%Y-%m-%d"),
-    )
 
 # ── Point of Sale (POS) ───────────────────────────────────────────────────────
 # A fast counter screen: scan or search an item, build a cart, take payment, print a
@@ -2265,144 +2150,6 @@ def code_svg(value, kind="barcode"):
 # Routes /labels and /labels/assign moved to salpurflask.inventory.routes
 # (labels() and labels_assign() functions)
 
-@app.route("/sale/edit/<int:id>", methods=["GET", "POST"])
-@manager_required
-def edit_sale(id):
-    sal = db.session.get(Sale, id) or abort(404)
-    assert_not_posted("sale", sal.id, f"Sale #{sal.id}")
-    customers = Customer.query.order_by(Customer.name).all()
-    items_all = Item.query.order_by(Item.name).all()
-    if request.method == "POST":
-        customer_id = request.form.get("customer_id", "").strip()
-        date_str    = request.form.get("date", "").strip()
-        notes       = request.form.get("notes", "").strip()
-        item_ids    = request.form.getlist("item_id[]")
-        quantities  = request.form.getlist("quantity[]")
-        prices      = request.form.getlist("sale_price[]")
-        disc_types  = request.form.getlist("discount_type[]")
-        disc_values = request.form.getlist("discount_value[]")
-        tax_pcts    = request.form.getlist("tax_percent[]")
-        unit_ids    = request.form.getlist("unit_id[]")
-
-        rows = []
-        for i, (iid, qty, price) in enumerate(zip(item_ids, quantities, prices)):
-            if iid.strip() and qty.strip() and price.strip():
-                rows.append((
-                    iid.strip(), qty.strip(), price.strip(),
-                    disc_types[i] if i < len(disc_types) else "percent",
-                    disc_values[i] if i < len(disc_values) else "0",
-                    tax_pcts[i] if i < len(tax_pcts) else "0",
-                    unit_ids[i] if i < len(unit_ids) else "",
-                ))
-
-        row_error = validate_line_rows(rows) if rows else None
-        if not customer_id or not date_str:
-            flash("Customer and date are required!", "danger")
-        elif not rows:
-            flash("At least one item is required!", "danger")
-        elif row_error:
-            flash(row_error, "danger")
-        else:
-            try:
-                old_customer_id = sal.customer_id
-                # Restore old stock (with inventory_value sync)
-                for si in sal.line_items:
-                    old_item = get_item_locked(si.item_id)
-                    if old_item:
-                        cost_returned = si.cost_price * line_base_qty(si)
-                        item_add_stock(old_item, line_base_qty(si), cost_total=cost_returned)
-                # Check new stock
-                stock_errors = []
-                for iid, qty, price, d_type, d_val, tax, unit_key in rows:
-                    item_obj = get_item_locked(int(iid))
-                    if item_obj:
-                        _, factor = resolve_item_unit(item_obj, unit_key)
-                        if item_obj.stock < int(qty) * factor:
-                            stock_errors.append(f"{item_obj.name}: only {item_obj.stock} {item_obj.unit} available")
-                if stock_errors:
-                    # Undo stock restoration (with inventory_value sync)
-                    for si in sal.line_items:
-                        old_item = get_item_locked(si.item_id)
-                        if old_item:
-                            cost_removed = si.cost_price * line_base_qty(si)
-                            item_remove_stock(old_item, line_base_qty(si), cost_total=cost_removed)
-                    flash("Insufficient stock — " + "; ".join(stock_errors), "danger")
-                else:
-                    # Delete old line items, update header
-                    SaleItem.query.filter_by(sale_id=sal.id).delete()
-                    first_iid, first_qty, first_price = rows[0][0], rows[0][1], rows[0][2]
-                    sal.customer_id = int(customer_id)
-                    sal.item_id = int(first_iid); sal.quantity = int(first_qty)
-                    sal.sale_price = float(first_price); sal.cost_price = 0.0
-                    sal.discount_type = "percent"; sal.discount_value = 0
-                    sal.discount_amount = 0; sal.tax_percent = 0; sal.tax_amount = 0
-                    sal.date = datetime.strptime(date_str, "%Y-%m-%d")
-                    sal.notes = notes or None
-                    for iid, qty, price, d_type, d_val, tax, unit_key in rows:
-                        item_obj = get_item_locked(int(iid)) or abort(404)
-                        qty_i = int(qty); price_f = float(price)
-                        d_val_f = float(d_val or 0); tax_f = float(tax or 0)
-                        gross = qty_i * price_f
-                        disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
-                        unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
-                        base_qty = qty_i * unit_factor
-                        # Cost is the weighted average at the moment of sale, captured
-                        # on the line so a later purchase never re-values a past sale.
-                        unit_cost = item_obj.avg_cost
-                        si = SaleItem(
-                            sale_id=sal.id, item_id=int(iid),
-                            quantity=qty_i, sale_price=price_f,
-                            cost_price=float(unit_cost),
-                            discount_type=d_type or "percent", discount_value=d_val_f,
-                            discount_amount=disc_amt, tax_percent=tax_f,
-                            tax_amount=tax_amt, amount=net,
-                            unit_name=unit_name, unit_factor=unit_factor,
-                        )
-                        db.session.add(si)
-                        item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)))
-                    db.session.flush()
-                    db.session.refresh(sal)
-                    if old_customer_id != int(customer_id):
-                        remove_customer_ledger_entry("sale", sal.id)
-                        recalculate_customer_ledger(old_customer_id)
-                    sync_customer_sale(sal)
-                    post_document("sale", sal)
-                    db.session.commit()
-                    record_audit("update", "Sale", sal.id, f"Sale #{sal.id} edited")
-                    flash("Sale updated successfully!", "success")
-                    return redirect(url_for("sale"))
-            except ValueError as e:
-                flash(f"Invalid data: {e}", "danger")
-    return render_template("edit_sale.html", sale=sal, customers=customers, items=items_all)
-
-@app.route("/sale/delete/<int:id>", methods=["POST"])
-@admin_required
-def delete_sale(id):
-    sal = db.session.get(Sale, id) or abort(404)
-    assert_not_posted("sale", sal.id, f"Sale #{sal.id}")
-    assert_not_numbered(sal, "Sale")
-    if sal.customer_payments:
-        flash("Cannot delete sale with associated receipts! Delete receipts first.", "danger")
-        return redirect(url_for("sale"))
-    linked_quotation = Quotation.query.filter_by(converted_sale_id=sal.id).first()
-    if linked_quotation:
-        flash(f"Cannot delete sale — it was created from Quotation #{linked_quotation.id}.", "danger")
-        return redirect(url_for("sale"))
-    for si in sal.line_items:
-        item_obj = db.session.get(Item, si.item_id)
-        if item_obj:
-            cost_returned = si.cost_price * line_base_qty(si)
-            item_add_stock(item_obj, line_base_qty(si), cost_total=cost_returned)
-    audit_summary = f"Sale #{sal.id} ({sal.id_customer.name if sal.id_customer else 'customer'}) deleted"
-    customer_id = remove_customer_ledger_entry("sale", sal.id)
-    db.session.delete(sal)
-    db.session.commit()
-    if customer_id:
-        recalculate_customer_ledger(customer_id)
-        db.session.commit()
-    record_audit("delete", "Sale", id, audit_summary)
-    flash("Sale deleted successfully!", "success")
-    return redirect(url_for("sale"))
 
 @app.route("/supplier_payment", methods=["GET", "POST"])
 @verified_required
