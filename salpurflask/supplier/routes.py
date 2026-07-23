@@ -450,3 +450,132 @@ def supplier_bulk_payment():
         general_suggested=general_suggested,
         today=now_local().strftime("%Y-%m-%d"),
     )
+
+
+# ─── SUPPLIER LEDGER ROUTES ────────────────────────────────────────────────
+
+
+@verified_required
+def supplier_ledger(id):
+    """Display supplier ledger with adjustments."""
+    from app import parse_payment_amount, recalculate_supplier_ledger, get_supplier_balance
+
+    supplier = db.session.get(Supplier, id) or abort(404)
+    start_date_str = request.args.get("start_date", "")
+    end_date_str = request.args.get("end_date", "")
+    if request.method == "POST" and request.form.get("action") == "adjustment":
+        if current_user.role not in ("admin", "manager"):
+            flash("Access denied. Only managers and admins can add ledger adjustments.", "danger")
+            return redirect(url_for("supplier_ledger", id=id))
+        adj_date = request.form.get("adj_date", "").strip()
+        adj_type = request.form.get("adj_type", "").strip()
+        amount_str = request.form.get("adj_amount", "").strip()
+        description = request.form.get("adj_description", "").strip() or "Manual Adjustment"
+        amount = parse_payment_amount(amount_str)
+        if not adj_date or amount is None or adj_type not in ("debit", "credit"):
+            flash("Valid date, type and amount are required for adjustment!", "danger")
+        else:
+            entry = SupplierLedgerEntry(
+                supplier_id=supplier.id,
+                entry_date=datetime.strptime(adj_date, "%Y-%m-%d"),
+                entry_type="Adjustment",
+                source_type="adjustment",
+                source_id=None,
+                description=description,
+                debit=amount if adj_type == "debit" else 0.0,
+                credit=amount if adj_type == "credit" else 0.0,
+                balance_after=0.0,
+            )
+            db.session.add(entry)
+            db.session.flush()
+            entry.source_id = entry.id
+            recalculate_supplier_ledger(supplier.id)
+            db.session.commit()
+            flash("Ledger adjustment added!", "success")
+            return redirect(url_for("supplier_ledger", id=id))
+    query = SupplierLedgerEntry.query.filter_by(supplier_id=id)
+    if start_date_str and end_date_str:
+        try:
+            start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+            end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            query = query.filter(SupplierLedgerEntry.entry_date.between(start_date, end_date))
+        except ValueError:
+            flash("Invalid date format! Use YYYY-MM-DD.", "danger")
+    entries = query.order_by(SupplierLedgerEntry.entry_date.asc(), SupplierLedgerEntry.id.asc()).all()
+    balance = get_supplier_balance(id)
+    return render_template(
+        "supplier_ledger.html",
+        supplier=supplier,
+        entries=entries,
+        balance=balance,
+        start_date=start_date_str,
+        end_date=end_date_str,
+    )
+
+
+@admin_required
+def delete_supplier_ledger_adjustment(id, entry_id):
+    """Delete a supplier ledger adjustment."""
+    from app import recalculate_supplier_ledger
+
+    entry = SupplierLedgerEntry.query.filter_by(id=entry_id, supplier_id=id, source_type="adjustment").first() or abort(404)
+    db.session.delete(entry)
+    recalculate_supplier_ledger(id)
+    db.session.commit()
+    flash("Adjustment deleted!", "success")
+    return redirect(url_for("supplier_ledger", id=id))
+
+
+@manager_required
+def export_supplier_ledger(id):
+    """Export supplier ledger (CSV)."""
+    supplier = db.session.get(Supplier, id) or abort(404)
+    entries = (
+        SupplierLedgerEntry.query.filter_by(supplier_id=id)
+        .order_by(SupplierLedgerEntry.entry_date.asc(), SupplierLedgerEntry.id.asc())
+        .all()
+    )
+    rows = [
+        [e.entry_date.strftime("%Y-%m-%d"), e.entry_type, e.description, round(e.debit, 2), round(e.credit, 2), round(e.balance_after, 2)]
+        for e in entries
+    ]
+    return csv_response(
+        f"{supplier.name}_ledger.csv", "Supplier Ledger",
+        ["Date", "Type", "Description", "Debit", "Credit", "Balance"],
+        rows, extra_info=f"Supplier: {supplier.name}",
+    )
+
+
+@manager_required
+def export_supplier_ledger_excel(id):
+    """Export supplier ledger (XLSX)."""
+    supplier = db.session.get(Supplier, id) or abort(404)
+    entries = (
+        SupplierLedgerEntry.query.filter_by(supplier_id=id)
+        .order_by(SupplierLedgerEntry.entry_date.asc(), SupplierLedgerEntry.id.asc())
+        .all()
+    )
+    rows = [
+        [e.entry_date.strftime("%Y-%m-%d"), e.entry_type, e.description, round(e.debit, 2), round(e.credit, 2), round(e.balance_after, 2)]
+        for e in entries
+    ]
+    return excel_response(
+        filename=f"{supplier.name}_ledger.xlsx",
+        title="Supplier Ledger",
+        col_headers=["Date", "Type", "Description", "Debit", "Credit", "Balance"],
+        rows=rows,
+        extra_info=f"Supplier: {supplier.name}",
+    )
+
+
+@verified_required
+def api_supplier_balance(id):
+    """Get supplier balance (API)."""
+    from app import get_supplier_payable, get_supplier_paid, get_supplier_balance
+
+    supplier = db.session.get(Supplier, id) or abort(404)
+    return {
+        "payable": get_supplier_payable(id),
+        "paid": get_supplier_paid(id),
+        "balance": get_supplier_balance(id),
+    }

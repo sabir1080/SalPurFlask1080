@@ -450,3 +450,132 @@ def customer_bulk_receipt():
         general_suggested=general_suggested,
         today=now_local().strftime("%Y-%m-%d"),
     )
+
+
+# ─── CUSTOMER LEDGER ROUTES ────────────────────────────────────────────────
+
+
+@verified_required
+def customer_ledger(id):
+    """Display customer ledger with adjustments."""
+    from app import parse_payment_amount, recalculate_customer_ledger, get_customer_balance
+
+    customer = db.session.get(Customer, id) or abort(404)
+    start_date_str = request.args.get("start_date", "")
+    end_date_str = request.args.get("end_date", "")
+    if request.method == "POST" and request.form.get("action") == "adjustment":
+        if current_user.role not in ("admin", "manager"):
+            flash("Access denied. Only managers and admins can add ledger adjustments.", "danger")
+            return redirect(url_for("customer_ledger", id=id))
+        adj_date = request.form.get("adj_date", "").strip()
+        adj_type = request.form.get("adj_type", "").strip()
+        amount_str = request.form.get("adj_amount", "").strip()
+        description = request.form.get("adj_description", "").strip() or "Manual Adjustment"
+        amount = parse_payment_amount(amount_str)
+        if not adj_date or amount is None or adj_type not in ("debit", "credit"):
+            flash("Valid date, type and amount are required for adjustment!", "danger")
+        else:
+            entry = CustomerLedgerEntry(
+                customer_id=customer.id,
+                entry_date=datetime.strptime(adj_date, "%Y-%m-%d"),
+                entry_type="Adjustment",
+                source_type="adjustment",
+                source_id=None,
+                description=description,
+                debit=amount if adj_type == "debit" else 0.0,
+                credit=amount if adj_type == "credit" else 0.0,
+                balance_after=0.0,
+            )
+            db.session.add(entry)
+            db.session.flush()
+            entry.source_id = entry.id
+            recalculate_customer_ledger(customer.id)
+            db.session.commit()
+            flash("Ledger adjustment added!", "success")
+            return redirect(url_for("customer_ledger", id=id))
+    query = CustomerLedgerEntry.query.filter_by(customer_id=id)
+    if start_date_str and end_date_str:
+        try:
+            start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+            end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            query = query.filter(CustomerLedgerEntry.entry_date.between(start_date, end_date))
+        except ValueError:
+            flash("Invalid date format! Use YYYY-MM-DD.", "danger")
+    entries = query.order_by(CustomerLedgerEntry.entry_date.asc(), CustomerLedgerEntry.id.asc()).all()
+    balance = get_customer_balance(id)
+    return render_template(
+        "customer_ledger.html",
+        customer=customer,
+        entries=entries,
+        balance=balance,
+        start_date=start_date_str,
+        end_date=end_date_str,
+    )
+
+
+@admin_required
+def delete_customer_ledger_adjustment(id, entry_id):
+    """Delete a customer ledger adjustment."""
+    from app import recalculate_customer_ledger
+
+    entry = CustomerLedgerEntry.query.filter_by(id=entry_id, customer_id=id, source_type="adjustment").first() or abort(404)
+    db.session.delete(entry)
+    recalculate_customer_ledger(id)
+    db.session.commit()
+    flash("Adjustment deleted!", "success")
+    return redirect(url_for("customer_ledger", id=id))
+
+
+@manager_required
+def export_customer_ledger(id):
+    """Export customer ledger (CSV)."""
+    customer = db.session.get(Customer, id) or abort(404)
+    entries = (
+        CustomerLedgerEntry.query.filter_by(customer_id=id)
+        .order_by(CustomerLedgerEntry.entry_date.asc(), CustomerLedgerEntry.id.asc())
+        .all()
+    )
+    rows = [
+        [e.entry_date.strftime("%Y-%m-%d"), e.entry_type, e.description, round(e.debit, 2), round(e.credit, 2), round(e.balance_after, 2)]
+        for e in entries
+    ]
+    return csv_response(
+        f"{customer.name}_ledger.csv", "Customer Ledger",
+        ["Date", "Type", "Description", "Debit", "Credit", "Balance"],
+        rows, extra_info=f"Customer: {customer.name}",
+    )
+
+
+@manager_required
+def export_customer_ledger_excel(id):
+    """Export customer ledger (XLSX)."""
+    customer = db.session.get(Customer, id) or abort(404)
+    entries = (
+        CustomerLedgerEntry.query.filter_by(customer_id=id)
+        .order_by(CustomerLedgerEntry.entry_date.asc(), CustomerLedgerEntry.id.asc())
+        .all()
+    )
+    rows = [
+        [e.entry_date.strftime("%Y-%m-%d"), e.entry_type, e.description, round(e.debit, 2), round(e.credit, 2), round(e.balance_after, 2)]
+        for e in entries
+    ]
+    return excel_response(
+        filename=f"{customer.name}_ledger.xlsx",
+        title="Customer Ledger",
+        col_headers=["Date", "Type", "Description", "Debit", "Credit", "Balance"],
+        rows=rows,
+        extra_info=f"Customer: {customer.name}",
+    )
+
+
+@verified_required
+def api_customer_balance(id):
+    """Get customer balance (API)."""
+    from app import get_customer_receivable, get_customer_received, get_customer_balance
+
+    customer = db.session.get(Customer, id) or abort(404)
+    return {
+        "receivable": get_customer_receivable(id),
+        "received": get_customer_received(id),
+        "balance": get_customer_balance(id),
+    }
