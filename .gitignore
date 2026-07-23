@@ -17,7 +17,7 @@ ForMyUseOnly/
 notes.txt
 test_data/
 # Large media — keep videos out of git (GitHub 100MB limit)
-docs/screenshots/*.mp4
+#docs/screenshots/*.mp4
 *.mp4
 docs/
 
