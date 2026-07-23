@@ -298,3 +298,170 @@ def delete_sale(id):
     record_audit("delete", "Sale", id, audit_summary)
     flash("Sale deleted successfully!", "success")
     return redirect(url_for("sale"))
+
+
+# ─── SALE RETURN & INVOICE ROUTES ───────────────────────────────────────────
+
+
+def get_sale_item_returned_qty(sale_item_id):
+    """Total quantity already returned for a sale item."""
+    return float(db.session.query(SaleReturn)
+                 .filter_by(sale_item_id=sale_item_id)
+                 .with_entities(db.func.sum(SaleReturn.quantity))
+                 .scalar() or 0)
+
+
+def get_sale_returned_qty(sale_id):
+    """Total quantity returned for an entire sale."""
+    return float(db.session.query(SaleReturn)
+                 .filter_by(sale_id=sale_id)
+                 .with_entities(db.func.sum(SaleReturn.quantity))
+                 .scalar() or 0)
+
+
+@verified_required
+def sale_return():
+    """Display and create sale returns."""
+    from app import get_item_locked, item_add_stock, item_remove_stock
+    from app import remove_customer_ledger_entry, recalculate_customer_ledger
+    from app import sync_customer_sale_return, post_document
+
+    search = request.args.get("search", "").strip()
+    query = SaleReturn.query.order_by(SaleReturn.date.desc())
+    if search:
+        from salpurflask.models import Customer as Cust
+        query = (
+            query.join(Cust, SaleReturn.customer_id == Cust.id)
+            .join(Item, SaleReturn.item_id == Item.id)
+            .filter((Cust.name.ilike(f"%{search}%")) | (Item.name.ilike(f"%{search}%")))
+        )
+    returns, pagination = get_paginated_results(query)
+    all_sis = (SaleItem.query.join(Sale)
+               .filter(Sale.is_reversed.is_(False))
+               .order_by(Sale.date.desc(), SaleItem.id).all())
+    items_available = [
+        {"si": si, "remaining": si.quantity - get_sale_item_returned_qty(si.id)}
+        for si in all_sis
+        if si.quantity - get_sale_item_returned_qty(si.id) > 0
+    ]
+    if request.method == "POST":
+        si_ids        = request.form.getlist("sale_item_id[]")
+        quantities    = request.form.getlist("quantity[]")
+        return_prices = request.form.getlist("return_price[]")
+        reasons       = request.form.getlist("reason[]")
+        date_str      = request.form.get("date", "").strip()
+        if not date_str:
+            flash("Date is required!", "danger")
+        elif not si_ids:
+            flash("At least one item row is required!", "danger")
+        else:
+            try:
+                ret_date = datetime.strptime(date_str, "%Y-%m-%d")
+                errors = []
+                rows = []
+                for idx, (si_id, qty_s, price_s, reason_s) in enumerate(zip(si_ids, quantities, return_prices, reasons), 1):
+                    if not si_id or not qty_s or not price_s:
+                        errors.append(f"Row {idx}: item, quantity and price are required.")
+                        continue
+                    if not qty_s.isdigit() or int(qty_s) <= 0:
+                        errors.append(f"Row {idx}: quantity must be a positive integer.")
+                        continue
+                    try:
+                        price_f = float(price_s)
+                        if price_f < 0:
+                            errors.append(f"Row {idx}: return price cannot be negative.")
+                            continue
+                    except ValueError:
+                        errors.append(f"Row {idx}: invalid return price.")
+                        continue
+                    si = db.session.get(SaleItem, int(si_id))
+                    if not si:
+                        errors.append(f"Row {idx}: sale item not found.")
+                        continue
+                    remaining = si.quantity - get_sale_item_returned_qty(si.id)
+                    if int(qty_s) > remaining:
+                        errors.append(f"Row {idx} ({si.item.name}): cannot return {qty_s}, only {remaining} remaining.")
+                        continue
+                    rows.append((si, int(qty_s), price_f, reason_s.strip() or None))
+                if errors:
+                    for e in errors:
+                        flash(e, "danger")
+                else:
+                    for si, qty, price, reason_val in rows:
+                        sale = si.sale_header
+                        item = get_item_locked(si.item_id)
+                        sr = SaleReturn(
+                            sale_id=sale.id,
+                            customer_id=sale.customer_id,
+                            item_id=si.item_id,
+                            quantity=qty,
+                            return_price=price,
+                            date=ret_date,
+                            reason=reason_val,
+                            unit_name=si.unit_name, unit_factor=si.unit_factor or 1,
+                            sale_item_id=si.id,
+                        )
+                        if item:
+                            base_qty = qty * (si.unit_factor or 1)
+                            cost = (Decimal(str(si.cost_price or 0)) * Decimal(str(base_qty))).quantize(MONEY)
+                            sr.cost_restored = cost
+                            item_add_stock(item, base_qty, cost)
+                        db.session.add(sr)
+                        db.session.flush()
+                        sync_customer_sale_return(sr)
+                        post_document("sale_return", sr)
+                    db.session.commit()
+                    flash(f"{len(rows)} sale return(s) recorded successfully!", "success")
+                    return redirect(url_for("sale_return"))
+            except ValueError:
+                flash("Invalid date format! Use YYYY-MM-DD.", "danger")
+    return render_template(
+        "sale_return.html",
+        returns=returns,
+        items_available=items_available,
+        pagination=pagination,
+        search=search,
+        today=now_local().strftime("%Y-%m-%d"),
+    )
+
+
+@admin_required
+def delete_sale_return(id):
+    """Delete a sale return."""
+    from app import get_item_locked, item_remove_stock
+    from app import remove_customer_ledger_entry, recalculate_customer_ledger
+
+    sr = db.session.get(SaleReturn, id) or abort(404)
+    assert_not_posted("sale_return", sr.id, f"Sale return #{sr.id}")
+    item = get_item_locked(sr.item_id)
+    if item:
+        item_remove_stock(item, line_base_qty(sr), cost_total=sr.cost_restored or 0)
+    customer_id = remove_customer_ledger_entry("sale_return", sr.id)
+    db.session.delete(sr)
+    db.session.commit()
+    if customer_id:
+        recalculate_customer_ledger(customer_id)
+        db.session.commit()
+    flash("Sale return deleted successfully!", "success")
+    return redirect(url_for("sale_return"))
+
+
+@verified_required
+def sale_invoice(id):
+    """Display sale invoice with payment details."""
+    from app import get_payment_status
+
+    sale      = db.session.get(Sale, id) or abort(404)
+    received  = get_sale_received(id)
+    total     = sale_total(sale)
+    status    = get_payment_status(total, received)
+    returned_qty = get_sale_returned_qty(id)
+    return render_template(
+        "invoice_sale.html",
+        sale=sale,
+        received=received,
+        total=total,
+        balance=total - received,
+        status=status,
+        returned_qty=returned_qty,
+    )

@@ -236,7 +236,8 @@ from salpurflask.purchase.routes import (
     export_purchase_report, export_purchase_return_report, export_supplier_purchase_report
 )
 from salpurflask.sales.routes import (
-    sale, edit_sale, delete_sale
+    sale, edit_sale, delete_sale,
+    sale_return, delete_sale_return, sale_invoice
 )
 app.add_url_rule("/item/<int:id>/ledger", "item_ledger", item_ledger)
 app.add_url_rule("/api/item/<int:id>", "get_item", get_item)
@@ -273,6 +274,9 @@ app.add_url_rule("/export_supplier_purchase_report", "export_supplier_purchase_r
 app.add_url_rule("/sale", "sale", sale, methods=["GET", "POST"])
 app.add_url_rule("/sale/edit/<int:id>", "edit_sale", edit_sale, methods=["GET", "POST"])
 app.add_url_rule("/sale/delete/<int:id>", "delete_sale", delete_sale, methods=["POST"])
+app.add_url_rule("/sale_return", "sale_return", sale_return, methods=["GET", "POST"])
+app.add_url_rule("/sale_return/delete/<int:id>", "delete_sale_return", delete_sale_return, methods=["POST"])
+app.add_url_rule("/sale/<int:id>/invoice", "sale_invoice", sale_invoice, methods=["GET"])
 
 def sql_date_fmt(col, fmt="%Y-%m"):
     if db.engine.dialect.name == "postgresql":
@@ -3507,148 +3511,11 @@ def export_customer_receipt_history():
 # Routes /purchase_return and /purchase_return/delete moved to salpurflask.purchase.routes
 # (purchase_return and delete_purchase_return functions)
 
-@app.route("/sale_return", methods=["GET", "POST"])
-@verified_required
-def sale_return():
-    search = request.args.get("search", "").strip()
-    query = SaleReturn.query.order_by(SaleReturn.date.desc())
-    if search:
-        query = (
-            query.join(Customer, SaleReturn.customer_id == Customer.id)
-            .join(Item, SaleReturn.item_id == Item.id)
-            .filter((Customer.name.ilike(f"%{search}%")) | (Item.name.ilike(f"%{search}%")))
-        )
-    returns, pagination = get_paginated_results(query)
-    # A reversed sale never happened, so nothing can be returned against it.
-    all_sis = (SaleItem.query.join(Sale)
-               .filter(Sale.is_reversed.is_(False))
-               .order_by(Sale.date.desc(), SaleItem.id).all())
-    items_available = [
-        {"si": si, "remaining": si.quantity - get_sale_item_returned_qty(si)}
-        for si in all_sis
-        if si.quantity - get_sale_item_returned_qty(si) > 0
-    ]
-    if request.method == "POST":
-        si_ids        = request.form.getlist("sale_item_id[]")
-        quantities    = request.form.getlist("quantity[]")
-        return_prices = request.form.getlist("return_price[]")
-        reasons       = request.form.getlist("reason[]")
-        date_str      = request.form.get("date", "").strip()
-        if not date_str:
-            flash("Date is required!", "danger")
-        elif not si_ids:
-            flash("At least one item row is required!", "danger")
-        else:
-            try:
-                ret_date = datetime.strptime(date_str, "%Y-%m-%d")
-                errors = []
-                rows = []
-                for idx, (si_id, qty_s, price_s, reason_s) in enumerate(zip(si_ids, quantities, return_prices, reasons), 1):
-                    if not si_id or not qty_s or not price_s:
-                        errors.append(f"Row {idx}: item, quantity and price are required.")
-                        continue
-                    if not qty_s.isdigit() or int(qty_s) <= 0:
-                        errors.append(f"Row {idx}: quantity must be a positive integer.")
-                        continue
-                    try:
-                        price_f = float(price_s)
-                        if price_f < 0:
-                            errors.append(f"Row {idx}: return price cannot be negative.")
-                            continue
-                    except ValueError:
-                        errors.append(f"Row {idx}: invalid return price.")
-                        continue
-                    si = db.session.get(SaleItem, int(si_id))
-                    if not si:
-                        errors.append(f"Row {idx}: sale item not found.")
-                        continue
-                    remaining = si.quantity - get_sale_item_returned_qty(si)
-                    if int(qty_s) > remaining:
-                        errors.append(f"Row {idx} ({si.item.name}): cannot return {qty_s}, only {remaining} remaining.")
-                        continue
-                    rows.append((si, int(qty_s), price_f, reason_s.strip() or None))
-                if errors:
-                    for e in errors:
-                        flash(e, "danger")
-                else:
-                    for si, qty, price, reason_val in rows:
-                        sale = si.sale_header
-                        item = get_item_locked(si.item_id)
-                        # A return is always in the original line's unit, never chosen separately.
-                        sr = SaleReturn(
-                            sale_id=sale.id,
-                            customer_id=sale.customer_id,
-                            item_id=si.item_id,
-                            quantity=qty,
-                            return_price=price,
-                            date=ret_date,
-                            reason=reason_val,
-                            unit_name=si.unit_name, unit_factor=si.unit_factor or 1,
-                            sale_item_id=si.id,
-                        )
-                        if item:
-                            # Back into stock at the cost they left at, taken from the
-                            # original sale line — never at today's average. cost_price
-                            # is per base unit, so the total needs the base qty.
-                            base_qty = qty * (si.unit_factor or 1)
-                            cost = (Decimal(str(si.cost_price or 0)) * Decimal(str(base_qty))).quantize(MONEY)
-                            sr.cost_restored = cost
-                            item_add_stock(item, base_qty, cost)
-                        db.session.add(sr)
-                        db.session.flush()
-                        sync_customer_sale_return(sr)
-                        post_document("sale_return", sr)
-                    db.session.commit()
-                    flash(f"{len(rows)} sale return(s) recorded successfully!", "success")
-                    return redirect(url_for("sale_return"))
-            except ValueError:
-                flash("Invalid date format! Use YYYY-MM-DD.", "danger")
-    return render_template(
-        "sale_return.html",
-        returns=returns,
-        items_available=items_available,
-        pagination=pagination,
-        search=search,
-        today=now_local().strftime("%Y-%m-%d"),
-    )
 
-@app.route("/sale_return/delete/<int:id>", methods=["POST"])
-@admin_required
-def delete_sale_return(id):
-    sr = db.session.get(SaleReturn, id) or abort(404)
-    assert_not_posted("sale_return", sr.id, f"Sale return #{sr.id}")
-    item = get_item_locked(sr.item_id)
-    if item:
-        item_remove_stock(item, line_base_qty(sr), cost_total=sr.cost_restored or 0)
-    customer_id = remove_customer_ledger_entry("sale_return", sr.id)
-    db.session.delete(sr)
-    db.session.commit()
-    if customer_id:
-        recalculate_customer_ledger(customer_id)
-        db.session.commit()
-    flash("Sale return deleted successfully!", "success")
-    return redirect(url_for("sale_return"))
 
 # Route /purchase/<id>/invoice moved to salpurflask.purchase.routes
 # (purchase_invoice function)
 
-@app.route("/sale/<int:id>/invoice")
-@verified_required
-def sale_invoice(id):
-    sale      = db.session.get(Sale, id) or abort(404)
-    received  = get_sale_received(id)
-    total     = sale_total(sale)
-    status    = get_payment_status(total, received)
-    returned_qty = get_sale_returned_qty(id)
-    return render_template(
-        "invoice_sale.html",
-        sale=sale,
-        received=received,
-        total=total,
-        balance=total - received,
-        status=status,
-        returned_qty=returned_qty,
-    )
 
 # ─── Stock Adjustment ──────────────────────────────────────────────────────────
 
