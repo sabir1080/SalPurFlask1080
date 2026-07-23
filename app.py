@@ -238,7 +238,8 @@ from salpurflask.purchase.routes import (
 from salpurflask.sales.routes import (
     sale, edit_sale, delete_sale,
     sale_return, delete_sale_return, sale_invoice,
-    pos, pos_lookup, pos_checkout, pos_receipt
+    pos, pos_lookup, pos_checkout, pos_receipt,
+    delivery_challans, create_delivery_challan, update_delivery_challan
 )
 app.add_url_rule("/item/<int:id>/ledger", "item_ledger", item_ledger)
 app.add_url_rule("/api/item/<int:id>", "get_item", get_item)
@@ -282,6 +283,9 @@ app.add_url_rule("/pos", "pos", pos, methods=["GET"])
 app.add_url_rule("/pos/lookup", "pos_lookup", pos_lookup, methods=["GET"])
 app.add_url_rule("/pos/checkout", "pos_checkout", pos_checkout, methods=["POST"])
 app.add_url_rule("/pos/receipt/<int:id>", "pos_receipt", pos_receipt, methods=["GET"])
+app.add_url_rule("/delivery_challans", "delivery_challans", delivery_challans, methods=["GET"])
+app.add_url_rule("/delivery_challans/create", "create_delivery_challan", create_delivery_challan, methods=["POST"])
+app.add_url_rule("/delivery_challans/<int:id>/update", "update_delivery_challan", update_delivery_challan, methods=["POST"])
 
 def sql_date_fmt(col, fmt="%Y-%m"):
     if db.engine.dialect.name == "postgresql":
@@ -3633,72 +3637,6 @@ def delete_quotation(id):
 
 # ─── Delivery Challan ──────────────────────────────────────────────────────────
 
-@app.route("/delivery_challans", methods=["GET"])
-@verified_required
-def delivery_challans():
-    search = request.args.get("search", "").strip()
-    status_filter = request.args.get("status", "").strip()
-    query = DeliveryChallan.query.join(Sale).join(Customer, Sale.customer_id == Customer.id)
-    if search:
-        query = query.filter(Customer.name.ilike(f"%{search}%"))
-    if status_filter:
-        query = query.filter(DeliveryChallan.status == status_filter)
-    challans, pagination = get_paginated_results(
-        query.order_by(DeliveryChallan.challan_date.desc(), DeliveryChallan.id.desc())
-    )
-    # pending sales (no challan yet)
-    pending_sales = Sale.query.filter(
-        ~Sale.id.in_(db.session.query(DeliveryChallan.sale_id))
-    ).order_by(Sale.date.desc()).all()
-    return render_template("delivery_challans.html",
-        challans=challans, pending_sales=pending_sales,
-        pagination=pagination, search=search,
-        status_filter=status_filter, challan_statuses=CHALLAN_STATUSES,
-        today=now_local().strftime("%Y-%m-%d"))
-
-@app.route("/delivery_challans/create", methods=["POST"])
-@manager_required
-def create_delivery_challan():
-    sale_id      = request.form.get("sale_id", "").strip()
-    challan_date = request.form.get("challan_date", "").strip()
-    transport    = request.form.get("transport", "").strip() or None
-    notes        = request.form.get("notes", "").strip() or None
-    if not sale_id or not challan_date:
-        flash("Sale and challan date are required.", "danger")
-        return redirect(url_for("delivery_challans"))
-    if DeliveryChallan.query.filter_by(sale_id=int(sale_id)).first():
-        flash("A challan already exists for this sale.", "warning")
-        return redirect(url_for("delivery_challans"))
-    dc = DeliveryChallan(
-        sale_id=int(sale_id),
-        challan_date=datetime.strptime(challan_date, "%Y-%m-%d"),
-        transport=transport, notes=notes,
-    )
-    db.session.add(dc)
-    db.session.commit()
-    flash(f"Delivery Challan #{dc.id} created.", "success")
-    return redirect(url_for("delivery_challans"))
-
-@app.route("/delivery_challans/<int:id>/update", methods=["POST"])
-@manager_required
-def update_challan_status(id):
-    dc = db.session.get(DeliveryChallan, id) or abort(404)
-    new_status    = request.form.get("status", "").strip()
-    dispatch_date = request.form.get("dispatch_date", "").strip()
-    delivery_date = request.form.get("delivery_date", "").strip()
-    transport     = request.form.get("transport", "").strip() or None
-    notes         = request.form.get("notes", "").strip() or None
-    if new_status in CHALLAN_STATUSES:
-        dc.status = new_status
-    if dispatch_date:
-        dc.dispatch_date = datetime.strptime(dispatch_date, "%Y-%m-%d")
-    if delivery_date:
-        dc.delivery_date = datetime.strptime(delivery_date, "%Y-%m-%d")
-    dc.transport = transport
-    dc.notes = notes
-    db.session.commit()
-    flash(f"Challan #{dc.id} updated.", "success")
-    return redirect(url_for("delivery_challans"))
 
 # ─── Reports: AP/AR Aging, P&L, Cash Book, GST ────────────────────────────────
 
