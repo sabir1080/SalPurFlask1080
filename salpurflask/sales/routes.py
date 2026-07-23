@@ -8,7 +8,7 @@ from flask_login import current_user
 
 from salpurflask.extensions import db
 from salpurflask.models import (
-    Sale, SaleItem, SaleReturn, Customer, Item,
+    Sale, SaleItem, SaleReturn, Customer, Item, CustomerPayment, FinancialAccount,
     MONEY, resolve_item_unit, line_base_qty,
     calc_discount_tax, allocate_document_number, assert_not_posted, assert_not_numbered,
     post_document, reverse_document, Quotation,
@@ -17,6 +17,7 @@ from salpurflask.auth import verified_required, manager_required, admin_required
 from salpurflask.utils import (
     now_local, get_paginated_results, csv_response, excel_response
 )
+from sqlalchemy import or_ as sql_or
 
 
 # ─── HELPER FUNCTIONS (SALES-SPECIFIC) ─────────────────────────────────────
@@ -465,3 +466,166 @@ def sale_invoice(id):
         status=status,
         returned_qty=returned_qty,
     )
+
+
+# ─── POINT OF SALE (POS) ROUTES ────────────────────────────────────────────
+
+
+def get_walkin_customer():
+    """The counter's default customer for cash sales."""
+    c = Customer.query.filter_by(name="Walk-in Customer").first()
+    if c is None:
+        c = Customer(name="Walk-in Customer", contact="0000000000",
+                     address="Walk-in", opening_balance=0)
+        db.session.add(c)
+        db.session.commit()
+    return c
+
+
+@manager_required
+def pos():
+    """POS main screen."""
+    from app import active_accounts
+
+    return render_template(
+        "pos.html",
+        customers=Customer.query.order_by(Customer.name).all(),
+        accounts=active_accounts(),
+        walkin=get_walkin_customer(),
+        today=now_local().strftime("%Y-%m-%d"),
+    )
+
+
+@manager_required
+def pos_lookup():
+    """Item lookup for POS."""
+    from app import item_unit_choices
+
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return {"items": []}
+    exact = Item.query.filter_by(barcode=q).first()
+    if exact:
+        matches = [exact]
+    else:
+        matches = (Item.query
+                   .filter(sql_or(Item.name.ilike(f"%{q}%"), Item.barcode.ilike(f"%{q}%")))
+                   .order_by(Item.name).limit(20).all())
+    return {"items": [{
+        "id": it.id, "name": it.name, "barcode": it.barcode or "",
+        "price": float(it.sale_price or 0), "stock": it.stock,
+        "unit": it.unit or "Pcs",
+        "units": [{"key": u["key"], "name": u["name"], "factor": u["factor"],
+                   "price": float(u["sale_price"] or 0) or float(it.sale_price or 0)}
+                  for u in item_unit_choices(it)],
+    } for it in matches]}
+
+
+@manager_required
+def pos_checkout():
+    """Ring up a POS sale."""
+    from app import get_item_locked, item_remove_stock, sync_customer_sale
+    from app import sync_customer_receipt, post_document, record_audit
+    from app import parse_account_id, PAYMENT_METHODS, PostingError
+
+    data = request.get_json(silent=True) or {}
+    lines = data.get("items") or []
+    if not lines:
+        return {"ok": False, "error": "The cart is empty."}, 400
+
+    customer_id = data.get("customer_id") or get_walkin_customer().id
+    try:
+        amount_paid = Decimal(str(data.get("amount_paid") or 0)).quantize(MONEY)
+    except (InvalidOperation, ValueError):
+        return {"ok": False, "error": "Invalid amount paid."}, 400
+
+    account_id, acc_err = parse_account_id(str(data.get("account_id") or "").strip())
+    if acc_err:
+        return {"ok": False, "error": acc_err}, 400
+
+    try:
+        first = lines[0]
+        sal = Sale(
+            customer_id=int(customer_id),
+            item_id=int(first["item_id"]),
+            quantity=int(first["qty"]),
+            sale_price=float(first["price"]),
+            cost_price=0.0,
+            discount_type="percent", discount_value=0, discount_amount=0,
+            tax_percent=0, tax_amount=0,
+            date=now_local(), notes="POS sale",
+        )
+        db.session.add(sal)
+        db.session.flush()
+
+        total = Decimal("0")
+        for ln in lines:
+            item_obj = get_item_locked(int(ln["item_id"]))
+            if item_obj is None:
+                db.session.rollback()
+                return {"ok": False, "error": "Item not found."}, 400
+            qty_i = int(ln["qty"]); price_f = float(ln["price"])
+            if qty_i <= 0 or price_f < 0:
+                db.session.rollback()
+                return {"ok": False, "error": f"Bad quantity or price for {item_obj.name}."}, 400
+            unit_name, unit_factor = resolve_item_unit(item_obj, str(ln.get("unit_id") or ""))
+            base_qty = qty_i * unit_factor
+            if item_obj.stock < base_qty:
+                db.session.rollback()
+                return {"ok": False,
+                        "error": f"Only {item_obj.stock} {item_obj.unit} × {item_obj.name} in stock."}, 400
+            net = (Decimal(str(qty_i)) * Decimal(str(price_f))).quantize(MONEY)
+            total += net
+            unit_cost = item_obj.avg_cost
+            db.session.add(SaleItem(
+                sale_id=sal.id, item_id=item_obj.id, quantity=qty_i, sale_price=price_f,
+                cost_price=float(unit_cost), discount_type="percent", discount_value=0,
+                discount_amount=0, tax_percent=0, tax_amount=0, amount=net,
+                unit_name=unit_name, unit_factor=unit_factor))
+            item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)))
+
+        db.session.flush()
+        db.session.refresh(sal)
+        sal.invoice_no = allocate_document_number("sale", sal.date)
+        sync_customer_sale(sal)
+        post_document("sale", sal)
+
+        received = min(amount_paid, total) if amount_paid > 0 else Decimal("0")
+        if received > 0:
+            acct = db.session.get(FinancialAccount, account_id) if account_id else None
+            method = acct.method if (acct and acct.method in PAYMENT_METHODS) else "Cash"
+            rcpt = CustomerPayment(
+                customer_id=sal.customer_id, sale_id=sal.id, amount=received,
+                payment_date=now_local(), payment_method=method,
+                account_id=account_id, reference_no=sal.invoice_no, notes="POS payment")
+            db.session.add(rcpt)
+            db.session.flush()
+            sync_customer_receipt(rcpt)
+            post_document("receipt", rcpt)
+
+        db.session.commit()
+        record_audit("create", "Sale", sal.id, f"POS sale {sal.invoice_no}, total {float(total):,.2f}")
+
+        change = (amount_paid - total) if amount_paid > total else Decimal("0")
+        return {"ok": True, "sale_id": sal.id, "invoice_no": sal.invoice_no,
+                "total": float(total), "paid": float(amount_paid), "change": float(change),
+                "receipt_url": url_for("pos_receipt", id=sal.id)}
+    except PostingError as e:
+        db.session.rollback()
+        return {"ok": False, "error": str(e)}, 400
+    except Exception as e:
+        db.session.rollback()
+        import logging
+        logging.exception("POS checkout failed")
+        return {"ok": False, "error": f"Could not complete the sale: {e}"}, 500
+
+
+@manager_required
+def pos_receipt(id):
+    """POS receipt display."""
+    from app import get_sale_received
+
+    sal = db.session.get(Sale, id) or abort(404)
+    received = get_sale_received(sal.id)
+    return render_template("pos_receipt.html", sale=sal,
+                           total=sale_total(sal), received=received)

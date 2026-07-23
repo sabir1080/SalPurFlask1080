@@ -10,12 +10,13 @@ from decimal import Decimal
 from app import (
     app as flask_app, db, User, pwd_context,
     Customer, Category, Item, FinancialAccount, Sale, CustomerPayment,
-    get_walkin_customer, get_customer_balance, get_sale_received,
+    get_customer_balance, get_sale_received,
     get_account, gl_balances, natural_balance, sale_total,
     ACC_AR, ACC_SALES, ACC_INVENTORY, ACC_CASH_IN_HAND,
     seed_chart_of_accounts, seed_fixed_asset_accounts, seed_fiscal_year,
     seed_financial_account_links, post_item_opening, post_account_opening,
 )
+from salpurflask.sales.routes import get_walkin_customer
 
 
 def _manager(email="m@t.com"):
