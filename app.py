@@ -239,7 +239,9 @@ from salpurflask.sales.routes import (
     sale, edit_sale, delete_sale,
     sale_return, delete_sale_return, sale_invoice,
     pos, pos_lookup, pos_checkout, pos_receipt,
-    delivery_challans, create_delivery_challan, update_delivery_challan
+    delivery_challans, create_delivery_challan, update_delivery_challan,
+    export_sale_report, export_date_sale_report, export_item_sale_report,
+    export_customer_sale_report, export_category_sale_report, export_sale_return_report
 )
 app.add_url_rule("/item/<int:id>/ledger", "item_ledger", item_ledger)
 app.add_url_rule("/api/item/<int:id>", "get_item", get_item)
@@ -286,6 +288,12 @@ app.add_url_rule("/pos/receipt/<int:id>", "pos_receipt", pos_receipt, methods=["
 app.add_url_rule("/delivery_challans", "delivery_challans", delivery_challans, methods=["GET"])
 app.add_url_rule("/delivery_challans/create", "create_delivery_challan", create_delivery_challan, methods=["POST"])
 app.add_url_rule("/delivery_challans/<int:id>/update", "update_delivery_challan", update_delivery_challan, methods=["POST"])
+app.add_url_rule("/export_sale_report", "export_sale_report", export_sale_report, methods=["POST"])
+app.add_url_rule("/export_date_sale_report", "export_date_sale_report", export_date_sale_report, methods=["POST"])
+app.add_url_rule("/export_item_sale_report", "export_item_sale_report", export_item_sale_report, methods=["POST"])
+app.add_url_rule("/export_customer_sale_report", "export_customer_sale_report", export_customer_sale_report, methods=["POST"])
+app.add_url_rule("/export_category_sale_report", "export_category_sale_report", export_category_sale_report, methods=["POST"])
+app.add_url_rule("/export_sale_return_report", "export_sale_return_report", export_sale_return_report, methods=["POST"])
 
 def sql_date_fmt(col, fmt="%Y-%m"):
     if db.engine.dialect.name == "postgresql":
@@ -3043,178 +3051,6 @@ def reports():
     )
 
 
-@app.route("/export_sale_report", methods=["POST"])
-@manager_required
-def export_sale_report():
-    start_date_str = request.form.get("start_date", "")
-    end_date_str = request.form.get("end_date", "")
-    if not start_date_str or not end_date_str:
-        flash("Both dates are required!", "danger")
-        return redirect(url_for("reports"))
-    try:
-        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
-        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
-        sale_items = (
-            SaleItem.query.join(Sale, SaleItem.sale_id == Sale.id)
-            .join(Customer, Sale.customer_id == Customer.id)
-            .join(Item, SaleItem.item_id == Item.id)
-            .filter(Sale.date.between(start_date, end_date))
-            .order_by(Sale.id)
-            .all()
-        )
-        col_headers = ["ID", "Customer", "Item", "Category", "Quantity", "Sale Price", "Total", "Date"]
-        rows = [
-            [si.sale_id, si.sale_header.id_customer.name, si.item.name,
-             si.item.id_category.name if si.item.id_category else "N/A",
-             si.base_quantity, round(float(si.sale_price), 2),
-             round(float(si.amount), 2), si.sale_header.date.strftime("%Y-%m-%d")]
-            for si in sale_items
-        ]
-        if request.form.get("format") == "xlsx":
-            return excel_response("sale_report.xlsx", "Sale History", col_headers, rows, start_date_str, end_date_str)
-        return csv_response("sale_report.csv", "Sale History", col_headers, rows, start_date_str, end_date_str)
-    except ValueError:
-        flash("Invalid date format! Use YYYY-MM-DD.", "danger")
-        return redirect(url_for("reports"))
-
-@app.route("/export_date_sale_report", methods=["POST"])
-@manager_required
-def export_date_sale_report():
-    start_date_str = request.form.get("start_date", "")
-    end_date_str = request.form.get("end_date", "")
-    if not start_date_str or not end_date_str:
-        flash("Both dates are required!", "danger")
-        return redirect(url_for("reports"))
-    try:
-        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
-        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
-        date_sale_report = (
-            db.session.query(
-                db.func.date(Sale.date).label("sale_date"),
-                db.func.sum(SaleItem.amount).label("sale_amt"),
-                db.func.sum(SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.unit_factor * SaleItem.cost_price).label("profit_amt"),
-            )
-            .select_from(SaleItem)
-            .join(Sale, SaleItem.sale_id == Sale.id)
-            .filter(Sale.date.between(start_date, end_date))
-            .group_by(db.func.date(Sale.date))
-            .order_by(db.func.date(Sale.date))
-            .all()
-        )
-        col_headers = ["Date", "Sale Amount", "Profit Amount"]
-        rows = [[row.sale_date, round(row.sale_amt, 2), round(row.profit_amt, 2)] for row in date_sale_report]
-        if request.form.get("format") == "xlsx":
-            return excel_response("date_sale_report.xlsx", "Date-wise Profit Report", col_headers, rows, start_date_str, end_date_str)
-        return csv_response("date_sale_report.csv", "Date-wise Profit Report", col_headers, rows, start_date_str, end_date_str)
-    except ValueError:
-        flash("Invalid date format! Use YYYY-MM-DD.", "danger")
-        return redirect(url_for("reports"))
-
-@app.route("/export_item_sale_report", methods=["POST"])
-@manager_required
-def export_item_sale_report():
-    start_date_str = request.form.get("start_date", "")
-    end_date_str = request.form.get("end_date", "")
-    if not start_date_str or not end_date_str:
-        flash("Both dates are required!", "danger")
-        return redirect(url_for("reports"))
-    try:
-        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
-        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
-        item_sale = (
-            db.session.query(
-                Item.name.label("name"),
-                Category.name.label("category"),
-                db.func.sum(SaleItem.amount).label("sale_amt"),
-                db.func.sum(SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.unit_factor * SaleItem.cost_price).label("profit_amt"),
-            )
-            .select_from(SaleItem)
-            .join(Sale, SaleItem.sale_id == Sale.id)
-            .join(Item, SaleItem.item_id == Item.id)
-            .outerjoin(Category, Item.category_id == Category.id)
-            .filter(Sale.date.between(start_date, end_date))
-            .group_by(Item.name, Category.name)
-            .order_by(Item.name)
-            .all()
-        )
-        col_headers = ["Item", "Category", "Sale Amount", "Profit Amount"]
-        rows = [[row.name, row.category or "N/A", round(row.sale_amt, 2), round(row.profit_amt, 2)] for row in item_sale]
-        if request.form.get("format") == "xlsx":
-            return excel_response("item_sale_report.xlsx", "Item-wise Profit Report", col_headers, rows, start_date_str, end_date_str)
-        return csv_response("item_sale_report.csv", "Item-wise Profit Report", col_headers, rows, start_date_str, end_date_str)
-    except ValueError:
-        flash("Invalid date format! Use YYYY-MM-DD.", "danger")
-        return redirect(url_for("reports"))
-
-@app.route("/export_customer_sale_report", methods=["POST"])
-@manager_required
-def export_customer_sale_report():
-    start_date_str = request.form.get("start_date", "")
-    end_date_str = request.form.get("end_date", "")
-    if not start_date_str or not end_date_str:
-        flash("Both dates are required!", "danger")
-        return redirect(url_for("reports"))
-    try:
-        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
-        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
-        customer_sale = (
-            db.session.query(
-                Customer.name.label("name"),
-                db.func.sum(SaleItem.amount).label("sale_amt"),
-                db.func.sum(SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.unit_factor * SaleItem.cost_price).label("profit_amt"),
-            )
-            .select_from(SaleItem)
-            .join(Sale, SaleItem.sale_id == Sale.id)
-            .join(Customer, Sale.customer_id == Customer.id)
-            .filter(Sale.date.between(start_date, end_date))
-            .group_by(Customer.name)
-            .order_by(Customer.name)
-            .all()
-        )
-        col_headers = ["Customer", "Sale Amount", "Profit Amount"]
-        rows = [[row.name, round(row.sale_amt, 2), round(row.profit_amt, 2)] for row in customer_sale]
-        if request.form.get("format") == "xlsx":
-            return excel_response("customer_sale_report.xlsx", "Customer-wise Profit Report", col_headers, rows, start_date_str, end_date_str)
-        return csv_response("customer_sale_report.csv", "Customer-wise Profit Report", col_headers, rows, start_date_str, end_date_str)
-    except ValueError:
-        flash("Invalid date format! Use YYYY-MM-DD.", "danger")
-        return redirect(url_for("reports"))
-
-@app.route("/export_category_sale_report", methods=["POST"])
-@manager_required
-def export_category_sale_report():
-    start_date_str = request.form.get("start_date", "")
-    end_date_str = request.form.get("end_date", "")
-    if not start_date_str or not end_date_str:
-        flash("Both dates are required!", "danger")
-        return redirect(url_for("reports"))
-    try:
-        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
-        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
-        category_sale = (
-            db.session.query(
-                Category.name.label("name"),
-                db.func.sum(SaleItem.amount).label("sale_amt"),
-                db.func.sum(SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.unit_factor * SaleItem.cost_price).label("profit_amt"),
-            )
-            .select_from(SaleItem)
-            .join(Sale, SaleItem.sale_id == Sale.id)
-            .join(Item, SaleItem.item_id == Item.id)
-            .join(Category, Item.category_id == Category.id)
-            .filter(Sale.date.between(start_date, end_date))
-            .group_by(Category.name)
-            .order_by(Category.name)
-            .all()
-        )
-        col_headers = ["Category", "Sale Amount", "Profit Amount"]
-        rows = [[row.name, round(row.sale_amt, 2), round(row.profit_amt, 2)] for row in category_sale]
-        if request.form.get("format") == "xlsx":
-            return excel_response("category_sale_report.xlsx", "Category-wise Profit Report", col_headers, rows, start_date_str, end_date_str)
-        return csv_response("category_sale_report.csv", "Category-wise Profit Report", col_headers, rows, start_date_str, end_date_str)
-    except ValueError:
-        flash("Invalid date format! Use YYYY-MM-DD.", "danger")
-        return redirect(url_for("reports"))
-
 @app.route("/export_supplier_payable")
 @manager_required
 def export_supplier_payable():
@@ -3242,33 +3078,6 @@ def export_customer_receivable():
     if request.args.get("format") == "xlsx":
         return excel_response("customer_receivable_report.xlsx", "Customer Receivable Report", col_headers, rows)
     return csv_response("customer_receivable_report.csv", "Customer Receivable Report", col_headers, rows)
-
-
-@app.route("/export_sale_return_report", methods=["POST"])
-@manager_required
-def export_sale_return_report():
-    start_date_str = request.form.get("start_date", "")
-    end_date_str = request.form.get("end_date", "")
-    if not start_date_str or not end_date_str:
-        flash("Both dates are required!", "danger")
-        return redirect(url_for("reports"))
-    try:
-        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
-        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
-        returns = SaleReturn.query.filter(SaleReturn.date.between(start_date, end_date)).order_by(SaleReturn.date.desc()).all()
-        col_headers = ["ID", "Sale #", "Customer", "Item", "Quantity", "Return Price", "Total", "Date", "Reason"]
-        rows = [
-            [r.id, r.sale_id, r.customer.name, r.item.name,
-             r.quantity, round(r.return_price, 2), round(r.quantity * r.return_price, 2),
-             r.date.strftime("%Y-%m-%d"), r.reason or ""]
-            for r in returns
-        ]
-        if request.form.get("format") == "xlsx":
-            return excel_response("sale_return_report.xlsx", "Sale Returns Report", col_headers, rows, start_date_str, end_date_str)
-        return csv_response("sale_return_report.csv", "Sale Returns Report", col_headers, rows, start_date_str, end_date_str)
-    except ValueError:
-        flash("Invalid date format! Use YYYY-MM-DD.", "danger")
-        return redirect(url_for("reports"))
 
 
 @app.route("/export_stock_report")
