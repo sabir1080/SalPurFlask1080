@@ -814,13 +814,13 @@ See `LICENSE` file for full details.
 
 ### Getting Help
 - **GitHub Issues**: Report bugs & request features
-- **Email**: support@tradeflow.local
+- **Email**: sabir1212temp@gmail.com
 - **Documentation**: Full docs at `/docs` directory
 - **Community**: Join discussions on GitHub
 
 ### Reporting Security Issues
 ⚠️ **Do not** open public issues for security vulnerabilities.  
-Email: security@tradeflow.local
+Email: sabir1212temp@gmail.com
 
 ### Frequently Asked Questions
 
