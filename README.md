@@ -850,13 +850,16 @@ A: Yes, the modular architecture supports custom integrations. REST API is plann
 ## 👤 Author
 
 **Sabir Shah**  
-Software Architect & Full-Stack Developer
+Full-Stack Developer & Solutions Architect
 
-- 🌐 **Website**: [tradeflow.solutions](https://tradeflow.solutions)
-- 🐙 **GitHub**: [@sabir1080](https://github.com/sabir1080)
-- 💼 **LinkedIn**: [Sabir Shah](https://linkedin.com/in/sabir-shah)
-- 🎥 **YouTube**: [TradeFlow Channel](https://youtube.com/@tradeflow)
-- 💻 **Fiverr**: [sabir1080](https://fiverr.com/sabir1080)
+- 🌐 Website: https://www.fiverr.com/s/NNv5D7G
+- 🐙 GitHub: https://github.com/sabir1080
+- 💼 LinkedIn: https://linkedin.com/in/sabir-shah
+- 📧 Email: sabir1212temp@gmail.com
+- 💻 Fiverr: https://www.fiverr.com/s/NNv5D7G
+- 💼 Whatsapp: Pak +92-345-323-1545
+- 💻 Youtube: @TradeFlowBusinessSolutions
+- 💼 FaceBook: TradeFlow Business Solutions
 
 ---
 
