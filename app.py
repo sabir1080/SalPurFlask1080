@@ -33,10 +33,6 @@ app = Flask(__name__)
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
-
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-load_dotenv(os.path.join(BASE_DIR, ".env"))
-
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 if DATABASE_URL:
