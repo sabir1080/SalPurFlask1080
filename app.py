@@ -231,7 +231,8 @@ from salpurflask.inventory.routes import (
 # Register purchase routes directly (not via blueprint, to preserve endpoint names)
 from salpurflask.purchase.routes import (
     purchase, edit_purchase, delete_purchase,
-    purchase_return, delete_purchase_return, purchase_invoice
+    purchase_return, delete_purchase_return, purchase_invoice,
+    purchase_orders, purchase_order_detail, update_po_status, convert_po_to_purchase, delete_purchase_order
 )
 app.add_url_rule("/item/<int:id>/ledger", "item_ledger", item_ledger)
 app.add_url_rule("/api/item/<int:id>", "get_item", get_item)
@@ -257,6 +258,11 @@ app.add_url_rule("/purchase/delete/<int:id>", "delete_purchase", delete_purchase
 app.add_url_rule("/purchase_return", "purchase_return", purchase_return, methods=["GET", "POST"])
 app.add_url_rule("/purchase_return/delete/<int:id>", "delete_purchase_return", delete_purchase_return, methods=["POST"])
 app.add_url_rule("/purchase/<int:id>/invoice", "purchase_invoice", purchase_invoice, methods=["GET"])
+app.add_url_rule("/purchase_orders", "purchase_orders", purchase_orders, methods=["GET", "POST"])
+app.add_url_rule("/purchase_orders/<int:id>", "purchase_order_detail", purchase_order_detail, methods=["GET"])
+app.add_url_rule("/purchase_orders/<int:id>/status", "update_po_status", update_po_status, methods=["POST"])
+app.add_url_rule("/purchase_orders/<int:id>/convert", "convert_po_to_purchase", convert_po_to_purchase, methods=["POST"])
+app.add_url_rule("/purchase_orders/<int:id>/delete", "delete_purchase_order", delete_purchase_order, methods=["POST"])
 
 def sql_date_fmt(col, fmt="%Y-%m"):
     if db.engine.dialect.name == "postgresql":
@@ -4090,149 +4096,6 @@ def delete_expense(id):
     flash("Expense deleted.", "success")
     return redirect(url_for("expenses"))
 
-# ─── Purchase Orders ───────────────────────────────────────────────────────────
-
-@app.route("/purchase_orders", methods=["GET", "POST"])
-@manager_required
-def purchase_orders():
-    search = request.args.get("search", "").strip()
-    query = PurchaseOrder.query.join(Supplier)
-    if search:
-        query = query.filter(Supplier.name.ilike(f"%{search}%"))
-    orders, pagination = get_paginated_results(
-        query.order_by(PurchaseOrder.order_date.desc(), PurchaseOrder.id.desc())
-    )
-    suppliers = Supplier.query.order_by(Supplier.name).all()
-    items     = Item.query.order_by(Item.name).all()
-    if request.method == "POST":
-        supplier_id   = request.form.get("supplier_id", "").strip()
-        order_date    = request.form.get("order_date", "").strip()
-        expected_date = request.form.get("expected_date", "").strip()
-        notes         = request.form.get("notes", "").strip()
-        item_ids      = request.form.getlist("item_id[]")
-        quantities    = request.form.getlist("quantity[]")
-        prices        = request.form.getlist("purchase_price[]")
-        unit_ids      = request.form.getlist("unit_id[]")
-        rows = [(iid.strip(), qty.strip(), pr.strip(), unit_ids[i] if i < len(unit_ids) else "")
-                for i, (iid, qty, pr) in enumerate(zip(item_ids, quantities, prices))
-                if iid.strip() and qty.strip() and pr.strip()]
-        row_error = validate_line_rows(rows) if rows else None
-        if not supplier_id or not order_date:
-            flash("Supplier and order date are required.", "danger")
-        elif not rows:
-            flash("At least one item is required.", "danger")
-        elif row_error:
-            flash(row_error, "danger")
-        else:
-            po = PurchaseOrder(
-                supplier_id=int(supplier_id),
-                order_date=datetime.strptime(order_date, "%Y-%m-%d"),
-                expected_date=datetime.strptime(expected_date, "%Y-%m-%d") if expected_date else None,
-                notes=notes or None,
-            )
-            db.session.add(po)
-            db.session.flush()
-            for iid, qty, price, unit_key in rows:
-                item_obj = db.session.get(Item, int(iid)) or abort(404)
-                unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
-                db.session.add(PurchaseOrderItem(
-                    po_id=po.id, item_id=int(iid),
-                    quantity=int(qty), purchase_price=float(price),
-                    unit_name=unit_name, unit_factor=unit_factor,
-                ))
-            db.session.commit()
-            flash(f"Purchase Order #{po.id} created.", "success")
-            return redirect(url_for("purchase_orders"))
-    return render_template("purchase_orders.html",
-        orders=orders, suppliers=suppliers, items=items,
-        pagination=pagination, search=search,
-        po_statuses=PO_STATUSES,
-        today=now_local().strftime("%Y-%m-%d"))
-
-@app.route("/purchase_orders/<int:id>")
-@manager_required
-def purchase_order_detail(id):
-    po = db.session.get(PurchaseOrder, id) or abort(404)
-    return render_template("purchase_order_detail.html", po=po, po_statuses=PO_STATUSES)
-
-@app.route("/purchase_orders/<int:id>/status", methods=["POST"])
-@manager_required
-def update_po_status(id):
-    po = db.session.get(PurchaseOrder, id) or abort(404)
-    new_status = request.form.get("status", "").strip()
-    if new_status not in PO_STATUSES:
-        flash("Invalid status.", "danger")
-    elif po.status in ("Received", "Cancelled"):
-        flash("Cannot change status of a Received or Cancelled order.", "warning")
-    else:
-        po.status = new_status
-        db.session.commit()
-        flash(f"PO #{po.id} status updated to {new_status}.", "success")
-    return redirect(url_for("purchase_order_detail", id=id))
-
-@app.route("/purchase_orders/<int:id>/convert", methods=["POST"])
-@manager_required
-def convert_po_to_purchase(id):
-    po = db.session.get(PurchaseOrder, id) or abort(404)
-    if po.status == "Cancelled":
-        flash("Cancelled orders cannot be converted.", "danger")
-        return redirect(url_for("purchase_order_detail", id=id))
-    if po.converted_purchase_id:
-        flash(f"Already converted to Purchase #{po.converted_purchase_id}.", "warning")
-        return redirect(url_for("purchase_order_detail", id=id))
-    date_str = request.form.get("purchase_date", "").strip()
-    notes    = request.form.get("notes", "").strip()
-    try:
-        pur_date = datetime.strptime(date_str, "%Y-%m-%d") if date_str else now_local()
-    except ValueError:
-        pur_date = now_local()
-    first = po.line_items[0] if po.line_items else None
-    if not first:
-        flash("PO has no line items.", "danger")
-        return redirect(url_for("purchase_order_detail", id=id))
-    pur = Purchase(
-        supplier_id=po.supplier_id,
-        item_id=first.item_id, quantity=first.quantity, purchase_price=first.purchase_price,
-        discount_type="percent", discount_value=0, discount_amount=0,
-        tax_percent=0, tax_amount=0,
-        date=pur_date, notes=notes or po.notes,
-    )
-    db.session.add(pur)
-    db.session.flush()
-    for poi in po.line_items:
-        gross = poi.quantity * poi.purchase_price
-        db.session.add(PurchaseItem(
-            purchase_id=pur.id, item_id=poi.item_id,
-            quantity=poi.quantity, purchase_price=poi.purchase_price,
-            discount_type="percent", discount_value=0,
-            discount_amount=0, tax_percent=0, tax_amount=0, amount=gross,
-            unit_name=poi.unit_name, unit_factor=poi.unit_factor or 1,
-        ))
-        item_obj = db.session.get(Item, poi.item_id)
-        if item_obj:
-            item_add_stock(item_obj, poi.quantity * (poi.unit_factor or 1), gross)   # PO lines carry no tax
-    db.session.flush()
-    db.session.refresh(pur)
-    pur.invoice_no = allocate_document_number("purchase", pur.date)
-    sync_supplier_purchase(pur)
-    post_document("purchase", pur)
-    po.status = "Received"
-    po.converted_purchase_id = pur.id
-    db.session.commit()
-    flash(f"PO #{po.id} converted to Purchase {pur.invoice_no} successfully.", "success")
-    return redirect(url_for("purchase_order_detail", id=id))
-
-@app.route("/purchase_orders/<int:id>/delete", methods=["POST"])
-@admin_required
-def delete_purchase_order(id):
-    po = db.session.get(PurchaseOrder, id) or abort(404)
-    if po.status == "Received":
-        flash("Cannot delete a received order.", "danger")
-        return redirect(url_for("purchase_orders"))
-    db.session.delete(po)
-    db.session.commit()
-    flash(f"Purchase Order #{id} deleted.", "success")
-    return redirect(url_for("purchase_orders"))
 
 # ─── Quotations ────────────────────────────────────────────────────────────────
 
