@@ -171,7 +171,7 @@
                 <tr>
                     <td>{{ loop.index }}</td>
                     <td class="fw-semibold wrap">{{ si.item.name }}</td>
-                    <td class="text-muted wrap">{{ si.item.id_category.name if si.item.id_category else '—' }}</td>
+                    <td class="text-muted wrap">{{ si.item.business_category.name if si.item.business_category else (si.item.id_category.name if si.item.id_category else '—') }}</td>
                     <td class="text-end text-nowrap">{{ "{:,}".format(si.quantity) }}<small class="text-muted d-block">{{ si.display_unit }}</small></td>
                     <td class="text-end">{{ si.sale_price | fmt_num }}</td>
                     <td class="text-end text-danger">
@@ -195,19 +195,19 @@
     <!-- Totals Summary -->
     <div class="d-flex justify-content-end px-4 pb-3 pt-2">
         <table class="inv-totals">
-            <tr>
-                <td class="text-muted">Gross Amount</td>
-                <td class="text-end fw-semibold">{{ ns.gross | fmt_num }}</td>
+            <tr style="border-bottom: 2px solid #dee2e6; font-weight: 600;">
+                <td>Subtotal</td>
+                <td class="text-end">{{ ns.gross | fmt_num }}</td>
             </tr>
             {% if ns.total_disc > 0 %}
             <tr class="text-danger">
-                <td>Total Discount</td>
+                <td>Discount</td>
                 <td class="text-end">− {{ ns.total_disc | fmt_num }}</td>
             </tr>
             {% endif %}
             {% if ns.total_tax > 0 %}
             <tr class="text-info">
-                <td>Total Tax</td>
+                <td>Tax</td>
                 <td class="text-end">+ {{ ns.total_tax | fmt_num }}</td>
             </tr>
             {% endif %}
@@ -219,8 +219,8 @@
                 <td class="text-end">− {{ ns2.returned_amt | fmt_num }}</td>
             </tr>
             {% endif %}
-            <tr class="total-final">
-                <td>Net Total</td>
+            <tr class="total-final" style="border-top: 2px solid #dee2e6; font-weight: 700; font-size: 1.1rem;">
+                <td>GRAND TOTAL</td>
                 <td class="text-end">{{ total | money }}</td>
             </tr>
             <tr class="text-success">

@@ -70,7 +70,25 @@
 
   <div class="rule"></div>
   <table>
-    <tr class="tot"><td>TOTAL</td><td></td><td class="r">{{ currency }} {{ total | fmt_num }}</td></tr>
+    {% set subtotal = 0 %}
+    {% set total_disc = 0 %}
+    {% set total_tax = 0 %}
+    {% for si in sale.line_items %}
+      {% set line_gross = si.quantity * si.sale_price %}
+      {% set line_disc = si.discount_amount or 0 %}
+      {% set line_tax = si.tax_amount or 0 %}
+      {% set subtotal = subtotal + line_gross %}
+      {% set total_disc = total_disc + line_disc %}
+      {% set total_tax = total_tax + line_tax %}
+    {% endfor %}
+    <tr><td>Subtotal</td><td></td><td class="r">{{ currency }} {{ subtotal | fmt_num }}</td></tr>
+    {% if total_disc > 0 %}
+    <tr><td>Discount</td><td></td><td class="r">- {{ total_disc | fmt_num }}</td></tr>
+    {% endif %}
+    {% if total_tax > 0 %}
+    <tr><td>Tax</td><td></td><td class="r">+ {{ total_tax | fmt_num }}</td></tr>
+    {% endif %}
+    <tr class="tot"><td>GRAND TOTAL</td><td></td><td class="r">{{ currency }} {{ total | fmt_num }}</td></tr>
     <tr><td>Paid</td><td></td><td class="r">{{ received | fmt_num }}</td></tr>
     {% set change = received - total %}
     {% if change > 0 %}

@@ -69,9 +69,62 @@
       <div id="cartEmpty" class="pos-empty">Cart is empty — scan or search an item.</div>
 
       <hr>
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <span class="text-muted">Total</span>
-        <span class="pos-total"><span id="curr">{{ currency }}</span> <span id="total">0.00</span></span>
+
+      <!-- Discount & Tax Section -->
+      <div class="mb-3 p-2 border rounded" style="background: var(--surface);">
+        <h6 class="text-muted small mb-2"><i class="bi bi-percent"></i> Discount & Tax</h6>
+
+        <div class="row g-2 mb-2">
+          <div class="col-8">
+            <label class="form-label small mb-1">Discount</label>
+            <div class="input-group input-group-sm">
+              <input id="discountValue" type="number" step="0.01" min="0"
+                     class="form-control" placeholder="0.00">
+              <select id="discountType" class="form-select form-select-sm" style="flex: 0 1 60px;">
+                <option value="percent">%</option>
+                <option value="fixed">Rs</option>
+              </select>
+            </div>
+          </div>
+          <div class="col-4 text-end">
+            <label class="form-label small mb-1">&nbsp;</label>
+            <div class="text-muted small">= <span id="discountAmt">0.00</span></div>
+          </div>
+        </div>
+
+        <div class="row g-2">
+          <div class="col-8">
+            <label class="form-label small mb-1">Tax %</label>
+            <input id="taxPercent" type="number" step="0.01" min="0" max="100"
+                   class="form-control form-control-sm" placeholder="0.00">
+          </div>
+          <div class="col-4 text-end">
+            <label class="form-label small mb-1">&nbsp;</label>
+            <div class="text-muted small">= <span id="taxAmt">0.00</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Totals Breakdown -->
+      <div class="mb-3 p-2 border rounded" style="background: var(--surface);">
+        <table class="w-100 small" style="line-height: 1.6;">
+          <tr>
+            <td class="text-muted">Subtotal</td>
+            <td class="text-end fw-semibold">{{ currency }} <span id="subtotal">0.00</span></td>
+          </tr>
+          <tr id="discountRow" style="display: none;">
+            <td class="text-muted">Discount</td>
+            <td class="text-end text-danger">- <span id="discountDisplay">0.00</span></td>
+          </tr>
+          <tr id="taxRow" style="display: none;">
+            <td class="text-muted">Tax</td>
+            <td class="text-end text-info">+ <span id="taxDisplay">0.00</span></td>
+          </tr>
+          <tr style="border-top: 2px solid var(--border); font-weight: 700;">
+            <td>Grand Total</td>
+            <td class="text-end">{{ currency }} <span id="grandTotal">0.00</span></td>
+          </tr>
+        </table>
       </div>
 
       <div class="mb-2">
@@ -196,6 +249,59 @@
 
   function refocus() { scan.focus(); }
 
+  function applyDiscountTax() {
+    const discountValue = parseFloat(document.getElementById('discountValue').value || 0);
+    const discountType = document.getElementById('discountType').value;
+    const taxPercent = parseFloat(document.getElementById('taxPercent').value || 0);
+
+    // Apply to all items in cart
+    cart.forEach(item => {
+      item.discount_type = discountType;
+      item.discount_value = discountValue;
+      item.tax_percent = taxPercent;
+    });
+
+    updateTotalsDisplay();
+  }
+
+  function updateTotalsDisplay() {
+    const discountValue = parseFloat(document.getElementById('discountValue').value || 0);
+    const discountType = document.getElementById('discountType').value;
+    const taxPercent = parseFloat(document.getElementById('taxPercent').value || 0);
+
+    // Calculate totals
+    let grossTotal = 0;
+    cart.forEach(item => {
+      grossTotal += (item.price * item.qty);
+    });
+
+    // Apply discount
+    let discountAmt = 0;
+    if (discountType === 'fixed') {
+      discountAmt = Math.min(discountValue, grossTotal);
+    } else {
+      discountAmt = grossTotal * (discountValue / 100);
+    }
+
+    // Apply tax
+    const taxable = grossTotal - discountAmt;
+    const taxAmt = taxable * (taxPercent / 100);
+
+    // Update display
+    document.getElementById('subtotal').textContent = money(grossTotal);
+    document.getElementById('discountDisplay').textContent = money(discountAmt);
+    document.getElementById('taxDisplay').textContent = money(taxAmt);
+    document.getElementById('grandTotal').textContent = money(grossTotal - discountAmt + taxAmt);
+    document.getElementById('discountAmt').textContent = money(discountAmt);
+    document.getElementById('taxAmt').textContent = money(taxAmt);
+
+    // Show/hide rows
+    document.getElementById('discountRow').style.display = discountAmt > 0.01 ? 'table-row' : 'none';
+    document.getElementById('taxRow').style.display = taxAmt > 0.01 ? 'table-row' : 'none';
+
+    updateChange();
+  }
+
   function render() {
     cartEl.innerHTML = '';
     cart.forEach((l, i) => {
@@ -215,7 +321,7 @@
     totalEl.textContent = money(cartTotal());
     checkoutBtn.disabled = cart.length === 0;
     holdBtn.disabled = cart.length === 0;
-    updateChange();
+    updateTotalsDisplay();
   }
 
   function updateChange() {
@@ -308,6 +414,11 @@
   });
 
   paidEl.addEventListener('input', updateChange);
+
+  // Discount/Tax input change listeners
+  document.getElementById('discountValue').addEventListener('input', applyDiscountTax);
+  document.getElementById('discountType').addEventListener('change', applyDiscountTax);
+  document.getElementById('taxPercent').addEventListener('input', applyDiscountTax);
 
   // Payment method buttons: tap one to select the account the money goes into.
   document.getElementById('payBtns').addEventListener('click', function (e) {
