@@ -696,20 +696,33 @@ def pos_hold():
                 "name": item_obj.name,
             })
 
-        # Check if updating existing hold (optimistic locking)
+        # Check if updating existing hold (optimistic locking with version field)
         hold_id = data.get("hold_id")
+        client_version = data.get("client_version")  # Version from client when resume was fetched
+
         if hold_id and str(hold_id).isdigit():
             hold = db.session.get(PosHold, int(hold_id))
             if hold:
+                # Version conflict check: if client version differs from server, someone else updated it
+                if client_version is not None and int(client_version) != hold.version:
+                    # Version mismatch: hold was updated by another user
+                    db.session.rollback()
+                    return {
+                        "ok": False,
+                        "error": f"Hold was updated by another user. Please reload and try again.",
+                        "conflict": True,
+                        "current_version": hold.version
+                    }, 409  # Conflict
+
                 # Update existing hold with version increment
                 hold.customer_id = int(customer_id)
                 hold.cart_data = json.dumps(enriched_lines)
                 hold.notes = data.get("notes", "").strip() or None
                 hold.account_id = account_id if account_id else None
                 hold.amount_paid_memo = Decimal(str(data.get("amount_paid") or 0)).quantize(MONEY) if data.get("amount_paid") else None
-                hold.version += 1  # Increment for optimistic locking
+                hold.version += 1  # Increment for next concurrent attempt
             else:
-                # Hold not found, create new
+                # Hold not found, create new (was deleted between resume and update)
                 hold = PosHold(
                     customer_id=int(customer_id),
                     user_id=current_user.id,
@@ -783,7 +796,7 @@ def list_pos_holds():
 
 @manager_required
 def get_pos_hold(id):
-    """Fetch a held bill as JSON for resuming. Returns complete cart with unit metadata."""
+    """Fetch a held bill as JSON for resuming. Returns complete cart with unit metadata and version for optimistic locking."""
     import json
 
     hold = db.session.get(PosHold, id)
@@ -809,6 +822,7 @@ def get_pos_hold(id):
             "amount_paid": float(hold.amount_paid_memo or 0),
             "notes": hold.notes or "",
             "cart": cart,
+            "version": hold.version,  # For optimistic locking conflict detection
         }
     except Exception as e:
         return {"ok": False, "error": f"Failed to load hold: {e}"}, 500
