@@ -694,6 +694,10 @@ def pos_hold():
                 "unit_factor": unit_factor,
                 "stock": item_obj.stock,
                 "name": item_obj.name,
+                # Optional discount/tax fields (for future use if added to POS)
+                "discount_type": str(ln.get("discount_type") or "percent"),
+                "discount_value": float(ln.get("discount_value") or 0),
+                "tax_percent": float(ln.get("tax_percent") or 0),
             })
 
         # Check if updating existing hold (optimistic locking with version field)
