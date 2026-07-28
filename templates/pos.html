@@ -154,7 +154,7 @@
       .then(r => r.json())
       .then(data => {
         if (data.ok) {
-          // Restore complete cart with unit metadata preserved
+          // Restore complete cart with unit and tax metadata preserved
           cart = (data.cart || []).map(line => ({
             id: line.item_id,
             item_id: line.item_id,
@@ -166,6 +166,9 @@
             unit_id: line.unit_id || '',
             unit_name: line.unit_name,
             unit_factor: line.unit_factor || 1,
+            discount_type: line.discount_type || 'percent',
+            discount_value: line.discount_value || 0,
+            tax_percent: line.tax_percent || 0,
           }));
           holdVersion = data.version || 1;  // Store version for optimistic locking
           document.getElementById('customer').value = data.customer_id || '';
@@ -183,7 +186,13 @@
   }
 
   const money = n => Number(n || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-  const cartTotal = () => cart.reduce((s, l) => s + l.price * l.qty, 0);
+  const cartTotal = () => cart.reduce((s, l) => {
+    const gross = l.price * l.qty;
+    const discountAmt = l.discount_type === 'fixed' ? Math.min(l.discount_value || 0, gross) : (gross * (l.discount_value || 0) / 100);
+    const taxable = gross - discountAmt;
+    const tax = taxable * (l.tax_percent || 0) / 100;
+    return s + (taxable + tax);
+  }, 0);
 
   function refocus() { scan.focus(); }
 
@@ -233,6 +242,9 @@
         unit_id: '',  // Base unit by default
         unit_name: null,
         unit_factor: 1,
+        discount_type: 'percent',
+        discount_value: 0,
+        tax_percent: 0,
       });
     }
     results.innerHTML = '';
@@ -323,7 +335,15 @@
           customer_id: document.getElementById('customer').value,
           account_id: document.getElementById('account').value,
           amount_paid: paidEl.value || 0,
-          items: cart.map(l => ({ item_id: l.id, qty: l.qty, price: l.price, unit_id: l.unit_id || '' })),
+          items: cart.map(l => ({
+            item_id: l.id,
+            qty: l.qty,
+            price: l.price,
+            unit_id: l.unit_id || '',
+            discount_type: l.discount_type || 'percent',
+            discount_value: l.discount_value || 0,
+            tax_percent: l.tax_percent || 0,
+          })),
           hold_id: resumedHoldId,
           client_version: holdVersion,  // For optimistic locking conflict detection
         }),
@@ -353,7 +373,15 @@
           customer_id: document.getElementById('customer').value,
           account_id: document.getElementById('account').value,
           amount_paid: paidEl.value || 0,
-          items: cart.map(l => ({ item_id: l.id, qty: l.qty, price: l.price, unit_id: l.unit_id || '' })),
+          items: cart.map(l => ({
+            item_id: l.id,
+            qty: l.qty,
+            price: l.price,
+            unit_id: l.unit_id || '',
+            discount_type: l.discount_type || 'percent',
+            discount_value: l.discount_value || 0,
+            tax_percent: l.tax_percent || 0,
+          })),
           hold_id: resumedHoldId,
           client_version: holdVersion,  // For optimistic locking conflict detection
         }),

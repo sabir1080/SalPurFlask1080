@@ -579,13 +579,17 @@ def pos_checkout():
                 db.session.rollback()
                 return {"ok": False,
                         "error": f"Only {item_obj.stock} {item_obj.unit} × {item_obj.name} in stock."}, 400
-            net = (Decimal(str(qty_i)) * Decimal(str(price_f))).quantize(MONEY)
-            total += net
+            gross = qty_i * price_f
+            d_type = str(ln.get("discount_type") or "percent")
+            d_val = float(ln.get("discount_value") or 0)
+            tax_pct = float(ln.get("tax_percent") or 0)
+            disc_amt, tax_amt, net = calc_discount_tax(gross, d_type, d_val, tax_pct)
+            total += Decimal(str(net)).quantize(MONEY)
             unit_cost = item_obj.avg_cost
             db.session.add(SaleItem(
                 sale_id=sal.id, item_id=item_obj.id, quantity=qty_i, sale_price=price_f,
-                cost_price=float(unit_cost), discount_type="percent", discount_value=0,
-                discount_amount=0, tax_percent=0, tax_amount=0, amount=net,
+                cost_price=float(unit_cost), discount_type=d_type, discount_value=d_val,
+                discount_amount=disc_amt, tax_percent=tax_pct, tax_amount=tax_amt, amount=net,
                 unit_name=unit_name, unit_factor=unit_factor))
             item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)))
 
