@@ -58,6 +58,7 @@ class Item(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
     name                = db.Column(db.String(100), nullable=False)
     category_id         = db.Column(db.Integer, db.ForeignKey("category.id"), nullable=True)
+    business_category_id = db.Column(db.Integer, db.ForeignKey("business_category.id"), nullable=True)
     unit                = db.Column(db.String(20), nullable=False, default="Pcs")
     # A barcode or QR value, whichever the item is labelled with. One field serves both:
     # a scanner types the code and presses Enter, and the POS looks the item up by it —
@@ -79,6 +80,7 @@ class Item(db.Model):
     inventory_value     = db.Column(db.Numeric(14, 4), nullable=False, default=0)
     purchases           = db.relationship("Purchase", backref="id_item", lazy=True)
     sales               = db.relationship("Sale", backref="id_item", lazy=True)
+    business_category   = db.relationship("BusinessCategory", backref="items", lazy=True, foreign_keys=[business_category_id])
 
     @property
     def avg_cost(self):
@@ -329,6 +331,40 @@ class SaleItem(db.Model):
     def base_quantity(self):
         """See PurchaseItem.base_quantity."""
         return self.quantity * (self.unit_factor or 1)
+
+class PosHold(db.Model):
+    __tablename__ = "pos_hold"
+    id                  = db.Column(db.Integer, primary_key=True)
+    customer_id         = db.Column(db.Integer, db.ForeignKey("customer.id"), nullable=False)
+    user_id             = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    cart_data           = db.Column(db.Text, nullable=False)
+    hold_time           = db.Column(db.DateTime, default=lambda: now_local(), nullable=False, index=True)
+    last_modified       = db.Column(db.DateTime, default=lambda: now_local(), onupdate=lambda: now_local(), nullable=False)
+    version             = db.Column(db.Integer, default=1, nullable=False)  # Optimistic locking
+    notes               = db.Column(db.String(300), nullable=True)
+    account_id          = db.Column(db.Integer, db.ForeignKey("financial_account.id"), nullable=True)
+    amount_paid_memo    = db.Column(db.Numeric(14, 4), nullable=True)
+    status              = db.Column(db.String(20), default="held", nullable=False)
+    customer            = db.relationship("Customer", foreign_keys=[customer_id])
+    user                = db.relationship("User", foreign_keys=[user_id])
+    account             = db.relationship("FinancialAccount", foreign_keys=[account_id])
+
+    @property
+    def total(self):
+        import json
+        try:
+            cart = json.loads(self.cart_data)
+            return sum(line.get('price', 0) * line.get('qty', 0) for line in cart)
+        except Exception:
+            return 0
+
+    @property
+    def item_count(self):
+        import json
+        try:
+            return len(json.loads(self.cart_data))
+        except Exception:
+            return 0
 
 PAYMENT_METHODS = ("Cash", "Bank", "Cheque", "Online")
 ITEM_UNITS = ("Pcs", "Dozen", "Meter", "Kg", "Gram", "Liter", "Box", "Carton", "Bag", "Yard", "Foot", "Set", "Pair", "Roll", "Sheet", "Pack")
@@ -2483,6 +2519,7 @@ __all__ = [
     'Sale',
     'PurchaseItem',
     'SaleItem',
+    'PosHold',
     'SupplierPayment',
     'CustomerPayment',
     'PurchaseReturn',

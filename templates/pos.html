@@ -19,11 +19,10 @@
   .pos-hit .meta { font-size: .8rem; color: var(--text-muted); }
   .pos-hit .oos { color: #dc3545; font-weight: 600; }
 
-  .cart-line { display: grid; grid-template-columns: 1fr auto auto auto; gap: .5rem; align-items: center;
+  .cart-line { display: grid; grid-template-columns: 1fr auto auto; gap: .5rem; align-items: center;
                padding: .5rem 0; border-bottom: 1px solid var(--border); }
   .cart-line .nm { font-weight: 600; color: var(--text-dark); }
   .cart-line .meta { font-size: .78rem; color: var(--text-muted); }
-  .cart-unit { font-size: .8rem; padding: .25rem .4rem; }
   .cart-qty { width: 64px; text-align: center; }
   .cart-amt { min-width: 90px; text-align: right; font-weight: 700; white-space: nowrap; }
   .cart-x { cursor: pointer; color: #dc3545; border: 0; background: none; font-size: 1.1rem; }
@@ -48,7 +47,7 @@
 <div class="pos-wrap">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h3 class="mb-0"><i class="bi bi-shop"></i> Point of Sale</h3>
-    <a href="{{ url_for('dashboard.dashboard') }}" class="btn btn-outline-secondary btn-sm">
+    <a href="{{ url_for('dashboard.index') }}" class="btn btn-outline-secondary btn-sm">
       <i class="bi bi-arrow-left"></i> Dashboard
     </a>
   </div>
@@ -105,9 +104,20 @@
         <span class="pos-change" id="change">{{ currency }} 0.00</span>
       </div>
 
-      <button id="checkout" class="btn btn-success w-100 btn-lg" disabled>
-        <i class="bi bi-check2-circle"></i> Complete Sale
-      </button>
+      <div class="d-grid gap-2">
+        <button id="checkout" class="btn btn-success btn-lg" disabled>
+          <i class="bi bi-check2-circle"></i> Complete Sale
+        </button>
+        <button id="holdBtn" class="btn btn-warning btn-lg" disabled>
+          <i class="bi bi-bookmark-fill"></i> Hold Bill
+        </button>
+        <a href="{{ url_for('list_pos_holds') }}" class="btn btn-info btn-lg">
+          <i class="bi bi-bookmark-check"></i> Held Bills
+        </a>
+        <button id="clearCartBtn" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-trash"></i> Clear Cart
+        </button>
+      </div>
       <div id="posMsg" class="small mt-2"></div>
     </div>
   </div>
@@ -125,35 +135,65 @@
   const paidEl = document.getElementById('paid');
   const changeEl = document.getElementById('change');
   const checkoutBtn = document.getElementById('checkout');
+  const holdBtn = document.getElementById('holdBtn');
+  const clearCartBtn = document.getElementById('clearCartBtn');
   const msg = document.getElementById('posMsg');
 
-  let cart = [];          // {id, name, price, qty, stock, unit, units, unitKey, unitName, factor}
+  let cart = [];          // {id, name, price, qty, stock, unit, unit_id, unit_name, unit_factor}
   let lookupTimer = null;
+  let resumedHoldId = null;
+
+  // Check if resuming a held bill
+  const params = new URLSearchParams(window.location.search);
+  const holdIdParam = params.get('hold_id');
+  if (holdIdParam && /^\d+$/.test(holdIdParam)) {
+    resumedHoldId = parseInt(holdIdParam);
+    // Load the held bill data via API (if available)
+    fetch("/pos/held-bills/" + holdIdParam)
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok) {
+          // Restore complete cart with unit metadata preserved
+          cart = (data.cart || []).map(line => ({
+            id: line.item_id,
+            item_id: line.item_id,
+            name: line.name || '',
+            price: line.price,
+            qty: line.qty,
+            stock: line.stock,
+            unit: line.unit_name || 'Pcs',
+            unit_id: line.unit_id || '',
+            unit_name: line.unit_name,
+            unit_factor: line.unit_factor || 1,
+          }));
+          document.getElementById('customer').value = data.customer_id || '';
+          document.getElementById('account').value = data.account_id || '';
+          document.getElementById('paid').value = data.amount_paid || 0;
+          render();
+        } else {
+          flash('Failed to load held bill: ' + (data.error || 'Unknown error'), true);
+        }
+      })
+      .catch(err => {
+        flash('Network error loading held bill', true);
+        console.error('Failed to load held bill:', err);
+      });
+  }
 
   const money = n => Number(n || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
   const cartTotal = () => cart.reduce((s, l) => s + l.price * l.qty, 0);
 
   function refocus() { scan.focus(); }
 
-  // Remembers the last unit a counter sold this item in (per browser), so a
-  // frequently-sold-by-the-box item doesn't need re-picking every time — while
-  // staying just as fast for anything sold in its base unit (the default).
-  function pickDefaultUnit(it) {
-    const saved = localStorage.getItem('posUnit:' + it.id);
-    return it.units.find(u => u.key === saved) || it.units[0];
-  }
-
   function render() {
     cartEl.innerHTML = '';
     cart.forEach((l, i) => {
       const row = document.createElement('div');
       row.className = 'cart-line';
-      const unitOptions = l.units.map(u =>
-        '<option value="' + u.key + '"' + (u.key === l.unitKey ? ' selected' : '') + '>' + u.name + '</option>').join('');
+      const unitDisplay = l.unit_name || l.unit || 'Pcs';
       row.innerHTML =
         '<div><div class="nm">' + l.name + '</div>' +
-        '<div class="meta">' + money(l.price) + ' / ' + l.unitName + ' · ' + l.stock + ' ' + l.unit + ' in stock</div></div>' +
-        '<select class="form-select form-select-sm cart-unit" data-u="' + i + '">' + unitOptions + '</select>' +
+        '<div class="meta">' + money(l.price) + ' each · ' + l.stock + ' in stock · ' + unitDisplay + '</div></div>' +
         '<input type="number" min="1" class="form-control form-control-sm cart-qty" value="' + l.qty + '" data-i="' + i + '">' +
         '<div class="d-flex align-items-center gap-2">' +
         '<span class="cart-amt">' + money(l.price * l.qty) + '</span>' +
@@ -163,6 +203,7 @@
     cartEmpty.style.display = cart.length ? 'none' : 'block';
     totalEl.textContent = money(cartTotal());
     checkoutBtn.disabled = cart.length === 0;
+    holdBtn.disabled = cart.length === 0;
     updateChange();
   }
 
@@ -176,12 +217,21 @@
     if (it.stock <= 0) { flash(it.name + ' is out of stock.', true); return; }
     const found = cart.find(l => l.id === it.id);
     if (found) {
-      if ((found.qty + 1) * found.factor > it.stock) { flash('Only ' + it.stock + ' ' + it.unit + ' in stock.', true); return; }
+      if (found.qty + 1 > it.stock) { flash('Only ' + it.stock + ' in stock.', true); return; }
       found.qty += 1;
     } else {
-      const u = pickDefaultUnit(it);
-      cart.push({ id: it.id, name: it.name, stock: it.stock, unit: it.unit, units: it.units,
-                  unitKey: u.key, unitName: u.name, factor: u.factor, price: u.price, qty: 1 });
+      cart.push({
+        id: it.id,
+        item_id: it.id,
+        name: it.name,
+        price: it.price,
+        qty: 1,
+        stock: it.stock,
+        unit: it.unit,
+        unit_id: '',  // Base unit by default
+        unit_name: null,
+        unit_factor: 1,
+      });
     }
     results.innerHTML = '';
     scan.value = '';
@@ -198,7 +248,7 @@
       d.innerHTML = '<div><div class="nm">' + it.name + '</div>' +
         '<div class="meta">' + (it.barcode ? it.barcode + ' · ' : '') + money(it.price) + '</div></div>' +
         '<div class="' + (it.stock > 0 ? 'meta' : 'oos') + '">' +
-        (it.stock > 0 ? (it.stock + ' ' + it.unit + ' in stock') : 'Out of stock') + '</div>';
+        (it.stock > 0 ? (it.stock + ' in stock') : 'Out of stock') + '</div>';
       d.addEventListener('click', () => addItem(it));
       results.appendChild(d);
     });
@@ -233,27 +283,8 @@
     let qty = parseInt(e.target.value || '1', 10);
     const line = cart[i];
     if (qty < 1) qty = 1;
-    if (qty * line.factor > line.stock) {
-      qty = Math.max(1, Math.floor(line.stock / line.factor));
-      e.target.value = qty;
-      flash('Only ' + line.stock + ' ' + line.unit + ' in stock.', true);
-    }
+    if (qty > line.stock) { qty = line.stock; e.target.value = qty; flash('Only ' + line.stock + ' in stock.', true); }
     line.qty = qty;
-    render();
-  });
-
-  cartEl.addEventListener('change', function (e) {
-    const u = e.target.getAttribute('data-u');
-    if (u === null) return;
-    const line = cart[u];
-    const chosen = line.units.find(x => x.key === e.target.value);
-    if (!chosen) return;
-    line.unitKey = chosen.key; line.unitName = chosen.name; line.factor = chosen.factor; line.price = chosen.price;
-    if (line.qty * line.factor > line.stock) {
-      line.qty = Math.max(1, Math.floor(line.stock / line.factor));
-      flash('Adjusted quantity to fit available stock.', true);
-    }
-    localStorage.setItem('posUnit:' + line.id, line.unitKey);
     render();
   });
 
@@ -290,7 +321,8 @@
           customer_id: document.getElementById('customer').value,
           account_id: document.getElementById('account').value,
           amount_paid: paidEl.value || 0,
-          items: cart.map(l => ({ item_id: l.id, qty: l.qty, price: l.price, unit_id: l.unitKey })),
+          items: cart.map(l => ({ item_id: l.id, qty: l.qty, price: l.price, unit_id: l.unit_id || '' })),
+          hold_id: resumedHoldId,
         }),
       });
       const data = await r.json();
@@ -303,6 +335,39 @@
     } catch (err) {
       flash('Network error — please try again.', true);
       checkoutBtn.disabled = false;
+    }
+  });
+
+  holdBtn.addEventListener('click', async function () {
+    if (!cart.length) return;
+    holdBtn.disabled = true;
+    flash('Saving…', false);
+    try {
+      const r = await fetch("{{ url_for('pos_hold') }}", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+        body: JSON.stringify({
+          customer_id: document.getElementById('customer').value,
+          account_id: document.getElementById('account').value,
+          amount_paid: paidEl.value || 0,
+          items: cart.map(l => ({ item_id: l.id, qty: l.qty, price: l.price, unit_id: l.unit_id || '' })),
+          hold_id: resumedHoldId,
+        }),
+      });
+      const data = await r.json();
+      if (!data.ok) { flash(data.error || 'Failed to hold bill.', true); holdBtn.disabled = false; return; }
+      cart = []; paidEl.value = ''; render();
+      flash('Bill held successfully.', false);
+      refocus();
+    } catch (err) {
+      flash('Network error — please try again.', true);
+      holdBtn.disabled = false;
+    }
+  });
+
+  clearCartBtn.addEventListener('click', function () {
+    if (cart.length && confirm('Clear cart?')) {
+      cart = []; paidEl.value = ''; render(); refocus();
     }
   });
 

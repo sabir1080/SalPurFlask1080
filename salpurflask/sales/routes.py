@@ -8,16 +8,18 @@ from flask_login import current_user
 
 from salpurflask.extensions import db
 from salpurflask.models import (
-    Sale, SaleItem, SaleReturn, Customer, Item, CustomerPayment, FinancialAccount,
+    Sale, SaleItem, SaleReturn, Customer, Item, CustomerPayment, FinancialAccount, PosHold,
     MONEY, resolve_item_unit, line_base_qty,
     calc_discount_tax, allocate_document_number, assert_not_posted, assert_not_numbered,
     post_document, reverse_document, Quotation,
 )
+from salpurflask.models.business_config import BusinessCategory
 from salpurflask.auth import verified_required, manager_required, admin_required
 from salpurflask.utils import (
-    now_local, get_paginated_results, csv_response, excel_response
+    now_local, get_paginated_results, csv_response, excel_response, get_item_locked
 )
 from sqlalchemy import or_ as sql_or
+from sqlalchemy.orm import joinedload
 
 
 # ─── HELPER FUNCTIONS (SALES-SPECIFIC) ─────────────────────────────────────
@@ -42,7 +44,7 @@ def sale_total(sale):
 @verified_required
 def sale():
     """Display sales and allow creation of new sales."""
-    from app import validate_line_rows, get_item_locked, sale_total as app_sale_total
+    from app import validate_line_rows, sale_total as app_sale_total
     from app import record_audit, sync_customer_sale, item_add_stock, item_remove_stock
 
     search = request.args.get("search", "").strip()
@@ -162,7 +164,7 @@ def sale():
 @manager_required
 def edit_sale(id):
     """Edit an existing sale."""
-    from app import validate_line_rows, get_item_locked, record_audit
+    from app import validate_line_rows, record_audit
     from app import sync_customer_sale, item_add_stock, item_remove_stock
     from app import remove_customer_ledger_entry, recalculate_customer_ledger
 
@@ -323,7 +325,7 @@ def get_sale_returned_qty(sale_id):
 @verified_required
 def sale_return():
     """Display and create sale returns."""
-    from app import get_item_locked, item_add_stock, item_remove_stock
+    from app import item_add_stock, item_remove_stock
     from app import remove_customer_ledger_entry, recalculate_customer_ledger
     from app import sync_customer_sale_return, post_document
 
@@ -429,7 +431,7 @@ def sale_return():
 @admin_required
 def delete_sale_return(id):
     """Delete a sale return."""
-    from app import get_item_locked, item_remove_stock
+    from app import item_remove_stock
     from app import remove_customer_ledger_entry, recalculate_customer_ledger
 
     sr = db.session.get(SaleReturn, id) or abort(404)
@@ -485,10 +487,11 @@ def get_walkin_customer():
 @manager_required
 def pos():
     """POS main screen."""
-    from app import active_accounts
+    from app import active_accounts, Item
 
     return render_template(
         "pos.html",
+        items=Item.query.order_by(Item.name).all(),
         customers=Customer.query.order_by(Customer.name).all(),
         accounts=active_accounts(),
         walkin=get_walkin_customer(),
@@ -504,12 +507,14 @@ def pos_lookup():
     q = (request.args.get("q") or "").strip()
     if not q:
         return {"items": []}
-    exact = Item.query.filter_by(barcode=q).first()
+    # Only show items with business_category_id (new configurable system)
+    exact = Item.query.filter(Item.barcode == q, Item.business_category_id != None).first()
     if exact:
         matches = [exact]
     else:
         matches = (Item.query
                    .filter(sql_or(Item.name.ilike(f"%{q}%"), Item.barcode.ilike(f"%{q}%")))
+                   .filter(Item.business_category_id != None)
                    .order_by(Item.name).limit(20).all())
     return {"items": [{
         "id": it.id, "name": it.name, "barcode": it.barcode or "",
@@ -524,7 +529,7 @@ def pos_lookup():
 @manager_required
 def pos_checkout():
     """Ring up a POS sale."""
-    from app import get_item_locked, item_remove_stock, sync_customer_sale
+    from app import item_remove_stock, sync_customer_sale
     from app import sync_customer_receipt, post_document, record_audit
     from app import parse_account_id, PAYMENT_METHODS, PostingError
 
@@ -606,6 +611,14 @@ def pos_checkout():
         db.session.commit()
         record_audit("create", "Sale", sal.id, f"POS sale {sal.invoice_no}, total {float(total):,.2f}")
 
+        # Delete the hold record if this was a resumed hold
+        hold_id = data.get("hold_id")
+        if hold_id and str(hold_id).isdigit():
+            hold = db.session.get(PosHold, int(hold_id))
+            if hold:
+                db.session.delete(hold)
+                db.session.commit()
+
         change = (amount_paid - total) if amount_paid > total else Decimal("0")
         return {"ok": True, "sale_id": sal.id, "invoice_no": sal.invoice_no,
                 "total": float(total), "paid": float(amount_paid), "change": float(change),
@@ -629,6 +642,191 @@ def pos_receipt(id):
     received = get_sale_received(sal.id)
     return render_template("pos_receipt.html", sale=sal,
                            total=sale_total(sal), received=received)
+
+
+# ─── POS BILL HOLD ROUTES ──────────────────────────────────────────────────
+
+
+@manager_required
+def pos_hold():
+    """Hold a POS bill (save temporarily without processing). Updates existing hold if hold_id provided."""
+    import json
+
+    data = request.get_json(silent=True) or {}
+    lines = data.get("items") or []
+
+    if not lines:
+        return {"ok": False, "error": "Cart is empty."}, 400
+
+    customer_id = data.get("customer_id")
+    if not customer_id:
+        return {"ok": False, "error": "Customer required."}, 400
+
+    customer = db.session.get(Customer, int(customer_id))
+    if not customer:
+        return {"ok": False, "error": "Customer not found."}, 400
+
+    account_id = data.get("account_id")
+    if account_id:
+        account = db.session.get(FinancialAccount, int(account_id))
+        if not account:
+            account_id = None
+
+    try:
+        # Enrich cart data with complete unit metadata before saving
+        enriched_lines = []
+        for ln in lines:
+            item_id = int(ln.get("item_id", 0))
+            item_obj = db.session.get(Item, item_id)
+            if not item_obj:
+                return {"ok": False, "error": f"Item {item_id} not found."}, 400
+
+            # Get unit metadata
+            unit_id = str(ln.get("unit_id") or "").strip()
+            unit_name, unit_factor = resolve_item_unit(item_obj, unit_id)
+
+            enriched_lines.append({
+                "item_id": int(ln["item_id"]),
+                "qty": int(ln["qty"]),
+                "price": float(ln["price"]),
+                "unit_id": unit_id,  # Save the unit_id to restore it exactly
+                "unit_name": unit_name,
+                "unit_factor": unit_factor,
+                "stock": item_obj.stock,
+                "name": item_obj.name,
+            })
+
+        # Check if updating existing hold (optimistic locking)
+        hold_id = data.get("hold_id")
+        if hold_id and str(hold_id).isdigit():
+            hold = db.session.get(PosHold, int(hold_id))
+            if hold:
+                # Update existing hold with version increment
+                hold.customer_id = int(customer_id)
+                hold.cart_data = json.dumps(enriched_lines)
+                hold.notes = data.get("notes", "").strip() or None
+                hold.account_id = account_id if account_id else None
+                hold.amount_paid_memo = Decimal(str(data.get("amount_paid") or 0)).quantize(MONEY) if data.get("amount_paid") else None
+                hold.version += 1  # Increment for optimistic locking
+            else:
+                # Hold not found, create new
+                hold = PosHold(
+                    customer_id=int(customer_id),
+                    user_id=current_user.id,
+                    cart_data=json.dumps(enriched_lines),
+                    notes=data.get("notes", "").strip() or None,
+                    account_id=account_id if account_id else None,
+                    amount_paid_memo=Decimal(str(data.get("amount_paid") or 0)).quantize(MONEY) if data.get("amount_paid") else None,
+                )
+                db.session.add(hold)
+        else:
+            # Create new hold
+            hold = PosHold(
+                customer_id=int(customer_id),
+                user_id=current_user.id,
+                cart_data=json.dumps(enriched_lines),
+                notes=data.get("notes", "").strip() or None,
+                account_id=account_id if account_id else None,
+                amount_paid_memo=Decimal(str(data.get("amount_paid") or 0)).quantize(MONEY) if data.get("amount_paid") else None,
+            )
+            db.session.add(hold)
+
+        db.session.commit()
+
+        return {
+            "ok": True,
+            "hold_id": hold.id,
+            "hold_no": f"HOLD-{hold.id:05d}",
+        }
+    except Exception as e:
+        db.session.rollback()
+        import logging
+        logging.exception("pos_hold failed")
+        return {"ok": False, "error": f"Failed to hold bill: {e}"}, 500
+
+
+@manager_required
+def list_pos_holds():
+    """List held POS bills."""
+    from salpurflask.models import PosHold
+
+    search = request.args.get("search", "").strip()
+    sort = request.args.get("sort", "hold_time").strip()
+    query = (PosHold.query
+             .filter_by(status="held")
+             .options(joinedload(PosHold.user), joinedload(PosHold.customer)))
+
+    if search:
+        query = query.filter(
+            Customer.name.ilike(f"%{search}%")
+        )
+
+    query = query.outerjoin(Customer)
+
+    if sort == "customer":
+        query = query.order_by(Customer.name.asc())
+    elif sort == "total":
+        query = query.order_by(PosHold.id.desc())  # Can't order by computed property
+    else:
+        query = query.order_by(PosHold.hold_time.desc())
+
+    holds, pagination = get_paginated_results(query)
+
+    return render_template(
+        "pos_held_bills.html",
+        holds=holds,
+        pagination=pagination,
+        search=search,
+        sort=sort,
+    )
+
+
+@manager_required
+def get_pos_hold(id):
+    """Fetch a held bill as JSON for resuming. Returns complete cart with unit metadata."""
+    import json
+
+    hold = db.session.get(PosHold, id)
+    if not hold:
+        return {"ok": False, "error": "Hold not found."}, 404
+
+    try:
+        cart = json.loads(hold.cart_data)
+
+        # Validate and refresh stock levels for each item (stock may have changed since hold was created)
+        for line in cart:
+            item = db.session.get(Item, line.get("item_id"))
+            if item:
+                line["stock"] = item.stock
+                line["name"] = item.name
+
+        return {
+            "ok": True,
+            "hold_id": hold.id,
+            "hold_no": f"HOLD-{hold.id:05d}",
+            "customer_id": hold.customer_id,
+            "account_id": hold.account_id,
+            "amount_paid": float(hold.amount_paid_memo or 0),
+            "notes": hold.notes or "",
+            "cart": cart,
+        }
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to load hold: {e}"}, 500
+
+
+@manager_required
+def delete_pos_hold(id):
+    """Delete a held bill."""
+    from salpurflask.models import PosHold
+
+    hold = db.session.get(PosHold, id)
+    if not hold:
+        return redirect(url_for("list_pos_holds"))
+
+    db.session.delete(hold)
+    db.session.commit()
+    flash(f"Hold HOLD-{hold.id:05d} deleted.", "info")
+    return redirect(url_for("list_pos_holds"))
 
 
 # ─── DELIVERY CHALLAN ROUTES ──────────────────────────────────────────────
@@ -860,8 +1058,6 @@ def export_customer_sale_report():
 @manager_required
 def export_category_sale_report():
     """Export category-wise profit report (CSV/XLSX)."""
-    from salpurflask.models import Category
-
     start_date_str = request.form.get("start_date", "")
     end_date_str = request.form.get("end_date", "")
     if not start_date_str or not end_date_str:
@@ -872,17 +1068,17 @@ def export_category_sale_report():
         end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
         category_sale = (
             db.session.query(
-                Category.name.label("name"),
+                BusinessCategory.name.label("name"),
                 db.func.sum(SaleItem.amount).label("sale_amt"),
                 db.func.sum(SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.unit_factor * SaleItem.cost_price).label("profit_amt"),
             )
             .select_from(SaleItem)
             .join(Sale, SaleItem.sale_id == Sale.id)
             .join(Item, SaleItem.item_id == Item.id)
-            .join(Category, Item.category_id == Category.id)
+            .join(BusinessCategory, Item.business_category_id == BusinessCategory.id)
             .filter(Sale.date.between(start_date, end_date))
-            .group_by(Category.name)
-            .order_by(Category.name)
+            .group_by(BusinessCategory.name)
+            .order_by(BusinessCategory.name)
             .all()
         )
         col_headers = ["Category", "Sale Amount", "Profit Amount"]
