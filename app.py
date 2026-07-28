@@ -203,6 +203,7 @@ login_manager.init_app(app)
 # Must happen AFTER db.init_app(app)
 # Wildcard import is safe here because salpurflask.models explicitly defines __all__
 from salpurflask.models import *
+from salpurflask.models.business_config import BusinessCategory
 from salpurflask.utils import (
     now_local, get_paginated_results, csv_response, excel_response,
     is_demo_mode, barcode_taken, write_csv_header,
@@ -211,8 +212,10 @@ from salpurflask.utils import (
 
 # Register blueprints
 from salpurflask.routes import auth_bp, dashboard_bp
+from salpurflask.routes.admin_config import config_bp
 app.register_blueprint(auth_bp)
 app.register_blueprint(dashboard_bp)
+app.register_blueprint(config_bp)
 
 # Register inventory routes directly (not via blueprint, to preserve endpoint names)
 from salpurflask.inventory.routes import (
@@ -235,6 +238,7 @@ from salpurflask.sales.routes import (
     sale, edit_sale, delete_sale,
     sale_return, delete_sale_return, sale_invoice,
     pos, pos_lookup, pos_checkout, pos_receipt,
+    pos_hold, list_pos_holds, get_pos_hold, delete_pos_hold,
     delivery_challans, create_delivery_challan, update_delivery_challan,
     export_sale_report, export_date_sale_report, export_item_sale_report,
     export_customer_sale_report, export_category_sale_report, export_sale_return_report
@@ -303,6 +307,10 @@ app.add_url_rule("/pos", "pos", pos, methods=["GET"])
 app.add_url_rule("/pos/lookup", "pos_lookup", pos_lookup, methods=["GET"])
 app.add_url_rule("/pos/checkout", "pos_checkout", pos_checkout, methods=["POST"])
 app.add_url_rule("/pos/receipt/<int:id>", "pos_receipt", pos_receipt, methods=["GET"])
+app.add_url_rule("/pos/hold", "pos_hold", pos_hold, methods=["POST"])
+app.add_url_rule("/pos/held-bills", "list_pos_holds", list_pos_holds, methods=["GET"])
+app.add_url_rule("/pos/held-bills/<int:id>", "get_pos_hold", get_pos_hold, methods=["GET"])
+app.add_url_rule("/pos/held-bills/<int:id>/delete", "delete_pos_hold", delete_pos_hold, methods=["POST"])
 app.add_url_rule("/delivery_challans", "delivery_challans", delivery_challans, methods=["GET"])
 app.add_url_rule("/delivery_challans/create", "create_delivery_challan", create_delivery_challan, methods=["POST"])
 app.add_url_rule("/delivery_challans/<int:id>/update", "update_delivery_challan", update_delivery_challan, methods=["POST"])
@@ -1122,13 +1130,6 @@ def parse_payment_amount(amount_str):
     amount = float(amount_str)
     return amount if amount > 0 else None
 
-def get_item_locked(item_id):
-    """Fetch an Item row FOR UPDATE so concurrent stock changes serialize instead
-    of racing (two simultaneous sales could otherwise both pass the stock check
-    and oversell, or two purchases could lose one update). It's a real row lock on
-    PostgreSQL; on SQLite it's a harmless no-op since SQLite serializes writes."""
-    return db.session.query(Item).filter_by(id=item_id).with_for_update().first()
-
 def validate_line_rows(rows, qty_idx=1, price_idx=2):
     """Validate quantity (positive whole number) and price (non-negative) for each
     parsed line-item row tuple. Returns an error string for the first bad row, or None."""
@@ -1502,6 +1503,13 @@ def migrate_database():
             with db.engine.begin() as conn:
                 conn.execute(text("ALTER TABLE financial_account ADD COLUMN parent_id INTEGER REFERENCES financial_account(id)"))
 
+    # Optimistic locking for hold bills to prevent race conditions
+    if "pos_hold" in inspector.get_table_names():
+        cols = {col["name"] for col in inspector.get_columns("pos_hold")}
+        if "version" not in cols:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE pos_hold ADD COLUMN version INTEGER NOT NULL DEFAULT 1"))
+
     # Weighted-average costing: what the stock on hand actually cost.
     if "item" in inspector.get_table_names():
         cols = {col["name"] for col in inspector.get_columns("item")}
@@ -1643,7 +1651,7 @@ def _safe_referrer():
     ref = request.referrer
     if ref and urlsplit(ref).netloc == urlsplit(request.host_url).netloc:
         return ref
-    return url_for("index")
+    return url_for("dashboard.index")
 
 @app.errorhandler(400)
 def error_400(e):
@@ -2022,17 +2030,17 @@ def reports():
                 )
                 category_profit = (
                     db.session.query(
-                        Category.name.label("name"),
+                        BusinessCategory.name.label("name"),
                         db.func.sum(_sale_net).label("sale_amt"),
                         db.func.sum(_sale_prof).label("profit_amt"),
                     )
                     .select_from(SaleItem)
                     .join(Sale, SaleItem.sale_id == Sale.id)
                     .join(Item, SaleItem.item_id == Item.id)
-                    .join(Category, Item.category_id == Category.id)
+                    .join(BusinessCategory, Item.business_category_id == BusinessCategory.id)
                     .filter(Sale.date.between(start_date, end_date))
-                    .group_by(Category.name)
-                    .order_by(Category.name)
+                    .group_by(BusinessCategory.name)
+                    .order_by(BusinessCategory.name)
                     .all()
                 )
                 _pur_net = PurchaseItem.amount
