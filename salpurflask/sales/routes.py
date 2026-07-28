@@ -452,7 +452,7 @@ def delete_sale_return(id):
 @verified_required
 def sale_invoice(id):
     """Display sale invoice with payment details."""
-    from app import get_payment_status
+    from app import get_payment_status, get_sale_received, get_sale_returned_qty
 
     sale      = db.session.get(Sale, id) or abort(404)
     received  = get_sale_received(id)
