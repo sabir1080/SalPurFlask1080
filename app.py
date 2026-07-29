@@ -574,19 +574,6 @@ def calc_discount_tax(gross, discount_type, discount_value, tax_percent):
     tax = taxable * tp / 100
     return round(disc, 4), round(tax, 4), round(taxable + tax, 4)
 
-def calc_discount_tax(gross, discount_type, discount_value, tax_percent):
-    """Returns (discount_amt, tax_amt, net_total). discount_type: 'percent' or 'fixed'."""
-    gross = float(gross or 0)          # tolerate Decimal/str inputs
-    dv = float(discount_value or 0)
-    tp = float(tax_percent or 0)
-    if discount_type == "fixed":
-        disc = min(dv, gross)
-    else:
-        disc = gross * dv / 100
-    taxable = gross - disc
-    tax = taxable * tp / 100
-    return round(disc, 4), round(tax, 4), round(taxable + tax, 4)
-
 def purchase_item_total(pi):
     gross = float(pi.quantity * pi.purchase_price)
     _, _, net = calc_discount_tax(gross, pi.discount_type or "percent", pi.discount_value or 0, pi.tax_percent or 0)
