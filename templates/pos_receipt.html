@@ -82,11 +82,11 @@
       {% set total_tax = total_tax + line_tax %}
     {% endfor %}
     <tr><td>Subtotal</td><td></td><td class="r">{{ currency }} {{ subtotal | fmt_num }}</td></tr>
-    {% if total_disc > 0 %}
-    <tr><td>Discount</td><td></td><td class="r">- {{ total_disc | fmt_num }}</td></tr>
+    {% if total_disc > 0.01 %}
+    <tr><td>Discount</td><td></td><td class="r">- {{ currency }} {{ total_disc | fmt_num }}</td></tr>
     {% endif %}
-    {% if total_tax > 0 %}
-    <tr><td>Tax</td><td></td><td class="r">+ {{ total_tax | fmt_num }}</td></tr>
+    {% if total_tax > 0.01 %}
+    <tr><td>Tax</td><td></td><td class="r">+ {{ currency }} {{ total_tax | fmt_num }}</td></tr>
     {% endif %}
     <tr class="tot"><td>GRAND TOTAL</td><td></td><td class="r">{{ currency }} {{ total | fmt_num }}</td></tr>
     <tr><td>Paid</td><td></td><td class="r">{{ received | fmt_num }}</td></tr>
