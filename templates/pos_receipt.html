@@ -74,11 +74,11 @@
         {% set disc_pct = (si.discount_amount / (si.quantity * si.sale_price) * 100) | round(1) %}
       {% endif %}
       <tr>
-        <td colspan="5" class="barcode">{{ si.item.barcode or 'N/A' }}</td>
+        <td colspan="5" class="barcode">{% if si.item %}{{ si.item.barcode or 'N/A' }}{% else %}N/A{% endif %}</td>
       </tr>
       <tr>
         <td></td>
-        <td class="item-name">{{ si.item.name }}</td>
+        <td class="item-name">{% if si.item %}{{ si.item.name }}{% else %}[Unknown Item]{% endif %}</td>
         <td class="r">{{ si.sale_price | fmt_num }}</td>
         <td class="r">{{ disc_pct }}%</td>
         <td class="r">{{ si.amount | fmt_num }}</td>
