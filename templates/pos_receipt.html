@@ -90,30 +90,21 @@
 
   <!-- Summary section -->
   <table>
-    {% set subtotal = 0 %}
-    {% set total_qty = 0 %}
-    {% set total_disc = 0 %}
-    {% set total_tax = 0 %}
-    {% set gross_amt = 0 %}
-
+    {% set ns = namespace(qty=0, gross=0, disc=0, tax=0) %}
     {% for si in sale.line_items %}
-      {% set line_gross = si.quantity * si.sale_price %}
-      {% set line_disc = si.discount_amount or 0 %}
-      {% set line_tax = si.tax_amount or 0 %}
-      {% set subtotal = subtotal + line_gross %}
-      {% set total_qty = total_qty + si.quantity %}
-      {% set total_disc = total_disc + line_disc %}
-      {% set total_tax = total_tax + line_tax %}
-      {% set gross_amt = gross_amt + line_gross %}
+      {% set ns.qty = ns.qty + si.quantity %}
+      {% set ns.gross = ns.gross + (si.quantity * si.sale_price) %}
+      {% set ns.disc = ns.disc + (si.discount_amount or 0) %}
+      {% set ns.tax = ns.tax + (si.tax_amount or 0) %}
     {% endfor %}
 
-    <tr class="summary-row"><td>Total Qty</td><td></td><td></td><td></td><td class="r">{{ total_qty }}</td></tr>
-    <tr class="summary-row"><td>Gross Amt</td><td></td><td></td><td></td><td class="r">{{ currency }} {{ gross_amt | fmt_num }}</td></tr>
-    {% if total_disc > 0.01 %}
-    <tr class="summary-row"><td>Total Disc</td><td></td><td></td><td></td><td class="r">- {{ currency }} {{ total_disc | fmt_num }}</td></tr>
+    <tr class="summary-row"><td>Total Qty</td><td></td><td></td><td></td><td class="r">{{ ns.qty }}</td></tr>
+    <tr class="summary-row"><td>Gross Amt</td><td></td><td></td><td></td><td class="r">{{ currency }} {{ ns.gross | fmt_num }}</td></tr>
+    {% if ns.disc > 0.01 %}
+    <tr class="summary-row"><td>Total Disc</td><td></td><td></td><td></td><td class="r">- {{ currency }} {{ ns.disc | fmt_num }}</td></tr>
     {% endif %}
-    {% if total_tax > 0.01 %}
-    <tr class="summary-row"><td>Tax</td><td></td><td></td><td></td><td class="r">+ {{ currency }} {{ total_tax | fmt_num }}</td></tr>
+    {% if ns.tax > 0.01 %}
+    <tr class="summary-row"><td>Tax</td><td></td><td></td><td></td><td class="r">+ {{ currency }} {{ ns.tax | fmt_num }}</td></tr>
     {% endif %}
     <tr class="tot"><td>NET TOTAL</td><td></td><td></td><td></td><td class="r">{{ currency }} {{ total | fmt_num }}</td></tr>
   </table>
