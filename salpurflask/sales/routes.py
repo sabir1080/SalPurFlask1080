@@ -552,20 +552,11 @@ def pos_checkout():
 
     try:
         first = lines[0]
-        sal = Sale(
-            customer_id=int(customer_id),
-            item_id=int(first["item_id"]),
-            quantity=int(first["qty"]),
-            sale_price=float(first["price"]),
-            cost_price=0.0,
-            discount_type="percent", discount_value=0, discount_amount=0,
-            tax_percent=0, tax_amount=0,
-            date=now_local(), notes="POS sale",
-        )
-        db.session.add(sal)
-        db.session.flush()
-
         total = Decimal("0")
+        first_item_data = None
+        processed_lines = []
+
+        # Validate all items, calculate totals, remove stock
         for ln in lines:
             item_obj = get_item_locked(int(ln["item_id"]))
             if item_obj is None:
@@ -581,19 +572,66 @@ def pos_checkout():
                 db.session.rollback()
                 return {"ok": False,
                         "error": f"Only {item_obj.stock} {item_obj.unit} × {item_obj.name} in stock."}, 400
+
+            # Calculate discount and tax
             gross = qty_i * price_f
             d_type = str(ln.get("discount_type") or "percent")
             d_val = float(ln.get("discount_value") or 0)
             tax_pct = float(ln.get("tax_percent") or 0)
             disc_amt, tax_amt, net = calc_discount_tax(gross, d_type, d_val, tax_pct)
             total += Decimal(str(net)).quantize(MONEY)
+
+            # Store processed line data
+            line_data = {
+                "item_obj": item_obj,
+                "qty_i": qty_i,
+                "price_f": price_f,
+                "unit_name": unit_name,
+                "unit_factor": unit_factor,
+                "base_qty": base_qty,
+                "d_type": d_type,
+                "d_val": d_val,
+                "tax_pct": tax_pct,
+                "disc_amt": disc_amt,
+                "tax_amt": tax_amt,
+                "net": net,
+            }
+            processed_lines.append(line_data)
+
+            # Capture first item for Sale record
+            if ln == first:
+                first_item_data = line_data
+
+            # Remove stock
             unit_cost = item_obj.avg_cost
-            db.session.add(SaleItem(
-                sale_id=sal.id, item_id=item_obj.id, quantity=qty_i, sale_price=price_f,
-                cost_price=float(unit_cost), discount_type=d_type, discount_value=d_val,
-                discount_amount=disc_amt, tax_percent=tax_pct, tax_amount=tax_amt, amount=net,
-                unit_name=unit_name, unit_factor=unit_factor))
             item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)))
+
+        # Create Sale record with first item data
+        first = first_item_data
+        sal = Sale(
+            customer_id=int(customer_id),
+            item_id=int(lines[0]["item_id"]),
+            quantity=first["qty_i"],
+            sale_price=float(first["price_f"]),
+            cost_price=float(first["item_obj"].avg_cost),
+            discount_type=first["d_type"], discount_value=float(first["d_val"]),
+            discount_amount=first["disc_amt"],
+            tax_percent=float(first["tax_pct"]), tax_amount=first["tax_amt"],
+            date=now_local(), notes="POS sale",
+        )
+        db.session.add(sal)
+        db.session.flush()
+
+        # Add all SaleItems
+        for line_data in processed_lines:
+            unit_cost = line_data["item_obj"].avg_cost
+            db.session.add(SaleItem(
+                sale_id=sal.id, item_id=line_data["item_obj"].id, quantity=line_data["qty_i"],
+                sale_price=line_data["price_f"], cost_price=float(unit_cost),
+                discount_type=line_data["d_type"], discount_value=line_data["d_val"],
+                discount_amount=line_data["disc_amt"], tax_percent=line_data["tax_pct"],
+                tax_amount=line_data["tax_amt"], amount=line_data["net"],
+                unit_name=line_data["unit_name"], unit_factor=line_data["unit_factor"]))
 
         db.session.flush()
         db.session.refresh(sal)
