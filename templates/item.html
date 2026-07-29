@@ -2,8 +2,27 @@
 
 {% extends 'base.html' %}
 {% block content %}
+<script>
+// AGGRESSIVE: Clear ALL localStorage on item list page load
+// This prevents stale form data from appearing
+try {
+    // Clear anything with 'edit' or 'form' in the key
+    const allKeys = Object.keys(localStorage);
+    allKeys.forEach(key => {
+        if (key.toLowerCase().includes('edit') ||
+            key.toLowerCase().includes('form') ||
+            key.toLowerCase().includes('item')) {
+            console.log('Removing old key:', key);
+            localStorage.removeItem(key);
+        }
+    });
+    console.log('localStorage cleaned on item list page load');
+} catch(e) {
+    console.log('localStorage cleanup error (expected in some cases):', e.message);
+}
+</script>
 {% set form_data = form_data|default({}) %}
-    <div class="d-flex justify-content-between align-items-center mb-2">
+    <div class="d-flex justify-content-between align-items-center mb-2 mt-4">
         <h2>Manage Items</h2>
         <form method="POST" action="{{ url_for('send_low_stock_alert') }}" class="d-inline">
             <button type="submit" class="btn btn-outline-danger btn-sm"
@@ -19,10 +38,10 @@
                 <input type="text" class="form-control" name="search" placeholder="Search by item or category" value="{{ search }}">
             </div>
             <div class="col-md-4">
-                <select class="form-control" name="category_id">
+                <select class="form-control" name="business_category_id">
                     <option value="">All Categories</option>
-                    {% for category in categories %}
-                    <option value="{{ category.id }}" {% if category_filter|string == category.id|string %}selected{% endif %}>{{ category.name }}</option>
+                    {% for category in business_categories %}
+                    <option value="{{ category.id }}" {% if business_category_filter|string == category.id|string %}selected{% endif %}>{{ category.name }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -31,8 +50,10 @@
             </div>
         </div>
     </form>
-  {% if not categories %}
-    <div class="alert alert-warning">No categories found. Please <a href="{{ url_for('category') }}">add a category</a> before adding items.</div>
+  {% if not business_categories %}
+    <div class="alert alert-warning">
+      No business categories are enabled. Please visit <a href="{{ url_for('admin_config.index') }}">Business Configuration</a> to enable at least one category before creating items.
+    </div>
   {% endif %}
     <form method="POST" class="mb-4">
         <div class="mb-3">
@@ -40,13 +61,18 @@
             <input type="text" class="form-control" id="name" name="name" value="{{ form_data.get('name', '') }}" required>
         </div>
         <div class="mb-3">
-            <label for="category_id" class="form-label">Category</label>
-            <select class="form-control" id="category_id" name="category_id" required>
+            <label for="business_category_id" class="form-label">Category</label>
+            <select class="form-control" id="business_category_id" name="business_category_id" required>
                 <option value="">Select Category</option>
-                {% for category in categories %}
-                <option value="{{ category.id }}" {% if form_data.get('category_id', '')|string == category.id|string %}selected{% endif %}>{{ category.name }}</option>
+                {% for category in business_categories %}
+                <option value="{{ category.id }}"
+                        data-category-name="{{ category.name }}"
+                        {% if form_data.get('business_category_id', '')|string == category.id|string %}selected{% endif %}>
+                    {{ category.name }}
+                </option>
                 {% endfor %}
             </select>
+            <small class="text-muted">Showing enabled business categories. Configure more in Admin Settings.</small>
         </div>
         <div class="mb-3">
             <label for="unit" class="form-label">Unit of Measure</label>
@@ -78,6 +104,18 @@
                    placeholder="Scan or type the item's code" value="{{ form_data.get('barcode', '') }}">
         </div>
 
+        <!-- CATEGORY-SPECIFIC FIELDS -->
+        <div id="categoryFieldsContainer" style="display:none;">
+            <div class="card border-0 shadow-sm mb-3">
+                <div class="card-header bg-light fw-semibold">
+                    <span id="categoryFieldsTitle">Category-Specific Fields</span>
+                </div>
+                <div class="card-body" id="categoryFieldsBody">
+                    <!-- Fields will be loaded dynamically -->
+                </div>
+            </div>
+        </div>
+
         <div class="card border-0 shadow-sm mb-3">
             <div class="card-header bg-light fw-semibold d-flex justify-content-between align-items-center">
                 <span>Alternate Units</span>
@@ -103,9 +141,195 @@
             </div>
         </div>
 
-        <button type="submit" class="btn btn-primary" title="Save new inventory item" {% if not categories %}disabled{% endif %}>Add Item</button>
+        <button type="submit" class="btn btn-primary" title="Save new inventory item" {% if not business_categories %}disabled{% endif %}>Add Item</button>
     </form>
 <script>
+// AUTO-SAVE FORM DATA TO localStorage
+const FORM_STORAGE_KEY = 'itemFormData';
+
+// Save form data whenever user types
+function saveFormData() {
+  const formData = {
+    name: document.getElementById('name').value,
+    business_category_id: document.getElementById('business_category_id').value,
+    unit: document.getElementById('unit').value,
+    opening_stock: document.getElementById('opening_stock').value,
+    reorder_level: document.getElementById('reorder_level').value,
+    purchase_price: document.getElementById('purchase_price').value,
+    sale_price: document.getElementById('sale_price').value,
+    barcode: document.getElementById('barcode').value,
+  };
+  localStorage.setItem(FORM_STORAGE_KEY, JSON.stringify(formData));
+}
+
+// Restore form data from localStorage on page load
+function restoreFormData() {
+  const saved = localStorage.getItem(FORM_STORAGE_KEY);
+  if (!saved) return;
+
+  try {
+    const formData = JSON.parse(saved);
+    if (formData.name) document.getElementById('name').value = formData.name;
+    if (formData.business_category_id) document.getElementById('business_category_id').value = formData.business_category_id;
+    if (formData.unit) document.getElementById('unit').value = formData.unit;
+    if (formData.opening_stock) document.getElementById('opening_stock').value = formData.opening_stock;
+    if (formData.reorder_level) document.getElementById('reorder_level').value = formData.reorder_level;
+    if (formData.purchase_price) document.getElementById('purchase_price').value = formData.purchase_price;
+    if (formData.sale_price) document.getElementById('sale_price').value = formData.sale_price;
+    if (formData.barcode) document.getElementById('barcode').value = formData.barcode;
+  } catch (e) {
+    console.error('Failed to restore form data:', e);
+  }
+}
+
+// Clear saved data on successful submission
+document.querySelector('form[method="POST"]').addEventListener('submit', function() {
+  localStorage.removeItem(FORM_STORAGE_KEY);
+});
+
+// DYNAMIC CATEGORY FIELDS
+async function loadCategoryFields() {
+  const categoryId = document.getElementById('business_category_id').value;
+  const container = document.getElementById('categoryFieldsContainer');
+  const body = document.getElementById('categoryFieldsBody');
+
+  if (!categoryId) {
+    container.style.display = 'none';
+    return;
+  }
+
+  try {
+    const response = await fetch(`/admin/config/api/category/${categoryId}/fields`);
+    if (!response.ok) throw new Error('Failed to load fields');
+
+    const fields = await response.json();
+
+    if (!fields || fields.length === 0) {
+      container.style.display = 'none';
+      return;
+    }
+
+    // Group fields by tab
+    const fieldsByTab = {};
+    fields.forEach(field => {
+      const tab = field.tab_name || 'General';
+      if (!fieldsByTab[tab]) fieldsByTab[tab] = [];
+      fieldsByTab[tab].push(field);
+    });
+
+    // Build tabs and fields HTML
+    const tabsHtml = Object.keys(fieldsByTab).map(tab => `
+      <li class="nav-item">
+        <button class="nav-link ${Object.keys(fieldsByTab)[0] === tab ? 'active' : ''}"
+                id="tab-${tab.replace(/\s+/g, '-')}-tab"
+                data-bs-toggle="tab"
+                data-bs-target="#tab-${tab.replace(/\s+/g, '-')}"
+                type="button">
+          ${tab}
+        </button>
+      </li>
+    `).join('');
+
+    const contentHtml = Object.entries(fieldsByTab).map(([tab, tabFields]) => `
+      <div class="tab-pane fade ${Object.keys(fieldsByTab)[0] === tab ? 'show active' : ''}"
+           id="tab-${tab.replace(/\s+/g, '-')}">
+        ${tabFields.map(field => renderField(field)).join('')}
+      </div>
+    `).join('');
+
+    body.innerHTML = `
+      <ul class="nav nav-tabs" role="tablist">
+        ${tabsHtml}
+      </ul>
+      <div class="tab-content mt-3">
+        ${contentHtml}
+      </div>
+    `;
+
+    container.style.display = 'block';
+
+    // Initialize Bootstrap tabs
+    const tabs = body.querySelectorAll('[data-bs-toggle="tab"]');
+    tabs.forEach(tab => new bootstrap.Tab(tab));
+
+  } catch (error) {
+    console.error('Error loading category fields:', error);
+    container.style.display = 'none';
+  }
+}
+
+function renderField(field) {
+  const fieldId = `category_field_${field.id}`;
+  const required = field.is_required ? 'required' : '';
+  const requiredLabel = field.is_required ? '<span class="text-danger">*</span>' : '';
+
+  let inputHtml = '';
+
+  switch (field.field_type) {
+    case 'text':
+      inputHtml = `<input type="text" class="form-control" id="${fieldId}" name="${field.field_name}"
+                           placeholder="${field.placeholder || ''}" ${required}>`;
+      break;
+    case 'number':
+      inputHtml = `<input type="number" class="form-control" id="${fieldId}" name="${field.field_name}"
+                           placeholder="${field.placeholder || ''}" ${required}>`;
+      break;
+    case 'date':
+      inputHtml = `<input type="date" class="form-control" id="${fieldId}" name="${field.field_name}" ${required}>`;
+      break;
+    case 'select':
+      const options = field.options && Array.isArray(field.options) ? field.options : [];
+      inputHtml = `
+        <select class="form-select" id="${fieldId}" name="${field.field_name}" ${required}>
+          <option value="">Select ${field.field_label}...</option>
+          ${options.map(opt => `<option value="${opt}">${opt}</option>`).join('')}
+        </select>`;
+      break;
+    case 'boolean':
+      inputHtml = `
+        <div class="form-check">
+          <input type="checkbox" class="form-check-input" id="${fieldId}" name="${field.field_name}" value="true">
+          <label class="form-check-label" for="${fieldId}">${field.help_text || ''}</label>
+        </div>`;
+      break;
+    case 'textarea':
+      inputHtml = `<textarea class="form-control" id="${fieldId}" name="${field.field_name}"
+                              placeholder="${field.placeholder || ''}" ${required}></textarea>`;
+      break;
+    default:
+      inputHtml = `<input type="text" class="form-control" id="${fieldId}" name="${field.field_name}" ${required}>`;
+  }
+
+  return `
+    <div class="mb-3">
+      <label for="${fieldId}" class="form-label">
+        ${field.field_label}
+        ${requiredLabel}
+      </label>
+      ${inputHtml}
+      ${field.help_text ? `<small class="text-muted d-block mt-1">${field.help_text}</small>` : ''}
+    </div>
+  `;
+}
+
+// Add event listeners to all form inputs
+['name', 'business_category_id', 'unit', 'opening_stock', 'reorder_level', 'purchase_price', 'sale_price', 'barcode'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) {
+    el.addEventListener('input', saveFormData);
+    el.addEventListener('change', saveFormData);
+  }
+});
+
+// Load category fields when category changes
+document.getElementById('business_category_id').addEventListener('change', loadCategoryFields);
+
+// Restore data when page loads
+document.addEventListener('DOMContentLoaded', function() {
+  restoreFormData();
+  loadCategoryFields();
+});
+
 function addUnitRow() {
     const tbody = document.getElementById('unitsBody');
     const tr = document.createElement('tr');
@@ -138,7 +362,15 @@ function addUnitRow() {
                 <tr>
                     <td>{{ item.id }}</td>
                     <td>{{ item.name }}</td>
-                    <td>{{ item.id_category.name if item.id_category else 'N/A' }}</td>
+                    <td>
+                        {% if item.business_category %}
+                            {{ item.business_category.name }}
+                        {% elif item.id_category %}
+                            {{ item.id_category.name }}
+                        {% else %}
+                            N/A
+                        {% endif %}
+                    </td>
                     <td><span class="badge bg-secondary">{{ item.unit or 'Pcs' }}</span></td>
                     <td class="text-muted">{{ item.opening_stock | fmt_num }}</td>
                     <td class="fw-semibold {% if item.stock <= item.reorder_level %}text-danger{% else %}text-success{% endif %}">

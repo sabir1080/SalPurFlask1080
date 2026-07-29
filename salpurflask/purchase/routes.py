@@ -18,7 +18,7 @@ from salpurflask.models import (
 )
 from salpurflask.auth import verified_required, manager_required, admin_required
 from salpurflask.utils import (
-    now_local, get_paginated_results, csv_response, excel_response
+    now_local, get_paginated_results, csv_response, excel_response, get_item_locked
 )
 
 
@@ -110,7 +110,7 @@ def validate_supplier_payment(supplier_id, amount, purchase_id=None, exclude_pay
 @verified_required
 def purchase():
     """Display purchases and allow creation of new purchases."""
-    from app import validate_line_rows, get_item_locked, purchase_total as app_purchase_total
+    from app import validate_line_rows, purchase_total as app_purchase_total
     from app import record_audit
 
     search = request.args.get("search", "").strip()
@@ -215,7 +215,7 @@ def purchase():
 @manager_required
 def edit_purchase(id):
     """Edit an existing purchase."""
-    from app import validate_line_rows, get_item_locked, purchase_total as app_purchase_total
+    from app import validate_line_rows, purchase_total as app_purchase_total
     from app import record_audit, remove_supplier_ledger_entry, recalculate_supplier_ledger
 
     pur = db.session.get(Purchase, id) or abort(404)
@@ -359,7 +359,7 @@ def delete_purchase(id):
 @verified_required
 def purchase_return():
     """Display purchase returns and allow creation of new returns."""
-    from app import get_item_locked, remove_supplier_ledger_entry, recalculate_supplier_ledger
+    from app import remove_supplier_ledger_entry, recalculate_supplier_ledger
 
     search = request.args.get("search", "").strip()
     query = PurchaseReturn.query.order_by(PurchaseReturn.date.desc())
@@ -462,7 +462,7 @@ def purchase_return():
 @admin_required
 def delete_purchase_return(id):
     """Delete a purchase return."""
-    from app import get_item_locked, remove_supplier_ledger_entry, recalculate_supplier_ledger
+    from app import remove_supplier_ledger_entry, recalculate_supplier_ledger
 
     pr = db.session.get(PurchaseReturn, id) or abort(404)
     assert_not_posted("purchase_return", pr.id, f"Purchase return #{pr.id}")

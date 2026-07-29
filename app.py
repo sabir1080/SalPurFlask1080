@@ -1195,6 +1195,12 @@ def migrate_database():
                       + COALESCE((SELECT SUM(pr.quantity) FROM purchase_return pr WHERE pr.item_id = item.id), 0)
                       - COALESCE((SELECT SUM(sr.quantity) FROM sale_return sr WHERE sr.item_id = item.id), 0)
                 """))
+        if "default_tax_percent" not in item_columns:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE item ADD COLUMN default_tax_percent DECIMAL(5,2) DEFAULT 0.0"))
+        if "is_taxable" not in item_columns:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE item ADD COLUMN is_taxable BOOLEAN DEFAULT TRUE"))
     # Multi-unit: the unit a line was transacted in, and its factor into the item's
     # base unit. Nullable/default-1, so every existing row reads back as "the base
     # unit, factor 1" — exactly what it always implicitly was.

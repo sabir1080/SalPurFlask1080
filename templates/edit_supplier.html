@@ -56,5 +56,55 @@
 
     </form>
 
+<script>
+// AUTO-SAVE EDIT FORM DATA TO localStorage
+const EDIT_SUPPLIER_STORAGE_KEY = 'editSupplierFormData';
+const SUPPLIER_ID = {{ supplier.id }};
+
+// Save form data whenever user types
+function saveEditSupplierFormData() {
+  const formData = {
+    name: document.getElementById('name').value,
+    contact: document.getElementById('contact').value,
+    address: document.getElementById('address').value,
+    opening_balance: document.getElementById('opening_balance').value,
+  };
+  localStorage.setItem(EDIT_SUPPLIER_STORAGE_KEY + '_' + SUPPLIER_ID, JSON.stringify(formData));
+}
+
+// Restore form data from localStorage on page load
+function restoreEditSupplierFormData() {
+  const saved = localStorage.getItem(EDIT_SUPPLIER_STORAGE_KEY + '_' + SUPPLIER_ID);
+  if (!saved) return;
+
+  try {
+    const formData = JSON.parse(saved);
+    if (formData.name) document.getElementById('name').value = formData.name;
+    if (formData.contact) document.getElementById('contact').value = formData.contact;
+    if (formData.address) document.getElementById('address').value = formData.address;
+    if (formData.opening_balance) document.getElementById('opening_balance').value = formData.opening_balance;
+  } catch (e) {
+    console.error('Failed to restore edit form data:', e);
+  }
+}
+
+// Clear saved data on successful submission
+document.querySelector('form[method="POST"]').addEventListener('submit', function() {
+  localStorage.removeItem(EDIT_SUPPLIER_STORAGE_KEY + '_' + SUPPLIER_ID);
+});
+
+// Add event listeners to all form inputs
+['name', 'contact', 'address', 'opening_balance'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) {
+    el.addEventListener('input', saveEditSupplierFormData);
+    el.addEventListener('change', saveEditSupplierFormData);
+  }
+});
+
+// Restore data when page loads
+document.addEventListener('DOMContentLoaded', restoreEditSupplierFormData);
+</script>
+
 {% endblock %}
 

@@ -434,7 +434,7 @@ ${tblClone.outerHTML}
                             {% else %}<span class="badge bg-info text-dark">{{ p.line_items | length }} items</span>{% endif %}
                         </td>
                         <td>
-                            {% if p.line_items | length == 1 %}{{ p.line_items[0].item.id_category.name if p.line_items[0].item.id_category else 'N/A' }}
+                            {% if p.line_items | length == 1 %}{{ p.line_items[0].item.business_category.name if p.line_items[0].item.business_category else (p.line_items[0].item.id_category.name if p.line_items[0].item.id_category else 'N/A') }}
                             {% else %}—{% endif %}
                         </td>
                         <td class="text-end">{{ p.line_items | sum(attribute='base_quantity') | fmt_num }}</td>

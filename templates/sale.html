@@ -62,7 +62,7 @@
                         <option value="">Select Item</option>
                         {% for it in items %}
                         <option value="{{ it.id }}" data-sale-price="{{ it.sale_price or '' }}" data-stock="{{ it.stock }}" data-unit="{{ it.unit or 'Pcs' }}">
-                            {{ it.name }}{% if it.id_category %} ({{ it.id_category.name }}){% endif %}
+                            {{ it.name }}{% if it.business_category %} ({{ it.business_category.name }}){% elif it.id_category %} ({{ it.id_category.name }}){% endif %}
                         </option>
                         {% endfor %}
                     </select>

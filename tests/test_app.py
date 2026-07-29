@@ -1,6 +1,7 @@
 """Smoke tests for the health endpoint, stock-locking helper, and timezone."""
 from datetime import datetime
-from app import app, db, Category, Item, get_item_locked, to_local, localdt_filter
+from app import app, db, Category, Item, to_local, localdt_filter
+from salpurflask.utils import get_item_locked
 
 
 def test_health_ok():

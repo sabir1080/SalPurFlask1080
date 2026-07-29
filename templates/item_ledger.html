@@ -19,7 +19,7 @@
             Item Ledger — <span class="text-primary">{{ item.name }}</span>
         </h2>
         <div class="d-flex flex-wrap gap-3 text-muted small mt-1">
-            <span>Category: <strong>{{ item.id_category.name if item.id_category else '—' }}</strong></span>
+            <span>Category: <strong>{{ item.business_category.name if item.business_category else (item.id_category.name if item.id_category else '—') }}</strong></span>
             <span>Unit: <strong><span class="badge bg-secondary">{{ item.unit or 'Pcs' }}</span></strong></span>
         <span>Current Stock: <strong class="{% if item.stock <= item.reorder_level %}text-danger{% else %}text-success{% endif %}">{{ item.stock | fmt_num }} {{ item.unit or 'Pcs' }}</strong></span>
             <span>Purchase Price: <strong>{{ item.purchase_price | fmt_num if item.purchase_price else '—' }}</strong></span>

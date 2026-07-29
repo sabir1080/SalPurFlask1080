@@ -12,7 +12,7 @@
 {% endblock %}
 {% block content %}
 {% set form_data = form_data|default({}) %}
-    <h2>Manage Customers</h2>
+    <h2 class="mt-4">Manage Customers</h2>
     <form method="GET" class="mb-3 no-print">
         <div class="input-group">
             <input type="text" class="form-control" name="search" placeholder="Search by name" value="{{ search }}">
@@ -55,6 +55,58 @@
     </div>
     {% endif %}
     <a href="{{ url_for('customer_receipt') }}" class="btn btn-outline-primary mb-3 no-print" title="View and record receipts received from customers">Customer Receipts</a>
+
+<script>
+// AUTO-SAVE FORM DATA TO localStorage
+const CUSTOMER_FORM_STORAGE_KEY = 'customerFormData';
+
+// Save form data whenever user types
+function saveCustomerFormData() {
+  const formData = {
+    name: document.getElementById('name').value,
+    contact: document.getElementById('contact').value,
+    address: document.getElementById('address').value,
+    opening_balance: document.getElementById('opening_balance').value,
+  };
+  localStorage.setItem(CUSTOMER_FORM_STORAGE_KEY, JSON.stringify(formData));
+}
+
+// Restore form data from localStorage on page load
+function restoreCustomerFormData() {
+  const saved = localStorage.getItem(CUSTOMER_FORM_STORAGE_KEY);
+  if (!saved) return;
+
+  try {
+    const formData = JSON.parse(saved);
+    if (formData.name) document.getElementById('name').value = formData.name;
+    if (formData.contact) document.getElementById('contact').value = formData.contact;
+    if (formData.address) document.getElementById('address').value = formData.address;
+    if (formData.opening_balance) document.getElementById('opening_balance').value = formData.opening_balance;
+  } catch (e) {
+    console.error('Failed to restore form data:', e);
+  }
+}
+
+// Clear saved data on successful submission
+const customerForm = document.querySelector('form[method="POST"]');
+if (customerForm) {
+  customerForm.addEventListener('submit', function() {
+    localStorage.removeItem(CUSTOMER_FORM_STORAGE_KEY);
+  });
+
+  // Add event listeners to all form inputs
+  ['name', 'contact', 'address', 'opening_balance'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('input', saveCustomerFormData);
+      el.addEventListener('change', saveCustomerFormData);
+    }
+  });
+}
+
+// Restore data when page loads
+document.addEventListener('DOMContentLoaded', restoreCustomerFormData);
+</script>
     <table class="table table-bordered">
         <thead>
             <tr>

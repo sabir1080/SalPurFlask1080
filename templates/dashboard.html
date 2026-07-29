@@ -252,7 +252,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 {% for item in items if item.stock <= item.reorder_level %}
                 <tr>
                     <td>{{ item.name }}</td>
-                    <td>{{ item.id_category.name if item.id_category else 'N/A' }}</td>
+                    <td>{{ item.business_category.name if item.business_category else (item.id_category.name if item.id_category else 'N/A') }}</td>
                     <td class="text-end text-danger fw-semibold">{{ item.stock | fmt_num }}</td>
                     <td class="text-end">{{ item.reorder_level | fmt_num }}</td>
                 </tr>

@@ -53,7 +53,7 @@
                         {% for it in items %}
                         <option value="{{ it.id }}" data-sale-price="{{ it.sale_price or '' }}" data-stock="{{ it.stock }}" data-unit="{{ it.unit or 'Pcs' }}"
                             {% if it.id == si.item_id %}selected{% endif %}>
-                            {{ it.name }}{% if it.id_category %} ({{ it.id_category.name }}){% endif %}
+                            {{ it.name }}{% if it.business_category %} ({{ it.business_category.name }}){% elif it.id_category %} ({{ it.id_category.name }}){% endif %}
                         </option>
                         {% endfor %}
                     </select>
@@ -237,5 +237,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     calcGrand();
 });
+
 </script>
 {% endblock %}

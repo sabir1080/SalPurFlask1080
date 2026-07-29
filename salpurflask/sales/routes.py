@@ -520,6 +520,8 @@ def pos_lookup():
         "id": it.id, "name": it.name, "barcode": it.barcode or "",
         "price": float(it.sale_price or 0), "stock": it.stock,
         "unit": it.unit or "Pcs",
+        "default_tax_percent": float(it.default_tax_percent or 0),
+        "is_taxable": bool(it.is_taxable),
         "units": [{"key": u["key"], "name": u["name"], "factor": u["factor"],
                    "price": float(u["sale_price"] or 0) or float(it.sale_price or 0)}
                   for u in item_unit_choices(it)],

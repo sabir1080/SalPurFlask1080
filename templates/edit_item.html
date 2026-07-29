@@ -9,13 +9,18 @@
             <input type="text" class="form-control" id="name" name="name" value="{{ item.name }}" required>
         </div>
         <div class="mb-3">
-            <label for="category_id" class="form-label">Category</label>
-            <select class="form-control" id="category_id" name="category_id" required>
+            <label for="business_category_id" class="form-label">Category</label>
+            <select class="form-control" id="business_category_id" name="business_category_id" required>
                 <option value="">Select Category</option>
-                {% for category in categories %}
-                <option value="{{ category.id }}" {% if item.category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
+                {% for category in business_categories %}
+                <option value="{{ category.id }}"
+                        data-category-name="{{ category.name }}"
+                        {% if item.business_category_id == category.id %}selected{% endif %}>
+                    {{ category.name }}
+                </option>
                 {% endfor %}
             </select>
+            <small class="text-muted">Showing enabled business categories. Configure more in Admin Settings.</small>
         </div>
         <div class="mb-3">
             <label for="unit" class="form-label">Unit of Measure</label>
@@ -49,6 +54,18 @@
             <label for="barcode" class="form-label">Barcode / QR <span class="text-muted small">(for the POS counter — optional)</span></label>
             <input type="text" class="form-control" id="barcode" name="barcode" autocomplete="off"
                    placeholder="Scan or type the item's code" value="{{ item.barcode or '' }}">
+        </div>
+
+        <!-- CATEGORY-SPECIFIC FIELDS -->
+        <div id="categoryFieldsContainer" style="display:none;">
+            <div class="card border-0 shadow-sm mb-3">
+                <div class="card-header bg-light fw-semibold">
+                    <span id="categoryFieldsTitle">Category-Specific Fields</span>
+                </div>
+                <div class="card-body" id="categoryFieldsBody">
+                    <!-- Fields will be loaded dynamically -->
+                </div>
+            </div>
         </div>
 
         <div class="card border-0 shadow-sm mb-3">
@@ -91,6 +108,167 @@
         <a href="{{ url_for('item') }}" class="btn btn-secondary">Cancel</a>
     </form>
 <script>
+// Form data management disabled to prevent localStorage conflicts
+// Data is preserved on page reload via browser's built-in form state
+const ITEM_ID = {{ item.id }};
+
+// Placeholder functions for compatibility
+function saveEditItemFormData() {
+  // Auto-save disabled - form data preserved via browser session
+}
+
+function restoreEditItemFormData() {
+  // Auto-restore disabled - form loads from server
+}
+
+// DYNAMIC CATEGORY FIELDS
+async function loadCategoryFields() {
+  const categoryId = document.getElementById('business_category_id').value;
+  const container = document.getElementById('categoryFieldsContainer');
+  const body = document.getElementById('categoryFieldsBody');
+
+  if (!categoryId) {
+    container.style.display = 'none';
+    return;
+  }
+
+  try {
+    const response = await fetch(`/admin/config/api/category/${categoryId}/fields`);
+    if (!response.ok) throw new Error('Failed to load fields');
+
+    const fields = await response.json();
+
+    if (!fields || fields.length === 0) {
+      container.style.display = 'none';
+      return;
+    }
+
+    // Group fields by tab
+    const fieldsByTab = {};
+    fields.forEach(field => {
+      const tab = field.tab_name || 'General';
+      if (!fieldsByTab[tab]) fieldsByTab[tab] = [];
+      fieldsByTab[tab].push(field);
+    });
+
+    // Build tabs and fields HTML
+    const tabsHtml = Object.keys(fieldsByTab).map(tab => `
+      <li class="nav-item">
+        <button class="nav-link ${Object.keys(fieldsByTab)[0] === tab ? 'active' : ''}"
+                id="tab-${tab.replace(/\s+/g, '-')}-tab"
+                data-bs-toggle="tab"
+                data-bs-target="#tab-${tab.replace(/\s+/g, '-')}"
+                type="button">
+          ${tab}
+        </button>
+      </li>
+    `).join('');
+
+    const contentHtml = Object.entries(fieldsByTab).map(([tab, tabFields]) => `
+      <div class="tab-pane fade ${Object.keys(fieldsByTab)[0] === tab ? 'show active' : ''}"
+           id="tab-${tab.replace(/\s+/g, '-')}">
+        ${tabFields.map(field => renderField(field)).join('')}
+      </div>
+    `).join('');
+
+    body.innerHTML = `
+      <ul class="nav nav-tabs" role="tablist">
+        ${tabsHtml}
+      </ul>
+      <div class="tab-content mt-3">
+        ${contentHtml}
+      </div>
+    `;
+
+    container.style.display = 'block';
+
+    // Initialize Bootstrap tabs
+    const tabs = body.querySelectorAll('[data-bs-toggle="tab"]');
+    tabs.forEach(tab => new bootstrap.Tab(tab));
+
+  } catch (error) {
+    console.error('Error loading category fields:', error);
+    container.style.display = 'none';
+  }
+}
+
+function renderField(field) {
+  const fieldId = `category_field_${field.id}`;
+  const required = field.is_required ? 'required' : '';
+  const requiredLabel = field.is_required ? '<span class="text-danger">*</span>' : '';
+
+  let inputHtml = '';
+
+  switch (field.field_type) {
+    case 'text':
+      inputHtml = `<input type="text" class="form-control" id="${fieldId}" name="${field.field_name}"
+                           placeholder="${field.placeholder || ''}" ${required}>`;
+      break;
+    case 'number':
+      inputHtml = `<input type="number" class="form-control" id="${fieldId}" name="${field.field_name}"
+                           placeholder="${field.placeholder || ''}" ${required}>`;
+      break;
+    case 'date':
+      inputHtml = `<input type="date" class="form-control" id="${fieldId}" name="${field.field_name}" ${required}>`;
+      break;
+    case 'select':
+      const options = field.options && Array.isArray(field.options) ? field.options : [];
+      inputHtml = `
+        <select class="form-select" id="${fieldId}" name="${field.field_name}" ${required}>
+          <option value="">Select ${field.field_label}...</option>
+          ${options.map(opt => `<option value="${opt}">${opt}</option>`).join('')}
+        </select>`;
+      break;
+    case 'boolean':
+      inputHtml = `
+        <div class="form-check">
+          <input type="checkbox" class="form-check-input" id="${fieldId}" name="${field.field_name}" value="true">
+          <label class="form-check-label" for="${fieldId}">${field.help_text || ''}</label>
+        </div>`;
+      break;
+    case 'textarea':
+      inputHtml = `<textarea class="form-control" id="${fieldId}" name="${field.field_name}"
+                              placeholder="${field.placeholder || ''}" ${required}></textarea>`;
+      break;
+    default:
+      inputHtml = `<input type="text" class="form-control" id="${fieldId}" name="${field.field_name}" ${required}>`;
+  }
+
+  return `
+    <div class="mb-3">
+      <label for="${fieldId}" class="form-label">
+        ${field.field_label}
+        ${requiredLabel}
+      </label>
+      ${inputHtml}
+      ${field.help_text ? `<small class="text-muted d-block mt-1">${field.help_text}</small>` : ''}
+    </div>
+  `;
+}
+
+// Clear saved data on successful submission
+document.querySelector('form[method="POST"]').addEventListener('submit', function() {
+  localStorage.removeItem(EDIT_ITEM_STORAGE_KEY + '_' + ITEM_ID);
+});
+
+// Add event listeners to all form inputs
+['name', 'business_category_id', 'unit', 'opening_stock', 'reorder_level', 'purchase_price', 'sale_price', 'barcode'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) {
+    el.addEventListener('input', saveEditItemFormData);
+    el.addEventListener('change', saveEditItemFormData);
+  }
+});
+
+// Load category fields when category changes
+document.getElementById('business_category_id').addEventListener('change', loadCategoryFields);
+
+// Restore data and load fields when page loads
+document.addEventListener('DOMContentLoaded', function() {
+  restoreEditItemFormData();
+  loadCategoryFields();
+});
+
 function addUnitRow() {
     const tbody = document.getElementById('unitsBody');
     const tr = document.createElement('tr');
@@ -101,6 +279,29 @@ function addUnitRow() {
         <td><input type="number" step="0.01" min="0" class="form-control form-control-sm" name="alt_unit_sale_price[]"></td>
         <td><button type="button" class="btn btn-danger btn-sm" onclick="this.closest('tr').remove()">×</button></td>`;
     tbody.appendChild(tr);
+}
+
+function clearForm() {
+    document.getElementById('name').value = '';
+    document.getElementById('business_category_id').value = '';
+    document.getElementById('unit').value = 'Pcs';
+    document.getElementById('opening_stock').value = '';
+    document.getElementById('reorder_level').value = '';
+    document.getElementById('purchase_price').value = '';
+    document.getElementById('sale_price').value = '';
+    document.getElementById('barcode').value = '';
+
+    // Clear alternate units table rows
+    const tbody = document.getElementById('unitsBody');
+    if (tbody) {
+        tbody.innerHTML = '';
+    }
+
+    // Clear category fields
+    const categoryFieldsContainer = document.getElementById('categoryFieldsContainer');
+    if (categoryFieldsContainer) {
+        categoryFieldsContainer.innerHTML = '';
+    }
 }
 </script>
 {% endblock %}

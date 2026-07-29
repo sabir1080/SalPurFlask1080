@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+
+{% block title %}Held Bills — {{ company_name }}{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2>Held Bills</h2>
+  <a href="{{ url_for('pos') }}" class="btn btn-outline-primary">
+    <i class="bi bi-arrow-left"></i> Back to POS
+  </a>
+</div>
+
+<div class="card mb-4">
+  <div class="card-body">
+    <form method="GET" class="row g-3">
+      <div class="col-sm-6">
+        <input type="text" class="form-control" name="search" placeholder="Search by customer or hold #" value="{{ search }}">
+      </div>
+      <div class="col-sm-4">
+        <select class="form-select" name="sort">
+          <option value="hold_time" {% if sort == 'hold_time' %}selected{% endif %}>Most Recent</option>
+          <option value="customer" {% if sort == 'customer' %}selected{% endif %}>Customer Name</option>
+          <option value="total" {% if sort == 'total' %}selected{% endif %}>Total Amount</option>
+        </select>
+      </div>
+      <div class="col-sm-2">
+        <button type="submit" class="btn btn-primary w-100">Search</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if holds %}
+<div class="table-responsive">
+  <table class="table table-striped table-hover">
+    <thead class="table-dark">
+      <tr>
+        <th>Hold #</th>
+        <th>Customer</th>
+        <th>Date & Time</th>
+        <th>Items</th>
+        <th>Total</th>
+        <th>Cashier</th>
+        <th>Notes</th>
+        <th class="text-end">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for hold in holds %}
+      <tr>
+        <td><strong>HOLD-{{ "%05d" % hold.id }}</strong></td>
+        <td>{{ hold.customer.name }}</td>
+        <td><small class="text-muted">{{ hold.hold_time.strftime('%Y-%m-%d %H:%M:%S') }}</small></td>
+        <td><span class="badge bg-info">{{ hold.item_count }}</span></td>
+        <td><strong>{{ "%.2f" % hold.total }}</strong></td>
+        <td><small>{{ hold.user.name if hold.user else 'Unknown' }}</small></td>
+        <td><small class="text-muted">{{ hold.notes[:30] if hold.notes else '—' }}</small></td>
+        <td class="text-end">
+          <a href="{{ url_for('pos') }}?hold_id={{ hold.id }}" class="btn btn-sm btn-success" title="Resume this held bill">
+            <i class="bi bi-play-fill"></i> Resume
+          </a>
+          <form action="{{ url_for('delete_pos_hold', id=hold.id) }}" method="POST" style="display:inline;">
+            <button type="submit" class="btn btn-sm btn-danger" title="Delete this held bill" onclick="return confirm('Delete hold HOLD-{{ '%05d' % hold.id }}?')">
+              <i class="bi bi-trash"></i> Delete
+            </button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{{ pagination.links }}
+{% else %}
+<div class="alert alert-info text-center">
+  <i class="bi bi-info-circle"></i> No held bills found.
+</div>
+{% endif %}
+
+{% endblock %}

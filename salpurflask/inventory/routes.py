@@ -19,8 +19,9 @@ from salpurflask.models import (
     item_add_stock, item_remove_stock, _repost_opening, _opening_date,
     assert_not_posted, post_document,
 )
+from salpurflask.models.business_config import BusinessCategory
 from salpurflask.auth import verified_required, manager_required, admin_required
-from salpurflask.utils import now_local, barcode_taken, get_paginated_results, line_base_qty, csv_response, excel_response, parse_import_file
+from salpurflask.utils import now_local, barcode_taken, get_paginated_results, line_base_qty, csv_response, excel_response, parse_import_file, get_item_locked
 
 
 def _purchase_line_value(pi):
@@ -186,21 +187,26 @@ def report_stock():
 @verified_required
 def item():
     """Display items with filters and handle item creation."""
+    from salpurflask.models.business_config import BusinessCategory
+    from salpurflask.services.config_service import ConfigurationService
+
     search = request.args.get("search", "")
+    business_category_filter = request.args.get("business_category_id", "")
     category_filter = request.args.get("category_id", "")
-    query = Item.query.outerjoin(Category)
+    query = Item.query.outerjoin(BusinessCategory, Item.business_category_id == BusinessCategory.id)
     if search:
-        query = query.filter((Item.name.ilike(f"%{search}%")) | (Category.name.ilike(f"%{search}%")))
-    if category_filter.isdigit():
-        query = query.filter(Item.category_id == int(category_filter))
+        query = query.filter((Item.name.ilike(f"%{search}%")) | (BusinessCategory.name.ilike(f"%{search}%")))
+    if business_category_filter.isdigit():
+        query = query.filter(Item.business_category_id == int(business_category_filter))
     items, pagination = get_paginated_results(query)
     categories = Category.query.order_by(Category.name).all()
+    business_categories = ConfigurationService.get_enabled_categories()
     if request.method == "POST":
         if current_user.role not in ("admin", "manager"):
             flash("You do not have permission to add items.", "danger")
             return redirect(url_for("item"))
         name = request.form.get("name", "").strip()
-        category_id = request.form.get("category_id", "").strip()
+        business_category_id = request.form.get("business_category_id", "").strip() or None
         unit = request.form.get("unit", "Pcs").strip()
         opening_stock = request.form.get("opening_stock", "0").strip() or "0"
         reorder_level = request.form.get("reorder_level", "").strip()
@@ -209,11 +215,11 @@ def item():
         barcode = request.form.get("barcode", "").strip() or None
         if unit not in ITEM_UNITS:
             unit = "Pcs"
-        if not categories:
-            flash("Please add a category first before adding items!", "danger")
-        elif not name or not reorder_level or not category_id:
+        if not business_categories:
+            flash("No business categories are enabled. Please enable categories in Admin Settings before adding items!", "danger")
+        elif not name or not reorder_level or not business_category_id:
             flash("Name, Category, and Reorder Level are required!", "danger")
-        elif not category_id.isdigit() or not db.session.get(Category, int(category_id)):
+        elif not business_category_id.isdigit() or not db.session.get(BusinessCategory, int(business_category_id)):
             flash("Please select a valid category!", "danger")
         elif not opening_stock.lstrip("-").isdigit() or not reorder_level.isdigit():
             flash("Opening Stock and Reorder Level must be numbers!", "danger")
@@ -230,7 +236,8 @@ def item():
             os_val = int(opening_stock)
             item_obj = Item(
                 name=name,
-                category_id=int(category_id),
+                category_id=None,  # Using business_category_id instead
+                business_category_id=int(business_category_id),
                 unit=unit,
                 opening_stock=os_val,
                 stock=os_val,
@@ -243,11 +250,31 @@ def item():
             item_obj.inventory_value = (Decimal(str(item_obj.opening_stock or 0))
                                         * Decimal(str(item_obj.purchase_price or 0))).quantize(MONEY)
             db.session.flush()
+
+            # Save category-specific field data
+            if business_category_id and business_category_id.isdigit():
+                from salpurflask.services.config_service import ConfigurationService
+                from salpurflask.models.business_config import ProductField
+
+                category_field_data = {}
+                # Get all field names for this category
+                category_fields = ProductField.query.filter_by(category_id=int(business_category_id)).all()
+                field_names = {f.field_name for f in category_fields}
+
+                # Extract category-specific fields from form
+                for key, value in request.form.items():
+                    if key in field_names and value:
+                        category_field_data[key] = value
+
+                if category_field_data:
+                    ConfigurationService.save_product_category_data(item_obj.id, int(business_category_id), category_field_data)
+
             unit_error = save_item_units(item_obj)
             if unit_error:
                 db.session.rollback()
                 flash(unit_error, "danger")
                 return render_template("item.html", items=items, categories=categories,
+                                       business_categories=business_categories,
                                        pagination=pagination, search=search,
                                        category_filter=category_filter)
             post_item_opening(item_obj)
@@ -261,6 +288,7 @@ def item():
         "item.html",
         items=items,
         categories=categories,
+        business_categories=business_categories,
         pagination=pagination,
         search=search,
         category_filter=category_filter,
@@ -270,11 +298,16 @@ def item():
 @manager_required
 def edit_item(id):
     """Edit an existing item."""
+    from salpurflask.models.business_config import BusinessCategory
+    from salpurflask.services.config_service import ConfigurationService
+
     item = db.session.get(Item, id) or abort(404)
     categories = Category.query.order_by(Category.name).all()
+    business_categories = ConfigurationService.get_enabled_categories()
+
     if request.method == "POST":
         name = request.form.get("name", "").strip()
-        category_id = request.form.get("category_id", "").strip()
+        business_category_id = request.form.get("business_category_id", "").strip() or None
         unit = request.form.get("unit", "Pcs").strip()
         opening_stock = request.form.get("opening_stock", str(item.opening_stock)).strip()
         reorder_level = request.form.get("reorder_level", "").strip()
@@ -283,11 +316,11 @@ def edit_item(id):
         barcode = request.form.get("barcode", "").strip() or None
         if unit not in ITEM_UNITS:
             unit = "Pcs"
-        if not categories:
-            flash("Please add a category first before editing items!", "danger")
-        elif not name or not reorder_level or not category_id:
+        if not business_categories:
+            flash("No business categories are enabled. Please enable categories in Admin Settings!", "danger")
+        elif not name or not reorder_level or not business_category_id:
             flash("Name, Category, and Reorder Level are required!", "danger")
-        elif not category_id.isdigit() or not db.session.get(Category, int(category_id)):
+        elif not business_category_id.isdigit() or not db.session.get(BusinessCategory, int(business_category_id)):
             flash("Please select a valid category!", "danger")
         elif not opening_stock.lstrip("-").isdigit() or not reorder_level.isdigit():
             flash("Opening Stock and Reorder Level must be numbers!", "danger")
@@ -307,13 +340,15 @@ def edit_item(id):
             if stock_adjustment != 0 and (item.purchases or item.sales):
                 flash("Cannot edit opening stock after transactions have been recorded! "
                       "Create a stock adjustment instead to change inventory.", "danger")
-                return render_template("edit_item.html", item=item, categories=categories)
+                return render_template("edit_item.html", item=item, categories=categories,
+                                       business_categories=business_categories)
             # The opening entry is about to be reversed and re-posted, so the
             # inventory value must move by the same amount the GL does.
             old_opening_value = (Decimal(str(item.opening_stock or 0))
                                  * Decimal(str(item.purchase_price or 0))).quantize(MONEY)
             item.name = name
-            item.category_id = int(category_id)
+            item.category_id = None  # Using business_category_id instead
+            item.business_category_id = int(business_category_id)
             item.unit = unit
             item.opening_stock = new_os
             item.reorder_level = int(reorder_level)
@@ -331,8 +366,27 @@ def edit_item(id):
             if unit_error:
                 db.session.rollback()
                 flash(unit_error, "danger")
-                return render_template("edit_item.html", item=item, categories=categories)
+                return render_template("edit_item.html", item=item, categories=categories,
+                                       business_categories=business_categories)
             db.session.flush()
+
+            # Save category-specific field data
+            if business_category_id and business_category_id.isdigit():
+                from salpurflask.models.business_config import ProductField
+
+                category_field_data = {}
+                # Get all field names for this category
+                category_fields = ProductField.query.filter_by(category_id=int(business_category_id)).all()
+                field_names = {f.field_name for f in category_fields}
+
+                # Extract category-specific fields from form
+                for key, value in request.form.items():
+                    if key in field_names and value:
+                        category_field_data[key] = value
+
+                if category_field_data:
+                    ConfigurationService.save_product_category_data(item.id, int(business_category_id), category_field_data)
+
             post_item_opening(item)
             db.session.commit()
             # Import record_audit locally to avoid circular imports
@@ -340,7 +394,8 @@ def edit_item(id):
             record_audit("update", "Item", item.id, f"Item '{item.name}' edited")
             flash("Item updated successfully!", "success")
             return redirect(url_for("item"))
-    return render_template("edit_item.html", item=item, categories=categories)
+    return render_template("edit_item.html", item=item, categories=categories,
+                           business_categories=business_categories)
 
 
 @admin_required
@@ -508,6 +563,8 @@ def import_items(data):
     """Bulk import items from parsed data. Mirrors the validation and GL/valuation
     behavior of the manual /item route so imported items are not silently missing
     their cost basis or accounting entry."""
+    from salpurflask.services.config_service import ConfigurationService
+
     success, failed, errors = 0, 0, []
 
     for idx, row in enumerate(data, 1):
@@ -523,11 +580,12 @@ def import_items(data):
                 errors.append(f"Row {idx}: Missing category")
                 failed += 1
                 continue
-            category = Category.query.filter_by(name=category_name).first()
+            enabled_categories = ConfigurationService.get_enabled_categories()
+            category = next((c for c in enabled_categories if c.name.lower() == category_name.lower()), None)
             if not category:
-                category = Category(name=category_name)
-                db.session.add(category)
-                db.session.flush()
+                errors.append(f"Row {idx}: Category '{category_name}' is not enabled in Business Configuration")
+                failed += 1
+                continue
 
             unit = (row.get('unit', 'Pcs') or 'Pcs').strip()
             if unit not in ITEM_UNITS:
@@ -565,7 +623,8 @@ def import_items(data):
 
             item = Item(
                 name=name,
-                category_id=category.id,
+                category_id=None,
+                business_category_id=category.id,
                 unit=unit,
                 opening_stock=qty,
                 stock=qty,
@@ -756,8 +815,6 @@ def stock_adjustment():
     )
     items = Item.query.order_by(Item.name).all()
     if request.method == "POST":
-        from app import get_item_locked
-
         item_id  = request.form.get("item_id", "").strip()
         adj_type = request.form.get("adj_type", "").strip()
         qty_str  = request.form.get("quantity", "").strip()
@@ -808,8 +865,6 @@ def stock_adjustment():
 @admin_required
 def delete_stock_adjustment(id):
     """Delete a stock adjustment and reverse its effect."""
-    from app import get_item_locked
-
     adj = db.session.get(StockAdjustment, id) or abort(404)
     assert_not_posted("stock_adjustment", adj.id, f"Stock adjustment #{adj.id}")
     item_obj = get_item_locked(adj.item_id)

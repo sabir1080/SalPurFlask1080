@@ -60,7 +60,7 @@
                     <select class="form-select form-select-sm item-select" name="item_id[]" required onchange="fetchPrice(this)">
                         <option value="">Select Item</option>
                         {% for it in items %}
-                        <option value="{{ it.id }}" data-price="{{ it.purchase_price or '' }}">{{ it.name }}{% if it.id_category %} ({{ it.id_category.name }}){% endif %}</option>
+                        <option value="{{ it.id }}" data-price="{{ it.purchase_price or '' }}">{{ it.name }}{% if it.business_category %} ({{ it.business_category.name }}){% elif it.id_category %} ({{ it.id_category.name }}){% endif %}</option>
                         {% endfor %}
                     </select>
                 </td>

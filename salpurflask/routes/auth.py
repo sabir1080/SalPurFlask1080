@@ -46,7 +46,7 @@ def signup():
         flash("Registration is disabled. Contact the administrator.", "warning")
         return redirect(url_for("auth.signin"))
     if current_user.is_authenticated:
-        return redirect(url_for("index"))
+        return redirect(url_for("dashboard.index"))
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         email = request.form.get("email", "").strip().lower()
@@ -97,7 +97,7 @@ def signup():
 @auth_bp.route("/signin", methods=["GET", "POST"])
 def signin():
     if current_user.is_authenticated:
-        return redirect(url_for("index"))
+        return redirect(url_for("dashboard.index"))
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "").strip()
@@ -118,7 +118,7 @@ def signin():
                     record_audit("login", "User", user.id, f"Signed in from {request.remote_addr}")
                     current_app.logger.info("Login OK: %s (role=%s) from %s", email, user.role, request.remote_addr)
                     flash("Signed in successfully!", "success")
-                    return redirect(url_for("index"))
+                    return redirect(url_for("dashboard.index"))
                 current_app.logger.warning("Login FAILED (bad password): %s from %s", email, request.remote_addr)
                 flash("Invalid email or password!", "danger")
             except Exception as e:
@@ -141,7 +141,7 @@ def signout():
 @auth_bp.route("/forgot_password", methods=["GET", "POST"])
 def forgot_password():
     if current_user.is_authenticated:
-        return redirect(url_for("index"))
+        return redirect(url_for("dashboard.index"))
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         if not _check_rate_limit(f"forgot_password:{request.remote_addr}"):
@@ -176,7 +176,7 @@ def forgot_password():
 @auth_bp.route("/reset_password/<token>", methods=["GET", "POST"])
 def reset_password(token):
     if current_user.is_authenticated:
-        return redirect(url_for("index"))
+        return redirect(url_for("dashboard.index"))
     user = User.query.filter_by(reset_token=token).first()
     if not user or not user.reset_token_expiry or user.reset_token_expiry < datetime.now(timezone.utc).replace(tzinfo=None):
         flash("Invalid or expired reset link!", "danger")
@@ -229,7 +229,7 @@ def verify_email(token):
 @auth_bp.route("/resend_verification", methods=["GET", "POST"])
 def resend_verification():
     if current_user.is_authenticated:
-        return redirect(url_for("index"))
+        return redirect(url_for("dashboard.index"))
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         user = User.query.filter_by(email=email).first()

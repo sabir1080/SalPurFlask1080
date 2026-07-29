@@ -19,13 +19,29 @@
   .pos-hit .meta { font-size: .8rem; color: var(--text-muted); }
   .pos-hit .oos { color: #dc3545; font-weight: 600; }
 
-  .cart-line { display: grid; grid-template-columns: 1fr auto auto; gap: .5rem; align-items: center;
-               padding: .5rem 0; border-bottom: 1px solid var(--border); }
+  .cart-line { border-bottom: 1px solid var(--border); padding: .75rem 0; }
   .cart-line .nm { font-weight: 600; color: var(--text-dark); }
-  .cart-line .meta { font-size: .78rem; color: var(--text-muted); }
-  .cart-qty { width: 64px; text-align: center; }
-  .cart-amt { min-width: 90px; text-align: right; font-weight: 700; white-space: nowrap; }
+  .cart-line .meta { font-size: .78rem; color: var(--text-muted); margin-bottom: .5rem; }
+  .cart-line-controls { display: grid; grid-template-columns: 1fr auto auto auto auto auto; gap: .4rem; align-items: center; font-size: .85rem; margin-top: .5rem; }
+  .cart-qty { width: 60px; text-align: center; }
+  .cart-disc { width: 70px; }
+  .cart-tax { width: 60px; }
+  .cart-amt { min-width: 80px; text-align: right; font-weight: 700; white-space: nowrap; }
   .cart-x { cursor: pointer; color: #dc3545; border: 0; background: none; font-size: 1.1rem; }
+
+  /* Hide browser number input spinners - ONLY for cart line inputs */
+  .cart-qty::-webkit-outer-spin-button,
+  .cart-qty::-webkit-inner-spin-button,
+  .cart-disc::-webkit-outer-spin-button,
+  .cart-disc::-webkit-inner-spin-button,
+  .cart-tax::-webkit-outer-spin-button,
+  .cart-tax::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .cart-qty, .cart-disc, .cart-tax {
+    -moz-appearance: textfield;
+  }
 
   /* Payment method as tap-able buttons — faster at a counter than a dropdown, and the
      options (Cash / Card / Bank) are all visible at once instead of hidden in a menu. */
@@ -70,40 +86,6 @@
 
       <hr>
 
-      <!-- Discount & Tax Section -->
-      <div class="mb-3 p-2 border rounded" style="background: var(--surface);">
-        <h6 class="text-muted small mb-2"><i class="bi bi-percent"></i> Discount & Tax</h6>
-
-        <div class="row g-2 mb-2">
-          <div class="col-8">
-            <label class="form-label small mb-1">Discount</label>
-            <div class="input-group input-group-sm">
-              <input id="discountValue" type="number" step="0.01" min="0"
-                     class="form-control" placeholder="0.00">
-              <select id="discountType" class="form-select form-select-sm" style="flex: 0 1 60px;">
-                <option value="percent">%</option>
-                <option value="fixed">Rs</option>
-              </select>
-            </div>
-          </div>
-          <div class="col-4 text-end">
-            <label class="form-label small mb-1">&nbsp;</label>
-            <div class="text-muted small">= <span id="discountAmt">0.00</span></div>
-          </div>
-        </div>
-
-        <div class="row g-2">
-          <div class="col-8">
-            <label class="form-label small mb-1">Tax %</label>
-            <input id="taxPercent" type="number" step="0.01" min="0" max="100"
-                   class="form-control form-control-sm" placeholder="0.00">
-          </div>
-          <div class="col-4 text-end">
-            <label class="form-label small mb-1">&nbsp;</label>
-            <div class="text-muted small">= <span id="taxAmt">0.00</span></div>
-          </div>
-        </div>
-      </div>
 
       <!-- Totals Breakdown -->
       <div class="mb-3 p-2 border rounded" style="background: var(--surface);">
@@ -196,6 +178,7 @@
   let lookupTimer = null;
   let resumedHoldId = null;
   let holdVersion = null;  // For optimistic locking
+  let userEditedPaid = false;  // Track if user manually edited the paid field
 
   // Check if resuming a held bill
   const params = new URLSearchParams(window.location.search);
@@ -227,6 +210,7 @@
           document.getElementById('customer').value = data.customer_id || '';
           document.getElementById('account').value = data.account_id || '';
           document.getElementById('paid').value = data.amount_paid || 0;
+          userEditedPaid = false;  // Reset edit tracking for resumed bill
           render();
         } else {
           flash('Failed to load held bill: ' + (data.error || 'Unknown error'), true);
@@ -249,57 +233,45 @@
 
   function refocus() { scan.focus(); }
 
-  function applyDiscountTax() {
-    const discountValue = parseFloat(document.getElementById('discountValue').value || 0);
-    const discountType = document.getElementById('discountType').value;
-    const taxPercent = parseFloat(document.getElementById('taxPercent').value || 0);
-
-    // Apply to all items in cart
-    cart.forEach(item => {
-      item.discount_type = discountType;
-      item.discount_value = discountValue;
-      item.tax_percent = taxPercent;
-    });
-
-    updateTotalsDisplay();
-  }
-
   function updateTotalsDisplay() {
-    const discountValue = parseFloat(document.getElementById('discountValue').value || 0);
-    const discountType = document.getElementById('discountType').value;
-    const taxPercent = parseFloat(document.getElementById('taxPercent').value || 0);
+    let grandTotal = 0, totalDisc = 0, totalTax = 0;
 
-    // Calculate totals
-    let grossTotal = 0;
     cart.forEach(item => {
-      grossTotal += (item.price * item.qty);
+      const gross = item.price * item.qty;
+      const disc = item.discount_type === 'fixed' ?
+        Math.min(item.discount_value, gross) :
+        (gross * (item.discount_value / 100));
+      const tax = (gross - disc) * (item.tax_percent / 100);
+
+      totalDisc += disc;
+      totalTax += tax;
+      grandTotal += (gross - disc + tax);
     });
 
-    // Apply discount
-    let discountAmt = 0;
-    if (discountType === 'fixed') {
-      discountAmt = Math.min(discountValue, grossTotal);
-    } else {
-      discountAmt = grossTotal * (discountValue / 100);
+    document.getElementById('subtotal').textContent = money(cartTotal());
+    document.getElementById('discountDisplay').textContent = money(totalDisc);
+    document.getElementById('taxDisplay').textContent = money(totalTax);
+    document.getElementById('grandTotal').textContent = money(grandTotal);
+
+    document.getElementById('discountRow').style.display = totalDisc > 0.01 ? 'table-row' : 'none';
+    document.getElementById('taxRow').style.display = totalTax > 0.01 ? 'table-row' : 'none';
+
+    // Auto-fill paid amount if user hasn't manually edited it
+    if (!userEditedPaid) {
+      paidEl.value = money(grandTotal);
     }
 
-    // Apply tax
-    const taxable = grossTotal - discountAmt;
-    const taxAmt = taxable * (taxPercent / 100);
-
-    // Update display
-    document.getElementById('subtotal').textContent = money(grossTotal);
-    document.getElementById('discountDisplay').textContent = money(discountAmt);
-    document.getElementById('taxDisplay').textContent = money(taxAmt);
-    document.getElementById('grandTotal').textContent = money(grossTotal - discountAmt + taxAmt);
-    document.getElementById('discountAmt').textContent = money(discountAmt);
-    document.getElementById('taxAmt').textContent = money(taxAmt);
-
-    // Show/hide rows
-    document.getElementById('discountRow').style.display = discountAmt > 0.01 ? 'table-row' : 'none';
-    document.getElementById('taxRow').style.display = taxAmt > 0.01 ? 'table-row' : 'none';
-
     updateChange();
+    updateCheckoutButtonState();
+    updateHoldButtonState();
+  }
+
+  function calcLineTotal(lineIndex) {
+    const line = cart[lineIndex];
+    const gross = line.price * line.qty;
+    const disc = line.discount_type === 'fixed' ? Math.min(line.discount_value, gross) : (gross * (line.discount_value / 100));
+    const taxAmt = (gross - disc) * (line.tax_percent / 100);
+    return gross - disc + taxAmt;
   }
 
   function render() {
@@ -308,13 +280,29 @@
       const row = document.createElement('div');
       row.className = 'cart-line';
       const unitDisplay = l.unit_name || l.unit || 'Pcs';
+      const gross = l.price * l.qty;
+      const disc = l.discount_type === 'fixed' ? Math.min(l.discount_value, gross) : (gross * (l.discount_value / 100));
+      const tax = (gross - disc) * (l.tax_percent / 100);
+      const lineTotal = gross - disc + tax;
+
       row.innerHTML =
-        '<div><div class="nm">' + l.name + '</div>' +
-        '<div class="meta">' + money(l.price) + ' each · ' + l.stock + ' in stock · ' + unitDisplay + '</div></div>' +
-        '<input type="number" min="1" class="form-control form-control-sm cart-qty" value="' + l.qty + '" data-i="' + i + '">' +
-        '<div class="d-flex align-items-center gap-2">' +
-        '<span class="cart-amt">' + money(l.price * l.qty) + '</span>' +
-        '<button class="cart-x" data-x="' + i + '" title="Remove">&times;</button></div>';
+        '<div class="d-flex justify-content-between align-items-start">' +
+          '<div><div class="nm">' + l.name + '</div>' +
+          '<div class="meta">' + money(l.price) + ' ea · ' + l.stock + ' stock · ' + unitDisplay + '</div></div>' +
+          '<div class="cart-amt">' + money(lineTotal) + '</div>' +
+        '</div>' +
+        '<div class="cart-line-controls">' +
+          '<input type="number" min="1" class="form-control form-control-sm cart-qty" value="' + l.qty + '" data-i="' + i + '" title="Qty">' +
+          '<div class="d-flex gap-1 align-items-center" style="flex: 1; font-size: .8rem; color: var(--text-muted);">Disc:</div>' +
+          '<select class="form-select form-select-sm" style="flex: 0 1 50px; font-size: .8rem;" data-disc-type="' + i + '" onchange="updateLineDiscount(' + i + ')">' +
+            '<option value="percent" ' + (l.discount_type === 'percent' ? 'selected' : '') + '>%</option>' +
+            '<option value="fixed" ' + (l.discount_type === 'fixed' ? 'selected' : '') + '>Rs</option>' +
+          '</select>' +
+          '<input type="number" step="0.01" min="0" class="form-control form-control-sm cart-disc" value="' + l.discount_value + '" data-i="' + i + '" data-disc-val="true" title="Discount" style="font-size: .8rem;" onchange="updateLineDiscount(' + i + ')">' +
+          '<div class="d-flex gap-1 align-items-center" style="flex: 0 1 auto; font-size: .8rem; color: var(--text-muted);">Tax%:</div>' +
+          '<input type="number" step="0.01" min="0" max="100" class="form-control form-control-sm cart-tax" value="' + l.tax_percent + '" data-i="' + i + '" data-tax-val="true" title="Tax %" style="font-size: .8rem;" onchange="updateLineTax(' + i + ')">' +
+          '<button class="btn btn-danger btn-sm cart-x" data-x="' + i + '" title="Remove">&times;</button>' +
+        '</div>';
       cartEl.appendChild(row);
     });
     cartEmpty.style.display = cart.length ? 'none' : 'block';
@@ -324,10 +312,65 @@
     updateTotalsDisplay();
   }
 
+  function updateLineDiscount(i) {
+    const row = document.querySelectorAll('.cart-line')[i];
+    if (!row) return;
+
+    const discTypeSelect = row.querySelector('[data-disc-type]');
+    const discValueInput = row.querySelector('[data-disc-val]');
+
+    if (!discTypeSelect || !discValueInput) return;
+
+    const discType = discTypeSelect.value;
+    const discVal = parseFloat(discValueInput.value || 0);
+
+    cart[i].discount_type = discType;
+    cart[i].discount_value = discVal;
+    updateTotalsDisplay();
+  }
+
+  function updateLineTax(i) {
+    const row = document.querySelectorAll('.cart-line')[i];
+    if (!row) return;
+
+    const taxInput = row.querySelector('[data-tax-val]');
+    if (!taxInput) return;
+
+    // If item is not taxable, lock at 0 and disable
+    if (!cart[i].is_taxable) {
+      taxInput.value = 0;
+      taxInput.disabled = true;
+      flash(cart[i].name + ' is not taxable.', true);
+      updateTotalsDisplay();
+      return;
+    }
+
+    taxInput.disabled = false;
+    const taxVal = parseFloat(taxInput.value || 0);
+    cart[i].tax_percent = taxVal;
+    updateTotalsDisplay();
+  }
+
   function updateChange() {
     const paid = parseFloat(paidEl.value || 0);
     const ch = paid - cartTotal();
     changeEl.textContent = CURR + ' ' + money(ch > 0 ? ch : 0);
+  }
+
+  function updateCheckoutButtonState() {
+    const grandTotal = cartTotal();
+    const amountPaid = parseFloat(paidEl.value || 0);
+
+    const canCheckout =
+      cart.length > 0 &&           // At least one item
+      grandTotal > 0 &&             // Grand total is positive
+      amountPaid > 0;               // Some amount received
+
+    checkoutBtn.disabled = !canCheckout;
+  }
+
+  function updateHoldButtonState() {
+    holdBtn.disabled = cart.length === 0;
   }
 
   function addItem(it) {
@@ -350,7 +393,8 @@
         unit_factor: 1,
         discount_type: 'percent',
         discount_value: 0,
-        tax_percent: 0,
+        tax_percent: parseFloat(it.default_tax_percent || 0),
+        is_taxable: it.is_taxable,
       });
     }
     results.innerHTML = '';
@@ -400,12 +444,15 @@
   cartEl.addEventListener('input', function (e) {
     const i = e.target.getAttribute('data-i');
     if (i === null) return;
-    let qty = parseInt(e.target.value || '1', 10);
-    const line = cart[i];
-    if (qty < 1) qty = 1;
-    if (qty > line.stock) { qty = line.stock; e.target.value = qty; flash('Only ' + line.stock + ' in stock.', true); }
-    line.qty = qty;
-    render();
+
+    if (e.target.classList.contains('cart-qty')) {
+      let qty = parseInt(e.target.value || '1', 10);
+      const line = cart[i];
+      if (qty < 1) qty = 1;
+      if (qty > line.stock) { qty = line.stock; e.target.value = qty; flash('Only ' + line.stock + ' in stock.', true); }
+      line.qty = qty;
+      updateTotalsDisplay();
+    }
   });
 
   cartEl.addEventListener('click', function (e) {
@@ -413,12 +460,20 @@
     if (x !== null) { cart.splice(x, 1); render(); refocus(); }
   });
 
-  paidEl.addEventListener('input', updateChange);
-
-  // Discount/Tax input change listeners
-  document.getElementById('discountValue').addEventListener('input', applyDiscountTax);
-  document.getElementById('discountType').addEventListener('change', applyDiscountTax);
-  document.getElementById('taxPercent').addEventListener('input', applyDiscountTax);
+  // Track manual editing of paid field
+  paidEl.addEventListener('input', function () {
+    if (paidEl.value.trim() === '') {
+      // If user clears it, allow auto-fill again
+      userEditedPaid = false;
+      // Trigger auto-fill with current grand total
+      updateTotalsDisplay();
+    } else {
+      // User is typing/editing, mark as manually edited
+      userEditedPaid = true;
+    }
+    updateChange();
+    updateCheckoutButtonState();
+  });
 
   // Payment method buttons: tap one to select the account the money goes into.
   document.getElementById('payBtns').addEventListener('click', function (e) {
@@ -519,7 +574,7 @@
 
   clearCartBtn.addEventListener('click', function () {
     if (cart.length && confirm('Clear cart?')) {
-      cart = []; paidEl.value = ''; render(); refocus();
+      cart = []; paidEl.value = ''; userEditedPaid = false; render(); refocus();
     }
   });
 

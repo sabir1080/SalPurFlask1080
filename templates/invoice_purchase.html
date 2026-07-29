@@ -173,7 +173,7 @@
                 <tr>
                     <td>{{ loop.index }}</td>
                     <td class="fw-semibold wrap">{{ pi.item.name }}</td>
-                    <td class="text-muted wrap">{{ pi.item.id_category.name if pi.item.id_category else '—' }}</td>
+                    <td class="text-muted wrap">{{ pi.item.business_category.name if pi.item.business_category else (pi.item.id_category.name if pi.item.id_category else '—') }}</td>
                     <td class="text-end text-nowrap">{{ "{:,}".format(pi.quantity) }}<small class="text-muted d-block">{{ pi.display_unit }}</small></td>
                     <td class="text-end">{{ pi.purchase_price | fmt_num }}</td>
                     <td class="text-end text-danger">

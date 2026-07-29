@@ -78,6 +78,9 @@ class Item(db.Model):
     # a document subtracts precisely the amount it added. It also keeps this in
     # step with the Inventory control account, which is posted the same amounts.
     inventory_value     = db.Column(db.Numeric(14, 4), nullable=False, default=0)
+    # Default tax % applied to this item when sold — auto-populated in POS/forms, can be overridden.
+    default_tax_percent = db.Column(db.Numeric(5, 2), nullable=False, default=0.0)
+    is_taxable          = db.Column(db.Boolean, nullable=False, default=True)
     purchases           = db.relationship("Purchase", backref="id_item", lazy=True)
     sales               = db.relationship("Sale", backref="id_item", lazy=True)
     business_category   = db.relationship("BusinessCategory", backref="items", lazy=True, foreign_keys=[business_category_id])

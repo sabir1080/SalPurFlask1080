@@ -16,7 +16,7 @@ pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 # Login manager
 login_manager = LoginManager()
-login_manager.login_view = "signin"
+login_manager.login_view = "auth.signin"
 
 __all__ = [
     'db',
