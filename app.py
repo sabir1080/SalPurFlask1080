@@ -1290,12 +1290,12 @@ def migrate_database():
             INSERT INTO purchase_item
                 (purchase_id, item_id, quantity, purchase_price,
                  discount_type, discount_value, discount_amount,
-                 tax_percent, tax_amount, amount)
+                 tax_percent, tax_amount, amount, unit_factor)
             SELECT p.id, p.item_id, p.quantity, p.purchase_price,
                 COALESCE(p.discount_type,'percent'), COALESCE(p.discount_value,0),
                 COALESCE(p.discount_amount,0), COALESCE(p.tax_percent,0),
                 COALESCE(p.tax_amount,0),
-                COALESCE(p.quantity,0) * COALESCE(p.purchase_price,0)
+                COALESCE(p.quantity,0) * COALESCE(p.purchase_price,0), 1
             FROM purchase p
             WHERE p.item_id IS NOT NULL AND p.quantity IS NOT NULL
               AND p.id NOT IN (SELECT DISTINCT purchase_id FROM purchase_item)
