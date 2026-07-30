@@ -55,14 +55,25 @@ def dashboard():
     items = Item.query.all()
     purchases = Purchase.query.order_by(Purchase.date.desc()).limit(5).all()
     sales = Sale.query.order_by(Sale.date.desc()).limit(5).all()
+    total_purchase_cost = 0.0
+    total_sale_revenue = 0.0
+    total_gross_profit = 0.0
+    _profit_expr = None
+
     try:
         total_purchase_cost = db.session.query(func.sum(PurchaseItem.amount)).scalar() or 0.0
+    except Exception:
+        total_purchase_cost = 0.0
+
+    try:
         total_sale_revenue = db.session.query(func.sum(SaleItem.amount)).scalar() or 0.0
+    except Exception:
+        total_sale_revenue = 0.0
+
+    try:
         _profit_expr = SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.unit_factor * SaleItem.cost_price
         total_gross_profit = db.session.query(func.sum(_profit_expr)).scalar() or 0.0
     except Exception:
-        total_purchase_cost = 0.0
-        total_sale_revenue = 0.0
         total_gross_profit = 0.0
         _profit_expr = None
 
