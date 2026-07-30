@@ -91,15 +91,17 @@ def dashboard():
 
     try:
         if _profit_expr is not None:
+            from sqlalchemy import cast, String
+            month_col = sql_date_fmt(Sale.date, "%Y-%m")
             monthly_sales = (
                 db.session.query(
-                    sql_date_fmt(Sale.date).label("month"),
+                    month_col.label("month"),
                     db.func.sum(SaleItem.amount).label("sale_amt"),
                     db.func.sum(_profit_expr).label("profit_amt"),
                 )
                 .join(SaleItem, SaleItem.sale_id == Sale.id)
-                .group_by(sql_date_fmt(Sale.date))
-                .order_by(sql_date_fmt(Sale.date))
+                .group_by(month_col)
+                .order_by(month_col)
                 .limit(12)
                 .all()
             )
@@ -108,14 +110,15 @@ def dashboard():
     except Exception:
         monthly_sales = []
     try:
+        month_col_purchase = sql_date_fmt(Purchase.date, "%Y-%m")
         monthly_purchases = (
             db.session.query(
-                sql_date_fmt(Purchase.date).label("month"),
+                month_col_purchase.label("month"),
                 db.func.sum(PurchaseItem.amount).label("purchase_amt"),
             )
             .join(PurchaseItem, PurchaseItem.purchase_id == Purchase.id)
-            .group_by(sql_date_fmt(Purchase.date))
-            .order_by(sql_date_fmt(Purchase.date))
+            .group_by(month_col_purchase)
+            .order_by(month_col_purchase)
             .limit(12)
             .all()
         )
