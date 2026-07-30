@@ -49,12 +49,30 @@ def dashboard():
     if current_user.role not in ("admin", "manager"):
         flash("You do not have permission to access this page.", "danger")
         return redirect(url_for("purchase"))
-    (get_total_payable, get_total_paid_suppliers, total_supplier_ledger_balance,
-     sql_date_fmt, get_total_receivable, get_total_received_customers,
-     total_customer_ledger_balance) = _get_dashboard_helpers()
-    items = Item.query.all()
-    purchases = Purchase.query.order_by(Purchase.date.desc()).limit(5).all()
-    sales = Sale.query.order_by(Sale.date.desc()).limit(5).all()
+    try:
+        (get_total_payable, get_total_paid_suppliers, total_supplier_ledger_balance,
+         sql_date_fmt, get_total_receivable, get_total_received_customers,
+         total_customer_ledger_balance) = _get_dashboard_helpers()
+    except Exception as e:
+        import logging
+        logging.error(f"Dashboard helpers import failed: {e}", exc_info=True)
+        flash("Dashboard data unavailable", "warning")
+        return redirect(url_for("purchase"))
+
+    try:
+        items = Item.query.all()
+    except Exception:
+        items = []
+
+    try:
+        purchases = Purchase.query.order_by(Purchase.date.desc()).limit(5).all()
+    except Exception:
+        purchases = []
+
+    try:
+        sales = Sale.query.order_by(Sale.date.desc()).limit(5).all()
+    except Exception:
+        sales = []
     total_purchase_cost = 0.0
     total_sale_revenue = 0.0
     total_gross_profit = 0.0
