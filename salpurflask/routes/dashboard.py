@@ -55,42 +55,72 @@ def dashboard():
     items = Item.query.all()
     purchases = Purchase.query.order_by(Purchase.date.desc()).limit(5).all()
     sales = Sale.query.order_by(Sale.date.desc()).limit(5).all()
-    total_purchase_cost = db.session.query(func.sum(PurchaseItem.amount)).scalar() or 0.0
-    total_sale_revenue = db.session.query(func.sum(SaleItem.amount)).scalar() or 0.0
-    _profit_expr = SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.unit_factor * SaleItem.cost_price
-    total_gross_profit = db.session.query(func.sum(_profit_expr)).scalar() or 0.0
-    total_purchase_returns = db.session.query(func.sum(PurchaseReturn.quantity * PurchaseReturn.return_price)).scalar() or 0.0
-    total_sale_returns = db.session.query(func.sum(SaleReturn.quantity * SaleReturn.return_price)).scalar() or 0.0
-    low_stock_count = Item.query.filter(Item.stock <= Item.reorder_level).count()
-    total_payable = get_total_payable()
-    total_paid_suppliers = get_total_paid_suppliers()
-    total_receivable = get_total_receivable()
-    total_received_customers = get_total_received_customers()
-    total_payable_balance = total_supplier_ledger_balance()
-    total_receivable_balance = total_customer_ledger_balance()
-    monthly_sales = (
-        db.session.query(
-            sql_date_fmt(Sale.date).label("month"),
-            db.func.sum(SaleItem.amount).label("sale_amt"),
-            db.func.sum(_profit_expr).label("profit_amt"),
+    try:
+        total_purchase_cost = db.session.query(func.sum(PurchaseItem.amount)).scalar() or 0.0
+        total_sale_revenue = db.session.query(func.sum(SaleItem.amount)).scalar() or 0.0
+        _profit_expr = SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.unit_factor * SaleItem.cost_price
+        total_gross_profit = db.session.query(func.sum(_profit_expr)).scalar() or 0.0
+    except Exception:
+        total_purchase_cost = 0.0
+        total_sale_revenue = 0.0
+        total_gross_profit = 0.0
+        _profit_expr = None
+
+    try:
+        total_purchase_returns = db.session.query(func.sum(PurchaseReturn.quantity * PurchaseReturn.return_price)).scalar() or 0.0
+        total_sale_returns = db.session.query(func.sum(SaleReturn.quantity * SaleReturn.return_price)).scalar() or 0.0
+    except Exception:
+        total_purchase_returns = 0.0
+        total_sale_returns = 0.0
+
+    try:
+        low_stock_count = Item.query.filter(Item.stock <= Item.reorder_level).count()
+    except Exception:
+        low_stock_count = 0
+
+    try:
+        total_payable = get_total_payable()
+        total_paid_suppliers = get_total_paid_suppliers()
+        total_receivable = get_total_receivable()
+        total_received_customers = get_total_received_customers()
+        total_payable_balance = total_supplier_ledger_balance()
+        total_receivable_balance = total_customer_ledger_balance()
+    except Exception:
+        total_payable = total_paid_suppliers = total_receivable = total_received_customers = 0.0
+        total_payable_balance = total_receivable_balance = 0.0
+
+    try:
+        if _profit_expr is not None:
+            monthly_sales = (
+                db.session.query(
+                    sql_date_fmt(Sale.date).label("month"),
+                    db.func.sum(SaleItem.amount).label("sale_amt"),
+                    db.func.sum(_profit_expr).label("profit_amt"),
+                )
+                .join(SaleItem, SaleItem.sale_id == Sale.id)
+                .group_by(sql_date_fmt(Sale.date))
+                .order_by(sql_date_fmt(Sale.date))
+                .limit(12)
+                .all()
+            )
+        else:
+            monthly_sales = []
+    except Exception:
+        monthly_sales = []
+    try:
+        monthly_purchases = (
+            db.session.query(
+                sql_date_fmt(Purchase.date).label("month"),
+                db.func.sum(PurchaseItem.amount).label("purchase_amt"),
+            )
+            .join(PurchaseItem, PurchaseItem.purchase_id == Purchase.id)
+            .group_by(sql_date_fmt(Purchase.date))
+            .order_by(sql_date_fmt(Purchase.date))
+            .limit(12)
+            .all()
         )
-        .join(SaleItem, SaleItem.sale_id == Sale.id)
-        .group_by(sql_date_fmt(Sale.date))
-        .order_by(sql_date_fmt(Sale.date))
-        .limit(12)
-        .all()
-    )
-    monthly_purchases = (
-        db.session.query(
-            sql_date_fmt(Purchase.date).label("month"),
-            db.func.sum(PurchaseItem.amount).label("purchase_amt"),
-        )
-        .join(PurchaseItem, PurchaseItem.purchase_id == Purchase.id)
-        .group_by(sql_date_fmt(Purchase.date))
-        .order_by(sql_date_fmt(Purchase.date))
-        .limit(12)
-        .all()
-    )
+    except Exception:
+        monthly_purchases = []
     return render_template(
         'dashboard.html',
         items=items,
