@@ -3,7 +3,7 @@
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
-from flask import abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user
 
 from salpurflask.extensions import db
@@ -21,6 +21,7 @@ from salpurflask.utils import (
 from sqlalchemy import or_ as sql_or
 from sqlalchemy.orm import joinedload
 
+sales_bp = Blueprint('sales', __name__)
 
 # ─── HELPER FUNCTIONS (SALES-SPECIFIC) ─────────────────────────────────────
 
@@ -41,6 +42,7 @@ def sale_total(sale):
 # ─── SALE CRUD ROUTES ──────────────────────────────────────────────────────
 
 
+@sales_bp.route('/sale', methods=['GET', 'POST'])
 @verified_required
 def sale():
     """Display sales and allow creation of new sales."""
@@ -161,6 +163,7 @@ def sale():
     )
 
 
+@sales_bp.route('/sale/<int:id>/edit', methods=['GET', 'POST'])
 @manager_required
 def edit_sale(id):
     """Edit an existing sale."""
@@ -270,6 +273,7 @@ def edit_sale(id):
     return render_template("edit_sale.html", sale=sal, customers=customers, items=items_all)
 
 
+@sales_bp.route('/sale/<int:id>/delete', methods=['POST'])
 @admin_required
 def delete_sale(id):
     """Delete a sale."""
@@ -322,6 +326,7 @@ def get_sale_returned_qty(sale_id):
                  .scalar() or 0)
 
 
+@sales_bp.route('/sale-return', methods=['GET', 'POST'])
 @verified_required
 def sale_return():
     """Display and create sale returns."""
@@ -449,6 +454,7 @@ def delete_sale_return(id):
     return redirect(url_for("sale_return"))
 
 
+@sales_bp.route('/sale/<int:id>/invoice', methods=['GET'])
 @verified_required
 def sale_invoice(id):
     """Display sale invoice with payment details."""
@@ -484,6 +490,7 @@ def get_walkin_customer():
     return c
 
 
+@sales_bp.route('/pos', methods=['GET', 'POST'])
 @manager_required
 def pos():
     """POS main screen."""
@@ -499,6 +506,7 @@ def pos():
     )
 
 
+@sales_bp.route('/pos/lookup', methods=['POST'])
 @manager_required
 def pos_lookup():
     """Item lookup for POS."""
@@ -528,6 +536,7 @@ def pos_lookup():
     } for it in matches]}
 
 
+@sales_bp.route('/pos/checkout', methods=['POST'])
 @manager_required
 def pos_checkout():
     """Ring up a POS sale."""
@@ -677,6 +686,7 @@ def pos_checkout():
         return {"ok": False, "error": f"Could not complete the sale: {e}"}, 500
 
 
+@sales_bp.route('/pos/receipt/<int:id>', methods=['GET'])
 @manager_required
 def pos_receipt(id):
     """POS receipt display."""
@@ -691,6 +701,7 @@ def pos_receipt(id):
 # ─── POS BILL HOLD ROUTES ──────────────────────────────────────────────────
 
 
+@sales_bp.route('/pos/hold', methods=['POST'])
 @manager_required
 def pos_hold():
     """Hold a POS bill (save temporarily without processing). Updates existing hold if hold_id provided."""
