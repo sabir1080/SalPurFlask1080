@@ -1190,6 +1190,9 @@ def migrate_database():
         if "is_taxable" not in item_columns:
             with db.engine.begin() as conn:
                 conn.execute(text("ALTER TABLE item ADD COLUMN is_taxable BOOLEAN DEFAULT TRUE"))
+        if "business_category_id" not in item_columns:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE item ADD COLUMN business_category_id INTEGER REFERENCES business_category(id)"))
     # Multi-unit: the unit a line was transacted in, and its factor into the item's
     # base unit. Nullable/default-1, so every existing row reads back as "the base
     # unit, factor 1" — exactly what it always implicitly was.
