@@ -48,6 +48,20 @@ else:
     )
 
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+# Production-safe connection pool settings for Render PostgreSQL
+if DATABASE_URL:
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_pre_ping": True,          # Detect and discard dead connections
+        "pool_recycle": 300,            # Recycle connections every 5 minutes
+        "pool_size": 5,
+        "max_overflow": 10,
+        "connect_args": {
+            "sslmode": "require",
+            "connect_timeout": 10,
+        },
+    }
+
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "your_secret_key")
 app.config["SECURITY_PASSWORD_SALT"] = os.getenv("SECURITY_PASSWORD_SALT", "your_salt")
 
@@ -427,9 +441,14 @@ def is_signup_allowed():
 def get_standard_tax_rate():
     """The single rate an admin sets on /tax_codes for their own country (17% Pakistan
     sales tax, 20% UK VAT, 8.5% a US state's sales tax, ...). Used only as a default on
-    new document lines — each line can still be overridden or zeroed independently."""
-    code = TaxCode.query.filter_by(name="Standard").first()
-    return code.total_rate if code else 0.0
+    new document lines — each line can still be overridden or zeroed independently.
+    Safe version – never leaves the session in an aborted state on Render."""
+    try:
+        code = TaxCode.query.filter_by(name="Standard").first()
+        return code.total_rate if code else 0.0
+    except Exception:
+        db.session.rollback()
+        return 0.0
 
 # Utility Functions
 def generate_verification_token(email):
@@ -1621,7 +1640,11 @@ with app.app_context():
 # Load user for Flask-Login
 @login_manager.user_loader
 def load_user(user_id):
-    return db.session.get(User, int(user_id))
+    try:
+        return db.session.get(User, int(user_id))
+    except Exception:
+        db.session.rollback()
+        return None
 
 # ── Custom error pages ────────────────────────────────────────────────────────
 @app.errorhandler(403)
@@ -1636,9 +1659,12 @@ def error_404(e):
 
 @app.errorhandler(500)
 def error_500(e):
+    try:
+        db.session.rollback()
+    except Exception:
+        pass
     # A failed request can leave the session in a broken state — roll back so the
     # error page (and the next request) can still query the database.
-    db.session.rollback()
     app.logger.exception("Unhandled 500 error")
     return render_template("error.html", code=500, title="Something Went Wrong",
                            message="An unexpected error occurred. Please try again, "
