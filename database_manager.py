@@ -443,6 +443,233 @@ def manage_items(app, db):
             elif choice == "0":
                 break
 
+def manage_categories(app, db):
+    """Manage item categories"""
+    from salpurflask.models import Category
+
+    with app.app_context():
+        while True:
+            print("\n" + "-" * 70)
+            print("CATEGORY MANAGEMENT")
+            print("-" * 70)
+            print("1. Add New Category")
+            print("2. View All Categories")
+            print("3. Delete Category")
+            print("0. Back")
+
+            choice = input("\nSelect (0-3): ").strip()
+
+            if choice == "1":
+                name = input("Category Name: ").strip()
+
+                if Category.query.filter_by(name=name).first():
+                    print("ERROR: Category already exists")
+                    continue
+
+                category = Category(name=name)
+                db.session.add(category)
+                db.session.commit()
+                print(f"[OK] Category '{name}' created")
+
+            elif choice == "2":
+                categories = Category.query.all()
+                print(f"\nTotal Categories: {len(categories)}\n")
+                for c in categories:
+                    print(f"  {c.name}")
+
+            elif choice == "3":
+                name = input("Category to delete: ").strip()
+                cat = Category.query.filter_by(name=name).first()
+                if cat:
+                    confirm = input(f"Delete '{name}'? (yes/no): ").strip().lower()
+                    if confirm == "yes":
+                        db.session.delete(cat)
+                        db.session.commit()
+                        print("[OK] Deleted")
+
+            elif choice == "0":
+                break
+
+def manage_business_categories(app, db):
+    """Manage business categories"""
+    from salpurflask.models import BusinessCategory
+
+    with app.app_context():
+        while True:
+            print("\n" + "-" * 70)
+            print("BUSINESS CATEGORY MANAGEMENT")
+            print("-" * 70)
+            print("1. Add New Business Category")
+            print("2. View All Business Categories")
+            print("3. Delete Business Category")
+            print("0. Back")
+
+            choice = input("\nSelect (0-3): ").strip()
+
+            if choice == "1":
+                name = input("Business Category Name: ").strip()
+                slug = input("Slug (e.g., premium-products): ").strip()
+                desc = input("Description: ").strip()
+                icon = input("Icon (e.g., star): ").strip()
+
+                if BusinessCategory.query.filter_by(slug=slug).first():
+                    print("ERROR: Business Category already exists")
+                    continue
+
+                biz_cat = BusinessCategory(
+                    name=name, slug=slug, description=desc, icon=icon,
+                    is_enabled=True, priority=1, color="#FF6B6B"
+                )
+                db.session.add(biz_cat)
+                db.session.commit()
+                print(f"[OK] Business Category '{name}' created")
+
+            elif choice == "2":
+                cats = BusinessCategory.query.all()
+                print(f"\nTotal: {len(cats)}\n")
+                for c in cats:
+                    print(f"  {c.name:30} | Slug: {c.slug}")
+
+            elif choice == "3":
+                name = input("Business Category to delete: ").strip()
+                cat = BusinessCategory.query.filter_by(name=name).first()
+                if cat:
+                    confirm = input(f"Delete '{name}'? (yes/no): ").strip().lower()
+                    if confirm == "yes":
+                        db.session.delete(cat)
+                        db.session.commit()
+                        print("[OK] Deleted")
+
+            elif choice == "0":
+                break
+
+def manage_financial_accounts(app, db):
+    """Manage financial accounts"""
+    from salpurflask.models import FinancialAccount
+
+    with app.app_context():
+        while True:
+            print("\n" + "-" * 70)
+            print("FINANCIAL ACCOUNT MANAGEMENT")
+            print("-" * 70)
+            print("1. Add New Account")
+            print("2. View All Accounts")
+            print("3. Delete Account")
+            print("0. Back")
+
+            choice = input("\nSelect (0-3): ").strip()
+
+            if choice == "1":
+                name = input("Account Name: ").strip()
+                print("Account Type: 1. asset | 2. liability | 3. equity")
+                acc_type = input("Select (1-3): ").strip()
+                types = {"1": "asset", "2": "liability", "3": "equity"}
+
+                try:
+                    opening_bal = float(input("Opening Balance: ").strip() or "0")
+                except:
+                    print("ERROR: Invalid amount")
+                    continue
+
+                if FinancialAccount.query.filter_by(name=name).first():
+                    print("ERROR: Account already exists")
+                    continue
+
+                account = FinancialAccount(
+                    name=name,
+                    method=name,
+                    account_type=types.get(acc_type, "asset"),
+                    opening_balance=opening_bal,
+                    is_active=True,
+                    is_control=False
+                )
+                db.session.add(account)
+                db.session.commit()
+                print(f"[OK] Account '{name}' created")
+
+            elif choice == "2":
+                accounts = FinancialAccount.query.all()
+                print(f"\nTotal Accounts: {len(accounts)}\n")
+                for a in accounts:
+                    print(f"  {a.name:30} | Type: {a.account_type:10} | Balance: {a.opening_balance:12,.2f}")
+
+            elif choice == "3":
+                name = input("Account to delete: ").strip()
+                acc = FinancialAccount.query.filter_by(name=name).first()
+                if acc:
+                    confirm = input(f"Delete '{name}'? (yes/no): ").strip().lower()
+                    if confirm == "yes":
+                        db.session.delete(acc)
+                        db.session.commit()
+                        print("[OK] Deleted")
+
+            elif choice == "0":
+                break
+
+def manage_tax_codes(app, db):
+    """Manage tax codes"""
+    from salpurflask.models import TaxCode, TaxComponent
+
+    with app.app_context():
+        while True:
+            print("\n" + "-" * 70)
+            print("TAX CODE MANAGEMENT")
+            print("-" * 70)
+            print("1. Add New Tax Code")
+            print("2. View All Tax Codes")
+            print("3. Delete Tax Code")
+            print("0. Back")
+
+            choice = input("\nSelect (0-3): ").strip()
+
+            if choice == "1":
+                name = input("Tax Code Name: ").strip()
+
+                if TaxCode.query.filter_by(name=name).first():
+                    print("ERROR: Tax Code already exists")
+                    continue
+
+                tax = TaxCode(name=name, is_active=True)
+                db.session.add(tax)
+                db.session.flush()
+
+                try:
+                    rate = float(input("Tax Rate (%): ").strip())
+                except:
+                    print("ERROR: Invalid rate")
+                    db.session.rollback()
+                    continue
+
+                component = TaxComponent(
+                    tax_code_id=tax.id,
+                    name=f"{name} Rate",
+                    rate=rate,
+                    input_account_id=1,
+                    output_account_id=1
+                )
+                db.session.add(component)
+                db.session.commit()
+                print(f"[OK] Tax Code '{name}' ({rate}%) created")
+
+            elif choice == "2":
+                taxes = TaxCode.query.all()
+                print(f"\nTotal Tax Codes: {len(taxes)}\n")
+                for t in taxes:
+                    print(f"  {t.name:30} | Active: {t.is_active}")
+
+            elif choice == "3":
+                name = input("Tax Code to delete: ").strip()
+                tax = TaxCode.query.filter_by(name=name).first()
+                if tax:
+                    confirm = input(f"Delete '{name}'? (yes/no): ").strip().lower()
+                    if confirm == "yes":
+                        db.session.delete(tax)
+                        db.session.commit()
+                        print("[OK] Deleted")
+
+            elif choice == "0":
+                break
+
 def view_summary(app, db):
     """View data summary"""
     from salpurflask.models import (
@@ -496,6 +723,14 @@ def main():
             manage_customers(app, db)
         elif choice == "4":
             manage_items(app, db)
+        elif choice == "5":
+            manage_categories(app, db)
+        elif choice == "6":
+            manage_business_categories(app, db)
+        elif choice == "7":
+            manage_financial_accounts(app, db)
+        elif choice == "8":
+            manage_tax_codes(app, db)
         elif choice == "9":
             view_summary(app, db)
         elif choice == "0":
