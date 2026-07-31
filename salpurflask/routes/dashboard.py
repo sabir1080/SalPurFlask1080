@@ -143,4 +143,31 @@ def dashboard():
     except Exception:
         pass
 
+    # Monthly sales and profit data for chart
+    try:
+        from sqlalchemy import func, text
+        from datetime import datetime, timedelta
+
+        # Get last 12 months of sales data
+        monthly_data = db.session.query(
+            func.strftime('%Y-%m', Sale.date).label('month'),
+            func.sum(SaleItem.amount).label('sale_amt'),
+            func.sum(SaleItem.amount - (SaleItem.quantity * SaleItem.cost_price)).label('profit_amt')
+        ).join(SaleItem, Sale.id == SaleItem.sale_id).group_by(
+            func.strftime('%Y-%m', Sale.date)
+        ).order_by(
+            func.strftime('%Y-%m', Sale.date)
+        ).all()
+
+        context['monthly_sales'] = [
+            {
+                'month': row.month or 'Unknown',
+                'sale_amt': float(row.sale_amt) if row.sale_amt else 0.0,
+                'profit_amt': float(row.profit_amt) if row.profit_amt else 0.0
+            }
+            for row in monthly_data
+        ]
+    except Exception:
+        context['monthly_sales'] = []
+
     return render_template('dashboard.html', **context)

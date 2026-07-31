@@ -1,0 +1,2698 @@
+{
+  "account": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",1
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "code",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "name",
+        "type": "VARCHAR(100)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "type",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "parent_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "is_group",
+        "type": "BOOLEAN",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "is_control",
+        "type": "BOOLEAN",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "is_active",
+        "type": "BOOLEAN",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "cash_flow_section",
+        "type": "VARCHAR(12)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "role",
+        "type": "VARCHAR(30)",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 33
+  },
+  "accounting_period": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "fiscal_year_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "name",
+        "type": "VARCHAR(40)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "start_date",
+        "type": "DATE",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "end_date",
+        "type": "DATE",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "is_closed",
+        "type": "BOOLEAN",
+        "not_null": true,
+        "primary_key": false
+      }
+    ],
+    "row_count": 12
+  },
+  "audit_log": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "created_at",
+        "type": "DATETIME",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "user_name",
+        "type": "VARCHAR(100)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "action",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "entity",
+        "type": "VARCHAR(50)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "entity_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "summary",
+        "type": "VARCHAR(300)",
+        "not_null": true,
+        "primary_key": false
+      }
+    ],
+    "row_count": 70
+  },
+  "business_category": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "name",
+        "type": "VARCHAR(100)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "slug",
+        "type": "VARCHAR(50)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "description",
+        "type": "TEXT",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "icon",
+        "type": "VARCHAR(50)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "is_enabled",
+        "type": "BOOLEAN",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "priority",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "color",
+        "type": "VARCHAR(20)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "config_data",
+        "type": "JSON",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "created_at",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "updated_at",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 18
+  },
+  "category": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "name",
+        "type": "VARCHAR(100)",
+        "not_null": true,
+        "primary_key": false
+      }
+    ],
+    "row_count": 2
+  },
+  "category_menu_item": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "category_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "label",
+        "type": "VARCHAR(100)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "route",
+        "type": "VARCHAR(100)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "icon",
+        "type": "VARCHAR(50)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "parent_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "position",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "permissions",
+        "type": "JSON",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 0
+  },
+  "category_report": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "category_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "name",
+        "type": "VARCHAR(100)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "slug",
+        "type": "VARCHAR(50)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "description",
+        "type": "TEXT",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "report_type",
+        "type": "VARCHAR(20)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "query_config",
+        "type": "JSON",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "columns",
+        "type": "JSON",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "filters",
+        "type": "JSON",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 0
+  },
+  "category_validation": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "category_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "rule_name",
+        "type": "VARCHAR(100)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "rule_type",
+        "type": "VARCHAR(50)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "field_name",
+        "type": "VARCHAR(100)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "condition",
+        "type": "JSON",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "error_message",
+        "type": "VARCHAR(300)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "is_active",
+        "type": "BOOLEAN",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 0
+  },
+  "configuration_snapshot": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "timestamp",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "enabled_categories",
+        "type": "JSON",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "configuration_hash",
+        "type": "VARCHAR(64)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "changed_by",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "description",
+        "type": "TEXT",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 5
+  },
+  "customer": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "name",
+        "type": "VARCHAR(100)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "contact",
+        "type": "VARCHAR(15)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "address",
+        "type": "VARCHAR(200)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "opening_balance",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      }
+    ],
+    "row_count": 1
+  },
+  "customer_ledger_entry": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "customer_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "entry_date",
+        "type": "DATETIME",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "entry_type",
+        "type": "VARCHAR(30)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "source_type",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "source_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "description",
+        "type": "VARCHAR(300)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "debit",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "credit",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "balance_after",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      }
+    ],
+    "row_count": 40
+  },
+  "customer_payment": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "customer_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "sale_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "amount",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "payment_date",
+        "type": "DATETIME",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "payment_method",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "account_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "reference_no",
+        "type": "VARCHAR(100)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "notes",
+        "type": "VARCHAR(300)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "is_reversed",
+        "type": "BOOLEAN",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "reversed_at",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 18
+  },
+  "delivery_challan": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "sale_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "challan_date",
+        "type": "DATETIME",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "dispatch_date",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "delivery_date",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "status",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "transport",
+        "type": "VARCHAR(100)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "notes",
+        "type": "VARCHAR(300)",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 0
+  },
+  "depreciation_charge": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "asset_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "period_end",
+        "type": "DATETIME",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "amount",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "entry_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 0
+  },
+  "document_sequence": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "doc_type",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "year",
+        "type": "VARCHAR(40)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "prefix",
+        "type": "VARCHAR(10)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "next_number",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      }
+    ],
+    "row_count": 2
+  },
+  "expense": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "category_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "description",
+        "type": "VARCHAR(300)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "amount",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "date",
+        "type": "DATETIME",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "payment_method",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "account_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "reference_no",
+        "type": "VARCHAR(100)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "is_reversed",
+        "type": "BOOLEAN",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "reversed_at",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "notes",
+        "type": "VARCHAR(300)",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 0
+  },
+  "expense_category": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "name",
+        "type": "VARCHAR(100)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "gl_account_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 0
+  },
+  "financial_account": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "name",
+        "type": "VARCHAR(80)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "method",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "account_type",
+        "type": "VARCHAR(10)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "opening_balance",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "is_active",
+        "type": "BOOLEAN",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "is_control",
+        "type": "BOOLEAN",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "parent_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "gl_account_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 4
+  },
+  "fiscal_year": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "name",
+        "type": "VARCHAR(40)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "start_date",
+        "type": "DATE",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "end_date",
+        "type": "DATE",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "is_closed",
+        "type": "BOOLEAN",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "closed_at",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 1
+  },
+  "fixed_asset": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "name",
+        "type": "VARCHAR(120)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "tag",
+        "type": "VARCHAR(40)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "acquisition_date",
+        "type": "DATETIME",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "cost",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "salvage_value",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "method",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "useful_life_months",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "rate_percent",
+        "type": "NUMERIC(14, 4)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "status",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "disposal_date",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "disposal_proceeds",
+        "type": "NUMERIC(14, 4)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "notes",
+        "type": "VARCHAR(300)",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 0
+  },
+  "import_log": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "created_at",
+        "type": "DATETIME",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "import_type",
+        "type": "VARCHAR(50)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "file_name",
+        "type": "VARCHAR(255)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "file_type",
+        "type": "VARCHAR(10)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "total_records",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "successful",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "failed",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "status",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "errors",
+        "type": "TEXT",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 0
+  },
+  "item": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "name",
+        "type": "VARCHAR(100)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "category_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "business_category_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "unit",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "barcode",
+        "type": "VARCHAR(64)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "opening_stock",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "stock",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "reorder_level",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "purchase_price",
+        "type": "NUMERIC(14, 4)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "sale_price",
+        "type": "NUMERIC(14, 4)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "inventory_value",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "default_tax_percent",
+        "type": "DECIMAL(5,2)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "is_taxable",
+        "type": "BOOLEAN",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 2
+  },
+  "item_unit": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "item_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "name",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "factor",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "purchase_price",
+        "type": "NUMERIC(14, 4)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "sale_price",
+        "type": "NUMERIC(14, 4)",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 0
+  },
+  "journal_entry": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "entry_date",
+        "type": "DATETIME",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "reference",
+        "type": "VARCHAR(50)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "description",
+        "type": "VARCHAR(300)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "source_type",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "source_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "period_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "reversal_of_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "is_reversed",
+        "type": "BOOLEAN",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "created_by_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "created_at",
+        "type": "DATETIME",
+        "not_null": true,
+        "primary_key": false
+      }
+    ],
+    "row_count": 56
+  },
+  "journal_line": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "entry_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "account_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "debit",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "credit",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "memo",
+        "type": "VARCHAR(200)",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 156
+  },
+  "pos_hold": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "customer_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "user_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "cart_data",
+        "type": "TEXT",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "hold_time",
+        "type": "DATETIME",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "last_modified",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "notes",
+        "type": "VARCHAR(300)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "account_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "amount_paid_memo",
+        "type": "NUMERIC(14, 4)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "status",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "version",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      }
+    ],
+    "row_count": 0
+  },
+  "product_category_data": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "product_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "category_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "field_name",
+        "type": "VARCHAR(100)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "field_value",
+        "type": "JSON",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "created_at",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "updated_at",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 39
+  },
+  "product_field": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "category_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "field_name",
+        "type": "VARCHAR(100)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "field_label",
+        "type": "VARCHAR(100)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "field_type",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "is_required",
+        "type": "BOOLEAN",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "is_searchable",
+        "type": "BOOLEAN",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "is_filterable",
+        "type": "BOOLEAN",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "placeholder",
+        "type": "VARCHAR(200)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "help_text",
+        "type": "VARCHAR(300)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "validation_pattern",
+        "type": "VARCHAR(500)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "min_value",
+        "type": "NUMERIC",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "max_value",
+        "type": "NUMERIC",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "options",
+        "type": "JSON",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "default_value",
+        "type": "VARCHAR(200)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "position",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "tab_name",
+        "type": "VARCHAR(50)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "created_at",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 61
+  },
+  "purchase": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "supplier_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "item_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "quantity",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "purchase_price",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "discount_type",
+        "type": "VARCHAR(10)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "discount_value",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "tax_percent",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "discount_amount",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "tax_amount",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "date",
+        "type": "DATETIME",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "notes",
+        "type": "VARCHAR(300)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "is_reversed",
+        "type": "BOOLEAN",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "reversed_at",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "invoice_no",
+        "type": "VARCHAR(30)",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 2
+  },
+  "purchase_item": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "purchase_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "item_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "quantity",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "purchase_price",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "discount_type",
+        "type": "VARCHAR(10)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "discount_value",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "discount_amount",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "tax_percent",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "tax_amount",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "amount",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "unit_name",
+        "type": "VARCHAR(20)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "unit_factor",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      }
+    ],
+    "row_count": 2
+  },
+  "purchase_order": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "supplier_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "order_date",
+        "type": "DATETIME",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "expected_date",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "status",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "notes",
+        "type": "VARCHAR(300)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "converted_purchase_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 0
+  },
+  "purchase_order_item": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "po_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "item_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "quantity",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "purchase_price",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "unit_name",
+        "type": "VARCHAR(20)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "unit_factor",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      }
+    ],
+    "row_count": 0
+  },
+  "purchase_return": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "purchase_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "supplier_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "item_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "quantity",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "return_price",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "date",
+        "type": "DATETIME",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "reason",
+        "type": "VARCHAR(300)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "cost_removed",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "is_reversed",
+        "type": "BOOLEAN",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "reversed_at",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "unit_name",
+        "type": "VARCHAR(20)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "unit_factor",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "purchase_item_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 0
+  },
+  "quotation": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "customer_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "quote_date",
+        "type": "DATETIME",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "valid_until",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "status",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "notes",
+        "type": "VARCHAR(300)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "converted_sale_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 0
+  },
+  "quotation_item": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "quotation_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "item_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "quantity",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "sale_price",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "discount_type",
+        "type": "VARCHAR(10)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "discount_value",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "tax_percent",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "unit_name",
+        "type": "VARCHAR(20)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "unit_factor",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      }
+    ],
+    "row_count": 0
+  },
+  "rate_limit_hit": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "key",
+        "type": "VARCHAR(200)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "created_at",
+        "type": "DATETIME",
+        "not_null": true,
+        "primary_key": false
+      }
+    ],
+    "row_count": 1
+  },
+  "sale": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "customer_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "item_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "quantity",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "sale_price",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "cost_price",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "discount_type",
+        "type": "VARCHAR(10)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "discount_value",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "tax_percent",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "discount_amount",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "tax_amount",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "date",
+        "type": "DATETIME",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "notes",
+        "type": "VARCHAR(300)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "is_reversed",
+        "type": "BOOLEAN",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "reversed_at",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "invoice_no",
+        "type": "VARCHAR(30)",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 17
+  },
+  "sale_item": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "sale_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "item_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "quantity",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "sale_price",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "cost_price",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "discount_type",
+        "type": "VARCHAR(10)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "discount_value",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "discount_amount",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "tax_percent",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "tax_amount",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "amount",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "unit_name",
+        "type": "VARCHAR(20)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "unit_factor",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      }
+    ],
+    "row_count": 24
+  },
+  "sale_return": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "sale_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "customer_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "item_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "quantity",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "return_price",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "date",
+        "type": "DATETIME",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "reason",
+        "type": "VARCHAR(300)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "cost_restored",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "is_reversed",
+        "type": "BOOLEAN",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "reversed_at",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "unit_name",
+        "type": "VARCHAR(20)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "unit_factor",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "sale_item_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 0
+  },
+  "stock_adjustment": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "item_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "adj_type",
+        "type": "VARCHAR(30)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "quantity",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "direction",
+        "type": "VARCHAR(4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "date",
+        "type": "DATETIME",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "reason",
+        "type": "VARCHAR(300)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "cost_value",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "is_reversed",
+        "type": "BOOLEAN",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "reversed_at",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 0
+  },
+  "supplier": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "name",
+        "type": "VARCHAR(100)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "contact",
+        "type": "VARCHAR(15)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "address",
+        "type": "VARCHAR(200)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "opening_balance",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      }
+    ],
+    "row_count": 3
+  },
+  "supplier_ledger_entry": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "supplier_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "entry_date",
+        "type": "DATETIME",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "entry_type",
+        "type": "VARCHAR(30)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "source_type",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "source_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "description",
+        "type": "VARCHAR(300)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "debit",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "credit",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "balance_after",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      }
+    ],
+    "row_count": 3
+  },
+  "supplier_payment": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "supplier_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "purchase_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "amount",
+        "type": "NUMERIC(14, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "payment_date",
+        "type": "DATETIME",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "payment_method",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "account_id",
+        "type": "INTEGER",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "reference_no",
+        "type": "VARCHAR(100)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "notes",
+        "type": "VARCHAR(300)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "is_reversed",
+        "type": "BOOLEAN",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "reversed_at",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 0
+  },
+  "tax_code": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "name",
+        "type": "VARCHAR(60)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "is_active",
+        "type": "BOOLEAN",
+        "not_null": true,
+        "primary_key": false
+      }
+    ],
+    "row_count": 2
+  },
+  "tax_component": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "tax_code_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "name",
+        "type": "VARCHAR(40)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "rate",
+        "type": "NUMERIC(7, 4)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "input_account_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "output_account_id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": false
+      }
+    ],
+    "row_count": 2
+  },
+  "user": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INTEGER",
+        "not_null": true,
+        "primary_key": true
+      },
+      {
+        "name": "name",
+        "type": "VARCHAR(100)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "email",
+        "type": "VARCHAR(120)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "password",
+        "type": "VARCHAR(255)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "verified",
+        "type": "BOOLEAN",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "role",
+        "type": "VARCHAR(20)",
+        "not_null": true,
+        "primary_key": false
+      },
+      {
+        "name": "reset_token",
+        "type": "VARCHAR(120)",
+        "not_null": false,
+        "primary_key": false
+      },
+      {
+        "name": "reset_token_expiry",
+        "type": "DATETIME",
+        "not_null": false,
+        "primary_key": false
+      }
+    ],
+    "row_count": 2
+  }
+}

@@ -1,0 +1,59 @@
+DATABASE MIGRATION STATUS ANALYSIS
+===================================
+
+LOCAL DATABASE (SQLite):
+✓ All 46 tables complete
+✓ All 411 columns present
+✓ All migrations applied
+
+
+RENDER DEPLOYMENTS (PostgreSQL):
+
+IMMEDIATE ISSUE:
+- business_category_id MISSING (Added in commit 11e8586)
+- Location: ITEM table
+- This is causing POS/Dashboard errors
+
+OLD RENDER DEPLOYMENTS have MORE missing columns:
+- barcode (VARCHAR 64)
+- is_reversed & reversed_at (Multiple tables)
+- cost_removed/cost_restored/cost_value
+- Plus 10+ other columns from earlier migrations
+
+WHY THIS HAPPENS:
+1. Render deployments are based on OLD commits
+2. Recent migrations (business_category_id) NOT applied yet
+3. Need FORCE REDEPLOY to run fresh migrations
+
+
+MIGRATION SEQUENCE (18 Phases):
+Phase 1: ITEM table columns (category_id, unit, opening_stock, tax fields, business_category_id)
+Phase 2: LINE ITEM tables (unit_name, unit_factor)
+Phase 3: RETURN tables (purchase_item_id, sale_item_id)
+Phase 4: PARTY tables (opening_balance)
+Phase 5: USER table (role)
+Phase 6: SALE/PURCHASE tables (discount fields, notes)
+Phase 7: NEW LINE ITEM TABLES (purchase_item, sale_item)
+Phase 8: NEW TRANSACTION TABLES (stock_adjustment, expense, PO, quotation, delivery)
+Phase 9: MONEY COLUMNS (FLOAT to NUMERIC conversion)
+Phase 10: FINANCIAL ACCOUNT links (account_id)
+Phase 11: GL ACCOUNT links (gl_account_id)
+Phase 12: FINANCIAL ACCOUNT hierarchy (is_control, parent_id)
+Phase 13: POS optimistic locking (version)
+Phase 14: ITEM costing (inventory_value)
+Phase 15: ACCOUNT hierarchy (cash_flow_section, role)
+Phase 16: INVOICE numbering (invoice_no)
+Phase 17: BARCODE support (barcode)
+Phase 18: SOFT DELETE / REVERSAL (is_reversed, reversed_at)
+
+
+SOLUTION:
+Step 1: git commit --allow-empty -m "trigger: Force Render redeploy with migrations"
+Step 2: git push origin main
+Step 3: Wait 5-10 minutes for Render auto-deploy
+Step 4: Migrations run automatically at app startup
+Step 5: ALL missing columns added
+Step 6: Both Render deployments match Local
+
+RESULT:
+Local = Render (Both have same 46 tables, 411 columns)
