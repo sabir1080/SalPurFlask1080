@@ -9,12 +9,65 @@
             <div class="card-header bg-dark text-white">
                 <h5 class="mb-0">Last 100 Log Lines</h5>
             </div>
-            <div class="card-body" style="max-height: 600px; overflow-y: auto; background: #f8f9fa;">
-                <pre class="mb-0" style="font-size: 0.85rem;">{% for line in logs %}{{ line }}{% endfor %}</pre>
+            <div class="card-body log-container" style="max-height: 600px; overflow-y: auto; background: #1e1e1e; padding: 15px;">
+                <div class="log-output" style="font-size: 0.85rem; font-family: 'Courier New', monospace; line-height: 1.6;">
+                    {% for line in logs %}
+                        {% if is_html %}
+                            {{ line|safe }}
+                        {% else %}
+                            <span style="color: #d4d4d4;">{{ line }}</span>
+                        {% endif %}
+                    {% endfor %}
+                </div>
             </div>
         </div>
     </div>
 
     <a href="{{ url_for('developer.dashboard') }}" class="btn btn-primary mt-3">← Back</a>
 </div>
+
+<style>
+    .log-container {
+        background: #1e1e1e !important;
+        border: 1px solid #333;
+    }
+
+    .log-output {
+        color: #d4d4d4;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        font-family: 'Courier New', 'Consolas', monospace;
+    }
+
+    /* Log level colors */
+    .log-output span[style*="color: #ffc107"] {
+        font-weight: 500;
+    }
+
+    .log-output span[style*="color: #dc3545"] {
+        font-weight: 500;
+    }
+
+    .log-output span[style*="color: #17a2b8"] {
+        font-weight: 400;
+    }
+
+    /* Scrollbar styling */
+    .log-container::-webkit-scrollbar {
+        width: 8px;
+    }
+
+    .log-container::-webkit-scrollbar-track {
+        background: #2d2d2d;
+    }
+
+    .log-container::-webkit-scrollbar-thumb {
+        background: #555;
+        border-radius: 4px;
+    }
+
+    .log-container::-webkit-scrollbar-thumb:hover {
+        background: #777;
+    }
+</style>
 {% endblock %}

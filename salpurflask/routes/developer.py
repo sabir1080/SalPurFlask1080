@@ -299,20 +299,31 @@ def environment():
 @dev_bp.route("/logs")
 @developer_login_required
 def logs():
-    """View application logs"""
+    """View application logs with color coding"""
     log_file = Path("logs/app.log")
 
     logs_data = []
     if log_file.exists():
         try:
             with open(log_file, "r") as f:
-                logs_data = f.readlines()[-100:]  # Last 100 lines
-        except:
-            logs_data = ["Error reading log file"]
-    else:
-        logs_data = ["No log file found. Check logs/ directory"]
+                raw_logs = f.readlines()[-100:]  # Last 100 lines
 
-    return render_template("developer/logs.html", logs=logs_data)
+            # Color-code logs based on level
+            for line in raw_logs:
+                if " WARNING " in line:
+                    logs_data.append(f'<span style="color: #ffc107;">{line}</span>')
+                elif " ERROR " in line:
+                    logs_data.append(f'<span style="color: #dc3545;">{line}</span>')
+                elif " INFO " in line:
+                    logs_data.append(f'<span style="color: #17a2b8;">{line}</span>')
+                else:
+                    logs_data.append(f'<span style="color: #d4d4d4;">{line}</span>')
+        except:
+            logs_data = ["<span style='color: #dc3545;'>Error reading log file</span>"]
+    else:
+        logs_data = ["<span style='color: #ffc107;'>No log file found. Check logs/ directory</span>"]
+
+    return render_template("developer/logs.html", logs=logs_data, is_html=True)
 
 # ==================== MIGRATION TOOLS ====================
 
