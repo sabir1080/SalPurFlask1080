@@ -93,7 +93,16 @@ def developer_login_required(f):
         # Check session timeout
         if "developer_login_time" in session:
             session_timeout = int(os.getenv("DEVELOPER_SESSION_TIMEOUT", "30"))
-            elapsed = (datetime.now() - session["developer_login_time"]).total_seconds() / 60
+            login_time = session["developer_login_time"]
+            # Handle both naive and aware datetimes
+            if login_time.tzinfo is not None:
+                # Aware datetime - use timezone-aware now()
+                from datetime import timezone
+                current_time = datetime.now(timezone.utc)
+            else:
+                # Naive datetime - use naive now()
+                current_time = datetime.now()
+            elapsed = (current_time - login_time).total_seconds() / 60
             if elapsed > session_timeout:
                 session.pop("developer_authenticated", None)
                 session.pop("developer_login_time", None)
