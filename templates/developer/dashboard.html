@@ -125,7 +125,7 @@
         </div>
     </div>
 
-    <!-- Info Section -->
+    <!-- Security & Info Section -->
     <div class="row">
         <div class="col-md-12">
             <div class="alert alert-info">
@@ -135,6 +135,49 @@
                     <strong>Company:</strong> {{ config.COMPANY_NAME }}<br>
                     <strong>Environment:</strong> {{ 'Production (Render)' if config.SQLALCHEMY_DATABASE_URI.startswith('postgresql') else 'Development (Local)' }}
                 </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Security Info Section -->
+    <div class="row mt-3">
+        <div class="col-md-12">
+            <div class="alert alert-warning border-2">
+                <h6 class="mb-3">🔒 Security Status</h6>
+                <div class="row">
+                    <div class="col-md-3">
+                        <small>
+                            <strong>Read-Only Mode:</strong>
+                            {% if read_only_mode %}
+                                <span class="badge bg-warning">ENABLED</span>
+                            {% else %}
+                                <span class="badge bg-success">DISABLED</span>
+                            {% endif %}
+                        </small>
+                    </div>
+                    <div class="col-md-3">
+                        <small>
+                            <strong>Localhost Only:</strong>
+                            {% if localhost_only %}
+                                <span class="badge bg-info">YES</span>
+                            {% else %}
+                                <span class="badge bg-danger">NO</span>
+                            {% endif %}
+                        </small>
+                    </div>
+                    <div class="col-md-3">
+                        <small>
+                            <strong>Session Timeout:</strong>
+                            <span class="badge bg-primary">{{ session_timeout }} min</span>
+                        </small>
+                    </div>
+                    <div class="col-md-3">
+                        <small>
+                            <strong>Auth Method:</strong>
+                            <span class="badge bg-secondary">Argon2</span>
+                        </small>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

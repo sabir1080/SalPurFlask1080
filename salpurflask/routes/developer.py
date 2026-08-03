@@ -1,40 +1,155 @@
-"""Developer Tasks - Admin Panel Routes"""
+"""Developer Tasks - Admin Panel Routes with Full Security"""
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, current_app, jsonify
 from functools import wraps
 from sqlalchemy import text
+from passlib.context import CryptContext
+from datetime import datetime, timedelta
 import os
 import sys
+import logging
 from pathlib import Path
 
 dev_bp = Blueprint('developer', __name__, url_prefix='/developer')
+logger = logging.getLogger(__name__)
 
-# Correct password
-DEVELOPER_PASSWORD = "_@sabir@_"
-DEVELOPER_HINT = "-0sbr0-"
+# Password hashing context
+pwd_context = CryptContext(schemes=['argon2'], deprecated='auto')
+
+# Track failed login attempts for rate limiting
+failed_attempts = {}
+MAX_ATTEMPTS = 5
+LOCKOUT_DURATION = 15 * 60  # 15 minutes
+
+def check_developer_enabled():
+    """Check if developer panel is enabled for this environment"""
+    enabled = os.getenv("ENABLE_DEVELOPER_PANEL", "false").lower() == "true"
+    if not enabled:
+        logger.warning("Developer panel access attempted but ENABLE_DEVELOPER_PANEL=false")
+        return False
+    return True
+
+def check_localhost_only():
+    """Check if developer panel should be restricted to localhost"""
+    localhost_only = os.getenv("DEVELOPER_LOCALHOST_ONLY", "true").lower() == "true"
+    if localhost_only and request.remote_addr not in ('127.0.0.1', 'localhost'):
+        logger.warning(f"Developer panel access attempted from non-localhost: {request.remote_addr}")
+        return False
+    return True
+
+def verify_password(password_hash, password):
+    """Verify password against hash"""
+    try:
+        return pwd_context.verify(password, password_hash)
+    except Exception as e:
+        logger.error(f"Password verification error: {str(e)}")
+        return False
+
+def check_rate_limit(ip_addr):
+    """Check if IP is rate-limited"""
+    if ip_addr not in failed_attempts:
+        return True
+
+    attempts, lockout_time = failed_attempts[ip_addr]
+    if attempts >= MAX_ATTEMPTS:
+        if datetime.now() < lockout_time:
+            return False
+        else:
+            del failed_attempts[ip_addr]
+            return True
+    return True
+
+def record_failed_attempt(ip_addr):
+    """Record failed login attempt"""
+    if ip_addr not in failed_attempts:
+        failed_attempts[ip_addr] = [1, datetime.now() + timedelta(seconds=LOCKOUT_DURATION)]
+    else:
+        attempts, _ = failed_attempts[ip_addr]
+        failed_attempts[ip_addr] = [attempts + 1, datetime.now() + timedelta(seconds=LOCKOUT_DURATION)]
+        logger.warning(f"Developer login failed attempt {failed_attempts[ip_addr][0]} from {ip_addr}")
+
+def clear_failed_attempts(ip_addr):
+    """Clear failed attempts on successful login"""
+    if ip_addr in failed_attempts:
+        del failed_attempts[ip_addr]
 
 def developer_login_required(f):
-    """Decorator to check if developer is logged in"""
+    """Decorator to check if developer is logged in with full security"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        # Check if developer panel is enabled
+        if not check_developer_enabled():
+            return render_template("errors/403.html", message="Developer panel is disabled"), 403
+
+        # Check localhost restriction
+        if not check_localhost_only():
+            logger.warning(f"Developer access blocked: non-localhost request from {request.remote_addr}")
+            return render_template("errors/403.html", message="Developer panel is restricted to localhost"), 403
+
+        # Check session
         if "developer_authenticated" not in session or not session["developer_authenticated"]:
             return redirect(url_for("developer.login"))
+
+        # Check session timeout
+        if "developer_login_time" in session:
+            session_timeout = int(os.getenv("DEVELOPER_SESSION_TIMEOUT", "30"))
+            elapsed = (datetime.now() - session["developer_login_time"]).total_seconds() / 60
+            if elapsed > session_timeout:
+                session.pop("developer_authenticated", None)
+                session.pop("developer_login_time", None)
+                flash(f"Session expired after {session_timeout} minutes", "warning")
+                return redirect(url_for("developer.login"))
+
         return f(*args, **kwargs)
     return decorated_function
 
 @dev_bp.route("/login", methods=["GET", "POST"])
 def login():
-    """Developer login page"""
-    if request.method == "POST":
-        password = request.form.get("password", "").strip()
+    """Developer login page with security checks"""
+    # Check if developer panel is enabled
+    if not check_developer_enabled():
+        return render_template("errors/403.html", message="Developer panel is disabled"), 403
 
-        if password == DEVELOPER_PASSWORD:
+    # Check localhost restriction for local instances
+    if not check_localhost_only():
+        logger.warning(f"Developer login attempted from non-localhost: {request.remote_addr}")
+        return render_template("errors/403.html", message="Developer panel is restricted to localhost"), 403
+
+    ip_addr = request.remote_addr
+
+    if request.method == "POST":
+        # Check rate limiting
+        if not check_rate_limit(ip_addr):
+            remaining = int(os.getenv("DEVELOPER_SESSION_TIMEOUT", "30"))
+            logger.warning(f"Developer login rate-limited from {ip_addr}")
+            flash(f"Too many failed attempts. Try again in {remaining} minutes.", "danger")
+            return render_template("developer/login.html"), 429
+
+        password = request.form.get("password", "").strip()
+        password_hash = os.getenv("DEVELOPER_PASSWORD_HASH", "")
+
+        if not password_hash:
+            logger.error("DEVELOPER_PASSWORD_HASH not configured in environment")
+            flash("Server configuration error", "danger")
+            return render_template("developer/login.html"), 500
+
+        # Verify password
+        if password and verify_password(password_hash, password):
             session["developer_authenticated"] = True
-            flash("Developer access granted!", "success")
+            session["developer_login_time"] = datetime.now()
+            session.permanent = True
+            session_timeout = int(os.getenv("DEVELOPER_SESSION_TIMEOUT", "30"))
+            current_app.permanent_session_lifetime = timedelta(minutes=session_timeout)
+
+            clear_failed_attempts(ip_addr)
+            logger.info(f"Developer access granted to {ip_addr}")
+            flash("Developer access granted! 🔓", "success")
             return redirect(url_for("developer.dashboard"))
         else:
-            flash(f"Incorrect password. Hint: {DEVELOPER_HINT}", "danger")
-            return render_template("developer/login.html", hint=DEVELOPER_HINT)
+            record_failed_attempt(ip_addr)
+            logger.warning(f"Developer login failed from {ip_addr} - {failed_attempts[ip_addr][0]} attempts")
+            flash("Incorrect password.", "danger")
+            return render_template("developer/login.html")
 
     return render_template("developer/login.html")
 
@@ -48,8 +163,17 @@ def logout():
 @dev_bp.route("/dashboard")
 @developer_login_required
 def dashboard():
-    """Developer dashboard"""
-    return render_template("developer/dashboard.html")
+    """Developer dashboard with security info"""
+    read_only_mode = os.getenv("DEVELOPER_READ_ONLY_MODE", "false").lower() == "true"
+    localhost_only = os.getenv("DEVELOPER_LOCALHOST_ONLY", "true").lower() == "true"
+
+    context = {
+        "read_only_mode": read_only_mode,
+        "localhost_only": localhost_only,
+        "session_timeout": int(os.getenv("DEVELOPER_SESSION_TIMEOUT", "30")),
+        "environment": os.getenv("FLASK_ENV", "development"),
+    }
+    return render_template("developer/dashboard.html", **context)
 
 # ==================== DATABASE TOOLS ====================
 
@@ -62,7 +186,11 @@ def database_manager():
 @dev_bp.route("/sync-schema")
 @developer_login_required
 def sync_schema():
-    """Launch schema sync tool info page"""
+    """Launch schema sync tool info page (disabled in read-only mode)"""
+    read_only_mode = os.getenv("DEVELOPER_READ_ONLY_MODE", "false").lower() == "true"
+    if read_only_mode:
+        flash("Schema sync is disabled in read-only mode", "warning")
+        return redirect(url_for("developer.dashboard"))
     return render_template("developer/sync_schema.html")
 
 @dev_bp.route("/data-display")
