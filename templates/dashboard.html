@@ -298,24 +298,23 @@
 <!-- Chart.js Configuration -->
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    // Get theme preference
-    const theme = document.documentElement.getAttribute('data-theme') || 'light';
-    const isDark = theme === 'dark';
-
-    // Theme-aware colors
-    const colors = {
-        text: isDark ? '#f1f5f9' : '#111827',
-        textSecondary: isDark ? '#cbd5e1' : '#4b5563',
-        primary: isDark ? '#60a5fa' : '#3b82f6',
-        success: isDark ? '#34d399' : '#059669',
-        warning: isDark ? '#fbbf24' : '#d97706',
-        border: isDark ? '#334155' : '#e5e7eb',
-        surface: isDark ? '#1e293b' : '#ffffff'
+    // Read colors directly from CSS variables (single source of truth)
+    const css = getComputedStyle(document.documentElement);
+    const COLORS = {
+        primary: css.getPropertyValue('--color-primary').trim(),
+        success: css.getPropertyValue('--color-success').trim(),
+        warning: css.getPropertyValue('--color-warning').trim(),
+        danger: css.getPropertyValue('--color-danger').trim(),
+        info: css.getPropertyValue('--color-info').trim(),
+        textPrimary: css.getPropertyValue('--text-primary').trim(),
+        textSecondary: css.getPropertyValue('--text-secondary').trim(),
+        borderPrimary: css.getPropertyValue('--border-primary').trim(),
+        surfacePrimary: css.getPropertyValue('--surface-primary').trim()
     };
 
-    // Chart defaults
-    Chart.defaults.color = colors.textSecondary;
-    Chart.defaults.borderColor = colors.border;
+    // Chart defaults from CSS variables
+    Chart.defaults.color = COLORS.textSecondary;
+    Chart.defaults.borderColor = COLORS.borderPrimary;
 
     // Monthly Sales & Profit Chart
     const salesCtx = document.getElementById('salesChart').getContext('2d');
@@ -327,8 +326,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 {
                     label: 'Sale Revenue',
                     data: [{% for row in monthly_sales %}{{ row.sale_amt | round(2) }}{% if not loop.last %},{% endif %}{% endfor %}],
-                    backgroundColor: colors.success,
-                    borderColor: colors.success,
+                    backgroundColor: COLORS.success,
+                    borderColor: COLORS.success,
                     borderWidth: 0,
                     borderRadius: 6,
                     order: 2
@@ -337,14 +336,14 @@ document.addEventListener('DOMContentLoaded', function () {
                     label: 'Gross Profit',
                     data: [{% for row in monthly_sales %}{{ row.profit_amt | round(2) }}{% if not loop.last %},{% endif %}{% endfor %}],
                     type: 'line',
-                    borderColor: colors.warning,
-                    backgroundColor: isDark ? 'rgba(251, 191, 36, 0.05)' : 'rgba(217, 119, 6, 0.05)',
+                    borderColor: COLORS.warning,
+                    backgroundColor: 'rgba(217, 119, 6, 0.05)',
                     borderWidth: 2,
                     fill: true,
                     tension: 0.4,
                     pointRadius: 4,
-                    pointBackgroundColor: colors.warning,
-                    pointBorderColor: colors.surface,
+                    pointBackgroundColor: COLORS.warning,
+                    pointBorderColor: COLORS.surfacePrimary,
                     pointBorderWidth: 2,
                     order: 1
                 }
@@ -356,17 +355,17 @@ document.addEventListener('DOMContentLoaded', function () {
             plugins: {
                 legend: {
                     position: 'top',
-                    labels: { color: colors.text, padding: 20, font: { size: 13, weight: '500' } }
+                    labels: { color: COLORS.textPrimary, padding: 20, font: { size: 13, weight: '500' } }
                 }
             },
             scales: {
                 y: {
                     beginAtZero: true,
-                    ticks: { color: colors.textSecondary, font: { size: 12 } },
-                    grid: { color: colors.border, drawBorder: false }
+                    ticks: { color: COLORS.textSecondary, font: { size: 12 } },
+                    grid: { color: COLORS.borderPrimary, drawBorder: false }
                 },
                 x: {
-                    ticks: { color: colors.textSecondary, font: { size: 12 } },
+                    ticks: { color: COLORS.textSecondary, font: { size: 12 } },
                     grid: { display: false, drawBorder: false }
                 }
             }
@@ -379,7 +378,10 @@ document.addEventListener('DOMContentLoaded', function () {
     const stockData = [{% for item in items[:10] %}{{ item.stock | default(0) }}{% if not loop.last %},{% endif %}{% endfor %}];
     const stockThresholds = [{% for item in items[:10] %}{{ item.reorder_level }}{% if not loop.last %},{% endif %}{% endfor %}];
 
-    const stockColors = stockData.map((val, idx) => stockData[idx] <= stockThresholds[idx] ? '#dc2626' : colors.primary);
+    // Color items red if below reorder level, primary color otherwise
+    const stockColors = stockData.map((val, idx) =>
+        stockData[idx] <= stockThresholds[idx] ? COLORS.danger : COLORS.primary
+    );
 
     new Chart(stockCtx, {
         type: 'bar',
@@ -403,20 +405,22 @@ document.addEventListener('DOMContentLoaded', function () {
             scales: {
                 x: {
                     beginAtZero: true,
-                    ticks: { color: colors.textSecondary, font: { size: 11 } },
-                    grid: { color: colors.border, drawBorder: false }
+                    ticks: { color: COLORS.textSecondary, font: { size: 11 } },
+                    grid: { color: COLORS.borderPrimary, drawBorder: false }
                 },
                 y: {
-                    ticks: { color: colors.textSecondary, font: { size: 12 } },
+                    ticks: { color: COLORS.textSecondary, font: { size: 12 } },
                     grid: { display: false, drawBorder: false }
                 }
             }
         }
     });
 
-    // Re-render charts on theme change
+    // Re-render charts on theme change (listen for localStorage changes)
     window.addEventListener('storage', function(e) {
-        if (e.key === 'theme') location.reload();
+        if (e.key === 'theme') {
+            location.reload();
+        }
     });
 });
 </script>
