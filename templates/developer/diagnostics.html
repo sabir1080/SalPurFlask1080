@@ -1,23 +1,32 @@
 {% extends "base.html" %}
 {% block title %}Diagnostics - Developer{% endblock %}
 {% block content %}
-<div class="container mt-4">
-    <h2>🩺 Application Diagnostics</h2>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-stethoscope"></i> Application Diagnostics</h1>
+    <p>System health and configuration status</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('developer.dashboard') }}" class="btn btn-secondary">
+      <i class="bi bi-arrow-left"></i> Back
+    </a>
+  </div>
+</div>
 
-    <div class="row mt-4">
-        <div class="col-md-6">
-            <div class="card">
-                <div class="card-header bg-primary text-white">
-                    <h5 class="mb-0">Application Info</h5>
-                </div>
-                <div class="card-body">
-                    <p><strong>App Name:</strong> {{ diagnostics.app_name }}</p>
-                    <p><strong>Company:</strong> {{ diagnostics.company }}</p>
-                    <p><strong>Timezone:</strong> {{ diagnostics.timezone }}</p>
-                    <p><strong>Currency:</strong> {{ diagnostics.currency }}</p>
-                    <p><strong>Debug Mode:</strong> {{ diagnostics.debug_mode }}</p>
-                </div>
-            </div>
+<div class="row g-6">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header bg-primary-subtle">
+        <h5 class="mb-0">Application Info</h5>
+      </div>
+      <div class="card-body">
+        <p><strong>App Name:</strong> {{ diagnostics.app_name }}</p>
+        <p><strong>Company:</strong> {{ diagnostics.company }}</p>
+        <p><strong>Timezone:</strong> {{ diagnostics.timezone }}</p>
+        <p><strong>Currency:</strong> {{ diagnostics.currency }}</p>
+        <p class="mb-0"><strong>Debug Mode:</strong> {{ diagnostics.debug_mode }}</p>
+      </div>
+    </div>
         </div>
 
         <div class="col-md-6">

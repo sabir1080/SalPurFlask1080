@@ -1,18 +1,30 @@
 {% extends "base.html" %}
 {% block title %}Migrations - Developer{% endblock %}
 {% block content %}
-<div class="container mt-4">
-    <h2>📊 Database Migrations</h2>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-diagram-3"></i> Database Migrations</h1>
+    <p>Automatic schema migration tracking</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('developer.dashboard') }}" class="btn btn-secondary">
+      <i class="bi bi-arrow-left"></i> Back
+    </a>
+  </div>
+</div>
 
-    <div class="alert alert-info mt-4">
-        <h5>Auto Migration System</h5>
-        <p>The app automatically runs migrations on startup via <code>migrate_database()</code> function in app.py</p>
+<div class="card mb-6">
+  <div class="card-header bg-info-subtle">
+    <h5 class="mb-0">Auto Migration System</h5>
+  </div>
+  <div class="card-body">
+    <p>The app automatically runs migrations on startup via <code class="bg-secondary-subtle px-2 py-1 rounded">migrate_database()</code> function in app.py</p>
 
-        <h6 class="mt-3">Current Migration Phases: 18</h6>
-        <ul class="mb-0">
-            <li>Phase 1-5: Core tables (User, Supplier, Customer, Item, Category)</li>
-            <li>Phase 6-10: Accounting (Journal, GL, Ledger, Tax)</li>
-            <li>Phase 11-15: Transactions (Purchase, Sale, Payment)</li>
+    <h6 class="mt-4">Current Migration Phases: 18</h6>
+    <ul class="mb-0">
+      <li>Phase 1-5: Core tables (User, Supplier, Customer, Item, Category)</li>
+      <li>Phase 6-10: Accounting (Journal, GL, Ledger, Tax)</li>
+      <li>Phase 11-15: Transactions (Purchase, Sale, Payment)</li>
             <li>Phase 16-18: Advanced (Business Category, Financial Accounts, etc)</li>
         </ul>
     </div>

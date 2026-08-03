@@ -1,18 +1,31 @@
 {% extends "base.html" %}
 {% block title %}Data Display Manager - Developer{% endblock %}
 {% block content %}
-<div class="container mt-4">
-    <h2>👁️ Data Display Manager</h2>
-    <div class="alert alert-info mt-3">
-        <h5>How to use:</h5>
-        <p>Run this in your terminal:</p>
-        <code class="bg-light p-3 d-block">python data_display_manager.py</code>
-        <p class="mt-3"><strong>Features:</strong></p>
-        <ul>
-            <li>Select and browse data from 3 databases</li>
-            <li>View complete table data in grid format</li>
-            <li>Check column types and nullable status</li>
-            <li>Compare data across deployments</li>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-eye"></i> Data Display Manager</h1>
+    <p>Browse and compare database records</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('developer.dashboard') }}" class="btn btn-secondary">
+      <i class="bi bi-arrow-left"></i> Back
+    </a>
+  </div>
+</div>
+
+<div class="card mb-6">
+  <div class="card-header bg-info-subtle">
+    <h5 class="mb-0">How to use:</h5>
+  </div>
+  <div class="card-body">
+    <p>Run this in your terminal:</p>
+    <pre class="bg-secondary-subtle p-3 rounded mb-3"><code>python data_display_manager.py</code></pre>
+    <p><strong>Features:</strong></p>
+    <ul>
+      <li>Select and browse data from 3 databases</li>
+      <li>View complete table data in grid format</li>
+      <li>Check column types and nullable status</li>
+      <li>Compare data across deployments</li>
         </ul>
     </div>
     <a href="{{ url_for('developer.dashboard') }}" class="btn btn-primary mt-3">← Back</a>

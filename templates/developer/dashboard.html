@@ -3,18 +3,17 @@
 {% block title %}Developer Dashboard - {{ app_name }}{% endblock %}
 
 {% block content %}
-<div class="container-fluid mt-4">
-    <div class="row mb-4">
-        <div class="col-md-8">
-            <h1>🔧 Developer Tasks Panel</h1>
-            <p class="text-muted">Advanced administration and diagnostic tools</p>
-        </div>
-        <div class="col-md-4 text-end">
-            <a href="{{ url_for('developer.logout') }}" class="btn btn-outline-danger">
-                🔒 Logout
-            </a>
-        </div>
-    </div>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-tools"></i> Developer Tasks Panel</h1>
+    <p>Advanced administration and diagnostic tools</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('developer.logout') }}" class="btn btn-danger">
+      <i class="bi bi-lock"></i> Logout
+    </a>
+  </div>
+</div>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}

@@ -1,14 +1,26 @@
 {% extends "base.html" %}
 {% block title %}Database Manager - Developer{% endblock %}
 {% block content %}
-<div class="container mt-4">
-    <h2>🗂️ Database Manager</h2>
-    <div class="alert alert-info mt-3">
-        <h5>How to use:</h5>
-        <p>Run this in your terminal:</p>
-        <code class="bg-light p-3 d-block">python database_manager.py</code>
-        <p class="mt-3 mb-0"><strong>Features:</strong> Add/edit/delete users, suppliers, customers, items, categories, and financial accounts</p>
-    </div>
-    <a href="{{ url_for('developer.dashboard') }}" class="btn btn-primary mt-3">← Back</a>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-database"></i> Database Manager</h1>
+    <p>CLI-based data management tool</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('developer.dashboard') }}" class="btn btn-secondary">
+      <i class="bi bi-arrow-left"></i> Back
+    </a>
+  </div>
+</div>
+
+<div class="card mb-6">
+  <div class="card-header bg-info-subtle">
+    <h5 class="mb-0">How to use:</h5>
+  </div>
+  <div class="card-body">
+    <p>Run this in your terminal:</p>
+    <pre class="bg-secondary-subtle p-3 rounded mb-3"><code>python database_manager.py</code></pre>
+    <p class="mb-0"><strong>Features:</strong> Add/edit/delete users, suppliers, customers, items, categories, and financial accounts</p>
+  </div>
 </div>
 {% endblock %}

@@ -1,14 +1,22 @@
 {% extends "base.html" %}
 {% block title %}Logs - Developer{% endblock %}
 {% block content %}
-<div class="container-fluid mt-4">
-    <h2>📋 Application Logs</h2>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-file-text"></i> Application Logs</h1>
+    <p>Last 100 log entries</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('developer.dashboard') }}" class="btn btn-secondary">
+      <i class="bi bi-arrow-left"></i> Back
+    </a>
+  </div>
+</div>
 
-    <div class="mt-4">
-        <div class="card">
-            <div class="card-header bg-dark text-white">
-                <h5 class="mb-0">Last 100 Log Lines</h5>
-            </div>
+<div class="card mb-6">
+  <div class="card-header bg-dark">
+    <h5 class="mb-0">Log Output</h5>
+  </div>
             <div class="card-body log-container" style="max-height: 600px; overflow-y: auto; background: #1e1e1e; padding: 15px;">
                 <div class="log-output" style="font-size: 1rem; font-family: 'Courier New', monospace; line-height: 2; letter-spacing: 0.5px;">
                     {% for line in logs %}
