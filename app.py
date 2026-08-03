@@ -241,6 +241,24 @@ app.register_blueprint(config_bp)
 app.register_blueprint(sales_bp)
 app.register_blueprint(dev_bp)
 
+# Configure logging
+logs_dir = os.path.join(BASE_DIR, "logs")
+os.makedirs(logs_dir, exist_ok=True)
+
+log_file = os.path.join(logs_dir, "app.log")
+file_handler = logging.FileHandler(log_file)
+file_handler.setLevel(logging.INFO)
+
+formatter = logging.Formatter(
+    "[%(asctime)s] %(levelname)s in %(module)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+file_handler.setFormatter(formatter)
+
+app.logger.addHandler(file_handler)
+app.logger.setLevel(logging.INFO)
+app.logger.info("Flask application started")
+
 # Register inventory routes directly (not via blueprint, to preserve endpoint names)
 from salpurflask.inventory.routes import (
     item_ledger, get_item, report_stock, item, edit_item, delete_item,

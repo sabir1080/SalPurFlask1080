@@ -1,0 +1,8 @@
+[2026-08-03 15:06:43] INFO in app: Flask application started
+[2026-08-03 15:06:44] INFO in app: Flask application started
+[2026-08-03 15:06:44] INFO in app: Flask application started
+[2026-08-03 15:06:49] INFO in app: Flask application started
+[2026-08-03 15:06:49] INFO in <string>: Test log entry 1
+[2026-08-03 15:06:49] WARNING in <string>: Test warning
+[2026-08-03 15:06:49] ERROR in <string>: Test error
+[2026-08-03 15:06:49] INFO in <string>: Test log entry 2
