@@ -1,120 +1,303 @@
 {% extends 'base.html' %}
 {% block title %}Dashboard — {{ app_name }}{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2 class="mb-0"><i class="bi bi-speedometer2"></i> Dashboard</h2>
-    <span class="text-muted small">Overview of your business</span>
-</div>
 
-<!-- Summary Cards Row 1 -->
-<div class="row g-3 mb-3">
-    <div class="col-6 col-md-3">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <p class="text-muted small mb-1">Total Sale Revenue</p>
-                        <h5 class="fw-bold mb-0 text-success">{{ total_sale_revenue | fmt_num }}</h5>
-                    </div>
-                    <span class="fs-3 text-success opacity-50"><i class="bi bi-graph-up-arrow"></i></span>
-                </div>
-                <small class="text-muted">Returns: {{ total_sale_returns | fmt_num }}</small>
-            </div>
-        </div>
+<div class="page-header">
+    <div class="page-header-title">
+        <h1><i class="bi bi-speedometer2"></i> Dashboard</h1>
+        <p>Business overview and key performance indicators</p>
     </div>
-    <div class="col-6 col-md-3">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <p class="text-muted small mb-1">Total Purchase Cost</p>
-                        <h5 class="fw-bold mb-0">{{ total_purchase_cost | fmt_num }}</h5>
-                    </div>
-                    <span class="fs-3 text-primary opacity-50"><i class="bi bi-cart"></i></span>
-                </div>
-                <small class="text-muted">Returns: {{ total_purchase_returns | fmt_num }}</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-6 col-md-3">
-        <div class="card border-0 shadow-sm h-100 border-start border-4 {% if total_gross_profit >= 0 %}border-success{% else %}border-danger{% endif %}">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <p class="text-muted small mb-1">Gross Profit</p>
-                        <h5 class="fw-bold mb-0 {% if total_gross_profit >= 0 %}text-success{% else %}text-danger{% endif %}">{{ total_gross_profit | fmt_num }}</h5>
-                    </div>
-                    <span class="fs-3 {% if total_gross_profit >= 0 %}text-success{% else %}text-danger{% endif %} opacity-50"><i class="bi bi-piggy-bank"></i></span>
-                </div>
-                <small class="text-muted">On all recorded sales</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-6 col-md-3">
-        <div class="card border-0 shadow-sm h-100 border-start border-warning border-4">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <p class="text-muted small mb-1">Low Stock Items</p>
-                        <h5 class="fw-bold mb-0 text-warning">{{ low_stock_count }}</h5>
-                    </div>
-                    <span class="fs-3 text-warning opacity-50"><i class="bi bi-exclamation-triangle"></i></span>
-                </div>
-                <small><a href="{{ url_for('reports') }}" class="text-muted">View in Reports</a></small>
-            </div>
-        </div>
+    <div class="page-header-actions">
+        <a href="{{ url_for('reports') }}" class="btn btn-outline-primary">
+            <i class="bi bi-bar-chart-line"></i> View Reports
+        </a>
     </div>
 </div>
 
-<!-- Summary Cards Row 2 -->
-<div class="row g-3 mb-4">
-    <div class="col-6 col-md-3">
-        <div class="card border-0 shadow-sm h-100 border-start border-danger border-4">
-            <div class="card-body">
-                <p class="text-muted small mb-1">Payable to Suppliers</p>
-                <h5 class="fw-bold text-danger mb-1">{{ total_payable_balance | fmt_num }}</h5>
-                <small class="text-muted">Paid: {{ total_paid_suppliers | fmt_num }} / {{ total_payable | fmt_num }}</small>
+<!-- KPI Metrics Grid (4 columns) -->
+<div class="grid grid-4 mb-8">
+    <!-- Total Sale Revenue -->
+    <div class="card card-elevated">
+        <div class="card-body">
+            <div class="flex flex-between mb-4">
+                <div class="flex-column">
+                    <p class="text-tertiary text-sm mb-1">Total Sale Revenue</p>
+                    <h3 class="mb-0 text-success font-bold">{{ total_sale_revenue | fmt_num }}</h3>
+                </div>
+                <span class="text-success text-4xl opacity-50"><i class="bi bi-graph-up-arrow"></i></span>
             </div>
+            <small class="text-tertiary">Returns: <span class="text-primary font-medium">{{ total_sale_returns | fmt_num }}</span></small>
         </div>
     </div>
-    <div class="col-6 col-md-3">
-        <div class="card border-0 shadow-sm h-100 border-start border-success border-4">
-            <div class="card-body">
-                <p class="text-muted small mb-1">Receivable from Customers</p>
-                <h5 class="fw-bold text-success mb-1">{{ total_receivable_balance | fmt_num }}</h5>
-                <small class="text-muted">Received: {{ total_received_customers | fmt_num }} / {{ total_receivable | fmt_num }}</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-12 col-md-6 d-flex align-items-center gap-2">
-        <a href="{{ url_for('supplier_payment') }}" class="btn btn-outline-danger btn-sm"><i class="bi bi-cash-coin"></i> Supplier Payments</a>
-        <a href="{{ url_for('customer_receipt') }}" class="btn btn-outline-success btn-sm"><i class="bi bi-receipt"></i> Customer Receipts</a>
-        <a href="{{ url_for('reports') }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-bar-chart-line"></i> Reports</a>
-    </div>
-</div>
 
-<!-- Charts -->
-<div class="row mb-4">
-    <div class="col-md-8">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-transparent fw-semibold">Monthly Sales &amp; Profit</div>
-            <div class="card-body">
-                <canvas id="salesChart" height="100"></canvas>
+    <!-- Total Purchase Cost -->
+    <div class="card card-elevated">
+        <div class="card-body">
+            <div class="flex flex-between mb-4">
+                <div class="flex-column">
+                    <p class="text-tertiary text-sm mb-1">Total Purchase Cost</p>
+                    <h3 class="mb-0 text-primary font-bold">{{ total_purchase_cost | fmt_num }}</h3>
+                </div>
+                <span class="text-primary text-4xl opacity-50"><i class="bi bi-cart"></i></span>
             </div>
+            <small class="text-tertiary">Returns: <span class="text-primary font-medium">{{ total_purchase_returns | fmt_num }}</span></small>
         </div>
     </div>
-    <div class="col-md-4">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-transparent fw-semibold">Stock Levels</div>
-            <div class="card-body">
-                <canvas id="stockChart" height="200"></canvas>
+
+    <!-- Gross Profit (with dynamic color) -->
+    <div class="card card-elevated {% if total_gross_profit >= 0 %}card-success{% else %}card-danger{% endif %}">
+        <div class="card-body">
+            <div class="flex flex-between mb-4">
+                <div class="flex-column">
+                    <p class="text-tertiary text-sm mb-1">Gross Profit Margin</p>
+                    <h3 class="mb-0 {% if total_gross_profit >= 0 %}text-success{% else %}text-danger{% endif %} font-bold">
+                        {{ total_gross_profit | fmt_num }}
+                    </h3>
+                </div>
+                <span class="{% if total_gross_profit >= 0 %}text-success{% else %}text-danger{% endif %} text-4xl opacity-50">
+                    <i class="bi bi-piggy-bank"></i>
+                </span>
             </div>
+            <small class="text-tertiary">Calculated on recorded sales</small>
+        </div>
+    </div>
+
+    <!-- Low Stock Alert -->
+    <div class="card card-elevated card-warning">
+        <div class="card-body">
+            <div class="flex flex-between mb-4">
+                <div class="flex-column">
+                    <p class="text-tertiary text-sm mb-1">Low Stock Items</p>
+                    <h3 class="mb-0 text-warning font-bold">{{ low_stock_count }}</h3>
+                </div>
+                <span class="text-warning text-4xl opacity-50"><i class="bi bi-exclamation-circle"></i></span>
+            </div>
+            <a href="{{ url_for('reports') }}" class="text-primary text-sm font-medium">View details →</a>
         </div>
     </div>
 </div>
 
+<!-- Financial Status Row -->
+<div class="grid grid-2 mb-8">
+    <!-- Payable to Suppliers -->
+    <div class="card card-elevated card-danger">
+        <div class="card-body">
+            <h4 class="card-title">💳 Payable to Suppliers</h4>
+            <h3 class="text-danger font-bold mb-2">{{ total_payable_balance | fmt_num }}</h3>
+            <div class="text-tertiary text-sm space-y-2">
+                <div class="flex flex-between">
+                    <span>Total Payable</span>
+                    <span class="font-medium">{{ total_payable | fmt_num }}</span>
+                </div>
+                <div class="flex flex-between">
+                    <span>Paid to Date</span>
+                    <span class="font-medium text-success">{{ total_paid_suppliers | fmt_num }}</span>
+                </div>
+            </div>
+            <a href="{{ url_for('supplier_payment') }}" class="btn btn-primary btn-sm mt-4 w-100">
+                <i class="bi bi-cash-coin"></i> Record Payment
+            </a>
+        </div>
+    </div>
+
+    <!-- Receivable from Customers -->
+    <div class="card card-elevated card-success">
+        <div class="card-body">
+            <h4 class="card-title">💰 Receivable from Customers</h4>
+            <h3 class="text-success font-bold mb-2">{{ total_receivable_balance | fmt_num }}</h3>
+            <div class="text-tertiary text-sm space-y-2">
+                <div class="flex flex-between">
+                    <span>Total Receivable</span>
+                    <span class="font-medium">{{ total_receivable | fmt_num }}</span>
+                </div>
+                <div class="flex flex-between">
+                    <span>Received to Date</span>
+                    <span class="font-medium text-success">{{ total_received_customers | fmt_num }}</span>
+                </div>
+            </div>
+            <a href="{{ url_for('customer_receipt') }}" class="btn btn-success btn-sm mt-4 w-100">
+                <i class="bi bi-receipt"></i> Record Receipt
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Section -->
+<div class="grid grid-3 mb-8 gap-8">
+    <!-- Monthly Sales & Profit Chart (2 columns wide) -->
+    <div class="card card-elevated" style="grid-column: span 2;">
+        <div class="card-header">
+            <h4 class="card-title mb-0">📊 Monthly Sales & Profit Trend</h4>
+        </div>
+        <div class="card-body">
+            <canvas id="salesChart" height="80"></canvas>
+        </div>
+    </div>
+
+    <!-- Stock Levels Chart -->
+    <div class="card card-elevated">
+        <div class="card-header">
+            <h4 class="card-title mb-0">📦 Top 10 Items by Stock</h4>
+        </div>
+        <div class="card-body">
+            <canvas id="stockChart" height="250"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activity Tables -->
+<div class="grid grid-2 gap-8 mb-8">
+    <!-- Recent Purchases -->
+    <div class="card card-elevated">
+        <div class="card-header flex flex-between">
+            <h4 class="card-title mb-0">📥 Recent Purchases</h4>
+            <a href="{{ url_for('purchase') }}" class="btn btn-text btn-sm">View All →</a>
+        </div>
+        <div class="table-wrapper">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Supplier</th>
+                        <th>Items</th>
+                        <th class="table-cell-right">Amount</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if purchases %}
+                        {% for p in purchases %}
+                        <tr>
+                            <td class="font-medium">{{ p.id_supplier.name }}</td>
+                            <td>
+                                {% if p.line_items | length == 1 %}
+                                    {{ p.line_items[0].item.name }}
+                                {% else %}
+                                    <span class="badge badge-primary">{{ p.line_items | length }} items</span>
+                                {% endif %}
+                            </td>
+                            <td class="table-cell-right font-medium">{{ purchase_total(p) | fmt_num }}</td>
+                            <td class="text-tertiary text-sm">{{ p.date.strftime('%d %b %Y') }}</td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="4" class="text-center text-tertiary py-8">No purchases recorded yet</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Recent Sales -->
+    <div class="card card-elevated">
+        <div class="card-header flex flex-between">
+            <h4 class="card-title mb-0">📤 Recent Sales</h4>
+            <a href="{{ url_for('sale') }}" class="btn btn-text btn-sm">View All →</a>
+        </div>
+        <div class="table-wrapper">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Customer</th>
+                        <th>Items</th>
+                        <th class="table-cell-right">Amount</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if sales %}
+                        {% for s in sales %}
+                        <tr>
+                            <td class="font-medium">{{ s.id_customer.name }}</td>
+                            <td>
+                                {% if s.line_items | length == 1 %}
+                                    {{ s.line_items[0].item.name }}
+                                {% else %}
+                                    <span class="badge badge-success">{{ s.line_items | length }} items</span>
+                                {% endif %}
+                            </td>
+                            <td class="table-cell-right font-medium">{{ sale_total(s) | fmt_num }}</td>
+                            <td class="text-tertiary text-sm">{{ s.date.strftime('%d %b %Y') }}</td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="4" class="text-center text-tertiary py-8">No sales recorded yet</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Low Stock Alert Section (if applicable) -->
+{% if low_stock_count > 0 %}
+<div class="alert alert-warning" role="alert" style="margin-bottom: 2rem;">
+    <h5 class="alert-heading">
+        <i class="bi bi-exclamation-triangle"></i> Stock Alert
+    </h5>
+    <p>{{ low_stock_count }} item{{ 's' if low_stock_count != 1 else '' }} below reorder level</p>
+</div>
+
+<div class="card card-elevated card-warning mb-8">
+    <div class="card-header">
+        <h4 class="card-title mb-0">⚠️ Low Stock Items ({{ low_stock_count }})</h4>
+    </div>
+    <div class="table-wrapper">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Item Name</th>
+                    <th>Category</th>
+                    <th class="table-cell-right">Current Stock</th>
+                    <th class="table-cell-right">Reorder Level</th>
+                    <th class="table-cell-center">Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in items if item.stock <= item.reorder_level %}
+                <tr>
+                    <td class="font-medium">{{ item.name }}</td>
+                    <td>{{ item.business_category.name if item.business_category else (item.id_category.name if item.id_category else '—') }}</td>
+                    <td class="table-cell-right">
+                        <span class="badge badge-danger-solid">{{ item.stock | fmt_num }}</span>
+                    </td>
+                    <td class="table-cell-right">{{ item.reorder_level | fmt_num }}</td>
+                    <td class="table-cell-center">
+                        <span class="text-xs text-danger font-semibold">CRITICAL</span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Chart.js Configuration -->
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    // Get theme preference
+    const theme = document.documentElement.getAttribute('data-theme') || 'light';
+    const isDark = theme === 'dark';
+
+    // Theme-aware colors
+    const colors = {
+        text: isDark ? '#f1f5f9' : '#111827',
+        textSecondary: isDark ? '#cbd5e1' : '#4b5563',
+        primary: isDark ? '#60a5fa' : '#3b82f6',
+        success: isDark ? '#34d399' : '#059669',
+        warning: isDark ? '#fbbf24' : '#d97706',
+        border: isDark ? '#334155' : '#e5e7eb',
+        surface: isDark ? '#1e293b' : '#ffffff'
+    };
+
+    // Chart defaults
+    Chart.defaults.color = colors.textSecondary;
+    Chart.defaults.borderColor = colors.border;
+
     // Monthly Sales & Profit Chart
     const salesCtx = document.getElementById('salesChart').getContext('2d');
     new Chart(salesCtx, {
@@ -125,141 +308,111 @@ document.addEventListener('DOMContentLoaded', function () {
                 {
                     label: 'Sale Revenue',
                     data: [{% for row in monthly_sales %}{{ row.sale_amt | round(2) }}{% if not loop.last %},{% endif %}{% endfor %}],
-                    backgroundColor: 'rgba(25, 135, 84, 0.6)',
-                    borderColor: 'rgba(25, 135, 84, 1)',
-                    borderWidth: 1,
+                    backgroundColor: colors.success,
+                    borderColor: colors.success,
+                    borderWidth: 0,
+                    borderRadius: 6,
                     order: 2
                 },
                 {
                     label: 'Gross Profit',
                     data: [{% for row in monthly_sales %}{{ row.profit_amt | round(2) }}{% if not loop.last %},{% endif %}{% endfor %}],
                     type: 'line',
-                    borderColor: 'rgba(255, 193, 7, 1)',
-                    backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                    borderColor: colors.warning,
+                    backgroundColor: isDark ? 'rgba(251, 191, 36, 0.05)' : 'rgba(217, 119, 6, 0.05)',
                     borderWidth: 2,
                     fill: true,
-                    tension: 0.3,
+                    tension: 0.4,
+                    pointRadius: 4,
+                    pointBackgroundColor: colors.warning,
+                    pointBorderColor: colors.surface,
+                    pointBorderWidth: 2,
                     order: 1
                 }
             ]
         },
         options: {
             responsive: true,
-            plugins: { legend: { position: 'top' } },
-            scales: { y: { beginAtZero: true } }
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: { color: colors.text, padding: 20, font: { size: 13, weight: '500' } }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: { color: colors.textSecondary, font: { size: 12 } },
+                    grid: { color: colors.border, drawBorder: false }
+                },
+                x: {
+                    ticks: { color: colors.textSecondary, font: { size: 12 } },
+                    grid: { display: false, drawBorder: false }
+                }
+            }
         }
     });
 
-    // Stock Chart
+    // Stock Levels Chart
     const stockCtx = document.getElementById('stockChart').getContext('2d');
     new Chart(stockCtx, {
         type: 'bar',
         data: {
-            labels: [{% for item in items[:10] %}'{{ item.name[:12] }}'{% if not loop.last %},{% endif %}{% endfor %}],
+            labels: [{% for item in items[:10] %}'{{ item.name[:15] }}'{% if not loop.last %},{% endif %}{% endfor %}],
             datasets: [{
-                label: 'Stock',
+                label: 'Stock Quantity',
                 data: [{% for item in items[:10] %}{{ item.stock | default(0) }}{% if not loop.last %},{% endif %}{% endfor %}],
-                backgroundColor: [{% for item in items[:10] %}{% if item.stock <= item.reorder_level %}'rgba(220,53,69,0.7)'{% else %}'rgba(13,110,253,0.6)'{% endif %}{% if not loop.last %},{% endif %}{% endfor %}],
-                borderWidth: 1
+                backgroundColor: [{% for item in items[:10] %}{% if item.stock <= item.reorder_level %}'#dc2626'{% else %}'{{ colors.primary }}'{% endif %}{% if not loop.last %},{% endif %}{% endfor %}],
+                borderRadius: 6,
+                borderWidth: 0
             }]
         },
         options: {
-            responsive: true,
             indexAxis: 'y',
-            plugins: { legend: { display: false } },
-            scales: { x: { beginAtZero: true } }
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: { display: false }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    ticks: { color: colors.textSecondary, font: { size: 11 } },
+                    grid: { color: colors.border, drawBorder: false }
+                },
+                y: {
+                    ticks: { color: colors.textSecondary, font: { size: 12 } },
+                    grid: { display: false, drawBorder: false }
+                }
+            }
         }
+    });
+
+    // Re-render charts on theme change
+    window.addEventListener('storage', function(e) {
+        if (e.key === 'theme') location.reload();
     });
 });
 </script>
 
-<!-- Recent Purchases & Sales -->
-<div class="row mb-4">
-    <div class="col-md-6">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
-                <span class="fw-semibold">Recent Purchases</span>
-                <a href="{{ url_for('purchase') }}" class="btn btn-outline-primary btn-sm">View All</a>
-            </div>
-            <div class="table-responsive">
-                <table class="table table-sm table-hover mb-0">
-                    <thead class="table-light">
-                        <tr><th>Supplier</th><th>Item</th><th class="text-end">Total</th><th>Date</th></tr>
-                    </thead>
-                    <tbody>
-                        {% for p in purchases %}
-                        <tr>
-                            <td>{{ p.id_supplier.name }}</td>
-                            <td>
-                                {% if p.line_items | length == 1 %}{{ p.line_items[0].item.name }}
-                                {% else %}<span class="badge bg-info text-dark">{{ p.line_items | length }} items</span>{% endif %}
-                            </td>
-                            <td class="text-end">{{ purchase_total(p) | fmt_num }}</td>
-                            <td>{{ p.date.strftime('%Y-%m-%d') }}</td>
-                        </tr>
-                        {% else %}
-                        <tr><td colspan="4" class="text-center text-muted">No purchases yet</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-6">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
-                <span class="fw-semibold">Recent Sales</span>
-                <a href="{{ url_for('sale') }}" class="btn btn-outline-success btn-sm">View All</a>
-            </div>
-            <div class="table-responsive">
-                <table class="table table-sm table-hover mb-0">
-                    <thead class="table-light">
-                        <tr><th>Customer</th><th>Item</th><th class="text-end">Total</th><th>Date</th></tr>
-                    </thead>
-                    <tbody>
-                        {% for s in sales %}
-                        <tr>
-                            <td>{{ s.id_customer.name }}</td>
-                            <td>
-                                {% if s.line_items | length == 1 %}{{ s.line_items[0].item.name }}
-                                {% else %}<span class="badge bg-info text-dark">{{ s.line_items | length }} items</span>{% endif %}
-                            </td>
-                            <td class="text-end">{{ sale_total(s) | fmt_num }}</td>
-                            <td>{{ s.date.strftime('%Y-%m-%d') }}</td>
-                        </tr>
-                        {% else %}
-                        <tr><td colspan="4" class="text-center text-muted">No sales yet</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-</div>
+<style>
+.grid { display: grid; gap: var(--space-8); }
+.grid-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
 
-<!-- Low Stock Alert -->
-{% if low_stock_count > 0 %}
-<div class="card border-0 shadow-sm border-start border-warning border-4 mb-4">
-    <div class="card-header bg-transparent fw-semibold text-warning">
-        <i class="bi bi-exclamation-triangle"></i> Low Stock Alert ({{ low_stock_count }} items)
-    </div>
-    <div class="table-responsive">
-        <table class="table table-sm mb-0">
-            <thead class="table-light">
-                <tr><th>Item</th><th>Category</th><th class="text-end">Stock</th><th class="text-end">Reorder Level</th></tr>
-            </thead>
-            <tbody>
-                {% for item in items if item.stock <= item.reorder_level %}
-                <tr>
-                    <td>{{ item.name }}</td>
-                    <td>{{ item.business_category.name if item.business_category else (item.id_category.name if item.id_category else 'N/A') }}</td>
-                    <td class="text-end text-danger fw-semibold">{{ item.stock | fmt_num }}</td>
-                    <td class="text-end">{{ item.reorder_level | fmt_num }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-{% endif %}
+.py-8 { padding-top: var(--space-8); padding-bottom: var(--space-8); }
+.space-y-2 > * + * { margin-top: var(--space-2); }
+
+@media (max-width: 1440px) {
+    .grid-4 { grid-template-columns: repeat(2, 1fr); }
+    .grid-3 { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 768px) {
+    .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
+}
+</style>
+
 {% endblock %}

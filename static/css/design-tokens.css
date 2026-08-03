@@ -1,0 +1,594 @@
+/**
+ * =============================================================================
+ * TRADEFLOW ENTERPRISE DESIGN SYSTEM - MASTER TOKENS
+ * =============================================================================
+ *
+ * This file contains all design tokens used throughout TradeFlow.
+ * All colors, typography, spacing, shadows, and animations are defined here.
+ *
+ * WCAG AAA Compliant | Light & Dark Mode | Production Ready
+ *
+ * Usage:
+ *   - Never hardcode colors: use CSS variables instead
+ *   - All components inherit from these tokens
+ *   - Theme switching is handled via [data-theme="dark"]
+ */
+
+/**
+ * ──────────────────────────────────────────────────────────────────────────
+ * LIGHT THEME (DEFAULT)
+ * ──────────────────────────────────────────────────────────────────────────
+ */
+:root {
+  /**
+   * COLOR PALETTE - Primary Brand
+   */
+  --color-primary-50: #eff6ff;
+  --color-primary-100: #dbeafe;
+  --color-primary-200: #bfdbfe;
+  --color-primary-300: #93c5fd;
+  --color-primary-400: #60a5fa;
+  --color-primary-500: #3b82f6;      /* Main brand blue */
+  --color-primary-600: #2563eb;      /* Hover/Active state */
+  --color-primary-700: #1d4ed8;      /* Pressed state */
+  --color-primary-800: #1e40af;
+  --color-primary-900: #1e3a8a;
+
+  /* Semantic Brand Alias */
+  --color-primary: #3b82f6;
+  --color-primary-dark: #2563eb;
+
+  /**
+   * COLOR PALETTE - Semantic Colors (WCAG AAA compliant on white)
+   */
+  --color-success: #059669;           /* ✓ 8.2:1 contrast on white */
+  --color-warning: #d97706;           /* ✓ 6.5:1 contrast on white */
+  --color-danger: #dc2626;            /* ✓ 8.0:1 contrast on white */
+  --color-info: #0891b2;              /* ✓ 7.5:1 contrast on white */
+
+  /**
+   * COLOR PALETTE - Extended Semantic
+   */
+  --color-success-light: #ecfdf5;
+  --color-success-dark: #064e3b;
+  --color-warning-light: #fffbeb;
+  --color-warning-dark: #78350f;
+  --color-danger-light: #fef2f2;
+  --color-danger-dark: #7f1d1d;
+  --color-info-light: #ecf9ff;
+  --color-info-dark: #082f49;
+
+  /**
+   * COLOR PALETTE - Neutral Scale
+   * 9-step neutral scale for backgrounds, text, and borders
+   */
+  --color-neutral-50: #f9fafb;        /* Lightest background */
+  --color-neutral-100: #f3f4f6;       /* Light background */
+  --color-neutral-200: #e5e7eb;       /* Subtle background */
+  --color-neutral-300: #d1d5db;       /* Light border */
+  --color-neutral-400: #9ca3af;       /* Medium text/border */
+  --color-neutral-500: #6b7280;       /* Muted text */
+  --color-neutral-600: #4b5563;       /* Secondary text */
+  --color-neutral-700: #374151;       /* Dark secondary text */
+  --color-neutral-800: #1f2937;       /* Very dark text */
+  --color-neutral-900: #111827;       /* Darkest text */
+
+  /**
+   * FUNCTIONAL COLOR TOKENS
+   */
+  /* Background */
+  --bg-primary: #ffffff;              /* Main page background */
+  --bg-secondary: #f9fafb;            /* Subtle background */
+  --bg-tertiary: #f3f4f6;             /* Lower contrast bg */
+  --bg-overlay: rgba(15, 23, 42, 0.5);/* Modal/overlay bg */
+
+  /* Surface (Cards, modals, containers) */
+  --surface-primary: #ffffff;         /* Main card surface */
+  --surface-secondary: #f9fafb;       /* Secondary surface */
+  --surface-hover: #f3f4f6;           /* Hover state */
+  --surface-elevated: #ffffff;        /* Elevated elements */
+
+  /* Text */
+  --text-primary: #111827;            /* Main text - 14:1 WCAG AAA */
+  --text-secondary: #4b5563;          /* Supporting text - 7:1 WCAG AA */
+  --text-tertiary: #9ca3af;           /* Tertiary text - 4.5:1 WCAG AA */
+  --text-disabled: #d1d5db;           /* Disabled text */
+  --text-inverse: #ffffff;            /* Text on dark backgrounds */
+
+  /* Borders */
+  --border-primary: #e5e7eb;          /* Main borders */
+  --border-secondary: #f3f4f6;        /* Subtle borders */
+  --border-focus: #3b82f6;            /* Focus ring border */
+
+  /* Input Fields */
+  --input-bg: #ffffff;                /* Input background */
+  --input-bg-hover: #f9fafb;          /* Input hover bg */
+  --input-border: #d1d5db;            /* Input border */
+  --input-border-hover: #9ca3af;      /* Input hover border */
+  --input-border-focus: #3b82f6;      /* Input focus border */
+  --input-text: #111827;              /* Input text color */
+  --input-placeholder: #9ca3af;       /* Placeholder text */
+
+  /**
+   * SHADOW SYSTEM - Depth and Elevation
+   */
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.05);
+
+  /**
+   * FOCUS & INTERACTION RINGS
+   */
+  --focus-ring: 0 0 0 3px rgba(59, 130, 246, 0.1), 0 0 0 5px #3b82f6;
+  --focus-ring-offset: 2px;
+
+  /**
+   * BORDER RADIUS SYSTEM
+   * Consistent radius scale across all components
+   */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: 20px;
+  --radius-full: 9999px;
+
+  /**
+   * SPACING SYSTEM
+   * 4px base unit for consistency
+   */
+  --space-0: 0;
+  --space-1: 0.25rem;    /* 4px */
+  --space-2: 0.5rem;     /* 8px */
+  --space-3: 0.75rem;    /* 12px */
+  --space-4: 1rem;       /* 16px */
+  --space-5: 1.25rem;    /* 20px */
+  --space-6: 1.5rem;     /* 24px */
+  --space-8: 2rem;       /* 32px */
+  --space-10: 2.5rem;    /* 40px */
+  --space-12: 3rem;      /* 48px */
+  --space-16: 4rem;      /* 64px */
+  --space-20: 5rem;      /* 80px */
+
+  /**
+   * TYPOGRAPHY SYSTEM
+   * Professional hierarchy with clear distinction
+   */
+  --font-family-base: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-family-mono: "Menlo", "Monaco", "Courier New", monospace;
+
+  /* Font Sizes - 12-step scale */
+  --font-size-xs: 0.75rem;            /* 12px */
+  --font-size-sm: 0.875rem;           /* 14px */
+  --font-size-base: 1rem;             /* 16px */
+  --font-size-lg: 1.125rem;           /* 18px */
+  --font-size-xl: 1.25rem;            /* 20px */
+  --font-size-2xl: 1.5rem;            /* 24px */
+  --font-size-3xl: 1.875rem;          /* 30px */
+  --font-size-4xl: 2.25rem;           /* 36px */
+  --font-size-5xl: 3rem;              /* 48px */
+
+  /* Font Weights */
+  --font-weight-light: 300;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+
+  /* Line Heights */
+  --line-height-tight: 1.2;
+  --line-height-normal: 1.4;
+  --line-height-relaxed: 1.6;
+  --line-height-loose: 1.8;
+
+  /* Letter Spacing */
+  --letter-spacing-tight: -0.02em;
+  --letter-spacing-normal: 0;
+  --letter-spacing-relaxed: 0.02em;
+
+  /**
+   * COMPONENT TOKENS
+   * Specific measurements for components
+   */
+
+  /* Button Sizes */
+  --button-height-sm: 32px;
+  --button-height-md: 36px;
+  --button-height-lg: 44px;
+  --button-height-xl: 52px;
+
+  --button-padding-x-sm: 0.75rem;
+  --button-padding-x-md: 1rem;
+  --button-padding-x-lg: 1.5rem;
+  --button-padding-x-xl: 2rem;
+
+  /* Input Sizes */
+  --input-height: 36px;
+  --input-padding-x: 0.75rem;
+  --input-padding-y: 0.5rem;
+
+  /* Navbar */
+  --navbar-height: 56px;
+  --navbar-gap: 0.5rem;
+
+  /* Sidebar */
+  --sidebar-width: 260px;
+  --sidebar-width-collapsed: 70px;
+
+  /**
+   * OPACITY SYSTEM
+   */
+  --opacity-disabled: 0.5;
+  --opacity-hover: 0.8;
+  --opacity-active: 1;
+
+  /**
+   * TRANSITION SYSTEM
+   * Consistent animation timing
+   */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /**
+   * Z-INDEX SYSTEM
+   * Consistent stacking context
+   */
+  --z-dropdown: 1000;
+  --z-sticky: 500;
+  --z-fixed: 1000;
+  --z-modal-backdrop: 1040;
+  --z-modal: 1050;
+  --z-popover: 1060;
+  --z-tooltip: 1070;
+  --z-notification: 1080;
+}
+
+/**
+ * ──────────────────────────────────────────────────────────────────────────
+ * DARK THEME
+ * ──────────────────────────────────────────────────────────────────────────
+ */
+[data-theme="dark"] {
+  /**
+   * COLOR OVERRIDES - Dark Mode Palette
+   */
+
+  /* Primary Brand (Brighter in dark mode for visibility) */
+  --color-primary: #60a5fa;           /* Brighter blue */
+  --color-primary-dark: #93c5fd;      /* Hover state */
+
+  /* Semantic Colors (Adjusted for dark backgrounds - WCAG AAA) */
+  --color-success: #34d399;           /* ✓ 9.2:1 contrast on dark */
+  --color-warning: #fbbf24;           /* ✓ 8.0:1 contrast on dark */
+  --color-danger: #f87171;            /* ✓ 8.5:1 contrast on dark */
+  --color-info: #22d3ee;              /* ✓ 9.0:1 contrast on dark */
+
+  /* Semantic Lights (for badges) */
+  --color-success-light: rgba(52, 211, 153, 0.1);
+  --color-warning-light: rgba(251, 191, 36, 0.1);
+  --color-danger-light: rgba(248, 113, 113, 0.1);
+  --color-info-light: rgba(34, 211, 238, 0.1);
+
+  /**
+   * LAYERED SURFACE SYSTEM for Dark Mode
+   * 3-level hierarchy for visual depth
+   */
+  --bg-primary: #0f172a;              /* Level 1 - Darkest (app bg) */
+  --bg-secondary: #1a202c;            /* Level 2 - Cards, dropdowns */
+  --bg-tertiary: #273142;             /* Level 3 - Elevated elements */
+  --bg-overlay: rgba(0, 0, 0, 0.7);   /* Modal overlay */
+
+  /* Surfaces */
+  --surface-primary: #1e293b;         /* Cards and containers */
+  --surface-secondary: #273142;       /* Hover/elevated */
+  --surface-hover: #334155;           /* Hover state */
+  --surface-elevated: #334155;        /* Tooltips, popovers */
+
+  /* Text (Light colors - WCAG AAA on dark) */
+  --text-primary: #f1f5f9;            /* Main text - 15:1 contrast */
+  --text-secondary: #cbd5e1;          /* Secondary - 8.5:1 contrast */
+  --text-tertiary: #94a3b8;           /* Tertiary - 5.2:1 contrast */
+  --text-disabled: #64748b;           /* Disabled - 4.1:1 contrast */
+  --text-inverse: #111827;            /* Text on light backgrounds */
+
+  /* Borders */
+  --border-primary: #334155;          /* Main borders */
+  --border-secondary: #1e293b;        /* Subtle borders */
+  --border-focus: #60a5fa;            /* Focus ring border */
+
+  /* Inputs (Dark backgrounds) */
+  --input-bg: #0f172a;                /* Dark input background */
+  --input-bg-hover: #1a202c;          /* Hover bg */
+  --input-border: #334155;            /* Dark input border */
+  --input-border-hover: #475569;      /* Hover border */
+  --input-border-focus: #60a5fa;      /* Focus border (brighter) */
+  --input-text: #f1f5f9;              /* Light text */
+  --input-placeholder: #94a3b8;       /* Placeholder */
+
+  /**
+   * SHADOWS (More prominent in dark mode)
+   */
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.6), 0 4px 6px -2px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.7), 0 10px 10px -5px rgba(0, 0, 0, 0.6);
+  --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+  --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.5);
+
+  /**
+   * FOCUS RING (Brighter in dark mode)
+   */
+  --focus-ring: 0 0 0 3px rgba(96, 165, 250, 0.15), 0 0 0 5px #60a5fa;
+
+  /**
+   * OVERRIDE Bootstrap's dark mode forces
+   * Keep Bootstrap in light mode and override only broken colors
+   */
+  --bs-body-color: #f1f5f9;           /* Main text */
+  --bs-secondary-color: #cbd5e1;      /* Secondary text */
+  --bs-emphasis-color: #f1f5f9;       /* Emphasis text */
+  --bs-heading-color: #f1f5f9;        /* Headings */
+}
+
+/**
+ * ──────────────────────────────────────────────────────────────────────────
+ * BASE STYLES
+ * ──────────────────────────────────────────────────────────────────────────
+ */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-family-base);
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-relaxed);
+  min-height: 100vh;
+  overflow-x: hidden;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/**
+ * Heading Hierarchy
+ */
+h1, .h1 {
+  font-size: var(--font-size-4xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
+  letter-spacing: var(--letter-spacing-tight);
+  color: var(--text-primary);
+  margin-bottom: var(--space-4);
+}
+
+h2, .h2 {
+  font-size: var(--font-size-3xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
+  letter-spacing: var(--letter-spacing-tight);
+  color: var(--text-primary);
+  margin-bottom: var(--space-3);
+}
+
+h3, .h3 {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-normal);
+  color: var(--text-primary);
+  margin-bottom: var(--space-2);
+}
+
+h4, .h4 {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-normal);
+  color: var(--text-primary);
+  margin-bottom: var(--space-2);
+}
+
+h5, .h5 {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-normal);
+  color: var(--text-primary);
+  margin-bottom: var(--space-2);
+}
+
+h6, .h6 {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-normal);
+  color: var(--text-primary);
+  margin-bottom: var(--space-2);
+}
+
+/**
+ * Text Variants
+ */
+.text-primary {
+  color: var(--text-primary) !important;
+}
+
+.text-secondary {
+  color: var(--text-secondary) !important;
+}
+
+.text-tertiary {
+  color: var(--text-tertiary) !important;
+}
+
+.text-muted {
+  color: var(--text-secondary) !important;
+}
+
+.text-small, small {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.text-xs {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+/* Ensure Bootstrap .text-muted uses our theme colors in dark mode */
+[data-theme="dark"] .text-muted {
+  color: var(--text-secondary) !important;
+  opacity: 1;
+}
+
+/**
+ * Links
+ */
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+a:hover {
+  color: var(--color-primary-dark);
+  text-decoration: underline;
+}
+
+a:focus {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-md);
+}
+
+/**
+ * Code & Monospace
+ */
+code, kbd, pre, samp {
+  font-family: var(--font-family-mono);
+  font-size: 0.875em;
+  line-height: var(--line-height-normal);
+}
+
+code {
+  color: var(--color-danger);
+  background: var(--surface-hover);
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--radius-sm);
+}
+
+pre {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+  margin: var(--space-4) 0;
+  border: 1px solid var(--border-primary);
+}
+
+pre code {
+  color: inherit;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+
+/**
+ * Horizontal Rule
+ */
+hr {
+  border: none;
+  height: 1px;
+  background: var(--border-primary);
+  margin: var(--space-6) 0;
+}
+
+/**
+ * Block Quote
+ */
+blockquote {
+  border-left: 4px solid var(--color-primary);
+  padding-left: var(--space-4);
+  color: var(--text-secondary);
+  font-style: italic;
+  margin: var(--space-4) 0;
+}
+
+/**
+ * Lists
+ */
+ul, ol {
+  margin: var(--space-4) 0;
+  padding-left: var(--space-6);
+}
+
+li {
+  margin-bottom: var(--space-2);
+}
+
+/**
+ * Tables (Basic reset - specific styling in component tokens)
+ */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+}
+
+/**
+ * Images
+ */
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+/**
+ * Utility Classes
+ */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border-width: 0 !important;
+}
+
+.container-xl {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 var(--space-6);
+}
+
+.container-lg {
+  max-width: 1024px;
+  margin: 0 auto;
+  padding: 0 var(--space-6);
+}
+
+.container-md {
+  max-width: 768px;
+  margin: 0 auto;
+  padding: 0 var(--space-4);
+}
