@@ -1,118 +1,175 @@
 {% extends 'base.html' %}
 {% block content %}
 {% set form_data = form_data|default({}) %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2>Customer Receipts</h2>
-    <a href="{{ url_for('customer_bulk_receipt') }}" class="btn btn-success">
-        <i class="bi bi-cash-stack"></i> Bulk Receipt
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-receipt"></i> Customer Receipts</h1>
+    <p>Record and manage customer payment receipts</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('customer_bulk_receipt') }}" class="btn btn-primary">
+      <i class="bi bi-cash-stack"></i> Bulk Receipt
     </a>
+  </div>
 </div>
 
-<form method="GET" class="mb-3">
-    <div class="input-group">
-        <input type="text" class="form-control" name="search" placeholder="Search customer, reference or notes" value="{{ search }}">
-        <button type="submit" class="btn btn-primary" title="Search receipts by customer, reference or notes">Search</button>
-    </div>
-</form>
+<!-- Search Card -->
+<div class="card mb-6">
+  <div class="card-body">
+    <form method="GET" class="row g-3">
+      <div class="col-md-10">
+        <input type="text" class="form-control" name="search" placeholder="Search customer, reference or notes..." value="{{ search }}">
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-secondary w-100">
+          <i class="bi bi-search"></i> Search
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
 
-<form method="POST" class="mb-4 card card-body border">
-    <h5 class="mb-3">Record Payment from Customer</h5>
-    <div class="row g-3">
-        <div class="col-md-4">
-            <label for="customer_id" class="form-label">Customer</label>
-            <select class="form-control" id="customer_id" name="customer_id" required>
-                <option value="">Select Customer</option>
-                {% for customer in customers %}
-                <option value="{{ customer.id }}" {% if form_data.get('customer_id', '')|string == customer.id|string %}selected{% endif %}>{{ customer.name }}</option>
-                {% endfor %}
-            </select>
-            <small id="customer_balance_hint" class="text-muted">Advance receipt allowed — balance negative ho sakta hai</small>
+<!-- Record Receipt Form -->
+<div class="card mb-6">
+  <div class="card-header">
+    <h5 class="mb-0"><i class="bi bi-plus-circle"></i> Record Receipt</h5>
+  </div>
+  <form method="POST" class="card-body">
+    <div class="row g-3 mb-4">
+      <div class="col-md-4">
+        <div class="form-group">
+          <label class="form-label required">Customer</label>
+          <select class="form-select" id="customer_id" name="customer_id" required>
+            <option value="">Select Customer</option>
+            {% for customer in customers %}
+            <option value="{{ customer.id }}" {% if form_data.get('customer_id', '')|string == customer.id|string %}selected{% endif %}>{{ customer.name }}</option>
+            {% endfor %}
+          </select>
+          <small class="form-text">Advance receipt allowed</small>
         </div>
-        <div class="col-md-4">
-            <label for="sale_id" class="form-label">Against Sale (optional)</label>
-            <select class="form-control" id="sale_id" name="sale_id">
-                <option value="">General / On Account</option>
-                {% for s in sales %}
-                {% set s_total = sale_total(s) %}
-                {% set s_received = get_sale_received(s.id) %}
-                {% set s_due = s_total - s_received %}
-                {% if s_due > 0 %}
-                <option value="{{ s.id }}" data-customer="{{ s.customer_id }}" class="sale-option" {% if form_data.get('sale_id', '')|string == s.id|string %}selected{% endif %}>
-                    #{{ s.id }} — {% if s.line_items | length > 1 %}{{ s.line_items | length }} items{% else %}{{ s.line_items[0].item.name if s.line_items else s.id_item.name }}{% endif %} — Due: {{ s_due | fmt_num }}
-                </option>
-                {% endif %}
-                {% endfor %}
-            </select>
+      </div>
+      <div class="col-md-4">
+        <div class="form-group">
+          <label class="form-label">Against Sale</label>
+          <select class="form-select" id="sale_id" name="sale_id">
+            <option value="">General / On Account</option>
+            {% for s in sales %}
+            {% set s_total = sale_total(s) %}
+            {% set s_received = get_sale_received(s.id) %}
+            {% set s_due = s_total - s_received %}
+            {% if s_due > 0 %}
+            <option value="{{ s.id }}" data-customer="{{ s.customer_id }}" {% if form_data.get('sale_id', '')|string == s.id|string %}selected{% endif %}>
+              #{{ s.id }} — Due: {{ s_due | fmt_num }}
+            </option>
+            {% endif %}
+            {% endfor %}
+          </select>
         </div>
-        <div class="col-md-4">
-            <label for="amount" class="form-label">Amount</label>
-            <input type="number" step="0.01" class="form-control" id="amount" name="amount" value="{{ form_data.get('amount', '') }}" required>
+      </div>
+      <div class="col-md-4">
+        <div class="form-group">
+          <label class="form-label required">Amount</label>
+          <input type="number" step="0.01" class="form-control" id="amount" name="amount" value="{{ form_data.get('amount', '') }}" required>
         </div>
-        <div class="col-md-3">
-            <label for="payment_date" class="form-label">Receipt Date</label>
-            <input type="date" class="form-control" id="payment_date" name="payment_date" value="{{ form_data.get('payment_date', '') }}" required>
-        </div>
-        <div class="col-md-3">
-            <label for="payment_method" class="form-label">Method</label>
-            <select class="form-control" id="payment_method" name="payment_method" required>
-                {% for method in payment_methods %}
-                <option value="{{ method }}" {% if form_data.get('payment_method', 'Cash') == method %}selected{% endif %}>{{ method }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="col-md-3">
-            {% include '_account_select.html' %}
-        </div>
-        <div class="col-md-3">
-            <label for="reference_no" class="form-label">Reference No.</label>
-            <input type="text" class="form-control" id="reference_no" name="reference_no" value="{{ form_data.get('reference_no', '') }}">
-        </div>
-        <div class="col-md-3">
-            <label for="notes" class="form-label">Notes</label>
-            <input type="text" class="form-control" id="notes" name="notes" value="{{ form_data.get('notes', '') }}">
-        </div>
+      </div>
     </div>
-    <button type="submit" class="btn btn-primary mt-3" title="Record receipt — customer ledger will update automatically">Save Receipt</button>
-</form>
 
-<table class="table table-bordered">
-    <thead>
+    <div class="row g-3 mb-4">
+      <div class="col-md-3">
+        <div class="form-group">
+          <label class="form-label required">Receipt Date</label>
+          <input type="date" class="form-control" id="payment_date" name="payment_date" value="{{ form_data.get('payment_date', '') }}" required>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="form-group">
+          <label class="form-label required">Method</label>
+          <select class="form-select" id="payment_method" name="payment_method" required>
+            {% for method in payment_methods %}
+            <option value="{{ method }}" {% if form_data.get('payment_method', 'Cash') == method %}selected{% endif %}>{{ method }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="col-md-3">
+        {% include '_account_select.html' %}
+      </div>
+      <div class="col-md-3">
+        <div class="form-group">
+          <label class="form-label">Reference No.</label>
+          <input type="text" class="form-control" id="reference_no" name="reference_no" value="{{ form_data.get('reference_no', '') }}">
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+      <div class="col-md-12">
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <input type="text" class="form-control" id="notes" name="notes" value="{{ form_data.get('notes', '') }}" placeholder="Optional notes">
+        </div>
+      </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">
+      <i class="bi bi-check"></i> Save Receipt
+    </button>
+  </form>
+</div>
+
+<!-- Receipts Table -->
+<div class="card">
+  <div class="table-wrapper">
+    <table class="table table-striped table-hover">
+      <thead>
         <tr>
-            <th>ID</th>
-            <th>Customer</th>
-            <th>Sale</th>
-            <th>Amount</th>
-            <th>Method</th>
-            <th>Reference</th>
-            <th>Date</th>
-            <th>Notes</th>
-            <th>Actions</th>
+          <th>ID</th>
+          <th>Customer</th>
+          <th>Sale</th>
+          <th class="text-end">Amount</th>
+          <th>Method</th>
+          <th>Reference</th>
+          <th>Date</th>
+          <th>Notes</th>
+          <th class="table-cell-center">Actions</th>
         </tr>
-    </thead>
-    <tbody>
+      </thead>
+      <tbody>
         {% for r in receipts %}
         <tr>
-            <td>{{ r.id }}</td>
-            <td>{{ r.customer.name }}</td>
-            <td>{% if r.sale_id %}#{{ r.sale_id }}{% else %}General{% endif %}</td>
-            <td>{{ r.amount | fmt_num }}</td>
-            <td>{{ r.payment_method }}</td>
-            <td>{{ r.reference_no or '—' }}</td>
-            <td>{{ r.payment_date.strftime('%Y-%m-%d') }}</td>
-            <td>{{ r.notes or '—' }}</td>
-            <td>
-                {% if current_user.is_manager %}
-                <a href="{{ url_for('edit_customer_receipt', id=r.id) }}" class="btn btn-warning btn-sm" title="Edit this receipt record">Edit</a>
-                {% endif %}
-                {% with doc = r, kind = "receipt" %}{% include "_reverse_button.html" %}{% endwith %}
-            </td>
+          <td class="text-tertiary fw-semibold">{{ r.id }}</td>
+          <td class="font-medium">{{ r.customer.name }}</td>
+          <td class="text-nowrap">{% if r.sale_id %}<span class="badge">#{{ r.sale_id }}</span>{% else %}<span class="text-muted">General</span>{% endif %}</td>
+          <td class="text-end fw-semibold">{{ r.amount | fmt_num }}</td>
+          <td>{{ r.payment_method }}</td>
+          <td class="text-nowrap">{{ r.reference_no or '—' }}</td>
+          <td class="text-tertiary text-nowrap">{{ r.payment_date.strftime('%Y-%m-%d') }}</td>
+          <td class="text-muted small">{{ r.notes or '—' }}</td>
+          <td class="table-cell-center">
+            {% if current_user.is_manager %}
+            <a href="{{ url_for('edit_customer_receipt', id=r.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit">
+              <i class="bi bi-pencil"></i>
+            </a>
+            {% endif %}
+            {% with doc = r, kind = "receipt" %}{% include "_reverse_button.html" %}{% endwith %}
+          </td>
         </tr>
         {% else %}
-        <tr><td colspan="9">No receipts recorded</td></tr>
+        <tr>
+          <td colspan="9" class="text-center text-tertiary py-8">No receipts recorded</td>
+        </tr>
         {% endfor %}
-    </tbody>
-</table>
-{{ pagination.links }}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Pagination -->
+{% if pagination.links %}
+<div class="mt-6">
+  {{ pagination.links }}
+</div>
+{% endif %}
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
