@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Migrations - Developer{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    <h2>📊 Database Migrations</h2>
+
+    <div class="alert alert-info mt-4">
+        <h5>Auto Migration System</h5>
+        <p>The app automatically runs migrations on startup via <code>migrate_database()</code> function in app.py</p>
+
+        <h6 class="mt-3">Current Migration Phases: 18</h6>
+        <ul class="mb-0">
+            <li>Phase 1-5: Core tables (User, Supplier, Customer, Item, Category)</li>
+            <li>Phase 6-10: Accounting (Journal, GL, Ledger, Tax)</li>
+            <li>Phase 11-15: Transactions (Purchase, Sale, Payment)</li>
+            <li>Phase 16-18: Advanced (Business Category, Financial Accounts, etc)</li>
+        </ul>
+    </div>
+
+    <div class="alert alert-success mt-3">
+        <strong>Note:</strong> All tables are automatically created on first app startup. No manual migration commands needed!
+    </div>
+
+    <a href="{{ url_for('developer.dashboard') }}" class="btn btn-primary mt-3">← Back</a>
+</div>
+{% endblock %}

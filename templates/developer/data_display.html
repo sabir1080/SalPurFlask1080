@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Data Display Manager - Developer{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    <h2>👁️ Data Display Manager</h2>
+    <div class="alert alert-info mt-3">
+        <h5>How to use:</h5>
+        <p>Run this in your terminal:</p>
+        <code class="bg-light p-3 d-block">python data_display_manager.py</code>
+        <p class="mt-3"><strong>Features:</strong></p>
+        <ul>
+            <li>Select and browse data from 3 databases</li>
+            <li>View complete table data in grid format</li>
+            <li>Check column types and nullable status</li>
+            <li>Compare data across deployments</li>
+        </ul>
+    </div>
+    <a href="{{ url_for('developer.dashboard') }}" class="btn btn-primary mt-3">← Back</a>
+</div>
+{% endblock %}

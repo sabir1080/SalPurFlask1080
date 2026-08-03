@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Environment - Developer{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    <h2>⚙️ Environment Configuration</h2>
+
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-dark text-white">
+                    <h5 class="mb-0">App Configuration</h5>
+                </div>
+                <div class="card-body">
+                    <p><strong>App Name:</strong> <code>{{ env.app_name }}</code></p>
+                    <p><strong>Company:</strong> <code>{{ env.company_name }}</code></p>
+                    <p><strong>Timezone:</strong> <code>{{ env.timezone }}</code></p>
+                    <p><strong>Currency:</strong> <code>{{ env.currency }}</code></p>
+                    <p><strong>Allow Signup:</strong> <code>{{ env.allow_signup }}</code></p>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-dark text-white">
+                    <h5 class="mb-0">System Information</h5>
+                </div>
+                <div class="card-body">
+                    <p><strong>Python Version:</strong> <code>{{ env.python_version }}</code></p>
+                    <p><strong>Database URL:</strong> <code>{{ env.database_url }}</code></p>
+                    <p><strong>Mail Server:</strong> <code>{{ env.mail_server }}</code></p>
+                    <p><strong>Mail Port:</strong> <code>{{ env.mail_port }}</code></p>
+                    <p><strong>Fiscal Year Start:</strong> <code>{{ env.fiscal_year_start }}</code></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <a href="{{ url_for('developer.dashboard') }}" class="btn btn-primary mt-3">← Back</a>
+</div>
+{% endblock %}

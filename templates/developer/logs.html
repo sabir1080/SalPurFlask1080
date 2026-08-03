@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Logs - Developer{% endblock %}
+{% block content %}
+<div class="container-fluid mt-4">
+    <h2>📋 Application Logs</h2>
+
+    <div class="mt-4">
+        <div class="card">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">Last 100 Log Lines</h5>
+            </div>
+            <div class="card-body" style="max-height: 600px; overflow-y: auto; background: #f8f9fa;">
+                <pre class="mb-0" style="font-size: 0.85rem;">{% for line in logs %}{{ line }}{% endfor %}</pre>
+            </div>
+        </div>
+    </div>
+
+    <a href="{{ url_for('developer.dashboard') }}" class="btn btn-primary mt-3">← Back</a>
+</div>
+{% endblock %}

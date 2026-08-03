@@ -233,11 +233,13 @@ from salpurflask.utils import (
 # Register blueprints
 from salpurflask.routes import auth_bp, dashboard_bp
 from salpurflask.routes.admin_config import config_bp
+from salpurflask.routes.developer import dev_bp
 from salpurflask.sales.routes import sales_bp
 app.register_blueprint(auth_bp)
 app.register_blueprint(dashboard_bp)
 app.register_blueprint(config_bp)
 app.register_blueprint(sales_bp)
+app.register_blueprint(dev_bp)
 
 # Register inventory routes directly (not via blueprint, to preserve endpoint names)
 from salpurflask.inventory.routes import (

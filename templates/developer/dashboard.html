@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block title %}Developer Dashboard - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h1>🔧 Developer Tasks Panel</h1>
+            <p class="text-muted">Advanced administration and diagnostic tools</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('developer.logout') }}" class="btn btn-outline-danger">
+                🔒 Logout
+            </a>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ 'danger' if category == 'danger' else 'success' if category == 'success' else 'info' }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <!-- Database Tools Section -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h3 class="mb-3">📊 Database Tools</h3>
+        </div>
+
+        <div class="col-md-4 mb-3">
+            <div class="card h-100 border-primary">
+                <div class="card-body">
+                    <h5 class="card-title">🗂️ Database Manager</h5>
+                    <p class="card-text text-muted small">Add/edit/delete data in any database</p>
+                    <a href="{{ url_for('developer.database_manager') }}" class="btn btn-primary btn-sm w-100">
+                        Open Tool
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-3">
+            <div class="card h-100 border-info">
+                <div class="card-body">
+                    <h5 class="card-title">🔄 Schema Sync</h5>
+                    <p class="card-text text-muted small">Compare and sync database schemas</p>
+                    <a href="{{ url_for('developer.sync_schema') }}" class="btn btn-info btn-sm w-100">
+                        Open Tool
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-3">
+            <div class="card h-100 border-success">
+                <div class="card-body">
+                    <h5 class="card-title">👁️ Data Display</h5>
+                    <p class="card-text text-muted small">Browse data across 3 databases</p>
+                    <a href="{{ url_for('developer.data_display') }}" class="btn btn-success btn-sm w-100">
+                        Open Tool
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Diagnostics Section -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h3 class="mb-3">🩺 Diagnostics & Monitoring</h3>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="card h-100 border-warning">
+                <div class="card-body">
+                    <h5 class="card-title">🔍 Diagnostics</h5>
+                    <p class="card-text text-muted small">App health check</p>
+                    <a href="{{ url_for('developer.diagnostics') }}" class="btn btn-warning btn-sm w-100">
+                        View
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="card h-100 border-secondary">
+                <div class="card-body">
+                    <h5 class="card-title">📈 Statistics</h5>
+                    <p class="card-text text-muted small">Table record counts</p>
+                    <a href="{{ url_for('developer.database_stats') }}" class="btn btn-secondary btn-sm w-100">
+                        View
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="card h-100 border-danger">
+                <div class="card-body">
+                    <h5 class="card-title">📋 Logs</h5>
+                    <p class="card-text text-muted small">Application logs</p>
+                    <a href="{{ url_for('developer.logs') }}" class="btn btn-danger btn-sm w-100">
+                        View
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 mb-3">
+            <div class="card h-100 border-dark">
+                <div class="card-body">
+                    <h5 class="card-title">⚙️ Environment</h5>
+                    <p class="card-text text-muted small">Config & variables</p>
+                    <a href="{{ url_for('developer.environment') }}" class="btn btn-dark btn-sm w-100">
+                        View
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Info Section -->
+    <div class="row">
+        <div class="col-md-12">
+            <div class="alert alert-info">
+                <h5>📌 Quick Info</h5>
+                <p class="mb-2">
+                    <strong>App Name:</strong> {{ config.APP_NAME }}<br>
+                    <strong>Company:</strong> {{ config.COMPANY_NAME }}<br>
+                    <strong>Environment:</strong> {{ 'Production (Render)' if config.SQLALCHEMY_DATABASE_URI.startswith('postgresql') else 'Development (Local)' }}
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .card {
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .btn-sm {
+        transition: all 0.2s;
+    }
+
+    .btn-sm:hover {
+        transform: scale(1.05);
+    }
+</style>
+{% endblock %}

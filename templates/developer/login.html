@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}Developer Login - {{ config.APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-5">
+            <div class="card shadow-lg">
+                <div class="card-body p-5">
+                    <div class="text-center mb-4">
+                        <h1 class="text-danger">🔐 Developer Access</h1>
+                        <p class="text-muted">Admin Panel - Password Required</p>
+                    </div>
+
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% if messages %}
+                            {% for category, message in messages %}
+                                <div class="alert alert-{{ 'danger' if category == 'danger' else 'success' }} alert-dismissible fade show" role="alert">
+                                    {{ message }}
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                                </div>
+                            {% endfor %}
+                        {% endif %}
+                    {% endwith %}
+
+                    <form method="POST">
+                        <div class="mb-4">
+                            <label for="password" class="form-label fw-bold">Developer Password</label>
+                            <input
+                                type="password"
+                                class="form-control form-control-lg"
+                                id="password"
+                                name="password"
+                                placeholder="Enter password"
+                                required
+                                autofocus
+                            >
+                        </div>
+
+                        <button type="submit" class="btn btn-danger btn-lg w-100 fw-bold">
+                            🔓 Unlock Developer Panel
+                        </button>
+                    </form>
+
+                    {% if hint %}
+                        <div class="alert alert-warning mt-4 text-center" role="alert">
+                            <small class="text-muted">Hint: <code class="text-dark">{{ hint }}</code></small>
+                        </div>
+                    {% endif %}
+
+                    <hr class="my-4">
+
+                    <div class="alert alert-info text-center">
+                        <small>
+                            🛠️ <strong>Developer Tools</strong><br>
+                            Database management, schema sync, diagnostics, and more.
+                        </small>
+                    </div>
+
+                    <a href="{{ url_for('dashboard.index') }}" class="btn btn-outline-secondary w-100">
+                        ← Back to App
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    body {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+    }
+
+    .card {
+        border: none;
+        border-radius: 15px;
+    }
+
+    .btn-danger {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        border: none;
+        transition: transform 0.2s;
+    }
+
+    .btn-danger:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 20px rgba(245, 87, 108, 0.4);
+    }
+
+    code {
+        background: #f0f0f0;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-weight: bold;
+    }
+</style>
+{% endblock %}

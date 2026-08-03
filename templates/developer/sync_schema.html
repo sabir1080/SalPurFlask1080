@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Schema Sync - Developer{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    <h2>🔄 Database Schema Synchronization</h2>
+    <div class="alert alert-info mt-3">
+        <h5>How to use:</h5>
+        <p>Run this in your terminal:</p>
+        <code class="bg-light p-3 d-block">python sync_database_schema.py</code>
+        <p class="mt-3"><strong>Features:</strong></p>
+        <ul>
+            <li>Compare schema between Local, SalPurFlask, and TradeFlow databases</li>
+            <li>Identify missing tables and columns</li>
+            <li>Generate sync reports</li>
+            <li>Data stays separate, schema syncs automatically</li>
+        </ul>
+    </div>
+    <a href="{{ url_for('developer.dashboard') }}" class="btn btn-primary mt-3">← Back</a>
+</div>
+{% endblock %}

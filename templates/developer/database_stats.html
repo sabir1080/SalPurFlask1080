@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Database Statistics - Developer{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    <h2>📈 Database Statistics</h2>
+
+    <div class="table-responsive mt-4">
+        <table class="table table-striped table-hover">
+            <thead class="table-dark">
+                <tr>
+                    <th>Table Name</th>
+                    <th class="text-end">Record Count</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for table, count in stats.items() | sort %}
+                    <tr>
+                        <td><code>{{ table }}</code></td>
+                        <td class="text-end">
+                            {% if count == 'Error' %}
+                                <span class="badge bg-danger">Error</span>
+                            {% else %}
+                                <span class="badge bg-primary">{{ count }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <a href="{{ url_for('developer.dashboard') }}" class="btn btn-primary mt-3">← Back</a>
+</div>
+{% endblock %}
