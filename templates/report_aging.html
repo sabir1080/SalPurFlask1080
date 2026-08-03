@@ -1,121 +1,125 @@
 {% extends 'base.html' %}
-{% block title %}AP/AR Aging Report{% endblock %}
+{% block title %}AP/AR Aging Report — {{ app_name }}{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2><i class="bi bi-clock-history text-danger"></i> Accounts Aging Report</h2>
-    <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">
-        <i class="bi bi-printer"></i> Print
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-clock-history"></i> Accounts Aging Report</h1>
+    <p>As of {{ today.strftime('%d %b %Y') }}</p>
+  </div>
+  <div class="page-header-actions d-print-none">
+    <button onclick="window.print()" class="btn btn-secondary">
+      <i class="bi bi-printer"></i> Print
     </button>
-</div>
-<p class="text-muted mb-4">As of <strong>{{ today.strftime('%d %b %Y') }}</strong></p>
-
-<!-- AP Aging -->
-<div class="card border-0 shadow-sm mb-4">
-    <div class="card-header bg-danger text-white fw-semibold">
-        <i class="bi bi-arrow-up-circle"></i> Accounts Payable Aging (Suppliers)
-    </div>
-    <div class="card-body p-0">
-        <div class="table-responsive">
-        <table class="table table-bordered mb-0">
-            <thead class="table-dark">
-                <tr>
-                    <th>Supplier</th>
-                    <th class="text-end">0–30 Days</th>
-                    <th class="text-end">31–60 Days</th>
-                    <th class="text-end">61–90 Days</th>
-                    <th class="text-end text-danger">90+ Days</th>
-                    <th class="text-end">Total Due</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% set ap_totals = namespace(b0=0, b1=0, b2=0, b3=0, total=0) %}
-                {% for row in ap_rows %}
-                {% set ap_totals.b0 = ap_totals.b0 + row.buckets['0-30'] %}
-                {% set ap_totals.b1 = ap_totals.b1 + row.buckets['31-60'] %}
-                {% set ap_totals.b2 = ap_totals.b2 + row.buckets['61-90'] %}
-                {% set ap_totals.b3 = ap_totals.b3 + row.buckets['90+'] %}
-                {% set ap_totals.total = ap_totals.total + row.total %}
-                <tr>
-                    <td>{{ row.name }}</td>
-                    <td class="text-end">{{ row.buckets['0-30'] | fmt_num if row.buckets['0-30'] else '—' }}</td>
-                    <td class="text-end">{{ row.buckets['31-60'] | fmt_num if row.buckets['31-60'] else '—' }}</td>
-                    <td class="text-end">{{ row.buckets['61-90'] | fmt_num if row.buckets['61-90'] else '—' }}</td>
-                    <td class="text-end text-danger fw-semibold">{{ row.buckets['90+'] | fmt_num if row.buckets['90+'] else '—' }}</td>
-                    <td class="text-end fw-bold">{{ row.total | fmt_num }}</td>
-                </tr>
-                {% else %}
-                <tr><td colspan="6" class="text-center text-muted py-3">No outstanding payables</td></tr>
-                {% endfor %}
-            </tbody>
-            {% if ap_rows %}
-            <tfoot class="table-danger">
-                <tr class="fw-bold">
-                    <td>Total</td>
-                    <td class="text-end">{{ ap_totals.b0 | fmt_num }}</td>
-                    <td class="text-end">{{ ap_totals.b1 | fmt_num }}</td>
-                    <td class="text-end">{{ ap_totals.b2 | fmt_num }}</td>
-                    <td class="text-end">{{ ap_totals.b3 | fmt_num }}</td>
-                    <td class="text-end fs-6">{{ ap_totals.total | fmt_num }}</td>
-                </tr>
-            </tfoot>
-            {% endif %}
-        </table>
-        </div>
-    </div>
+  </div>
 </div>
 
-<!-- AR Aging -->
-<div class="card border-0 shadow-sm">
-    <div class="card-header bg-success text-white fw-semibold">
-        <i class="bi bi-arrow-down-circle"></i> Accounts Receivable Aging (Customers)
-    </div>
-    <div class="card-body p-0">
-        <div class="table-responsive">
-        <table class="table table-bordered mb-0">
-            <thead class="table-dark">
-                <tr>
-                    <th>Customer</th>
-                    <th class="text-end">0–30 Days</th>
-                    <th class="text-end">31–60 Days</th>
-                    <th class="text-end">61–90 Days</th>
-                    <th class="text-end text-danger">90+ Days</th>
-                    <th class="text-end">Total Due</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% set ar_totals = namespace(b0=0, b1=0, b2=0, b3=0, total=0) %}
-                {% for row in ar_rows %}
-                {% set ar_totals.b0 = ar_totals.b0 + row.buckets['0-30'] %}
-                {% set ar_totals.b1 = ar_totals.b1 + row.buckets['31-60'] %}
-                {% set ar_totals.b2 = ar_totals.b2 + row.buckets['61-90'] %}
-                {% set ar_totals.b3 = ar_totals.b3 + row.buckets['90+'] %}
-                {% set ar_totals.total = ar_totals.total + row.total %}
-                <tr>
-                    <td>{{ row.name }}</td>
-                    <td class="text-end">{{ row.buckets['0-30'] | fmt_num if row.buckets['0-30'] else '—' }}</td>
-                    <td class="text-end">{{ row.buckets['31-60'] | fmt_num if row.buckets['31-60'] else '—' }}</td>
-                    <td class="text-end">{{ row.buckets['61-90'] | fmt_num if row.buckets['61-90'] else '—' }}</td>
-                    <td class="text-end text-danger fw-semibold">{{ row.buckets['90+'] | fmt_num if row.buckets['90+'] else '—' }}</td>
-                    <td class="text-end fw-bold">{{ row.total | fmt_num }}</td>
-                </tr>
-                {% else %}
-                <tr><td colspan="6" class="text-center text-muted py-3">No outstanding receivables</td></tr>
-                {% endfor %}
-            </tbody>
-            {% if ar_rows %}
-            <tfoot class="table-success">
-                <tr class="fw-bold">
-                    <td>Total</td>
-                    <td class="text-end">{{ ar_totals.b0 | fmt_num }}</td>
-                    <td class="text-end">{{ ar_totals.b1 | fmt_num }}</td>
-                    <td class="text-end">{{ ar_totals.b2 | fmt_num }}</td>
-                    <td class="text-end">{{ ar_totals.b3 | fmt_num }}</td>
-                    <td class="text-end fs-6">{{ ar_totals.total | fmt_num }}</td>
-                </tr>
-            </tfoot>
-            {% endif %}
-        </table>
-        </div>
-    </div>
+<!-- Accounts Payable Aging -->
+<div class="card mb-6">
+  <div class="card-header bg-danger-subtle">
+    <h5 class="mb-0"><i class="bi bi-arrow-up-circle-fill"></i> Accounts Payable Aging (Suppliers)</h5>
+  </div>
+  <div class="table-wrapper">
+    <table class="table table-striped align-middle">
+      <thead>
+        <tr>
+          <th>Supplier</th>
+          <th class="text-end">0–30 Days</th>
+          <th class="text-end">31–60 Days</th>
+          <th class="text-end">61–90 Days</th>
+          <th class="text-end">90+ Days</th>
+          <th class="text-end">Total Due</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set ap_totals = namespace(b0=0, b1=0, b2=0, b3=0, total=0) %}
+        {% for row in ap_rows %}
+        {% set ap_totals.b0 = ap_totals.b0 + row.buckets['0-30'] %}
+        {% set ap_totals.b1 = ap_totals.b1 + row.buckets['31-60'] %}
+        {% set ap_totals.b2 = ap_totals.b2 + row.buckets['61-90'] %}
+        {% set ap_totals.b3 = ap_totals.b3 + row.buckets['90+'] %}
+        {% set ap_totals.total = ap_totals.total + row.total %}
+        <tr>
+          <td class="font-medium">{{ row.name }}</td>
+          <td class="text-end">{{ row.buckets['0-30'] | fmt_num if row.buckets['0-30'] else '—' }}</td>
+          <td class="text-end">{{ row.buckets['31-60'] | fmt_num if row.buckets['31-60'] else '—' }}</td>
+          <td class="text-end">{{ row.buckets['61-90'] | fmt_num if row.buckets['61-90'] else '—' }}</td>
+          <td class="text-end {{ 'text-danger fw-semibold' if row.buckets['90+'] else '' }}">{{ row.buckets['90+'] | fmt_num if row.buckets['90+'] else '—' }}</td>
+          <td class="text-end fw-bold">{{ row.total | fmt_num }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="text-center text-tertiary py-8">No outstanding payables</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if ap_rows %}
+      <tfoot>
+        <tr class="fw-bold">
+          <td>Total</td>
+          <td class="text-end">{{ ap_totals.b0 | fmt_num }}</td>
+          <td class="text-end">{{ ap_totals.b1 | fmt_num }}</td>
+          <td class="text-end">{{ ap_totals.b2 | fmt_num }}</td>
+          <td class="text-end">{{ ap_totals.b3 | fmt_num }}</td>
+          <td class="text-end">{{ ap_totals.total | fmt_num }}</td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+
+<!-- Accounts Receivable Aging -->
+<div class="card mb-6">
+  <div class="card-header bg-success-subtle">
+    <h5 class="mb-0"><i class="bi bi-arrow-down-circle-fill"></i> Accounts Receivable Aging (Customers)</h5>
+  </div>
+  <div class="table-wrapper">
+    <table class="table table-striped align-middle">
+      <thead>
+        <tr>
+          <th>Customer</th>
+          <th class="text-end">0–30 Days</th>
+          <th class="text-end">31–60 Days</th>
+          <th class="text-end">61–90 Days</th>
+          <th class="text-end">90+ Days</th>
+          <th class="text-end">Total Due</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set ar_totals = namespace(b0=0, b1=0, b2=0, b3=0, total=0) %}
+        {% for row in ar_rows %}
+        {% set ar_totals.b0 = ar_totals.b0 + row.buckets['0-30'] %}
+        {% set ar_totals.b1 = ar_totals.b1 + row.buckets['31-60'] %}
+        {% set ar_totals.b2 = ar_totals.b2 + row.buckets['61-90'] %}
+        {% set ar_totals.b3 = ar_totals.b3 + row.buckets['90+'] %}
+        {% set ar_totals.total = ar_totals.total + row.total %}
+        <tr>
+          <td class="font-medium">{{ row.name }}</td>
+          <td class="text-end">{{ row.buckets['0-30'] | fmt_num if row.buckets['0-30'] else '—' }}</td>
+          <td class="text-end">{{ row.buckets['31-60'] | fmt_num if row.buckets['31-60'] else '—' }}</td>
+          <td class="text-end">{{ row.buckets['61-90'] | fmt_num if row.buckets['61-90'] else '—' }}</td>
+          <td class="text-end {{ 'text-danger fw-semibold' if row.buckets['90+'] else '' }}">{{ row.buckets['90+'] | fmt_num if row.buckets['90+'] else '—' }}</td>
+          <td class="text-end fw-bold">{{ row.total | fmt_num }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="text-center text-tertiary py-8">No outstanding receivables</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if ar_rows %}
+      <tfoot>
+        <tr class="fw-bold">
+          <td>Total</td>
+          <td class="text-end">{{ ar_totals.b0 | fmt_num }}</td>
+          <td class="text-end">{{ ar_totals.b1 | fmt_num }}</td>
+          <td class="text-end">{{ ar_totals.b2 | fmt_num }}</td>
+          <td class="text-end">{{ ar_totals.b3 | fmt_num }}</td>
+          <td class="text-end">{{ ar_totals.total | fmt_num }}</td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
 </div>
 {% endblock %}

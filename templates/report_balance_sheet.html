@@ -1,127 +1,147 @@
 {% extends 'base.html' %}
 {% block title %}Balance Sheet — {{ app_name }}{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-    <h2><i class="bi bi-clipboard-data text-dark"></i> Balance Sheet</h2>
-    <div class="d-flex gap-2">
-        <a href="{{ url_for('report_trial_balance', as_of=p.as_of.strftime('%Y-%m-%d')) }}" class="btn btn-outline-secondary btn-sm">
-            <i class="bi bi-list-columns-reverse"></i> Trial Balance
-        </a>
-        <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
-    </div>
-</div>
-<p class="text-muted">{{ company_name }} &mdash; as of {{ p.as_of.strftime('%d %B %Y') }}</p>
-
-<form method="GET" class="row g-2 align-items-end mb-3 d-print-none">
-    <div class="col-auto">
-        <label class="form-label fw-semibold mb-1">As of date</label>
-        <input type="date" name="as_of" class="form-control form-control-sm" value="{{ p.as_of.strftime('%Y-%m-%d') }}">
-    </div>
-    <div class="col-auto"><button class="btn btn-sm btn-primary">Show</button></div>
-</form>
-
-<div class="row g-3">
-    <!-- Assets -->
-    <div class="col-lg-6">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-primary text-white fw-semibold"><i class="bi bi-arrow-down-circle"></i> Assets</div>
-            <div class="card-body p-0">
-                <table class="table mb-0 align-middle">
-                    <tbody>
-                        {% for acct, bal in p.assets %}
-                        <tr>
-                            <td class="text-muted small">{{ acct.code }}</td>
-                            <td>{{ acct.name }}</td>
-                            <td class="text-end {{ 'text-danger' if bal < 0 }}">{{ bal | fmt_num }}</td>
-                        </tr>
-                        {% else %}
-                        <tr><td colspan="3" class="text-muted text-center py-3">No assets recorded</td></tr>
-                        {% endfor %}
-                    </tbody>
-                    <tfoot>
-                        <tr class="table-light fw-bold">
-                            <td colspan="2" class="text-end">Total Assets</td>
-                            <td class="text-end">{{ p.total_assets | fmt_num }}</td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <!-- Liabilities + Equity -->
-    <div class="col-lg-6">
-        <div class="card border-0 shadow-sm mb-3">
-            <div class="card-header bg-danger text-white fw-semibold"><i class="bi bi-arrow-up-circle"></i> Liabilities</div>
-            <div class="card-body p-0">
-                <table class="table mb-0 align-middle">
-                    <tbody>
-                        {% for acct, bal in p.liabilities %}
-                        <tr>
-                            <td class="text-muted small">{{ acct.code }}</td>
-                            <td>{{ acct.name }}</td>
-                            <td class="text-end {{ 'text-danger' if bal < 0 }}">{{ bal | fmt_num }}</td>
-                        </tr>
-                        {% else %}
-                        <tr><td colspan="3" class="text-muted text-center py-3">No liabilities</td></tr>
-                        {% endfor %}
-                    </tbody>
-                    <tfoot>
-                        <tr class="table-light fw-bold">
-                            <td colspan="2" class="text-end">Total Liabilities</td>
-                            <td class="text-end">{{ p.total_liabilities | fmt_num }}</td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
-        </div>
-
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-dark text-white fw-semibold"><i class="bi bi-safe"></i> Equity</div>
-            <div class="card-body p-0">
-                <table class="table mb-0 align-middle">
-                    <tbody>
-                        {% for acct, bal in p.equity_accs %}
-                        <tr>
-                            <td class="text-muted small">{{ acct.code }}</td>
-                            <td>{{ acct.name }}</td>
-                            <td class="text-end">{{ bal | fmt_num }}</td>
-                        </tr>
-                        {% endfor %}
-                        <tr>
-                            <td class="text-muted small">&mdash;</td>
-                            <td>Profit to date <span class="text-muted small">(not yet closed)</span></td>
-                            <td class="text-end {{ 'text-danger' if p.profit < 0 else 'text-success' }}">{{ p.profit | fmt_num }}</td>
-                        </tr>
-                    </tbody>
-                    <tfoot>
-                        <tr class="table-light fw-bold">
-                            <td colspan="2" class="text-end">Total Equity</td>
-                            <td class="text-end">{{ p.total_equity | fmt_num }}</td>
-                        </tr>
-                        <tr class="fw-bold">
-                            <td colspan="2" class="text-end">Liabilities + Equity</td>
-                            <td class="text-end">{{ (p.total_liabilities + p.total_equity) | fmt_num }}</td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
-        </div>
-    </div>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-clipboard-data"></i> Balance Sheet</h1>
+    <p>{{ company_name }} — as of {{ p.as_of.strftime('%d %B %Y') }}</p>
+  </div>
+  <div class="page-header-actions d-print-none">
+    <a href="{{ url_for('report_trial_balance', as_of=p.as_of.strftime('%Y-%m-%d')) }}" class="btn btn-secondary">
+      <i class="bi bi-list-columns-reverse"></i> Trial Balance
+    </a>
+    <button class="btn btn-secondary" onclick="window.print()">
+      <i class="bi bi-printer"></i> Print
+    </button>
+  </div>
 </div>
 
-<div class="text-center my-4">
-    {% if p.difference | abs < 0.01 %}
-    <span class="badge bg-success fs-6"><i class="bi bi-check-circle"></i> Balanced — Assets = Liabilities + Equity</span>
-    {% else %}
-    <span class="badge bg-danger fs-6">Out of balance by {{ p.difference | fmt_num }}</span>
-    {% endif %}
+<!-- Date Selector -->
+<div class="card mb-6 d-print-none">
+  <div class="card-body">
+    <form method="GET" class="row g-3 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label">Balance As Of</label>
+        <input type="date" name="as_of" class="form-control" value="{{ p.as_of.strftime('%Y-%m-%d') }}">
+      </div>
+      <div class="col-md-2">
+        <button class="btn btn-secondary">Show</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Balance Sheet Sections -->
+<div class="row g-6 mb-6">
+  <!-- Assets -->
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header bg-primary-subtle">
+        <h5 class="mb-0"><i class="bi bi-arrow-down-circle-fill"></i> Assets</h5>
+      </div>
+      <div class="table-wrapper">
+        <table class="table table-striped align-middle">
+          <tbody>
+            {% for acct, bal in p.assets %}
+            <tr>
+              <td class="text-tertiary small">{{ acct.code }}</td>
+              <td class="font-medium">{{ acct.name }}</td>
+              <td class="text-end {{ 'text-danger' if bal < 0 else '' }}">{{ bal | fmt_num }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="3" class="text-center text-tertiary py-8">No assets recorded</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr class="fw-bold">
+              <td colspan="2" class="text-end">Total Assets</td>
+              <td class="text-end">{{ p.total_assets | fmt_num }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Liabilities & Equity -->
+  <div class="col-lg-6 d-flex flex-column gap-6">
+    <div class="card">
+      <div class="card-header bg-danger-subtle">
+        <h5 class="mb-0"><i class="bi bi-arrow-up-circle-fill"></i> Liabilities</h5>
+      </div>
+      <div class="table-wrapper">
+        <table class="table table-striped align-middle">
+          <tbody>
+            {% for acct, bal in p.liabilities %}
+            <tr>
+              <td class="text-tertiary small">{{ acct.code }}</td>
+              <td class="font-medium">{{ acct.name }}</td>
+              <td class="text-end {{ 'text-danger' if bal < 0 else '' }}">{{ bal | fmt_num }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="3" class="text-center text-tertiary py-8">No liabilities</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr class="fw-bold">
+              <td colspan="2" class="text-end">Total Liabilities</td>
+              <td class="text-end">{{ p.total_liabilities | fmt_num }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg-secondary-subtle">
+        <h5 class="mb-0"><i class="bi bi-safe-fill"></i> Equity</h5>
+      </div>
+      <div class="table-wrapper">
+        <table class="table table-striped align-middle">
+          <tbody>
+            {% for acct, bal in p.equity_accs %}
+            <tr>
+              <td class="text-tertiary small">{{ acct.code }}</td>
+              <td class="font-medium">{{ acct.name }}</td>
+              <td class="text-end">{{ bal | fmt_num }}</td>
+            </tr>
+            {% endfor %}
+            <tr>
+              <td class="text-tertiary small">—</td>
+              <td><span class="font-medium">Profit to date</span><br><span class="text-muted small">(not yet closed)</span></td>
+              <td class="text-end {{ 'text-danger' if p.profit < 0 else 'text-success' }}">{{ p.profit | fmt_num }}</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr class="fw-bold">
+              <td colspan="2" class="text-end">Total Equity</td>
+              <td class="text-end">{{ p.total_equity | fmt_num }}</td>
+            </tr>
+            <tr class="fw-bold">
+              <td colspan="2" class="text-end">Liabilities + Equity</td>
+              <td class="text-end">{{ (p.total_liabilities + p.total_equity) | fmt_num }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Balance Check -->
+<div class="text-center mb-6">
+  {% if p.difference | abs < 0.01 %}
+  <span class="badge bg-success fs-6"><i class="bi bi-check-circle-fill"></i> Balanced — Assets = Liabilities + Equity</span>
+  {% else %}
+  <span class="badge bg-danger fs-6">Out of balance by {{ p.difference | fmt_num }}</span>
+  {% endif %}
 </div>
 
 <div class="alert alert-info">
-    <i class="bi bi-info-circle"></i>
-    <small>Summed from the general ledger. Equity is <strong>not</strong> a balancing figure:
-    it is the equity accounts plus the profit earned to date. The two sides matching is a
-    result, so if they ever differ, something is genuinely wrong.</small>
+  <i class="bi bi-info-circle"></i> Summed from the general ledger. Equity is <strong>not</strong> a balancing figure — it is the equity accounts plus profit earned to date. The two sides matching is a result, so if they differ, something is genuinely wrong.
 </div>
 {% endblock %}

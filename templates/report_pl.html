@@ -1,113 +1,133 @@
 {% extends 'base.html' %}
-{% block title %}Profit &amp; Loss{% endblock %}
+{% block title %}Profit &amp; Loss — {{ app_name }}{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2><i class="bi bi-graph-up text-success"></i> Profit &amp; Loss Statement</h2>
-    <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">
-        <i class="bi bi-printer"></i> Print
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-graph-up"></i> Profit &amp; Loss Statement</h1>
+    <p>{{ company_name }} — {{ start.strftime('%d %b %Y') }} to {{ end.strftime('%d %b %Y') }}</p>
+  </div>
+  <div class="page-header-actions d-print-none">
+    <button class="btn btn-secondary" onclick="window.print()">
+      <i class="bi bi-printer"></i> Print
     </button>
+  </div>
 </div>
-<p class="text-muted">{{ company_name }} &mdash; {{ start.strftime('%d %b %Y') }} to {{ end.strftime('%d %b %Y') }}</p>
 
-<form method="GET" class="row g-2 mb-4 align-items-end d-print-none">
-    <div class="col-md-3">
-        <label class="form-label fw-semibold">From</label>
+<!-- Date Range Filter -->
+<div class="card mb-6 d-print-none">
+  <div class="card-body">
+    <form method="GET" class="row g-3 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label">From</label>
         <input type="date" class="form-control" name="start" value="{{ start.strftime('%Y-%m-%d') }}">
-    </div>
-    <div class="col-md-3">
-        <label class="form-label fw-semibold">To</label>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">To</label>
         <input type="date" class="form-control" name="end" value="{{ end.strftime('%Y-%m-%d') }}">
-    </div>
-    <div class="col-md-2">
-        <button type="submit" class="btn btn-primary w-100">Apply</button>
-    </div>
-</form>
-
-<div class="card border-0 shadow-sm mb-3">
-    <div class="card-header bg-success text-white fw-semibold">Income</div>
-    <div class="card-body p-0">
-        <table class="table mb-0 align-middle">
-            <tbody>
-                {% for acct, bal in income_rows %}
-                <tr>
-                    <td class="text-muted small">{{ acct.code }}</td>
-                    <td>{{ acct.name }}</td>
-                    <td class="text-end {{ 'text-danger' if bal < 0 }}">{{ bal | fmt_num }}</td>
-                </tr>
-                {% else %}
-                <tr><td colspan="3" class="text-center text-muted py-3">No income in this period</td></tr>
-                {% endfor %}
-            </tbody>
-            <tfoot>
-                <tr class="table-light fw-bold">
-                    <td colspan="2" class="text-end">Net Revenue</td>
-                    <td class="text-end">{{ total_income | fmt_num }}</td>
-                </tr>
-            </tfoot>
-        </table>
-    </div>
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-secondary w-100">Apply</button>
+      </div>
+    </form>
+  </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-3">
-    <div class="card-body">
-        <div class="row text-center">
-            <div class="col-md-4">
-                <div class="text-muted small text-uppercase fw-bold">Net Revenue</div>
-                <div class="fs-5 fw-bold">{{ total_income | fmt_num }}</div>
-            </div>
-            <div class="col-md-4">
-                <div class="text-muted small text-uppercase fw-bold">Cost of Goods Sold</div>
-                <div class="fs-5 fw-bold text-danger">({{ cogs | fmt_num }})</div>
-            </div>
-            <div class="col-md-4">
-                <div class="text-muted small text-uppercase fw-bold">Gross Profit</div>
-                <div class="fs-5 fw-bold {{ 'text-success' if gross_profit >= 0 else 'text-danger' }}">{{ gross_profit | fmt_num }}</div>
-            </div>
-        </div>
-    </div>
+<!-- Income -->
+<div class="card mb-6">
+  <div class="card-header bg-success-subtle">
+    <h5 class="mb-0"><i class="bi bi-arrow-up-right-circle-fill"></i> Income</h5>
+  </div>
+  <div class="table-wrapper">
+    <table class="table table-striped align-middle">
+      <tbody>
+        {% for acct, bal in income_rows %}
+        <tr>
+          <td class="text-tertiary small">{{ acct.code }}</td>
+          <td class="font-medium">{{ acct.name }}</td>
+          <td class="text-end {{ 'text-danger' if bal < 0 else '' }}">{{ bal | fmt_num }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="3" class="text-center text-tertiary py-8">No income in this period</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="fw-bold">
+          <td colspan="2" class="text-end">Net Revenue</td>
+          <td class="text-end">{{ total_income | fmt_num }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-3">
-    <div class="card-header bg-danger text-white fw-semibold">Operating Expenses</div>
-    <div class="card-body p-0">
-        <table class="table mb-0 align-middle">
-            <tbody>
-                {% for acct, bal in operating_rows %}
-                <tr>
-                    <td class="text-muted small">{{ acct.code }}</td>
-                    <td>{{ acct.name }}</td>
-                    <td class="text-end">{{ bal | fmt_num }}</td>
-                </tr>
-                {% else %}
-                <tr><td colspan="3" class="text-center text-muted py-3">No operating expenses in this period</td></tr>
-                {% endfor %}
-            </tbody>
-            <tfoot>
-                <tr class="table-light fw-bold">
-                    <td colspan="2" class="text-end">Total Operating Expenses</td>
-                    <td class="text-end">{{ total_operating | fmt_num }}</td>
-                </tr>
-            </tfoot>
-        </table>
+<!-- Gross Profit Summary -->
+<div class="card mb-6">
+  <div class="card-body">
+    <div class="row g-4 text-center">
+      <div class="col-md-4">
+        <div class="text-muted small fw-semibold text-uppercase">Net Revenue</div>
+        <div class="fs-4 fw-bold mt-2">{{ total_income | fmt_num }}</div>
+      </div>
+      <div class="col-md-4">
+        <div class="text-muted small fw-semibold text-uppercase">Cost of Goods Sold</div>
+        <div class="fs-4 fw-bold text-danger mt-2">({{ cogs | fmt_num }})</div>
+      </div>
+      <div class="col-md-4">
+        <div class="text-muted small fw-semibold text-uppercase">Gross Profit</div>
+        <div class="fs-4 fw-bold {{ 'text-success' if gross_profit >= 0 else 'text-danger' }} mt-2">{{ gross_profit | fmt_num }}</div>
+      </div>
     </div>
+  </div>
 </div>
 
-<div class="card border-0 shadow-sm">
-    <div class="card-body text-center">
-        <div class="text-muted text-uppercase fw-bold small">Net {{ 'Profit' if net_profit >= 0 else 'Loss' }}</div>
-        <div class="display-6 fw-bold {{ 'text-success' if net_profit >= 0 else 'text-danger' }}">
-            {{ net_profit | fmt_num }}
-        </div>
-        <div class="text-muted small mt-2">
-            Net Revenue {{ total_income | fmt_num }} &minus; Total Expenses {{ total_expenses | fmt_num }}
-        </div>
-    </div>
+<!-- Operating Expenses -->
+<div class="card mb-6">
+  <div class="card-header bg-danger-subtle">
+    <h5 class="mb-0"><i class="bi bi-arrow-down-left-circle-fill"></i> Operating Expenses</h5>
+  </div>
+  <div class="table-wrapper">
+    <table class="table table-striped align-middle">
+      <tbody>
+        {% for acct, bal in operating_rows %}
+        <tr>
+          <td class="text-tertiary small">{{ acct.code }}</td>
+          <td class="font-medium">{{ acct.name }}</td>
+          <td class="text-end">{{ bal | fmt_num }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="3" class="text-center text-tertiary py-8">No operating expenses in this period</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="fw-bold">
+          <td colspan="2" class="text-end">Total Operating Expenses</td>
+          <td class="text-end">{{ total_operating | fmt_num }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
 </div>
 
-<div class="alert alert-info mt-4">
-    <i class="bi bi-info-circle"></i>
-    <small>Summed from the general ledger's income and expense accounts for the period.
-    Sales Returns is a contra-income account, so it already reduces Net Revenue above.
-    Reversed documents carry a cancelling entry and therefore drop out on their own.</small>
+<!-- Net Profit/Loss -->
+<div class="card mb-6">
+  <div class="card-body">
+    <div class="text-center">
+      <div class="text-muted small fw-semibold text-uppercase">Net {{ 'Profit' if net_profit >= 0 else 'Loss' }}</div>
+      <div class="display-5 fw-bold {{ 'text-success' if net_profit >= 0 else 'text-danger' }} mt-3">
+        {{ net_profit | fmt_num }}
+      </div>
+      <div class="text-muted small mt-3">
+        Net Revenue {{ total_income | fmt_num }} — Total Expenses {{ total_expenses | fmt_num }}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="alert alert-info">
+  <i class="bi bi-info-circle"></i> Summed from general ledger income and expense accounts. Sales Returns is a contra-income account and already reduces Net Revenue. Reversed documents carry cancelling entries and drop out automatically.
 </div>
 {% endblock %}

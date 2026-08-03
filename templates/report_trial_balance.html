@@ -1,76 +1,85 @@
 {% extends 'base.html' %}
 {% block title %}Trial Balance — {{ app_name }}{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-    <h2><i class="bi bi-list-columns-reverse text-dark"></i> Trial Balance</h2>
-    <div class="d-flex gap-2">
-        <a href="{{ url_for('chart_of_accounts') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-diagram-3"></i> Chart of Accounts</a>
-        <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
-    </div>
-</div>
-<p class="text-muted">{{ company_name }} &mdash; as of {{ as_of.strftime('%d %B %Y') }}</p>
-
-<form method="GET" class="row g-2 align-items-end mb-3 d-print-none">
-    <div class="col-auto">
-        <label class="form-label fw-semibold mb-1">As of date</label>
-        <input type="date" name="as_of" class="form-control form-control-sm" value="{{ as_of.strftime('%Y-%m-%d') }}">
-    </div>
-    <div class="col-auto">
-        <button class="btn btn-sm btn-primary">Show</button>
-    </div>
-</form>
-
-<div class="card border-0 shadow-sm">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-        <table class="table mb-0 align-middle">
-            <thead class="table-dark">
-                <tr>
-                    <th>Code</th>
-                    <th>Account</th>
-                    <th>Type</th>
-                    <th class="text-end">Debit</th>
-                    <th class="text-end">Credit</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for acct, debit, credit in rows %}
-                <tr>
-                    <td class="text-muted small">{{ acct.code }}</td>
-                    <td>{{ acct.name }}</td>
-                    <td class="small text-muted">{{ acct.type }}</td>
-                    <td class="text-end">{{ (debit | fmt_num) if debit else '' }}</td>
-                    <td class="text-end">{{ (credit | fmt_num) if credit else '' }}</td>
-                </tr>
-                {% else %}
-                <tr><td colspan="5" class="text-center text-muted py-4">No journal entries yet.</td></tr>
-                {% endfor %}
-            </tbody>
-            <tfoot>
-                <tr class="table-light fw-bold">
-                    <td colspan="3" class="text-end">Total</td>
-                    <td class="text-end">{{ total_dr | fmt_num }}</td>
-                    <td class="text-end">{{ total_cr | fmt_num }}</td>
-                </tr>
-                <tr>
-                    <td colspan="5" class="text-center py-2">
-                        {% if (total_dr - total_cr) | abs < 0.01 %}
-                        <span class="badge bg-success"><i class="bi bi-check-circle"></i> Balanced — Debits = Credits</span>
-                        {% else %}
-                        <span class="badge bg-danger">Out of balance by {{ (total_dr - total_cr) | fmt_num }}</span>
-                        {% endif %}
-                    </td>
-                </tr>
-            </tfoot>
-        </table>
-        </div>
-    </div>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-list-columns-reverse"></i> Trial Balance</h1>
+    <p>{{ company_name }} — as of {{ as_of.strftime('%d %B %Y') }}</p>
+  </div>
+  <div class="page-header-actions d-print-none">
+    <a href="{{ url_for('chart_of_accounts') }}" class="btn btn-secondary">
+      <i class="bi bi-diagram-3"></i> Chart of Accounts
+    </a>
+    <button class="btn btn-secondary" onclick="window.print()">
+      <i class="bi bi-printer"></i> Print
+    </button>
+  </div>
 </div>
 
-<div class="alert alert-info mt-4">
-    <i class="bi bi-info-circle"></i>
-    <small>Every balance here is summed from the general ledger's journal lines. Both
-    columns come from the same rows, so the totals agreeing is a genuine check that no
-    entry was written incompletely — not an identity forced by the report.</small>
+<!-- Date Selector -->
+<div class="card mb-6 d-print-none">
+  <div class="card-body">
+    <form method="GET" class="row g-3 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label">Balance As Of</label>
+        <input type="date" name="as_of" class="form-control" value="{{ as_of.strftime('%Y-%m-%d') }}">
+      </div>
+      <div class="col-md-2">
+        <button class="btn btn-secondary">Show</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Trial Balance Table -->
+<div class="card mb-6">
+  <div class="table-wrapper">
+    <table class="table table-striped table-hover align-middle">
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Account</th>
+          <th>Type</th>
+          <th class="text-end">Debit</th>
+          <th class="text-end">Credit</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for acct, debit, credit in rows %}
+        <tr>
+          <td class="text-tertiary small">{{ acct.code }}</td>
+          <td class="font-medium">{{ acct.name }}</td>
+          <td class="small text-muted">{{ acct.type }}</td>
+          <td class="text-end">{{ (debit | fmt_num) if debit else '' }}</td>
+          <td class="text-end">{{ (credit | fmt_num) if credit else '' }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="text-center text-tertiary py-8">No journal entries yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="fw-bold">
+          <td colspan="3" class="text-end">Total</td>
+          <td class="text-end fw-bold">{{ total_dr | fmt_num }}</td>
+          <td class="text-end fw-bold">{{ total_cr | fmt_num }}</td>
+        </tr>
+        <tr>
+          <td colspan="5" class="text-center py-3">
+            {% if (total_dr - total_cr) | abs < 0.01 %}
+            <span class="badge bg-success"><i class="bi bi-check-circle-fill"></i> Balanced — Debits = Credits</span>
+            {% else %}
+            <span class="badge bg-danger">Out of balance by {{ (total_dr - total_cr) | fmt_num }}</span>
+            {% endif %}
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+
+<div class="alert alert-info">
+  <i class="bi bi-info-circle"></i> Every balance here is summed from the general ledger's journal lines. Both columns come from the same rows, so totals agreeing is a genuine check that no entry was written incompletely.
 </div>
 {% endblock %}

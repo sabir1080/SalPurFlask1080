@@ -1,119 +1,147 @@
 {% extends 'base.html' %}
-{% block title %}Tax Summary{% endblock %}
+{% block title %}Tax Summary — {{ app_name }}{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2><i class="bi bi-receipt-cutoff text-warning"></i> Tax Summary</h2>
-    <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">
-        <i class="bi bi-printer"></i> Print
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-receipt-cutoff"></i> Tax Summary</h1>
+    <p>Input and output tax reconciliation</p>
+  </div>
+  <div class="page-header-actions d-print-none">
+    <button onclick="window.print()" class="btn btn-secondary">
+      <i class="bi bi-printer"></i> Print
     </button>
+  </div>
 </div>
 
-<form method="GET" class="row g-2 mb-4 align-items-end">
-    <div class="col-md-3">
-        <label class="form-label fw-semibold">From</label>
+<!-- Date Range Filter -->
+<div class="card mb-6 d-print-none">
+  <div class="card-body">
+    <form method="GET" class="row g-3 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label">From</label>
         <input type="date" class="form-control" name="start" value="{{ start.strftime('%Y-%m-%d') }}">
-    </div>
-    <div class="col-md-3">
-        <label class="form-label fw-semibold">To</label>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">To</label>
         <input type="date" class="form-control" name="end" value="{{ end.strftime('%Y-%m-%d') }}">
-    </div>
-    <div class="col-auto">
-        <button type="submit" class="btn btn-warning text-dark">Apply</button>
-    </div>
-</form>
-
-<!-- Summary -->
-<div class="row g-3 mb-4">
-    <div class="col-md-4">
-        <div class="card border-0 shadow-sm text-center py-3">
-            <div class="text-muted small">Input Tax (Purchases)</div>
-            <div class="fs-3 fw-bold text-success">{{ input_total | fmt_num }}</div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card border-0 shadow-sm text-center py-3">
-            <div class="text-muted small">Output Tax (Sales)</div>
-            <div class="fs-3 fw-bold text-danger">{{ output_total | fmt_num }}</div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card border-0 shadow-sm text-center py-3
-            {{ 'bg-danger text-white' if net_gst > 0 else 'bg-success text-white' if net_gst < 0 else '' }}">
-            <div class="small">Net Tax {{ '(Payable)' if net_gst > 0 else '(Refundable)' if net_gst < 0 else '' }}</div>
-            <div class="fs-3 fw-bold">{{ net_gst | fmt_num }}</div>
-        </div>
-    </div>
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-secondary w-100">Apply</button>
+      </div>
+    </form>
+  </div>
 </div>
 
-<div class="row g-3">
-    <!-- Input Tax -->
-    <div class="col-md-6">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-success text-white fw-semibold">Input Tax — Purchases</div>
-            <div class="card-body p-0">
-                <table class="table table-sm table-bordered mb-0">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>PUR #</th><th>Date</th><th>Supplier</th>
-                            <th class="text-end">Tax</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for row in input_rows %}
-                        <tr>
-                            <td>#{{ row.id }}</td>
-                            <td class="text-nowrap">{{ row.date.strftime('%d %b %Y') }}</td>
-                            <td>{{ row.party }}</td>
-                            <td class="text-end">{{ row.tax | fmt_num }}</td>
-                        </tr>
-                        {% else %}
-                        <tr><td colspan="4" class="text-center text-muted">No taxed purchases</td></tr>
-                        {% endfor %}
-                    </tbody>
-                    <tfoot class="table-success fw-bold">
-                        <tr>
-                            <td colspan="3" class="text-end">Total Input</td>
-                            <td class="text-end">{{ input_total | fmt_num }}</td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
-        </div>
+<!-- Tax Summary Cards -->
+<div class="row g-6 mb-6">
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-body text-center">
+        <div class="text-muted small fw-semibold text-uppercase">Input Tax (Purchases)</div>
+        <div class="fs-3 fw-bold text-success mt-3">{{ input_total | fmt_num }}</div>
+      </div>
     </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-body text-center">
+        <div class="text-muted small fw-semibold text-uppercase">Output Tax (Sales)</div>
+        <div class="fs-3 fw-bold text-danger mt-3">{{ output_total | fmt_num }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card {{ 'bg-danger-subtle' if net_gst > 0 else 'bg-success-subtle' if net_gst < 0 else '' }}">
+      <div class="card-body text-center">
+        <div class="small fw-semibold text-uppercase">Net Tax {{ '(Payable)' if net_gst > 0 else '(Refundable)' if net_gst < 0 else '' }}</div>
+        <div class="fs-3 fw-bold mt-3 {{ 'text-danger' if net_gst > 0 else 'text-success' if net_gst < 0 else '' }}">{{ net_gst | fmt_num }}</div>
+      </div>
+    </div>
+  </div>
+</div>
 
-    <!-- Output Tax -->
-    <div class="col-md-6">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-danger text-white fw-semibold">Output Tax — Sales</div>
-            <div class="card-body p-0">
-                <table class="table table-sm table-bordered mb-0">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>SAL #</th><th>Date</th><th>Customer</th>
-                            <th class="text-end">Tax</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for row in output_rows %}
-                        <tr>
-                            <td>#{{ row.id }}</td>
-                            <td class="text-nowrap">{{ row.date.strftime('%d %b %Y') }}</td>
-                            <td>{{ row.party }}</td>
-                            <td class="text-end">{{ row.tax | fmt_num }}</td>
-                        </tr>
-                        {% else %}
-                        <tr><td colspan="4" class="text-center text-muted">No taxed sales</td></tr>
-                        {% endfor %}
-                    </tbody>
-                    <tfoot class="table-danger fw-bold">
-                        <tr>
-                            <td colspan="3" class="text-end">Total Output</td>
-                            <td class="text-end">{{ output_total | fmt_num }}</td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
-        </div>
+<!-- Tax Details -->
+<div class="row g-6 mb-6">
+  <!-- Input Tax -->
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header bg-success-subtle">
+        <h5 class="mb-0"><i class="bi bi-arrow-down-circle-fill"></i> Input Tax — Purchases</h5>
+      </div>
+      <div class="table-wrapper">
+        <table class="table table-striped table-hover align-middle">
+          <thead>
+            <tr>
+              <th>PUR #</th>
+              <th>Date</th>
+              <th>Supplier</th>
+              <th class="text-end">Tax</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in input_rows %}
+            <tr>
+              <td class="font-medium">#{{ row.id }}</td>
+              <td class="text-tertiary text-nowrap">{{ row.date.strftime('%d %b %Y') }}</td>
+              <td>{{ row.party }}</td>
+              <td class="text-end fw-semibold">{{ row.tax | fmt_num }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="4" class="text-center text-tertiary py-8">No taxed purchases</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr class="fw-bold">
+              <td colspan="3" class="text-end">Total Input</td>
+              <td class="text-end">{{ input_total | fmt_num }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
+  </div>
+
+  <!-- Output Tax -->
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header bg-danger-subtle">
+        <h5 class="mb-0"><i class="bi bi-arrow-up-circle-fill"></i> Output Tax — Sales</h5>
+      </div>
+      <div class="table-wrapper">
+        <table class="table table-striped table-hover align-middle">
+          <thead>
+            <tr>
+              <th>SAL #</th>
+              <th>Date</th>
+              <th>Customer</th>
+              <th class="text-end">Tax</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in output_rows %}
+            <tr>
+              <td class="font-medium">#{{ row.id }}</td>
+              <td class="text-tertiary text-nowrap">{{ row.date.strftime('%d %b %Y') }}</td>
+              <td>{{ row.party }}</td>
+              <td class="text-end fw-semibold">{{ row.tax | fmt_num }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="4" class="text-center text-tertiary py-8">No taxed sales</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr class="fw-bold">
+              <td colspan="3" class="text-end">Total Output</td>
+              <td class="text-end">{{ output_total | fmt_num }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
