@@ -1,67 +1,67 @@
-<!--edit_customer.html-->
-
-
-
 {% extends 'base.html' %}
 
 {% block content %}
 
-    <h2>Edit Customer</h2>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-pencil-square"></i> Edit Customer</h1>
+    <p>Update customer information</p>
+  </div>
+</div>
 
-    <form method="POST" class="mb-4">
-
-        <div class="mb-3">
-
-            <label for="name" class="form-label">Name</label>
-
-            <input type="text" class="form-control" id="name" name="name" value="{{ customer.name }}" required>
-
+<div class="card">
+  <form method="POST" class="card-body">
+    <div class="row">
+      <div class="col-md-6">
+        <div class="form-group">
+          <label class="form-label required">Name</label>
+          <input type="text" class="form-control" id="name" name="name" value="{{ customer.name }}" required>
         </div>
-
-        <div class="mb-3">
-
-            <label for="contact" class="form-label">Contact</label>
-
-            <input type="text" class="form-control" id="contact" name="contact" value="{{ customer.contact }}" required>
-
+      </div>
+      <div class="col-md-6">
+        <div class="form-group">
+          <label class="form-label required">Contact</label>
+          <input type="text" class="form-control" id="contact" name="contact" value="{{ customer.contact }}" required>
         </div>
+      </div>
+    </div>
 
-        <div class="mb-3">
-
-            <label for="address" class="form-label">Address</label>
-
-            <input type="text" class="form-control" id="address" name="address" value="{{ customer.address }}" required>
-
+    <div class="row">
+      <div class="col-md-6">
+        <div class="form-group">
+          <label class="form-label required">Address</label>
+          <input type="text" class="form-control" id="address" name="address" value="{{ customer.address }}" required>
         </div>
-
-        <div class="mb-3">
-
-            <label for="opening_balance" class="form-label">Opening Balance</label>
-
-            <input type="number" step="0.01" class="form-control" id="opening_balance" name="opening_balance" value="{{ customer.opening_balance or 0 }}">
-
-            <small class="text-muted">Positive = receivable | Negative = advance received</small>
-
+      </div>
+      <div class="col-md-6">
+        <div class="form-group">
+          <label class="form-label">Opening Balance</label>
+          <input type="number" step="0.01" class="form-control" id="opening_balance" name="opening_balance" value="{{ customer.opening_balance or 0 }}">
+          <small class="form-text">Positive = amount owed | Negative = advance received</small>
         </div>
+      </div>
+    </div>
 
-        <a href="{{ url_for('customer_ledger', id=customer.id) }}" class="btn btn-info mb-3">View Full Ledger</a>
-
-        <div>
-
-            <button type="submit" class="btn btn-primary">Update Customer</button>
-
-            <a href="{{ url_for('customer') }}" class="btn btn-secondary">Cancel</a>
-
-        </div>
-
-    </form>
+    <div class="form-group mt-6 pt-6 border-top">
+      <a href="{{ url_for('customer_ledger', id=customer.id) }}" class="btn btn-outline-primary mb-3">
+        <i class="bi bi-journal-text"></i> View Full Ledger
+      </a>
+      <div class="mt-4">
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check"></i> Update Customer
+        </button>
+        <a href="{{ url_for('customer') }}" class="btn btn-secondary">
+          <i class="bi bi-x"></i> Cancel
+        </a>
+      </div>
+    </div>
+  </form>
+</div>
 
 <script>
-// AUTO-SAVE EDIT FORM DATA TO localStorage
 const EDIT_CUSTOMER_STORAGE_KEY = 'editCustomerFormData';
 const CUSTOMER_ID = {{ customer.id }};
 
-// Save form data whenever user types
 function saveEditCustomerFormData() {
   const formData = {
     name: document.getElementById('name').value,
@@ -72,11 +72,9 @@ function saveEditCustomerFormData() {
   localStorage.setItem(EDIT_CUSTOMER_STORAGE_KEY + '_' + CUSTOMER_ID, JSON.stringify(formData));
 }
 
-// Restore form data from localStorage on page load
 function restoreEditCustomerFormData() {
   const saved = localStorage.getItem(EDIT_CUSTOMER_STORAGE_KEY + '_' + CUSTOMER_ID);
   if (!saved) return;
-
   try {
     const formData = JSON.parse(saved);
     if (formData.name) document.getElementById('name').value = formData.name;
@@ -88,12 +86,10 @@ function restoreEditCustomerFormData() {
   }
 }
 
-// Clear saved data on successful submission
 document.querySelector('form[method="POST"]').addEventListener('submit', function() {
   localStorage.removeItem(EDIT_CUSTOMER_STORAGE_KEY + '_' + CUSTOMER_ID);
 });
 
-// Add event listeners to all form inputs
 ['name', 'contact', 'address', 'opening_balance'].forEach(id => {
   const el = document.getElementById(id);
   if (el) {
@@ -102,9 +98,7 @@ document.querySelector('form[method="POST"]').addEventListener('submit', functio
   }
 });
 
-// Restore data when page loads
 document.addEventListener('DOMContentLoaded', restoreEditCustomerFormData);
 </script>
 
 {% endblock %}
-

@@ -1,5 +1,3 @@
-<!--customer.html-->
-
 {% extends 'base.html' %}
 {% block extra_head %}
 <style>
@@ -12,56 +10,178 @@
 {% endblock %}
 {% block content %}
 {% set form_data = form_data|default({}) %}
-    <h2 class="mt-4">Manage Customers</h2>
-    <form method="GET" class="mb-3 no-print">
-        <div class="input-group">
-            <input type="text" class="form-control" name="search" placeholder="Search by name" value="{{ search }}">
-            <button type="submit" class="btn btn-primary" title="Search customers by name">Search</button>
-        </div>
-    </form>
+
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-people"></i> Customers</h1>
+    <p>Manage customer information and payment history</p>
+  </div>
+  <div class="page-header-actions no-print">
     {% if current_user.is_manager %}
-    <form method="POST" class="mb-4 no-print">
-        <div class="mb-3">
-            <label for="name" class="form-label">Name</label>
-            <input type="text" class="form-control" id="name" name="name" value="{{ form_data.get('name', '') }}" required>
-        </div>
-        <div class="mb-3">
-            <label for="contact" class="form-label">Contact</label>
-            <input type="text" class="form-control" id="contact" name="contact" value="{{ form_data.get('contact', '') }}" required>
-        </div>
-        <div class="mb-3">
-            <label for="address" class="form-label">Address</label>
-            <input type="text" class="form-control" id="address" name="address" value="{{ form_data.get('address', '') }}" required>
-        </div>
-        <div class="mb-3">
-            <label for="opening_balance" class="form-label">Opening Balance</label>
-            <input type="number" step="0.01" class="form-control" id="opening_balance" name="opening_balance" value="{{ form_data.get('opening_balance', '0') }}">
-            <small class="text-muted">Positive = pehle se lena hai | Negative = advance mila hua</small>
-        </div>
-        <button type="submit" class="btn btn-primary" title="Save new customer to the database">Add Customer</button>
-    </form>
-    {% endif %}
-    {% if current_user.is_manager %}
-    <div class="d-flex gap-2 flex-wrap mb-3 no-print">
-        <a href="{{ url_for('export_customers') }}" class="btn btn-secondary btn-sm" title="Download full customer list as CSV">
-            <i class="bi bi-filetype-csv"></i> Export CSV
-        </a>
-        <a href="{{ url_for('export_customers_excel') }}" class="btn btn-success btn-sm" title="Download full customer list as Excel (.xlsx)">
-            <i class="bi bi-file-earmark-excel"></i> Export Excel
-        </a>
-        <button onclick="window.print()" class="btn btn-info btn-sm text-white" title="Print customer list">
-            <i class="bi bi-printer"></i> Print
-        </button>
+    <div class="flex gap-2">
+      <a href="{{ url_for('export_customers') }}" class="btn btn-secondary btn-sm" title="Download customer list as CSV">
+        <i class="bi bi-download"></i> CSV
+      </a>
+      <a href="{{ url_for('export_customers_excel') }}" class="btn btn-secondary btn-sm" title="Download customer list as Excel">
+        <i class="bi bi-download"></i> Excel
+      </a>
+      <button onclick="window.print()" class="btn btn-secondary btn-sm" title="Print customer list">
+        <i class="bi bi-printer"></i> Print
+      </button>
+      <a href="{{ url_for('customer_receipt') }}" class="btn btn-primary" title="Record customer receipts">
+        <i class="bi bi-receipt"></i> Receipts
+      </a>
     </div>
     {% endif %}
-    <a href="{{ url_for('customer_receipt') }}" class="btn btn-outline-primary mb-3 no-print" title="View and record receipts received from customers">Customer Receipts</a>
+  </div>
+</div>
+
+<!-- Search Card -->
+<div class="card mb-6">
+  <div class="card-body">
+    <form method="GET" class="row g-3">
+      <div class="col-md-8">
+        <input type="text" class="form-control" name="search" placeholder="Search by name, contact, address..." value="{{ search }}">
+      </div>
+      <div class="col-md-4">
+        <button type="submit" class="btn btn-secondary w-100">
+          <i class="bi bi-search"></i> Search
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Add New Customer Form -->
+{% if current_user.is_manager %}
+<div class="card mb-6">
+  <div class="card-header">
+    <h4 class="mb-0"><i class="bi bi-plus-circle"></i> Add New Customer</h4>
+  </div>
+  <form method="POST" class="card-body">
+    <div class="row">
+      <div class="col-md-6">
+        <div class="form-group">
+          <label class="form-label required">Name</label>
+          <input type="text" class="form-control" id="name" name="name" value="{{ form_data.get('name', '') }}" required>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="form-group">
+          <label class="form-label required">Contact</label>
+          <input type="text" class="form-control" id="contact" name="contact" value="{{ form_data.get('contact', '') }}" required>
+        </div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-6">
+        <div class="form-group">
+          <label class="form-label required">Address</label>
+          <input type="text" class="form-control" id="address" name="address" value="{{ form_data.get('address', '') }}" required>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="form-group">
+          <label class="form-label">Opening Balance</label>
+          <input type="number" step="0.01" class="form-control" id="opening_balance" name="opening_balance" value="{{ form_data.get('opening_balance', '0') }}">
+          <small class="form-text">Positive = amount owed | Negative = advance received</small>
+        </div>
+      </div>
+    </div>
+    <div class="form-group mt-4">
+      <button type="submit" class="btn btn-primary">
+        <i class="bi bi-plus"></i> Add Customer
+      </button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+<!-- Customers Table -->
+{% if customers %}
+<div class="card">
+  <div class="table-wrapper">
+    <table class="table table-striped table-hover">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Contact</th>
+          <th>Address</th>
+          <th class="table-cell-right">Opening</th>
+          <th class="table-cell-right">Sales</th>
+          <th class="table-cell-right">Received</th>
+          <th class="table-cell-right">Balance</th>
+          <th class="table-cell-center no-print">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for customer in customers %}
+        <tr>
+          <td class="text-tertiary">{{ customer.id }}</td>
+          <td class="font-medium">{{ customer.name }}</td>
+          <td>{{ customer.contact }}</td>
+          <td>{{ customer.address }}</td>
+          <td class="table-cell-right">{{ customer.opening_balance | fmt_num }}</td>
+          <td class="table-cell-right">{{ get_customer_receivable(customer.id) | fmt_num }}</td>
+          <td class="table-cell-right">{{ get_customer_received(customer.id) | fmt_num }}</td>
+          <td class="table-cell-right">
+            {% set bal = get_customer_balance(customer.id) %}
+            <span class="font-medium {% if bal > 0 %}text-danger{% elif bal < 0 %}text-primary{% else %}text-success{% endif %}">
+              {{ bal | fmt_num }}
+            </span>
+            <br><small class="text-tertiary">{{ customer_balance_label(bal) }}</small>
+          </td>
+          <td class="table-cell-center no-print">
+            <a href="{{ url_for('customer_ledger', id=customer.id) }}" class="btn btn-sm btn-outline-primary" title="View ledger">
+              <i class="bi bi-journal-text"></i>
+            </a>
+            {% if current_user.is_manager %}
+            <a href="{{ url_for('edit_customer', id=customer.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit customer">
+              <i class="bi bi-pencil"></i>
+            </a>
+            {% endif %}
+            {% if current_user.is_admin %}
+            <form action="{{ url_for('delete_customer', id=customer.id) }}" method="POST" style="display:inline;">
+              <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete customer" onclick="return confirm('Delete this customer?')">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Pagination -->
+{% if pagination.links %}
+<div class="mt-6">
+  {{ pagination.links }}
+</div>
+{% endif %}
+
+{% else %}
+<div class="card">
+  <div class="card-body">
+    <div class="text-center text-tertiary py-8">
+      <i class="bi bi-inbox" style="font-size: 2rem; margin-bottom: 1rem; display: block;"></i>
+      <p>No customers found</p>
+      {% if current_user.is_manager %}
+      <p class="text-sm">Add your first customer using the form above</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <script>
-// AUTO-SAVE FORM DATA TO localStorage
 const CUSTOMER_FORM_STORAGE_KEY = 'customerFormData';
 
-// Save form data whenever user types
 function saveCustomerFormData() {
+  if (!document.getElementById('name')) return;
   const formData = {
     name: document.getElementById('name').value,
     contact: document.getElementById('contact').value,
@@ -71,30 +191,25 @@ function saveCustomerFormData() {
   localStorage.setItem(CUSTOMER_FORM_STORAGE_KEY, JSON.stringify(formData));
 }
 
-// Restore form data from localStorage on page load
 function restoreCustomerFormData() {
   const saved = localStorage.getItem(CUSTOMER_FORM_STORAGE_KEY);
   if (!saved) return;
-
   try {
     const formData = JSON.parse(saved);
-    if (formData.name) document.getElementById('name').value = formData.name;
-    if (formData.contact) document.getElementById('contact').value = formData.contact;
-    if (formData.address) document.getElementById('address').value = formData.address;
-    if (formData.opening_balance) document.getElementById('opening_balance').value = formData.opening_balance;
+    if (formData.name && document.getElementById('name')) document.getElementById('name').value = formData.name;
+    if (formData.contact && document.getElementById('contact')) document.getElementById('contact').value = formData.contact;
+    if (formData.address && document.getElementById('address')) document.getElementById('address').value = formData.address;
+    if (formData.opening_balance && document.getElementById('opening_balance')) document.getElementById('opening_balance').value = formData.opening_balance;
   } catch (e) {
     console.error('Failed to restore form data:', e);
   }
 }
 
-// Clear saved data on successful submission
 const customerForm = document.querySelector('form[method="POST"]');
 if (customerForm) {
   customerForm.addEventListener('submit', function() {
     localStorage.removeItem(CUSTOMER_FORM_STORAGE_KEY);
   });
-
-  // Add event listeners to all form inputs
   ['name', 'contact', 'address', 'opening_balance'].forEach(id => {
     const el = document.getElementById(id);
     if (el) {
@@ -104,56 +219,7 @@ if (customerForm) {
   });
 }
 
-// Restore data when page loads
 document.addEventListener('DOMContentLoaded', restoreCustomerFormData);
 </script>
-    <table class="table table-bordered">
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Name</th>
-                <th>Contact</th>
-                <th>Address</th>
-                <th>Opening</th>
-                <th>Sales</th>
-                <th>Received</th>
-                <th>Ledger Balance</th>
-                <th class="no-print">Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for customer in customers %}
-                <tr>
-                    <td>{{ customer.id }}</td>
-                    <td>{{ customer.name }}</td>
-                    <td>{{ customer.contact }}</td>
-                    <td>{{ customer.address }}</td>
-                    <td>{{ customer.opening_balance | fmt_num }}</td>
-                    <td>{{ get_customer_receivable(customer.id) | fmt_num }}</td>
-                    <td>{{ get_customer_received(customer.id) | fmt_num }}</td>
-                    <td>
-                        {% set bal = get_customer_balance(customer.id) %}
-                        <span class="{% if bal > 0 %}text-danger{% elif bal < 0 %}text-primary{% else %}text-success{% endif %} fw-semibold">
-                            {{ bal | fmt_num }}
-                        </span>
-                        <br><small class="text-muted">{{ customer_balance_label(bal) }}</small>
-                    </td>
-                    <td class="no-print">
-                        <a href="{{ url_for('customer_ledger', id=customer.id) }}" class="btn btn-sm btn-info" title="View complete ledger and all transactions for this customer">Ledger</a>
-                        {% if current_user.is_manager %}
-                        <a href="{{ url_for('edit_customer', id=customer.id) }}" class="btn btn-sm btn-warning" title="Edit customer name, contact and address">Edit</a>
-                        {% endif %}
-                        {% if current_user.is_admin %}
-                        <form action="{{ url_for('delete_customer', id=customer.id) }}" method="POST" style="display:inline;">
-                            <button type="submit" class="btn btn-sm btn-danger" title="Permanently delete this customer and all related records" onclick="return confirm('Are you sure you want to delete this customer?')">Delete</button>
-                        </form>
-                        {% endif %}
-                    </td>
-                </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {{ pagination.links }}
+
 {% endblock %}
-
-
