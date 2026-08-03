@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sabir Shah - Business Software Developer | CV</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Calibri', 'Segoe UI', sans-serif;
+            line-height: 1.35;
+            color: #2c3e50;
+            background: #f5f5f5;
+            font-size: 10pt;
+        }
+
+        .container {
+            width: 8.5in;
+            margin: 0 auto;
+            background: white;
+        }
+
+        @page {
+            size: A4;
+            margin: 0.5in;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        .name {
+            font-size: 20pt;
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+
+        .title {
+            font-size: 11pt;
+            font-weight: 500;
+            opacity: 0.95;
+            margin-bottom: 8px;
+        }
+
+        .title-sub {
+            font-size: 9pt;
+            opacity: 0.9;
+            margin-bottom: 10px;
+        }
+
+        .contact-info {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            font-size: 8.5pt;
+            justify-content: center;
+        }
+
+        .content {
+            padding: 0 0.5in;
+        }
+
+        .section {
+            margin-bottom: 10px;
+            page-break-inside: avoid;
+        }
+
+        .section-title {
+            font-size: 10pt;
+            font-weight: bold;
+            color: #1e3c72;
+            border-bottom: 2px solid #2a5298;
+            padding-bottom: 4px;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .summary {
+            background: #f0f4f8;
+            padding: 8px;
+            border-left: 3px solid #2a5298;
+            font-size: 9pt;
+            line-height: 1.3;
+            text-align: justify;
+            margin-bottom: 8px;
+        }
+
+        .skills-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .skill-category {
+            background: #f9f9f9;
+            padding: 8px;
+            border-left: 2px solid #2a5298;
+            font-size: 8.5pt;
+        }
+
+        .skill-category-title {
+            font-weight: bold;
+            color: #1e3c72;
+            margin-bottom: 4px;
+            font-size: 9pt;
+        }
+
+        .job-entry {
+            margin-bottom: 10px;
+            border-left: 2px solid #2a5298;
+            padding-left: 8px;
+            page-break-inside: avoid;
+        }
+
+        .job-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 4px;
+        }
+
+        .job-title {
+            font-weight: bold;
+            font-size: 10pt;
+            color: #1e3c72;
+        }
+
+        .job-company {
+            font-size: 9pt;
+            color: #2a5298;
+        }
+
+        .job-location {
+            font-size: 8.5pt;
+            color: #7f8c8d;
+            font-style: italic;
+        }
+
+        .job-description {
+            font-size: 9pt;
+            color: #34495e;
+            margin-top: 4px;
+        }
+
+        .job-description p {
+            margin-bottom: 6px;
+            line-height: 1.3;
+        }
+
+        .job-description ul {
+            margin-left: 15px;
+            margin-top: 4px;
+        }
+
+        .job-description li {
+            margin-bottom: 4px;
+            line-height: 1.25;
+            font-size: 8.5pt;
+        }
+
+        .project-title {
+            font-weight: bold;
+            color: #1e3c72;
+            font-size: 10pt;
+            margin-bottom: 6px;
+        }
+
+        .project-description {
+            font-size: 9pt;
+            color: #34495e;
+        }
+
+        .project-description p {
+            margin-bottom: 6px;
+            line-height: 1.3;
+        }
+
+        .project-description ul {
+            margin-left: 15px;
+            margin-top: 4px;
+        }
+
+        .project-description li {
+            margin-bottom: 3px;
+            line-height: 1.25;
+            font-size: 8.5pt;
+        }
+
+        .education-entry {
+            margin-bottom: 6px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #ecf0f1;
+            font-size: 9pt;
+        }
+
+        .education-entry:last-child {
+            border-bottom: none;
+        }
+
+        .degree {
+            font-weight: bold;
+            color: #1e3c72;
+            font-size: 9pt;
+        }
+
+        .institution {
+            font-size: 8.5pt;
+            color: #2a5298;
+        }
+
+        .year {
+            font-size: 8.5pt;
+            color: #7f8c8d;
+            font-style: italic;
+        }
+
+        .portfolio-section {
+            background: #f0f4f8;
+            padding: 8px;
+            border-left: 3px solid #2a5298;
+        }
+
+        .portfolio-item {
+            margin-bottom: 6px;
+            font-size: 8.5pt;
+        }
+
+        .portfolio-label {
+            font-weight: bold;
+            color: #1e3c72;
+            font-size: 9pt;
+        }
+
+        .portfolio-content {
+            font-size: 8.5pt;
+            color: #34495e;
+            line-height: 1.25;
+        }
+
+        .portfolio-link {
+            color: #2a5298;
+            text-decoration: none;
+            word-break: break-word;
+        }
+
+        .small-note {
+            font-size: 7.5pt;
+            color: #7f8c8d;
+            margin-top: 2px;
+            line-height: 1.2;
+        }
+
+        .page-break {
+            page-break-before: always;
+            margin-top: 20px;
+        }
+
+        @media print {
+            body {
+                background: white;
+            }
+            .container {
+                margin: 0;
+                box-shadow: none;
+            }
+            .page-break {
+                page-break-before: always;
+                margin-top: 0;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .skills-grid {
+                grid-template-columns: 1fr;
+            }
+            .container {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- PAGE 1 -->
+        <div>
+            <!-- HEADER -->
+            <div class="header">
+                <div class="name">SABIR SHAH</div>
+                <div class="title">Business Software Developer</div>
+                <div class="title-sub">Python | Flask | PostgreSQL | Double-Entry Accounting Systems</div>
+                <div class="contact-info">
+                    <span>📍 Karachi, Pakistan</span>
+                    <span>📱 +92 345 3231545</span>
+                    <span>✉️ sabir1212temp@yahoo.com</span>
+                </div>
+            </div>
+
+            <!-- MAIN CONTENT -->
+            <div class="content">
+                <!-- PROFESSIONAL SUMMARY -->
+                <div class="section">
+                    <div class="section-title">Professional Summary</div>
+                    <div class="summary">
+                        Results-driven Business Software Developer with 20+ years of proven expertise designing, building, and deploying enterprise-grade inventory management, accounting systems, and point-of-sale solutions. Demonstrates deep mastery of double-entry accounting principles, weighted-average inventory costing methodologies, and comprehensive financial reporting. Specializes in architecting scalable web applications using Python, Flask, and PostgreSQL with a proven track record of delivering clean, well-tested code backed by 120+ automated tests and continuous integration pipelines. Recognized for honest project scoping, meticulous attention to data integrity, and consistent delivery of production-ready solutions.
+                    </div>
+                </div>
+
+                <!-- CORE COMPETENCIES -->
+                <div class="section">
+                    <div class="section-title">Core Competencies</div>
+                    <div class="skills-grid">
+                        <div class="skill-category">
+                            <div class="skill-category-title">Languages & Frameworks</div>
+                            <div class="skill-category-content">
+                                Python 3, Flask, SQLAlchemy ORM, JavaScript, HTML5, CSS3, Bootstrap 5, Jinja2
+                            </div>
+                        </div>
+
+                        <div class="skill-category">
+                            <div class="skill-category-title">Databases & Cloud</div>
+                            <div class="skill-category-content">
+                                PostgreSQL, MySQL, SQLite, Docker, CI/CD (GitHub Actions), Gunicorn, Render, Neon
+                            </div>
+                        </div>
+
+                        <div class="skill-category">
+                            <div class="skill-category-title">Best Practices</div>
+                            <div class="skill-category-content">
+                                Automated testing (pytest), REST APIs, Security (Argon2 hashing, CSRF protection), Git & GitHub
+                            </div>
+                        </div>
+
+                        <div class="skill-category">
+                            <div class="skill-category-title">Domain Expertise</div>
+                            <div class="skill-category-content">
+                                Double-entry accounting, Inventory costing, Invoicing, Payroll, Fixed assets, Financial reporting, POS systems
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PROFESSIONAL EXPERIENCE -->
+                <div class="section">
+                    <div class="section-title">Professional Experience</div>
+
+                    <div class="job-entry">
+                        <div class="job-header">
+                            <div>
+                                <div class="job-title">Business Software Developer</div>
+                                <div class="job-company">Independent · Karachi</div>
+                            </div>
+                            <div class="job-location">Present</div>
+                        </div>
+                        <div class="job-description">
+                            <p>Design, develop, and deploy complete inventory and double-entry accounting web applications serving diverse business sectors.</p>
+                            <ul>
+                                <li>Architected and built a production-ready trading and accounting system featuring integrated point-of-sale, general ledger, inventory management, and comprehensive financial reporting—deployed live with 120+ automated test coverage.</li>
+                                <li>Implemented comprehensive double-entry general ledger with control accounts, accounting periods, year-end closing procedures, and weighted-average inventory costing.</li>
+                                <li>Developed advanced point-of-sale module with barcode/QR code scanning, multi-payment method processing, customer management, and thermal receipt printing.</li>
+                                <li>Built complete suite of financial reports including Balance Sheet, Profit & Loss statements, Trial Balances, Cash Flow analysis, and Reconciliation reports.</li>
+                                <li>Engineered immutable document management system with full audit trail, role-based access control, and one-click backup/restore functionality.</li>
+                                <li>Deployed to cloud infrastructure (PostgreSQL + Render) with continuous integration/continuous deployment pipeline and zero-downtime deployment strategy.</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="job-entry">
+                        <div class="job-header">
+                            <div>
+                                <div class="job-title">Senior Software Developer</div>
+                                <div class="job-company">Independent · Karachi</div>
+                            </div>
+                            <div class="job-location">Previous</div>
+                        </div>
+                        <div class="job-description">
+                            <p>Designed and delivered bespoke business applications across multiple industries, working directly with business owners and finance professionals.</p>
+                            <ul>
+                                <li>Developed specialized systems: Inventory Management, Sales & Purchase Orders, Payroll Processing, Human Resources, Transportation Fleet Management, Garment Production & Export, Oil Tanker Operations.</li>
+                                <li>Maintained systems in daily production use with on-site support, continuous optimization for performance, and proactive troubleshooting.</li>
+                                <li>Built applications with relational databases (SQL) emphasizing data integrity, transactional consistency, and recovery procedures.</li>
+                                <li>Established strong long-term client relationships through clear technical communication, domain expertise, and commitment to solving real business problems.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FLAGSHIP PROJECT - PAGE 1 -->
+                <div class="section">
+                    <div class="section-title">Flagship Project: TradeFlow</div>
+                    <div class="project-description">
+                        <p><strong>Complete Inventory & Double-Entry Accounting System</strong></p>
+                        <p style="font-size: 8.5pt;">A sophisticated, production-deployed web application that unifies inventory management, sales/purchase operations, and financial accounting through a single double-entry general ledger.</p>
+                        <ul>
+                            <li><strong>Accounting Core:</strong> Full double-entry general ledger with control accounts, accounting periods, year-end closing, and gapless invoice numbering.</li>
+                            <li><strong>Inventory:</strong> Weighted-average costing with real-time stock tracking, barcode/QR labels, and multi-location support.</li>
+                            <li><strong>Point-of-Sale:</strong> Barcode scanning, multi-payment processing, customer management, and thermal receipt printing.</li>
+                            <li><strong>Financial Reporting:</strong> Balance Sheet, P&L, Trial Balance, Cash Flow, and Reconciliation reports.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PAGE 2 -->
+        <div class="page-break">
+            <div class="content">
+                <!-- FLAGSHIP PROJECT CONTINUED - PAGE 2 -->
+                <div class="section">
+                    <div class="section-title">Flagship Project: TradeFlow (Continued)</div>
+                    <div class="project-description">
+                        <ul>
+                            <li><strong>Fixed Assets:</strong> Complete asset register with straight-line and reducing-balance depreciation methods.</li>
+                            <li><strong>Security & Auditability:</strong> Role-based access control, immutable transaction records, comprehensive audit trail with timestamps.</li>
+                            <li><strong>Configurability:</strong> Timezone support, fiscal-year customization, multi-currency capability for global deployment.</li>
+                            <li><strong>Technical Stack:</strong> Python 3 / Flask / SQLAlchemy ORM / PostgreSQL / Bootstrap 5 / Jinja2. Deployed to Render with GitHub Actions CI/CD. 120+ pytest-based automated tests.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- EDUCATION -->
+                <div class="section">
+                    <div class="section-title">Education & Professional Certification</div>
+
+                    <div class="education-entry">
+                        <div class="degree">Certified Python Programmer</div>
+                        <div class="institution">Aptech, Karachi</div>
+                        <div class="year">2025–2026</div>
+                    </div>
+
+                    <div class="education-entry">
+                        <div class="degree">Diploma in Computer Science</div>
+                        <div class="institution">Petroman Training Institute of Computer Sciences, Karachi</div>
+                        <div class="year">1993–1994</div>
+                    </div>
+
+                    <div class="education-entry">
+                        <div class="degree">B.Sc. (Science)</div>
+                        <div class="institution">University of Karachi</div>
+                        <div class="year">1991</div>
+                    </div>
+                </div>
+
+                <!-- PORTFOLIO -->
+                <div class="section">
+                    <div class="section-title">Portfolio & Online Presence</div>
+                    <div class="portfolio-section">
+                        <div class="portfolio-item">
+                            <div class="portfolio-label">💻 GitHub</div>
+                            <div class="portfolio-content">
+                                <a href="https://github.com/sabir1080" class="portfolio-link">github.com/sabir1080</a>
+                            </div>
+                        </div>
+
+                        <div class="portfolio-item">
+                            <div class="portfolio-label">🌐 Live Demo</div>
+                            <div class="portfolio-content">
+                                <a href="https://tradeflow-demo.onrender.com" class="portfolio-link">TradeFlow-Demo.onrender.com</a>
+                                <div class="small-note">Demo: sabir.shah@tradeflowhq.com / demo1234</div>
+                            </div>
+                        </div>
+
+                        <div class="portfolio-item">
+                            <div class="portfolio-label">💼 LinkedIn</div>
+                            <div class="portfolio-content">
+                                <a href="https://www.linkedin.com/in/sabir-shah-19470b351" class="portfolio-link">linkedin.com/in/sabir-shah-19470b351</a>
+                            </div>
+                        </div>
+
+                        <div class="portfolio-item">
+                            <div class="portfolio-label">⭐ Fiverr</div>
+                            <div class="portfolio-content">
+                                <a href="https://www.fiverr.com/sabirshah7" class="portfolio-link">fiverr.com/sabirshah7</a>
+                            </div>
+                        </div>
+
+                        <div class="portfolio-item">
+                            <div class="portfolio-label">📺 YouTube</div>
+                            <div class="portfolio-content">
+                                <a href="https://youtube.com/@TradeFlowBusinesSolutions" class="portfolio-link">@TradeFlowBusinessSolutions</a>
+                            </div>
+                        </div>
+
+                        <div class="portfolio-item">
+                            <div class="portfolio-label">📱 Facebook</div>
+                            <div class="portfolio-content">
+                                <a href="https://www.facebook.com/share/1DHHW6cccL/" class="portfolio-link">Business Page</a> | <a href="https://www.facebook.com/share/19GbJPhLX4/" class="portfolio-link">Community</a>
+                            </div>
+                        </div>
+
+                        <div class="portfolio-item">
+                            <div class="portfolio-label">📞 Contact</div>
+                            <div class="portfolio-content">
+                                WhatsApp: <strong>+92 345 3231545</strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TECHNICAL SKILLS SUMMARY -->
+                <div class="section">
+                    <div class="section-title">Additional Technical Details</div>
+                    <div class="project-description" style="font-size: 8.5pt;">
+                        <strong>Testing & Quality:</strong> 120+ automated test cases with pytest, continuous integration via GitHub Actions, code coverage analysis.<br>
+                        <strong>Database Design:</strong> Relational database design with referential integrity, transaction management, performance optimization with indexing.<br>
+                        <strong>Security:</strong> Argon2 password hashing, CSRF protection, SQL injection prevention, role-based access control (RBAC).<br>
+                        <strong>Deployment:</strong> Zero-downtime deployments, container orchestration, cloud database management, backup and disaster recovery procedures.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

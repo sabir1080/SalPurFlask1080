@@ -5,6 +5,7 @@ from flask_login import login_required, login_user, logout_user, current_user
 from datetime import datetime, timedelta, timezone
 import secrets
 import os
+from sqlalchemy.exc import OperationalError
 
 from salpurflask.extensions import db, pwd_context
 from salpurflask.models import User, RateLimitHit, AuditLog, record_audit
@@ -101,32 +102,45 @@ def signin():
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "").strip()
-        if not _check_rate_limit(f"signin:{request.remote_addr}"):
-            flash("Too many login attempts. Please try again in a few minutes.", "danger")
+
+        try:
+            if not _check_rate_limit(f"signin:{request.remote_addr}"):
+                flash("Too many login attempts. Please try again in a few minutes.", "danger")
+                return render_template("signin.html", just_reset=session.get("just_reset_email"))
+
+            user = User.query.filter_by(email=email).first()
+            if user:
+                try:
+                    db.session.refresh(user)
+                    if pwd_context.verify(password, user.password):
+                        if not user.verified:
+                            flash(f"Please verify {email} before signing in. Check your inbox for the verification link.", "danger")
+                            return render_template("signin.html", just_reset=session.get("just_reset_email"))
+                        login_user(user)
+                        session["user_id"] = user.id
+                        session.pop("just_reset_email", None)
+                        record_audit("login", "User", user.id, f"Signed in from {request.remote_addr}")
+                        current_app.logger.info("Login OK: %s (role=%s) from %s", email, user.role, request.remote_addr)
+                        flash("Signed in successfully!", "success")
+                        return redirect(url_for("dashboard.index"))
+                    current_app.logger.warning("Login FAILED (bad password): %s from %s", email, request.remote_addr)
+                    flash("Invalid email or password!", "danger")
+                except Exception as e:
+                    current_app.logger.exception("Login error for %s: %s", email, e)
+                    flash("Invalid email or password!", "danger")
+            else:
+                current_app.logger.warning("Login FAILED (unknown email): %s from %s", email, request.remote_addr)
+                flash("Invalid email or password!", "danger")
+
+        except OperationalError as db_err:
+            current_app.logger.error("Database connection error during login: %s", str(db_err))
+            flash("Database connection lost. Please try again in a few moments.", "danger")
             return render_template("signin.html", just_reset=session.get("just_reset_email"))
-        user = User.query.filter_by(email=email).first()
-        if user:
-            try:
-                db.session.refresh(user)
-                if pwd_context.verify(password, user.password):
-                    if not user.verified:
-                        flash(f"Please verify {email} before signing in. Check your inbox for the verification link.", "danger")
-                        return render_template("signin.html", just_reset=session.get("just_reset_email"))
-                    login_user(user)
-                    session["user_id"] = user.id
-                    session.pop("just_reset_email", None)
-                    record_audit("login", "User", user.id, f"Signed in from {request.remote_addr}")
-                    current_app.logger.info("Login OK: %s (role=%s) from %s", email, user.role, request.remote_addr)
-                    flash("Signed in successfully!", "success")
-                    return redirect(url_for("dashboard.index"))
-                current_app.logger.warning("Login FAILED (bad password): %s from %s", email, request.remote_addr)
-                flash("Invalid email or password!", "danger")
-            except Exception as e:
-                current_app.logger.exception("Login error for %s: %s", email, e)
-                flash("Invalid email or password!", "danger")
-        else:
-            current_app.logger.warning("Login FAILED (unknown email): %s from %s", email, request.remote_addr)
-            flash("Invalid email or password!", "danger")
+        except Exception as e:
+            current_app.logger.exception("Unexpected error during login: %s", str(e))
+            flash("An unexpected error occurred. Please try again.", "danger")
+            return render_template("signin.html", just_reset=session.get("just_reset_email"))
+
     just_reset = session.get("just_reset_email")
     return render_template("signin.html", just_reset=just_reset)
 
