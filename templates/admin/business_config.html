@@ -2,22 +2,20 @@
 {% block title %}Business Configuration - {{ app_name }}{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-  <!-- Header -->
-  <div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-      <h2 class="mb-1"><i class="bi bi-gear"></i> Business Configuration</h2>
-      <p class="text-muted">Enable/disable product categories for your retail business</p>
-    </div>
-    <div>
-      <span class="badge bg-primary">{{ stats.enabled_categories }}/{{ stats.total_categories }} Enabled</span>
-    </div>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-gear"></i> Business Configuration</h1>
+    <p>Enable/disable product categories for your retail business</p>
   </div>
+  <div class="page-header-actions">
+    <span class="badge bg-primary fs-6">{{ stats.enabled_categories }}/{{ stats.total_categories }} Enabled</span>
+  </div>
+</div>
 
-  <!-- Stats Cards -->
-  <div class="row mb-4">
-    <div class="col-md-3">
-      <div class="card border-start border-5 border-primary">
+<!-- Stats Cards -->
+<div class="row mb-6 g-6">
+  <div class="col-md-3">
+    <div class="card border-start border-5 border-primary">
         <div class="card-body">
           <p class="text-muted small mb-1">Total Categories</p>
           <h4 class="mb-0">{{ stats.total_categories }}</h4>
