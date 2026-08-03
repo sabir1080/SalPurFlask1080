@@ -142,16 +142,32 @@
     <!-- Security Info Section -->
     <div class="row mt-3">
         <div class="col-md-12">
-            <div class="alert alert-warning border-2">
+            <div class="alert {% if selective_mode %}alert-info{% elif read_only_mode %}alert-warning{% else %}alert-success{% endif %} border-2">
                 <h6 class="mb-3">🔒 Security Status</h6>
                 <div class="row">
+                    {% if selective_mode %}
+                        <div class="col-md-12 mb-2">
+                            <small><strong>⚠️ Selective Access Mode:</strong> View data & edit settings, but schema changes disabled</small>
+                        </div>
+                    {% elif read_only_mode %}
+                        <div class="col-md-12 mb-2">
+                            <small><strong>🔒 Read-Only Mode:</strong> Data protection enabled, no modifications allowed</small>
+                        </div>
+                    {% else %}
+                        <div class="col-md-12 mb-2">
+                            <small><strong>✅ Full Access Mode:</strong> All features available</small>
+                        </div>
+                    {% endif %}
+                    <hr class="my-2" style="width: 100%;">
                     <div class="col-md-3">
                         <small>
-                            <strong>Read-Only Mode:</strong>
-                            {% if read_only_mode %}
-                                <span class="badge bg-warning">ENABLED</span>
+                            <strong>Access Mode:</strong>
+                            {% if selective_mode %}
+                                <span class="badge bg-info">SELECTIVE</span>
+                            {% elif read_only_mode %}
+                                <span class="badge bg-warning">READ-ONLY</span>
                             {% else %}
-                                <span class="badge bg-success">DISABLED</span>
+                                <span class="badge bg-success">FULL</span>
                             {% endif %}
                         </small>
                     </div>

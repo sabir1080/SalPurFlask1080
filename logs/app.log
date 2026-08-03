@@ -37,3 +37,22 @@
 [2026-08-03 15:19:53] INFO in app: Flask application started
 [2026-08-03 15:19:53] INFO in app: Flask application started
 [2026-08-03 15:20:01] INFO in app: Flask application started
+[2026-08-03 15:20:17] INFO in app: Flask application started
+[2026-08-03 15:20:18] INFO in app: Flask application started
+[2026-08-03 15:20:18] INFO in app: Flask application started
+[2026-08-03 15:26:05] INFO in app: Bad request (400): 400 Bad Request: The CSRF token is missing.
+[2026-08-03 15:26:05] INFO in app: Bad request (400): 400 Bad Request: The CSRF token is missing.
+[2026-08-03 15:26:32] INFO in app: Flask application started
+[2026-08-03 15:26:32] INFO in app: Flask application started
+[2026-08-03 15:26:32] INFO in app: Flask application started
+[2026-08-03 15:26:35] INFO in app: Flask application started
+[2026-08-03 15:26:35] INFO in app: Flask application started
+[2026-08-03 15:26:35] INFO in app: Flask application started
+[2026-08-03 15:26:42] INFO in app: Bad request (400): 400 Bad Request: The CSRF token is missing.
+[2026-08-03 15:26:42] INFO in app: Bad request (400): 400 Bad Request: The CSRF token is missing.
+[2026-08-03 15:26:47] INFO in app: Bad request (400): 400 Bad Request: The CSRF token is missing.
+[2026-08-03 15:26:47] INFO in app: Bad request (400): 400 Bad Request: The CSRF token is missing.
+[2026-08-03 15:29:04] INFO in app: Flask application started
+[2026-08-03 15:41:33] INFO in app: Flask application started
+[2026-08-03 15:41:34] INFO in app: Flask application started
+[2026-08-03 15:41:34] INFO in app: Flask application started

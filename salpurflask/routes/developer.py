@@ -174,6 +174,7 @@ def logout():
 def dashboard():
     """Developer dashboard with security info"""
     read_only_mode = os.getenv("DEVELOPER_READ_ONLY_MODE", "false").lower() == "true"
+    selective_mode = os.getenv("DEVELOPER_SELECTIVE_MODE", "false").lower() == "true"
     localhost_only = os.getenv("DEVELOPER_LOCALHOST_ONLY", "true").lower() == "true"
 
     # Determine environment (local vs render)
@@ -182,6 +183,7 @@ def dashboard():
 
     context = {
         "read_only_mode": read_only_mode,
+        "selective_mode": selective_mode,
         "localhost_only": localhost_only,
         "session_timeout": int(os.getenv("DEVELOPER_SESSION_TIMEOUT", "30")),
         "environment": "Production (Render)" if is_production else "Development (Local)",
@@ -200,10 +202,13 @@ def database_manager():
 @dev_bp.route("/sync-schema")
 @developer_login_required
 def sync_schema():
-    """Launch schema sync tool info page (disabled in read-only mode)"""
+    """Launch schema sync tool info page (disabled in selective/read-only mode)"""
     read_only_mode = os.getenv("DEVELOPER_READ_ONLY_MODE", "false").lower() == "true"
-    if read_only_mode:
-        flash("Schema sync is disabled in read-only mode", "warning")
+    selective_mode = os.getenv("DEVELOPER_SELECTIVE_MODE", "false").lower() == "true"
+
+    if read_only_mode or selective_mode:
+        reason = "read-only mode" if read_only_mode else "selective access mode"
+        flash(f"Schema sync is disabled in {reason} (data protection)", "warning")
         return redirect(url_for("developer.dashboard"))
     return render_template("developer/sync_schema.html")
 
