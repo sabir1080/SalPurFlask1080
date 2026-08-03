@@ -25,7 +25,7 @@ from itsdangerous import URLSafeTimedSerializer
 from urllib.parse import urlsplit
 from dotenv import load_dotenv
 from sqlalchemy.sql import func
-from sqlalchemy import inspect, text, or_, and_
+from sqlalchemy import create_engine, inspect, text, or_, and_
 
 app = Flask(__name__)
 
@@ -2890,17 +2890,22 @@ def create_admin_cmd(name, email, password, sync):
     # Sync to Render if requested
     if sync:
         try:
-            sync_admin_to_render(user)
-            click.echo(f"[OK] Synced to SalPurFlask (Neon)")
-            click.echo(f"[OK] Synced to TradeFlow (Neon)")
+            sync_results = sync_admin_to_render(user)
+            for target, success, error in sync_results:
+                if success:
+                    click.echo(f"[OK] Synced to {target} (Neon)")
+                else:
+                    click.echo(f"[!] {target} sync failed: {error}")
         except Exception as e:
-            click.echo(f"[!] Sync error: {str(e)}")
+            click.echo(f"[!] Fatal sync error: {str(e)}")
             click.echo("[!] Admin created locally, but sync failed. Check your .env.render files.")
 
 def sync_admin_to_render(user):
-    """Sync admin user to Render databases"""
+    """Sync admin user to Render databases. Returns list of (target, success, error_msg)."""
     from pathlib import Path
     from dotenv import load_dotenv
+
+    results = []
 
     # Load Render env files
     env_salpurflask = Path(".env.render-salpurflask")
@@ -2910,13 +2915,12 @@ def sync_admin_to_render(user):
         raise Exception("Render env files not found")
 
     # Sync to SalPurFlask
-    load_dotenv(env_salpurflask)
+    load_dotenv(env_salpurflask, override=True)
     db_url = os.getenv("DATABASE_URL")
     if db_url:
         try:
             engine = create_engine(db_url)
             with engine.begin() as conn:
-                # Check if user exists
                 result = conn.execute(text(
                     "SELECT id FROM \"user\" WHERE email = :email"
                 ), {"email": user.email})
@@ -2933,17 +2937,19 @@ def sync_admin_to_render(user):
                         "verified": user.verified,
                         "role": user.role
                     })
+            results.append(("SalPurFlask", True, None))
         except Exception as e:
-            raise Exception(f"SalPurFlask sync failed: {str(e)}")
+            results.append(("SalPurFlask", False, str(e)))
+    else:
+        results.append(("SalPurFlask", False, "DATABASE_URL not set"))
 
     # Sync to TradeFlow
-    load_dotenv(env_tradeflow)
+    load_dotenv(env_tradeflow, override=True)
     db_url = os.getenv("DATABASE_URL")
     if db_url:
         try:
             engine = create_engine(db_url)
             with engine.begin() as conn:
-                # Check if user exists
                 result = conn.execute(text(
                     "SELECT id FROM \"user\" WHERE email = :email"
                 ), {"email": user.email})
@@ -2960,8 +2966,13 @@ def sync_admin_to_render(user):
                         "verified": user.verified,
                         "role": user.role
                     })
+            results.append(("TradeFlow", True, None))
         except Exception as e:
-            raise Exception(f"TradeFlow sync failed: {str(e)}")
+            results.append(("TradeFlow", False, str(e)))
+    else:
+        results.append(("TradeFlow", False, "DATABASE_URL not set"))
+
+    return results
 
 # ─── Admin: User Management ────────────────────────────────────────────────
 
