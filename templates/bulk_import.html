@@ -47,7 +47,7 @@
                     <div class="mb-4">
                         <label for="file" class="form-label fw-bold">Choose File</label>
                         <div class="input-group">
-                            <input type="file" class="form-control" id="file" name="file"
+                            <input type="file" class="form-control file-input-custom" id="file" name="file"
                                    accept=".csv,.xlsx,.xls,.json" required>
                             <small class="form-text text-muted d-block mt-2">
                                 Supported formats: CSV, Excel (.xlsx, .xls), JSON
@@ -194,6 +194,28 @@
 .overflow-x-auto {
     overflow-x: auto;
     white-space: nowrap;
+}
+
+/* File input text visibility */
+.file-input-custom {
+    color: #212529 !important;
+}
+
+.file-input-custom::file-selector-button {
+    background-color: #e9ecef !important;
+    color: #212529 !important;
+    border-color: #dee2e6 !important;
+}
+
+/* Dark mode */
+[data-theme="dark"] .file-input-custom {
+    color: #e9ecef !important;
+}
+
+[data-theme="dark"] .file-input-custom::file-selector-button {
+    background-color: #495057 !important;
+    color: #e9ecef !important;
+    border-color: #6c757d !important;
 }
 </style>
 

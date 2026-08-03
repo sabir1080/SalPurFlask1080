@@ -55,6 +55,28 @@
             background-color: #f3f5f8 !important;
             color: #0d6efd !important;
         }
+
+        /* Text selection styling - light and dark mode */
+        ::selection {
+            background-color: #0d6efd;
+            color: #ffffff;
+        }
+
+        ::-moz-selection {
+            background-color: #0d6efd;
+            color: #ffffff;
+        }
+
+        /* Dark mode selection */
+        [data-theme="dark"] ::selection {
+            background-color: #0d6efd;
+            color: #ffffff;
+        }
+
+        [data-theme="dark"] ::-moz-selection {
+            background-color: #0d6efd;
+            color: #ffffff;
+        }
     </style>
     <script>(function(){var t=localStorage.getItem('theme');if(t!=='light'&&t!=='dark'){t='light';localStorage.setItem('theme',t);}document.documentElement.setAttribute('data-theme',t);})();</script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.5/dist/chart.umd.min.js"></script>

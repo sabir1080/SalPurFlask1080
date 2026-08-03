@@ -62,7 +62,7 @@
                         <label class="form-label fw-semibold">
                             Select backup file <span class="text-danger">*</span>
                         </label>
-                        <input type="file" class="form-control" name="db_file"
+                        <input type="file" class="form-control file-input-custom" name="db_file"
                                accept=".json,.db" required>
                         <div class="form-text">Upload a <code>.json</code> backup (or a legacy
                             <code>.db</code> file on a local SQLite install).</div>
@@ -188,4 +188,28 @@
     </div>
 
 </div>
+
+<style>
+/* File input text visibility */
+.file-input-custom {
+    color: #212529 !important;
+}
+
+.file-input-custom::file-selector-button {
+    background-color: #e9ecef !important;
+    color: #212529 !important;
+    border-color: #dee2e6 !important;
+}
+
+/* Dark mode */
+[data-theme="dark"] .file-input-custom {
+    color: #e9ecef !important;
+}
+
+[data-theme="dark"] .file-input-custom::file-selector-button {
+    background-color: #495057 !important;
+    color: #e9ecef !important;
+    border-color: #6c757d !important;
+}
+</style>
 {% endblock %}

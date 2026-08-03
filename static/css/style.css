@@ -1925,3 +1925,24 @@ body {
 [data-theme="dark"] [style*="--bs-gray-200"] {
     --bs-gray-200: #2d3748 !important;
 }
+
+/* Table light row visibility in dark mode */
+[data-theme="dark"] .table-light {
+    background-color: #2d2d2d !important;
+    color: #e9ecef !important;
+}
+
+[data-theme="dark"] .table-light td,
+[data-theme="dark"] .table-light th {
+    color: #e9ecef !important;
+    background-color: #2d2d2d !important;
+}
+
+[data-theme="dark"] .table-light .text-dark {
+    color: #e9ecef !important;
+}
+
+[data-theme="dark"] .table-light .bi-folder-fill,
+[data-theme="dark"] .table-light .bi-dash-circle {
+    color: inherit !important;
+}
