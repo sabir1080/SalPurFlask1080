@@ -167,11 +167,16 @@ def dashboard():
     read_only_mode = os.getenv("DEVELOPER_READ_ONLY_MODE", "false").lower() == "true"
     localhost_only = os.getenv("DEVELOPER_LOCALHOST_ONLY", "true").lower() == "true"
 
+    # Determine environment (local vs render)
+    db_url = current_app.config.get("SQLALCHEMY_DATABASE_URI", "")
+    is_production = db_url.startswith("postgresql")
+
     context = {
         "read_only_mode": read_only_mode,
         "localhost_only": localhost_only,
         "session_timeout": int(os.getenv("DEVELOPER_SESSION_TIMEOUT", "30")),
-        "environment": os.getenv("FLASK_ENV", "development"),
+        "environment": "Production (Render)" if is_production else "Development (Local)",
+        "is_production": is_production,
     }
     return render_template("developer/dashboard.html", **context)
 

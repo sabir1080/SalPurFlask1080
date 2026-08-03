@@ -131,9 +131,9 @@
             <div class="alert alert-info">
                 <h5>📌 Quick Info</h5>
                 <p class="mb-2">
-                    <strong>App Name:</strong> {{ config.APP_NAME }}<br>
-                    <strong>Company:</strong> {{ config.COMPANY_NAME }}<br>
-                    <strong>Environment:</strong> {{ 'Production (Render)' if config.SQLALCHEMY_DATABASE_URI.startswith('postgresql') else 'Development (Local)' }}
+                    <strong>App Name:</strong> {{ config.get('APP_NAME', 'Unknown') }}<br>
+                    <strong>Company:</strong> {{ config.get('COMPANY_NAME', 'Unknown') }}<br>
+                    <strong>Environment:</strong> {{ environment }}
                 </p>
             </div>
         </div>
