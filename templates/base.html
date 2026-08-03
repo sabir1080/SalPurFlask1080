@@ -79,7 +79,7 @@
             color: #ffffff;
         }
     </style>
-    <script>(function(){var t=localStorage.getItem('theme');if(t!=='light'&&t!=='dark'){t='light';localStorage.setItem('theme',t);}document.documentElement.setAttribute('data-theme',t);})();</script>
+    <script>(function(){var t=localStorage.getItem('theme');if(t!=='light'&&t!=='dark'){t='dark';localStorage.setItem('theme',t);}document.documentElement.setAttribute('data-theme',t);})();</script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.5/dist/chart.umd.min.js"></script>
     {% block extra_head %}{% endblock %}
 </head>
@@ -283,7 +283,7 @@
         /* ── Theme Switcher ── */
         (function() {
             var savedTheme = localStorage.getItem('theme');
-            if (savedTheme !== 'light' && savedTheme !== 'dark') savedTheme = 'light';
+            if (savedTheme !== 'light' && savedTheme !== 'dark') savedTheme = 'dark';
             document.documentElement.setAttribute('data-theme', savedTheme);
             document.querySelectorAll('.theme-btn').forEach(function(btn) {
                 if (btn.getAttribute('data-theme') === savedTheme) btn.classList.add('active');
