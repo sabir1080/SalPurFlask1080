@@ -1659,6 +1659,9 @@ def migrate_database():
 with app.app_context():
     try:
         migrate_database()
+        # Initialize application configuration
+        from salpurflask.models import AppConfiguration
+        AppConfiguration.init_defaults()
     except Exception as e:
         print(f"FATAL: database migration failed: {e}")
         raise

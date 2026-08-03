@@ -279,6 +279,8 @@ def database_stats():
 @developer_login_required
 def environment():
     """Environment variables and configuration"""
+    from salpurflask.models import AppConfiguration
+
     env_info = {
         "app_name": current_app.config.get("APP_NAME", os.getenv("APP_NAME", "Not set")),
         "company_name": current_app.config.get("COMPANY_NAME", os.getenv("COMPANY_NAME", "Not set")),
@@ -292,7 +294,83 @@ def environment():
         "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
     }
 
-    return render_template("developer/environment.html", env=env_info)
+    # Get all configurations from DB
+    all_configs = AppConfiguration.query.all()
+    configs_by_category = {}
+    for config in all_configs:
+        if config.category not in configs_by_category:
+            configs_by_category[config.category] = []
+        configs_by_category[config.category].append(config)
+
+    return render_template("developer/environment.html", env=env_info, configs=configs_by_category)
+
+@dev_bp.route("/environment/edit", methods=["POST"])
+@developer_login_required
+def environment_edit():
+    """Update configuration values"""
+    from salpurflask.models import AppConfiguration
+
+    key = request.form.get("key")
+    value = request.form.get("value")
+
+    if not key or value is None:
+        flash("Invalid configuration update", "danger")
+        return redirect(url_for("developer.environment"))
+
+    try:
+        config = AppConfiguration.query.filter_by(key=key).first()
+        if not config:
+            flash(f"Configuration {key} not found", "danger")
+        elif not config.editable:
+            flash(f"Configuration {key} is read-only", "warning")
+        else:
+            config.value = str(value)
+            config.updated_at = datetime.now()
+            config.updated_by = session.get("developer_authenticated", "unknown")
+            db.session.commit()
+
+            # Update .env file
+            try:
+                env_file = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
+                _update_env_file(key, str(value), env_file)
+            except Exception as e:
+                logger.warning(f"Could not update .env file: {str(e)}")
+
+            msg = f"Configuration '{key}' updated to '{value}'"
+            if config.requires_restart:
+                msg += " (requires app restart)"
+                flash(msg + " ⚠️", "warning")
+            else:
+                flash(msg, "success")
+
+    except Exception as e:
+        logger.error(f"Error updating configuration: {str(e)}")
+        flash(f"Error updating configuration: {str(e)}", "danger")
+
+    return redirect(url_for("developer.environment"))
+
+def _update_env_file(key, value, env_file):
+    """Update or add configuration in .env file"""
+    lines = []
+    found = False
+
+    if os.path.exists(env_file):
+        with open(env_file, "r") as f:
+            lines = f.readlines()
+
+    new_lines = []
+    for line in lines:
+        if line.startswith(f"{key}="):
+            new_lines.append(f"{key}={value}\n")
+            found = True
+        else:
+            new_lines.append(line)
+
+    if not found:
+        new_lines.append(f"{key}={value}\n")
+
+    with open(env_file, "w") as f:
+        f.writelines(new_lines)
 
 # ==================== LOG VIEWER ====================
 

@@ -6,3 +6,16 @@
 [2026-08-03 15:06:49] WARNING in <string>: Test warning
 [2026-08-03 15:06:49] ERROR in <string>: Test error
 [2026-08-03 15:06:49] INFO in <string>: Test log entry 2
+[2026-08-03 15:09:02] INFO in app: Flask application started
+[2026-08-03 15:09:03] INFO in app: Flask application started
+[2026-08-03 15:09:03] INFO in app: Flask application started
+[2026-08-03 15:14:22] INFO in app: Flask application started
+[2026-08-03 15:14:22] INFO in app: Flask application started
+[2026-08-03 15:14:22] INFO in app: Flask application started
+[2026-08-03 15:14:47] INFO in app: Flask application started
+[2026-08-03 15:14:47] INFO in app: Flask application started
+[2026-08-03 15:14:47] INFO in app: Flask application started
+[2026-08-03 15:15:30] INFO in app: Flask application started
+[2026-08-03 15:15:31] INFO in app: Flask application started
+[2026-08-03 15:15:31] INFO in app: Flask application started
+[2026-08-03 15:15:37] INFO in app: Flask application started

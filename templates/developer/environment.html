@@ -1,41 +1,221 @@
 {% extends "base.html" %}
 {% block title %}Environment - Developer{% endblock %}
 {% block content %}
-<div class="container mt-4">
+<div class="container-fluid mt-4">
     <h2>⚙️ Environment Configuration</h2>
 
-    <div class="row mt-4">
-        <div class="col-md-6">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                {% set alert_class = 'alert-' ~ category %}
+                <div class="alert {{ alert_class }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <!-- Navigation Tabs -->
+    <ul class="nav nav-tabs mt-4" role="tablist">
+        <li class="nav-item">
+            <a class="nav-link active" data-bs-toggle="tab" href="#app-config">App Settings</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" data-bs-toggle="tab" href="#company-config">Company Info</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" data-bs-toggle="tab" href="#system-config">System Settings</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" data-bs-toggle="tab" href="#email-config">Email Settings</a>
+        </li>
+    </ul>
+
+    <div class="tab-content mt-3">
+        <!-- App Configuration -->
+        <div id="app-config" class="tab-pane fade show active">
             <div class="card">
-                <div class="card-header bg-dark text-white">
-                    <h5 class="mb-0">App Configuration</h5>
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">Application Settings</h5>
                 </div>
                 <div class="card-body">
-                    <p><strong>App Name:</strong> <code>{{ env.app_name }}</code></p>
-                    <p><strong>Company:</strong> <code>{{ env.company_name }}</code></p>
-                    <p><strong>Timezone:</strong> <code>{{ env.timezone }}</code></p>
-                    <p><strong>Currency:</strong> <code>{{ env.currency }}</code></p>
-                    <p><strong>Allow Signup:</strong> <code>{{ env.allow_signup }}</code></p>
+                    {% for config in configs.get('app', []) %}
+                        <div class="mb-3">
+                            <label class="form-label"><strong>{{ config.description or config.key }}</strong></label>
+                            <div class="input-group">
+                                <input type="text" class="form-control config-input" value="{{ config.value }}"
+                                       data-key="{{ config.key }}" data-type="{{ config.data_type }}"
+                                       {% if not config.editable %}disabled{% endif %}>
+                                <button class="btn btn-primary save-config" data-key="{{ config.key }}">Save</button>
+                                {% if not config.editable %}
+                                    <span class="input-group-text text-warning">Read-only</span>
+                                {% endif %}
+                                {% if config.requires_restart %}
+                                    <span class="input-group-text text-warning">⚠️ Restart required</span>
+                                {% endif %}
+                            </div>
+                            {% if config.description %}
+                                <small class="text-muted d-block mt-1">{{ config.description }}</small>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
                 </div>
             </div>
         </div>
 
-        <div class="col-md-6">
+        <!-- Company Configuration -->
+        <div id="company-config" class="tab-pane fade">
             <div class="card">
-                <div class="card-header bg-dark text-white">
-                    <h5 class="mb-0">System Information</h5>
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">Company Information</h5>
+                </div>
+                <div class="card-body">
+                    {% for config in configs.get('company', []) %}
+                        <div class="mb-3">
+                            <label class="form-label"><strong>{{ config.description or config.key }}</strong></label>
+                            <div class="input-group">
+                                {% if config.data_type == 'boolean' %}
+                                    <select class="form-select config-input" data-key="{{ config.key }}" data-type="{{ config.data_type }}"
+                                            {% if not config.editable %}disabled{% endif %}>
+                                        <option value="true" {% if config.value == 'true' %}selected{% endif %}>Enabled</option>
+                                        <option value="false" {% if config.value == 'false' %}selected{% endif %}>Disabled</option>
+                                    </select>
+                                {% elif config.data_type == 'integer' %}
+                                    <input type="number" class="form-control config-input" value="{{ config.value }}"
+                                           data-key="{{ config.key }}" data-type="{{ config.data_type }}"
+                                           {% if not config.editable %}disabled{% endif %}>
+                                {% else %}
+                                    <textarea class="form-control config-input" data-key="{{ config.key }}" data-type="{{ config.data_type }}"
+                                              {% if not config.editable %}disabled{% endif %}>{{ config.value }}</textarea>
+                                {% endif %}
+                                <button class="btn btn-primary save-config" data-key="{{ config.key }}">Save</button>
+                                {% if not config.editable %}
+                                    <span class="input-group-text text-warning">Read-only</span>
+                                {% endif %}
+                            </div>
+                            {% if config.description %}
+                                <small class="text-muted d-block mt-1">{{ config.description }}</small>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- System Configuration -->
+        <div id="system-config" class="tab-pane fade">
+            <div class="card">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0">System Settings</h5>
                 </div>
                 <div class="card-body">
                     <p><strong>Python Version:</strong> <code>{{ env.python_version }}</code></p>
                     <p><strong>Database URL:</strong> <code>{{ env.database_url }}</code></p>
-                    <p><strong>Mail Server:</strong> <code>{{ env.mail_server }}</code></p>
-                    <p><strong>Mail Port:</strong> <code>{{ env.mail_port }}</code></p>
-                    <p><strong>Fiscal Year Start:</strong> <code>{{ env.fiscal_year_start }}</code></p>
+                    <hr>
+                    {% for config in configs.get('system', []) %}
+                        <div class="mb-3">
+                            <label class="form-label"><strong>{{ config.description or config.key }}</strong></label>
+                            <div class="input-group">
+                                {% if config.data_type == 'boolean' %}
+                                    <select class="form-select config-input" data-key="{{ config.key }}" data-type="{{ config.data_type }}"
+                                            {% if not config.editable %}disabled{% endif %}>
+                                        <option value="true" {% if config.value == 'true' %}selected{% endif %}>Enabled</option>
+                                        <option value="false" {% if config.value == 'false' %}selected{% endif %}>Disabled</option>
+                                    </select>
+                                {% elif config.data_type == 'integer' %}
+                                    <input type="number" class="form-control config-input" value="{{ config.value }}"
+                                           data-key="{{ config.key }}" data-type="{{ config.data_type }}"
+                                           {% if not config.editable %}disabled{% endif %}>
+                                {% else %}
+                                    <input type="text" class="form-control config-input" value="{{ config.value }}"
+                                           data-key="{{ config.key }}" data-type="{{ config.data_type }}"
+                                           {% if not config.editable %}disabled{% endif %}>
+                                {% endif %}
+                                <button class="btn btn-primary save-config" data-key="{{ config.key }}">Save</button>
+                                {% if not config.editable %}
+                                    <span class="input-group-text text-warning">Read-only</span>
+                                {% endif %}
+                                {% if config.requires_restart %}
+                                    <span class="input-group-text text-warning">⚠️ Restart</span>
+                                {% endif %}
+                            </div>
+                            {% if config.description %}
+                                <small class="text-muted d-block mt-1">{{ config.description }}</small>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Email Configuration -->
+        <div id="email-config" class="tab-pane fade">
+            <div class="card">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0">Email Settings</h5>
+                </div>
+                <div class="card-body">
+                    {% for config in configs.get('email', []) %}
+                        <div class="mb-3">
+                            <label class="form-label"><strong>{{ config.description or config.key }}</strong></label>
+                            <div class="input-group">
+                                {% if config.key == 'MAIL_PORT' %}
+                                    <input type="number" class="form-control config-input" value="{{ config.value }}"
+                                           data-key="{{ config.key }}" data-type="{{ config.data_type }}"
+                                           {% if not config.editable %}disabled{% endif %}>
+                                {% else %}
+                                    <input type="text" class="form-control config-input" value="{{ config.value }}"
+                                           data-key="{{ config.key }}" data-type="{{ config.data_type }}"
+                                           {% if not config.editable %}disabled{% endif %}
+                                           {% if config.key == 'MAIL_USERNAME' %}placeholder="Email address"{% endif %}>
+                                {% endif %}
+                                <button class="btn btn-primary save-config" data-key="{{ config.key }}">Save</button>
+                                {% if not config.editable %}
+                                    <span class="input-group-text text-warning">Read-only</span>
+                                {% endif %}
+                            </div>
+                            {% if config.description %}
+                                <small class="text-muted d-block mt-1">{{ config.description }}</small>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
                 </div>
             </div>
         </div>
     </div>
 
-    <a href="{{ url_for('developer.dashboard') }}" class="btn btn-primary mt-3">← Back</a>
+    <div class="mt-4">
+        <a href="{{ url_for('developer.dashboard') }}" class="btn btn-secondary">← Back to Dashboard</a>
+    </div>
 </div>
+
+<script>
+document.querySelectorAll('.save-config').forEach(button => {
+    button.addEventListener('click', function() {
+        const key = this.dataset.key;
+        const input = document.querySelector(`.config-input[data-key="${key}"]`);
+        const value = input.value;
+
+        fetch('{{ url_for("developer.environment_edit") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                key: key,
+                value: value
+            })
+        }).then(response => {
+            if (response.ok) {
+                // Page will redirect with message
+                window.location.reload();
+            }
+        }).catch(error => {
+            alert('Error: ' + error);
+        });
+    });
+});
+</script>
+
 {% endblock %}

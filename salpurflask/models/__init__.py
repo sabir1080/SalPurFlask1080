@@ -14,3 +14,6 @@ from salpurflask.models.business_config import (  # noqa: F401, F403
     CategoryValidation,
     ConfigurationSnapshot,
 )
+
+# Import application configuration model
+from salpurflask.models.configuration import AppConfiguration  # noqa: F401
