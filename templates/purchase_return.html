@@ -1,21 +1,33 @@
 {% extends 'base.html' %}
-{% block title %}Purchase Returns{% endblock %}
+{% block title %}Purchase Returns — {{ app_name }}{% endblock %}
 {% block content %}
-<h2>Purchase Returns</h2>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-arrow-return-left"></i> Purchase Returns</h1>
+    <p>Record and track purchase returns</p>
+  </div>
+</div>
 
-<!-- Search -->
-<form method="GET" class="mb-4">
-    <div class="input-group">
+<!-- Search Card -->
+<div class="card mb-6">
+  <div class="card-body">
+    <form method="GET" class="row g-3">
+      <div class="col-md-10">
         <input type="text" class="form-control" name="search" placeholder="Search by supplier or item" value="{{ search }}">
-        <button type="submit" class="btn btn-primary">Search</button>
-        {% if search %}<a href="{{ url_for('purchase_return') }}" class="btn btn-outline-secondary">Clear</a>{% endif %}
-    </div>
-</form>
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-secondary w-100">Search</button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <!-- Add Return Form -->
-<div class="card border-0 shadow-sm mb-4">
-    <div class="card-header bg-warning bg-opacity-25 fw-semibold"><i class="bi bi-arrow-return-left"></i> Record Purchase Return</div>
-    <div class="card-body">
+<div class="card mb-6">
+  <div class="card-header bg-warning-subtle">
+    <h5 class="mb-0"><i class="bi bi-arrow-return-left"></i> Record Purchase Return</h5>
+  </div>
+  <div class="card-body">
         {% if items_available %}
         <form method="POST">
             <div class="row g-3 mb-3">

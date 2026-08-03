@@ -1,25 +1,26 @@
 {% extends 'base.html' %}
 {% block title %}New Account — {{ app_name }}{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="bi bi-plus-circle text-dark"></i> New Account</h2>
-    <a href="{{ url_for('chart_of_accounts') }}" class="btn btn-outline-secondary btn-sm">
-        <i class="bi bi-arrow-left"></i> Chart of Accounts
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-plus-circle"></i> New GL Account</h1>
+    <p>Create a new general ledger account</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('chart_of_accounts') }}" class="btn btn-secondary">
+      <i class="bi bi-arrow-left"></i> Chart of Accounts
     </a>
+  </div>
 </div>
 
-<div class="row justify-content-center">
-    <div class="col-lg-7">
-        <div class="alert alert-info">
-            <i class="bi bi-info-circle me-1"></i>
-            A <strong>main account</strong> is a heading — it groups others and holds no balance.
-            A <strong>subsidiary account</strong> sits under a heading and is what you post to.
-            Pick a parent and the type follows it, because a sub-account of an asset heading
-            must itself be an asset.
-        </div>
+<div class="row">
+  <div class="col-lg-7">
+    <div class="alert alert-info mb-6">
+      <i class="bi bi-info-circle"></i> A <strong>main account</strong> is a heading—it groups others and holds no balance. A <strong>subsidiary account</strong> sits under a heading and is what you post to. Pick a parent and the type follows it, because a sub-account of an asset heading must itself be an asset.
+    </div>
 
-        <div class="card border-0 shadow-sm">
-            <div class="card-body">
+    <div class="card">
+      <div class="card-body">
                 <form method="POST">
                     <div class="row g-3">
                         <div class="col-md-4">
