@@ -2261,3 +2261,148 @@ body {
     padding: 0.25rem 0.5rem !important;
     font-size: 0.875rem !important;
 }
+
+/* Badge visibility in dark mode - Bootstrap badges */
+[data-theme="dark"] .badge.bg-primary {
+    background-color: #0d6efd !important;
+    color: #ffffff !important;
+}
+
+[data-theme="dark"] .badge.bg-secondary {
+    background-color: #6c757d !important;
+    color: #ffffff !important;
+}
+
+[data-theme="dark"] .badge.bg-danger {
+    background-color: #dc3545 !important;
+    color: #ffffff !important;
+}
+
+[data-theme="dark"] .badge.bg-warning {
+    background-color: #ffc107 !important;
+    color: #000000 !important;
+}
+
+[data-theme="dark"] .badge.bg-info {
+    background-color: #0dcaf0 !important;
+    color: #000000 !important;
+}
+
+[data-theme="dark"] .badge.bg-light {
+    background-color: #f8f9fa !important;
+    color: #000000 !important;
+}
+
+[data-theme="dark"] .badge.bg-dark {
+    background-color: #212529 !important;
+    color: #ffffff !important;
+}
+
+/* Spinner visibility */
+[data-theme="dark"] .spinner-border {
+    border-color: rgba(233, 236, 239, 0.25) !important;
+    border-right-color: #e9ecef !important;
+}
+
+[data-theme="dark"] .spinner-grow {
+    background-color: #e9ecef !important;
+}
+
+/* Progress bar visibility */
+[data-theme="dark"] .progress {
+    background-color: #2d3748 !important;
+}
+
+[data-theme="dark"] .progress-bar {
+    background-color: #0d6efd !important;
+}
+
+/* Breadcrumb visibility */
+[data-theme="dark"] .breadcrumb {
+    background-color: #2d3748 !important;
+    border-color: #4a5065 !important;
+}
+
+[data-theme="dark"] .breadcrumb-item {
+    color: #e9ecef !important;
+}
+
+[data-theme="dark"] .breadcrumb-item.active {
+    color: #8b95a5 !important;
+}
+
+[data-theme="dark"] .breadcrumb-item a {
+    color: #64b5f6 !important;
+}
+
+/* Nav tabs and pills */
+[data-theme="dark"] .nav-tabs {
+    border-color: #4a5065 !important;
+}
+
+[data-theme="dark"] .nav-tabs .nav-link {
+    color: #8b95a5 !important;
+}
+
+[data-theme="dark"] .nav-tabs .nav-link:hover {
+    border-color: #6c757d !important;
+    color: #e9ecef !important;
+}
+
+[data-theme="dark"] .nav-tabs .nav-link.active {
+    background-color: #2d3748 !important;
+    border-color: #4a5065 #4a5065 #2d3748 !important;
+    color: #e9ecef !important;
+}
+
+[data-theme="dark"] .nav-pills .nav-link {
+    color: #e9ecef !important;
+}
+
+[data-theme="dark"] .nav-pills .nav-link.active {
+    background-color: #0d6efd !important;
+}
+
+/* Horizontal rule */
+[data-theme="dark"] hr {
+    border-color: #4a5065 !important;
+}
+
+/* Definition list */
+[data-theme="dark"] dt {
+    color: #e9ecef !important;
+}
+
+[data-theme="dark"] dd {
+    color: #8b95a5 !important;
+}
+
+/* Blockquote */
+[data-theme="dark"] blockquote {
+    border-left-color: #0d6efd !important;
+    color: #8b95a5 !important;
+}
+
+/* Table styling fixes */
+[data-theme="dark"] .table-sm > :not(caption) > * > * {
+    padding: 0.5rem 0.5rem !important;
+}
+
+[data-theme="dark"] .table-striped > tbody > tr:nth-of-type(odd) {
+    background-color: rgba(255, 255, 255, 0.02) !important;
+}
+
+[data-theme="dark"] .table-hover > tbody > tr:hover {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Card styling in dark mode */
+[data-theme="dark"] .card-header {
+    background-color: #2d3748 !important;
+    border-color: #4a5065 !important;
+}
+
+[data-theme="dark"] .card-footer {
+    background-color: #2d3748 !important;
+    border-color: #4a5065 !important;
+}
