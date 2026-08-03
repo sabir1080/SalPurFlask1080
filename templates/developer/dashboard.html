@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Developer Dashboard - {{ config.APP_NAME }}{% endblock %}
+{% block title %}Developer Dashboard - {{ app_name }}{% endblock %}
 
 {% block content %}
 <div class="container-fluid mt-4">
@@ -131,8 +131,8 @@
             <div class="alert alert-info">
                 <h5>📌 Quick Info</h5>
                 <p class="mb-2">
-                    <strong>App Name:</strong> {{ config.get('APP_NAME', 'Unknown') }}<br>
-                    <strong>Company:</strong> {{ config.get('COMPANY_NAME', 'Unknown') }}<br>
+                    <strong>App Name:</strong> {{ app_name }}<br>
+                    <strong>Company:</strong> {{ company_name }}<br>
                     <strong>Environment:</strong> {{ environment }}
                 </p>
             </div>
