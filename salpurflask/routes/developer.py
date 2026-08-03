@@ -138,15 +138,15 @@ def database_stats():
 def environment():
     """Environment variables and configuration"""
     env_info = {
-        "app_name": os.getenv("APP_NAME", "Not set"),
-        "company_name": os.getenv("COMPANY_NAME", "Not set"),
+        "app_name": current_app.config.get("APP_NAME", os.getenv("APP_NAME", "Not set")),
+        "company_name": current_app.config.get("COMPANY_NAME", os.getenv("COMPANY_NAME", "Not set")),
         "timezone": os.getenv("APP_TIMEZONE", "Not set"),
         "currency": os.getenv("CURRENCY", "Not set"),
         "database_url": "***" if os.getenv("DATABASE_URL") else "Not set (using SQLite)",
         "allow_signup": os.getenv("ALLOW_SIGNUP", "false"),
         "fiscal_year_start": os.getenv("FISCAL_YEAR_START_MONTH", "Not set"),
-        "mail_server": os.getenv("MAIL_SERVER", "Not set"),
-        "mail_port": os.getenv("MAIL_PORT", "Not set"),
+        "mail_server": current_app.config.get("MAIL_SERVER", os.getenv("MAIL_SERVER", "Not set")),
+        "mail_port": current_app.config.get("MAIL_PORT", os.getenv("MAIL_PORT", "Not set")),
         "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
     }
 
