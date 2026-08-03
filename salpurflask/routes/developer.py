@@ -309,6 +309,7 @@ def environment():
 def environment_edit():
     """Update configuration values"""
     from salpurflask.models import AppConfiguration
+    from salpurflask.extensions import db
 
     key = request.form.get("key")
     value = request.form.get("value")
@@ -331,8 +332,12 @@ def environment_edit():
 
             # Update .env file
             try:
-                env_file = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
+                # Get base directory (project root)
+                base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+                env_file = os.path.join(base_dir, ".env")
+                logger.info(f"Updating .env file: {env_file}")
                 _update_env_file(key, str(value), env_file)
+                logger.info(f"Successfully updated {key}={value} in .env")
             except Exception as e:
                 logger.warning(f"Could not update .env file: {str(e)}")
 
@@ -351,26 +356,44 @@ def environment_edit():
 
 def _update_env_file(key, value, env_file):
     """Update or add configuration in .env file"""
-    lines = []
-    found = False
+    try:
+        lines = []
+        found = False
 
-    if os.path.exists(env_file):
-        with open(env_file, "r") as f:
+        # Check if .env exists and read it
+        if not os.path.exists(env_file):
+            logger.warning(f".env file not found at {env_file}")
+            return
+
+        with open(env_file, "r", encoding='utf-8') as f:
             lines = f.readlines()
 
-    new_lines = []
-    for line in lines:
-        if line.startswith(f"{key}="):
+        # Update or find the key
+        new_lines = []
+        for line in lines:
+            # Match key= at start of line (handle comments, empty lines)
+            if line.strip() and not line.strip().startswith("#"):
+                if line.split("=")[0].strip() == key:
+                    new_lines.append(f"{key}={value}\n")
+                    found = True
+                else:
+                    new_lines.append(line)
+            else:
+                new_lines.append(line)
+
+        # Add if not found
+        if not found:
             new_lines.append(f"{key}={value}\n")
-            found = True
-        else:
-            new_lines.append(line)
 
-    if not found:
-        new_lines.append(f"{key}={value}\n")
+        # Write back to file
+        with open(env_file, "w", encoding='utf-8') as f:
+            f.writelines(new_lines)
 
-    with open(env_file, "w") as f:
-        f.writelines(new_lines)
+        logger.info(f"Successfully updated {key} in .env file")
+
+    except Exception as e:
+        logger.error(f"Error updating .env file: {str(e)}")
+        raise
 
 # ==================== LOG VIEWER ====================
 
