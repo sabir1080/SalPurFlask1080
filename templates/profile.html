@@ -1,58 +1,71 @@
 {% extends 'base.html' %}
 {% block title %}My Profile — {{ app_name }}{% endblock %}
 {% block content %}
-<div class="row justify-content-center mt-4">
-    <div class="col-md-6">
-        <h2 class="mb-4"><i class="bi bi-person-gear"></i> My Profile</h2>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-person-gear"></i> My Profile</h1>
+    <p>Manage your account settings and security</p>
+  </div>
+</div>
 
-        <!-- User Info Card -->
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-header bg-transparent fw-semibold">Account Details</div>
-            <div class="card-body">
-                <dl class="row mb-0">
-                    <dt class="col-sm-4 text-muted">Name</dt>
-                    <dd class="col-sm-8">{{ current_user.name }}</dd>
-                    <dt class="col-sm-4 text-muted">Email</dt>
-                    <dd class="col-sm-8">{{ current_user.email }}</dd>
-                    <dt class="col-sm-4 text-muted">Status</dt>
-                    <dd class="col-sm-8">
-                        {% if current_user.verified %}
-                        <span class="badge bg-success"><i class="bi bi-check-circle"></i> Verified</span>
-                        {% else %}
-                        <span class="badge bg-warning text-dark">Unverified</span>
-                        {% endif %}
-                    </dd>
-                </dl>
-            </div>
-        </div>
-
-        <!-- Change Password Card -->
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-transparent fw-semibold">Change Password</div>
-            <div class="card-body">
-                {% if demo_mode %}
-                <p class="text-muted mb-0"><i class="bi bi-lock"></i> Password changes are disabled in the demo.</p>
-                {% else %}
-                <form method="POST">
-                    <div class="mb-3">
-                        <label class="form-label">Current Password</label>
-                        <input type="password" class="form-control" name="current_password" required autocomplete="current-password">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">New Password</label>
-                        <input type="password" class="form-control" name="new_password" required autocomplete="new-password" minlength="6">
-                        <div class="form-text">Minimum 6 characters.</div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Confirm New Password</label>
-                        <input type="password" class="form-control" name="confirm_password" required autocomplete="new-password">
-                    </div>
-                    <button type="submit" class="btn btn-primary"><i class="bi bi-key"></i> Change Password</button>
-                    <a href="{{ url_for('dashboard.dashboard') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
-                </form>
-                {% endif %}
-            </div>
-        </div>
+<div class="row">
+  <div class="col-lg-6">
+    <!-- User Info Card -->
+    <div class="card mb-6">
+      <div class="card-header bg-secondary-subtle">
+        <h5 class="mb-0">Account Details</h5>
+      </div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-4 text-tertiary">Name</dt>
+          <dd class="col-sm-8 font-medium">{{ current_user.name }}</dd>
+          <dt class="col-sm-4 text-tertiary">Email</dt>
+          <dd class="col-sm-8 font-medium">{{ current_user.email }}</dd>
+          <dt class="col-sm-4 text-tertiary">Status</dt>
+          <dd class="col-sm-8">
+            {% if current_user.verified %}
+            <span class="badge bg-success"><i class="bi bi-check-circle-fill"></i> Verified</span>
+            {% else %}
+            <span class="badge bg-warning"><i class="bi bi-exclamation-circle-fill"></i> Unverified</span>
+            {% endif %}
+          </dd>
+        </dl>
+      </div>
     </div>
+
+    <!-- Change Password Card -->
+    <div class="card">
+      <div class="card-header bg-secondary-subtle">
+        <h5 class="mb-0">Change Password</h5>
+      </div>
+      <div class="card-body">
+        {% if demo_mode %}
+        <p class="text-tertiary mb-0"><i class="bi bi-lock"></i> Password changes are disabled in the demo.</p>
+        {% else %}
+        <form method="POST">
+          <div class="mb-4">
+            <label class="form-label">Current Password</label>
+            <input type="password" class="form-control" name="current_password" required autocomplete="current-password">
+          </div>
+          <div class="mb-4">
+            <label class="form-label">New Password</label>
+            <input type="password" class="form-control" name="new_password" required autocomplete="new-password" minlength="6">
+            <small class="form-text">Minimum 6 characters.</small>
+          </div>
+          <div class="mb-4">
+            <label class="form-label">Confirm New Password</label>
+            <input type="password" class="form-control" name="confirm_password" required autocomplete="new-password">
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-key"></i> Change Password
+            </button>
+            <a href="{{ url_for('dashboard.dashboard') }}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
