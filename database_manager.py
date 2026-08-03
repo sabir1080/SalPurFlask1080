@@ -12,7 +12,7 @@ from sqlalchemy import create_engine, inspect, text
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
-# Database configurations
+# Database configurations - will populate below
 DATABASES = {
     "1": {
         "name": "Local (SQLite)",
@@ -20,13 +20,17 @@ DATABASES = {
     },
     "2": {
         "name": "SalPurFlask (Neon)",
-        "url": os.getenv("DATABASE_URL")
+        "url": None
     },
     "3": {
         "name": "TradeFlow (Neon)",
         "url": None
     }
 }
+
+# Load SalPurFlask URL
+load_dotenv(os.path.join(BASE_DIR, ".env.render-salpurflask"), override=True)
+DATABASES["2"]["url"] = os.getenv("DATABASE_URL")
 
 # Load TradeFlow URL
 load_dotenv(os.path.join(BASE_DIR, ".env.render-tradeflow"), override=True)

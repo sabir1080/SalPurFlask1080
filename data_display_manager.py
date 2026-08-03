@@ -21,13 +21,17 @@ DATABASES = {
     },
     "2": {
         "name": "SalPurFlask (Neon)",
-        "url": os.getenv("DATABASE_URL")  # Will be overridden by .env.render-salpurflask
+        "url": None
     },
     "3": {
         "name": "TradeFlow (Neon)",
-        "url": None  # Will be loaded from .env.render-tradeflow
+        "url": None
     }
 }
+
+# Load SalPurFlask URL
+load_dotenv(os.path.join(BASE_DIR, ".env.render-salpurflask"), override=True)
+DATABASES["2"]["url"] = os.getenv("DATABASE_URL")
 
 # Load TradeFlow URL
 load_dotenv(os.path.join(BASE_DIR, ".env.render-tradeflow"), override=True)
