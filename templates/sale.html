@@ -1,60 +1,86 @@
 {% extends 'base.html' %}
 {% block content %}
-<h2><i class="bi bi-bag-check text-success"></i> Sales</h2>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-bag-check"></i> Sales</h1>
+    <p>Create and manage customer sales invoices</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('customer_receipt') }}" class="btn btn-primary" title="Record customer receipts">
+      <i class="bi bi-cash-coin"></i> Customer Receipts
+    </a>
+  </div>
+</div>
 
-<!-- Search -->
-<form method="GET" class="mb-4">
-    <div class="input-group">
-        <input type="text" class="form-control" name="search" placeholder="Search by customer name" value="{{ search }}">
-        <button type="submit" class="btn btn-primary" title="Search sales">Search</button>
-        {% if search %}<a href="{{ url_for('sale') }}" class="btn btn-outline-secondary" title="Clear search">Clear</a>{% endif %}
-    </div>
-</form>
+<!-- Search Card -->
+<div class="card mb-6">
+  <div class="card-body">
+    <form method="GET" class="row g-3">
+      <div class="col-md-8">
+        <input type="text" class="form-control" name="search" placeholder="Search by customer name..." value="{{ search }}">
+      </div>
+      <div class="col-md-4">
+        <div class="d-flex gap-2">
+          <button type="submit" class="btn btn-secondary w-100">
+            <i class="bi bi-search"></i> Search
+          </button>
+          {% if search %}<a href="{{ url_for('sale') }}" class="btn btn-outline-secondary">Clear</a>{% endif %}
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
 
 {% if current_user.is_manager %}
 <!-- Add Sale Form -->
-<div class="card border-0 shadow-sm mb-4">
-    <div class="card-header bg-success text-white fw-semibold">
-        <i class="bi bi-plus-circle"></i> New Sale Invoice
-    </div>
-    <div class="card-body">
-<form method="POST" id="saleForm">
-    <div class="row g-3 mb-3">
+<div class="card mb-6">
+  <div class="card-header">
+    <h4 class="mb-0"><i class="bi bi-plus-circle"></i> New Sale Invoice</h4>
+  </div>
+  <div class="card-body">
+    <form method="POST" id="saleForm">
+      <div class="row g-3 mb-4">
         <div class="col-md-4">
-            <label class="form-label fw-semibold">Customer <span class="text-danger">*</span></label>
+          <div class="form-group">
+            <label class="form-label required">Customer</label>
             <select class="form-select" name="customer_id" required>
-                <option value="">Select Customer</option>
-                {% for c in customers %}
-                <option value="{{ c.id }}">{{ c.name }}</option>
-                {% endfor %}
+              <option value="">Select Customer</option>
+              {% for c in customers %}
+              <option value="{{ c.id }}">{{ c.name }}</option>
+              {% endfor %}
             </select>
+          </div>
         </div>
         <div class="col-md-3">
-            <label class="form-label fw-semibold">Date <span class="text-danger">*</span></label>
+          <div class="form-group">
+            <label class="form-label required">Date</label>
             <input type="date" class="form-control" name="date" required value="{{ today }}">
+          </div>
         </div>
         <div class="col-md-5">
-            <label class="form-label fw-semibold">Notes</label>
+          <div class="form-group">
+            <label class="form-label">Notes</label>
             <input type="text" class="form-control" name="notes" placeholder="Optional invoice notes">
+          </div>
         </div>
-    </div>
+      </div>
 
-    <!-- Line Items Table -->
-    <div class="table-responsive mb-2">
-    <table class="table table-bordered table-sm align-middle" id="itemsTable">
-        <thead class="table-dark">
+      <!-- Line Items Table -->
+      <div class="table-wrapper mb-4">
+        <table class="table table-striped table-hover align-middle" id="itemsTable">
+          <thead>
             <tr>
-                <th style="min-width:200px">Item <span class="text-danger">*</span></th>
-                <th style="min-width:100px">Unit</th>
-                <th style="min-width:100px">Qty <span class="text-danger">*</span></th>
-                <th style="min-width:120px">Sale Price <span class="text-danger">*</span></th>
-                <th style="min-width:90px">Stock</th>
-                <th style="min-width:120px">Discount</th>
-                <th style="min-width:90px">Tax (%)</th>
-                <th style="min-width:110px" class="text-end">Net Amount</th>
-                <th style="width:40px"></th>
+              <th style="min-width: 200px">Item <span class="text-danger">*</span></th>
+              <th style="min-width: 100px">Unit</th>
+              <th style="min-width: 100px">Qty <span class="text-danger">*</span></th>
+              <th style="min-width: 120px">Sale Price <span class="text-danger">*</span></th>
+              <th style="min-width: 90px">Stock</th>
+              <th style="min-width: 120px">Discount</th>
+              <th style="min-width: 90px">Tax (%)</th>
+              <th style="min-width: 110px" class="text-end">Net Amount</th>
+              <th style="width: 40px"></th>
             </tr>
-        </thead>
+          </thead>
         <tbody id="itemsBody">
             <tr class="item-row">
                 <td>
@@ -86,84 +112,104 @@
                     <button type="button" class="btn btn-danger btn-sm remove-row" onclick="removeRow(this)" title="Remove this row">×</button>
                 </td>
             </tr>
-        </tbody>
-        <tfoot>
-            <tr class="table-light">
-                <td colspan="7" class="text-end fw-bold">Grand Total:</td>
-                <td class="text-end fw-bold text-primary fs-5" id="grandTotal">0.00</td>
-                <td></td>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="7" class="text-end fw-bold">Grand Total:</td>
+              <td class="text-end fw-bold text-primary" id="grandTotal">0.00</td>
+              <td></td>
             </tr>
-        </tfoot>
-    </table>
-    </div>
+          </tfoot>
+        </table>
+      </div>
 
-    <div class="d-flex gap-2">
-        <button type="button" class="btn btn-outline-success btn-sm" onclick="addRow()" title="Add another item row">
-            <i class="bi bi-plus-circle"></i> Add Item
+      <div class="d-flex gap-2">
+        <button type="button" class="btn btn-outline-secondary" onclick="addRow()" title="Add another item row">
+          <i class="bi bi-plus-circle"></i> Add Item
         </button>
-        <button type="submit" class="btn btn-success" title="Save sale invoice">
-            <i class="bi bi-save"></i> Save Sale
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check"></i> Save Sale
         </button>
-    </div>
-</form>
-    </div>
+      </div>
+    </form>
+  </div>
 </div>
 {% endif %}
 
-<a href="{{ url_for('customer_receipt') }}" class="btn btn-outline-primary btn-sm mb-3" title="Go to customer receipts">
-    <i class="bi bi-cash-coin"></i> Record Customer Receipt
-</a>
-
-<!-- Sale List -->
-<div class="table-responsive">
-<table class="table table-bordered table-sm table-hover">
-    <thead class="table-dark">
+<!-- Sales List -->
+<div class="card">
+  <div class="table-wrapper">
+    <table class="table table-striped table-hover">
+      <thead>
         <tr>
-            <th>Invoice&nbsp;#</th><th>Customer</th><th>Items</th>
-            <th class="text-end">Total Qty</th>
-            <th class="text-end">Net Total</th><th class="text-end">Received</th>
-            <th class="text-end">Due</th><th>Status</th><th>Date</th><th>Notes</th><th>Actions</th>
+          <th>Invoice #</th>
+          <th>Customer</th>
+          <th>Items</th>
+          <th class="text-end">Total Qty</th>
+          <th class="text-end">Net Total</th>
+          <th class="text-end">Received</th>
+          <th class="text-end">Due</th>
+          <th>Status</th>
+          <th>Date</th>
+          <th>Notes</th>
+          <th class="table-cell-center">Actions</th>
         </tr>
-    </thead>
-    <tbody>
+      </thead>
+      <tbody>
         {% for s in sales %}
         {% set s_total = sale_total(s) %}
         {% set s_recv = get_sale_received(s.id) %}
         {% set s_due = s_total - s_recv %}
         {% set s_status = get_payment_status(s_total, s_recv) %}
         <tr>
-            <td class="text-nowrap"><span class="fw-semibold">{{ s.invoice_no or s.id }}</span>{% if s.is_reversed %}<span class="badge bg-danger ms-1">reversed</span>{% endif %}</td>
-            <td>{{ s.id_customer.name }}</td>
-            <td>
-                {% if s.line_items | length == 1 %}
-                    {{ s.line_items[0].item.name }}
-                {% else %}
-                    <span class="badge bg-info text-dark">{{ s.line_items | length }} items</span>
-                    <small class="text-muted d-block">{{ s.line_items | map(attribute='item.name') | list | join(', ') | truncate(40) }}</small>
-                {% endif %}
-            </td>
-            <td class="text-end">{{ s.line_items | sum(attribute='base_quantity') | fmt_num }}</td>
-            <td class="text-end fw-semibold">{{ s_total | fmt_num }}</td>
-            <td class="text-end">{{ s_recv | fmt_num }}</td>
-            <td class="text-end {% if s_due > 0 %}text-danger{% endif %}">{{ s_due | fmt_num }}</td>
-            <td><span class="badge pay-status-{{ s_status|lower }}">{{ s_status }}</span></td>
-            <td class="text-nowrap">{{ s.date.strftime('%Y-%m-%d') }}</td>
-            <td class="text-muted small">{{ s.notes or '—' }}</td>
-            <td class="text-nowrap">
-                <a href="{{ url_for('sale_invoice', id=s.id) }}" class="btn btn-info btn-sm" target="_blank" title="View sale invoice"><i class="bi bi-receipt"></i></a>
-                {% if current_user.is_manager %}
-                <a href="{{ url_for('edit_sale', id=s.id) }}" class="btn btn-warning btn-sm" title="Edit this sale"><i class="bi bi-pencil"></i></a>
-                {% endif %}
-                {% with doc = s, kind = "sale" %}{% include "_reverse_button.html" %}{% endwith %}
-            </td>
+          <td class="text-nowrap">
+            <span class="fw-semibold">{{ s.invoice_no or s.id }}</span>
+            {% if s.is_reversed %}<span class="badge bg-danger ms-1">reversed</span>{% endif %}
+          </td>
+          <td class="font-medium">{{ s.id_customer.name }}</td>
+          <td>
+            {% if s.line_items | length == 1 %}
+              {{ s.line_items[0].item.name }}
+            {% else %}
+              <span class="badge bg-info text-dark">{{ s.line_items | length }} items</span>
+              <small class="text-muted d-block">{{ s.line_items | map(attribute='item.name') | list | join(', ') | truncate(40) }}</small>
+            {% endif %}
+          </td>
+          <td class="text-end">{{ s.line_items | sum(attribute='base_quantity') | fmt_num }}</td>
+          <td class="text-end fw-semibold">{{ s_total | fmt_num }}</td>
+          <td class="text-end">{{ s_recv | fmt_num }}</td>
+          <td class="text-end {% if s_due > 0 %}text-danger{% endif %}">{{ s_due | fmt_num }}</td>
+          <td><span class="badge pay-status-{{ s_status|lower }}">{{ s_status }}</span></td>
+          <td class="text-nowrap text-tertiary">{{ s.date.strftime('%Y-%m-%d') }}</td>
+          <td class="text-muted small">{{ s.notes or '—' }}</td>
+          <td class="table-cell-center">
+            <a href="{{ url_for('sale_invoice', id=s.id) }}" class="btn btn-sm btn-outline-primary" target="_blank" title="View invoice">
+              <i class="bi bi-receipt"></i>
+            </a>
+            {% if current_user.is_manager %}
+            <a href="{{ url_for('edit_sale', id=s.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit sale">
+              <i class="bi bi-pencil"></i>
+            </a>
+            {% endif %}
+            {% with doc = s, kind = "sale" %}{% include "_reverse_button.html" %}{% endwith %}
+          </td>
         </tr>
         {% else %}
-        <tr><td colspan="11" class="text-center text-muted py-3">No sales found</td></tr>
+        <tr>
+          <td colspan="11" class="text-center text-tertiary py-8">No sales found</td>
+        </tr>
         {% endfor %}
-    </tbody>
-</table>
+      </tbody>
+    </table>
+  </div>
 </div>
-<div class="pagination">{{ pagination.links }}</div>
+
+<!-- Pagination -->
+{% if pagination.links %}
+<div class="mt-6">
+  {{ pagination.links }}
+</div>
+{% endif %}
 
 <script>
 const ITEMS_DATA = {{ sale_item_options_for_js(items) | tojson }};

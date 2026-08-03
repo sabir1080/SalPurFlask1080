@@ -2,39 +2,133 @@
 {% block title %}Point of Sale — {{ company_name }}{% endblock %}
 {% block content %}
 <style>
-  .pos-wrap { color: var(--text-dark); }
-  .pos-grid { display: grid; grid-template-columns: 1fr 380px; gap: 1rem; align-items: start; }
-  @media (max-width: 900px) { .pos-grid { grid-template-columns: 1fr; } }
-
-  .pos-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px; padding: 1rem; }
-  .pos-scan { font-size: 1.1rem; padding: .75rem 1rem; }
-  .pos-results { max-height: 320px; overflow-y: auto; margin-top: .5rem; }
-  .pos-hit {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: .6rem .75rem; border: 1px solid var(--border); border-radius: 10px;
-    margin-bottom: .4rem; cursor: pointer; background: var(--surface);
+  .pos-grid {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: var(--spacing-6);
+    align-items: start;
   }
-  .pos-hit:hover { border-color: var(--primary); }
-  .pos-hit .nm { font-weight: 600; color: var(--text-dark); }
-  .pos-hit .meta { font-size: .8rem; color: var(--text-muted); }
-  .pos-hit .oos { color: #dc3545; font-weight: 600; }
+  @media (max-width: 900px) {
+    .pos-grid {
+      grid-template-columns: 1fr;
+    }
+  }
 
-  .cart-line { border-bottom: 1px solid var(--border); padding: .75rem 0; }
-  .cart-line .nm { font-weight: 600; color: var(--text-dark); }
-  .cart-line .meta { font-size: .78rem; color: var(--text-muted); margin-bottom: .5rem; }
-  .cart-line-controls { display: grid; grid-template-columns: 50px 30px 50px 1fr 50px 50px 20px; gap: .3rem; align-items: center; font-size: .75rem; margin-top: .5rem; }
-  .cart-qty { padding: .25rem .3rem; }
-  .cart-disc-type { padding: .25rem .3rem; }
-  .cart-disc { padding: .25rem .3rem; }
-  .cart-tax-label { text-align: right; color: var(--text-muted); }
-  .cart-tax { padding: .25rem .3rem; }
-  .cart-qty { width: 55px; text-align: center; }
-  .cart-disc { width: 70px; }
-  .cart-tax { width: 55px; }
-  .cart-amt { min-width: 80px; text-align: right; font-weight: 700; white-space: nowrap; }
-  .cart-x { cursor: pointer; color: #dc3545; border: 0; background: none; font-size: 1.1rem; }
+  .pos-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    padding: var(--spacing-6);
+  }
 
-  /* Hide browser number input spinners - ONLY for cart line inputs */
+  .pos-scan {
+    font-size: 1.1rem;
+    padding: var(--spacing-4) var(--spacing-6);
+  }
+
+  .pos-results {
+    max-height: 320px;
+    overflow-y: auto;
+    margin-top: var(--spacing-3);
+  }
+
+  .pos-hit {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-3) var(--spacing-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-1);
+    margin-bottom: var(--spacing-2);
+    cursor: pointer;
+    background: var(--surface);
+    transition: var(--transition-fast);
+  }
+
+  .pos-hit:hover {
+    border-color: var(--primary);
+  }
+
+  .pos-hit .nm {
+    font-weight: 600;
+    color: var(--text-dark);
+  }
+
+  .pos-hit .meta {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  .pos-hit .oos {
+    color: var(--color-error);
+    font-weight: 600;
+  }
+
+  .cart-line {
+    border-bottom: 1px solid var(--border);
+    padding: var(--spacing-4) 0;
+  }
+
+  .cart-line .nm {
+    font-weight: 600;
+    color: var(--text-dark);
+  }
+
+  .cart-line .meta {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-bottom: var(--spacing-2);
+  }
+
+  .cart-line-controls {
+    display: grid;
+    grid-template-columns: 50px 30px 50px 1fr 50px 50px 20px;
+    gap: var(--spacing-1);
+    align-items: center;
+    font-size: 0.75rem;
+    margin-top: var(--spacing-2);
+  }
+
+  .cart-qty,
+  .cart-disc,
+  .cart-tax {
+    padding: var(--spacing-1) var(--spacing-2);
+  }
+
+  .cart-tax-label {
+    text-align: right;
+    color: var(--text-muted);
+  }
+
+  .cart-qty {
+    width: 55px;
+    text-align: center;
+  }
+
+  .cart-disc {
+    width: 70px;
+  }
+
+  .cart-tax {
+    width: 55px;
+  }
+
+  .cart-amt {
+    min-width: 80px;
+    text-align: right;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .cart-x {
+    cursor: pointer;
+    color: var(--color-error);
+    border: 0;
+    background: none;
+    font-size: 1.1rem;
+    padding: 0;
+  }
+
   .cart-qty::-webkit-outer-spin-button,
   .cart-qty::-webkit-inner-spin-button,
   .cart-disc::-webkit-outer-spin-button,
@@ -44,88 +138,145 @@
     -webkit-appearance: none;
     margin: 0;
   }
-  .cart-qty, .cart-disc, .cart-tax {
+
+  .cart-qty,
+  .cart-disc,
+  .cart-tax {
     -moz-appearance: textfield;
   }
 
-  /* Payment method as tap-able buttons — faster at a counter than a dropdown, and the
-     options (Cash / Card / Bank) are all visible at once instead of hidden in a menu. */
-  .pay-btns { display: flex; flex-wrap: wrap; gap: .4rem; }
-  .pay-btn {
-    flex: 1 1 auto; min-width: 72px; padding: .5rem .6rem;
-    border: 2px solid var(--border); border-radius: 10px;
-    background: var(--surface); color: var(--text-dark);
-    font-weight: 600; font-size: .9rem; cursor: pointer;
+  .pay-btns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-2);
   }
-  .pay-btn:hover { border-color: var(--primary); }
-  .pay-btn.active { border-color: var(--primary); background: var(--primary); color: #fff; }
 
-  .pos-total { font-size: 2rem; font-weight: 800; color: var(--text-dark); }
-  .pos-change { font-size: 1.3rem; font-weight: 700; }
-  .pos-empty { color: var(--text-muted); text-align: center; padding: 2rem 0; }
+  .pay-btn {
+    flex: 1 1 auto;
+    min-width: 72px;
+    padding: var(--spacing-2) var(--spacing-3);
+    border: 2px solid var(--border);
+    border-radius: var(--radius-1);
+    background: var(--surface);
+    color: var(--text-dark);
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: var(--transition-fast);
+  }
+
+  .pay-btn:hover {
+    border-color: var(--primary);
+  }
+
+  .pay-btn.active {
+    border-color: var(--primary);
+    background: var(--primary);
+    color: #fff;
+  }
+
+  .pos-total {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--text-dark);
+  }
+
+  .pos-change {
+    font-size: 1.3rem;
+    font-weight: 700;
+  }
+
+  .pos-empty {
+    color: var(--text-muted);
+    text-align: center;
+    padding: var(--spacing-8) 0;
+  }
+
+  .pos-totals-table {
+    width: 100%;
+    font-size: 0.9rem;
+    line-height: 1.6;
+  }
+
+  .pos-totals-table td:first-child {
+    color: var(--text-muted);
+  }
+
+  .pos-totals-table td:last-child {
+    text-align: right;
+    font-weight: 600;
+  }
+
+  .pos-totals-table tr:last-child {
+    border-top: 2px solid var(--border);
+    font-weight: 700;
+  }
 </style>
 
-<div class="pos-wrap">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h3 class="mb-0"><i class="bi bi-shop"></i> Point of Sale</h3>
-    <a href="{{ url_for('dashboard.index') }}" class="btn btn-outline-secondary btn-sm">
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-shop"></i> Point of Sale</h1>
+    <p>Fast checkout counter — scan or search items</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('dashboard.index') }}" class="btn btn-outline-secondary">
       <i class="bi bi-arrow-left"></i> Dashboard
     </a>
   </div>
+</div>
 
-  <div class="pos-grid">
-    <!-- LEFT: scan / search -->
-    <div class="pos-card">
-      <label class="form-label fw-semibold">Scan barcode / QR, or type an item name</label>
-      <input id="scan" class="form-control pos-scan" autocomplete="off" autofocus
-             placeholder="Scan or search…">
-      <div class="form-text">A USB barcode/QR reader types the code and adds the item automatically.</div>
-      <div id="results" class="pos-results"></div>
+<div class="pos-grid">
+  <!-- LEFT: scan / search -->
+  <div class="pos-card">
+    <label class="form-label fw-semibold mb-3">Scan barcode / QR, or type an item name</label>
+    <input id="scan" class="form-control pos-scan" autocomplete="off" autofocus placeholder="Scan or search…">
+    <div class="form-text">A USB barcode/QR reader types the code and adds the item automatically.</div>
+    <div id="results" class="pos-results"></div>
+  </div>
+
+  <!-- RIGHT: cart + payment -->
+  <div class="pos-card">
+    <h6 class="fw-bold mb-3"><i class="bi bi-cart-fill"></i> Cart</h6>
+    <div id="cart"></div>
+    <div id="cartEmpty" class="pos-empty">Cart is empty — scan or search an item.</div>
+
+    <hr class="my-4">
+
+    <!-- Totals Breakdown -->
+    <div class="mb-4 p-3" style="background: var(--surface); border-radius: var(--radius-1);">
+      <table class="pos-totals-table">
+        <tr>
+          <td>Subtotal</td>
+          <td>{{ currency }} <span id="subtotal">0.00</span></td>
+        </tr>
+        <tr id="discountRow" style="display: none;">
+          <td>Discount</td>
+          <td class="text-danger">- <span id="discountDisplay">0.00</span></td>
+        </tr>
+        <tr id="taxRow" style="display: none;">
+          <td>Tax</td>
+          <td class="text-info">+ <span id="taxDisplay">0.00</span></td>
+        </tr>
+        <tr>
+          <td>Grand Total</td>
+          <td>{{ currency }} <span id="grandTotal">0.00</span></td>
+        </tr>
+      </table>
     </div>
 
-    <!-- RIGHT: cart + payment -->
-    <div class="pos-card">
-      <h6 class="fw-bold mb-2"><i class="bi bi-cart"></i> Cart</h6>
-      <div id="cart"></div>
-      <div id="cartEmpty" class="pos-empty">Cart is empty — scan or search an item.</div>
+    <div class="mb-3">
+      <label class="form-label small mb-2">Customer</label>
+      <select id="customer" class="form-select form-select-sm">
+        <option value="{{ walkin.id }}">Walk-in Customer</option>
+        {% for c in customers if c.name != 'Walk-in Customer' %}
+        <option value="{{ c.id }}">{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
 
-      <hr>
-
-
-      <!-- Totals Breakdown -->
-      <div class="mb-3 p-2 border rounded" style="background: var(--surface);">
-        <table class="w-100 small" style="line-height: 1.6;">
-          <tr>
-            <td class="text-muted">Subtotal</td>
-            <td class="text-end fw-semibold">{{ currency }} <span id="subtotal">0.00</span></td>
-          </tr>
-          <tr id="discountRow" style="display: none;">
-            <td class="text-muted">Discount</td>
-            <td class="text-end text-danger">- <span id="discountDisplay">0.00</span></td>
-          </tr>
-          <tr id="taxRow" style="display: none;">
-            <td class="text-muted">Tax</td>
-            <td class="text-end text-info">+ <span id="taxDisplay">0.00</span></td>
-          </tr>
-          <tr style="border-top: 2px solid var(--border); font-weight: 700;">
-            <td>Grand Total</td>
-            <td class="text-end">{{ currency }} <span id="grandTotal">0.00</span></td>
-          </tr>
-        </table>
-      </div>
-
-      <div class="mb-2">
-        <label class="form-label small mb-1">Customer</label>
-        <select id="customer" class="form-select form-select-sm">
-          <option value="{{ walkin.id }}">Walk-in Customer</option>
-          {% for c in customers if c.name != 'Walk-in Customer' %}
-          <option value="{{ c.id }}">{{ c.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <label class="form-label small mb-1">Payment method</label>
-      <div id="payBtns" class="pay-btns mb-2">
+    <div class="mb-3">
+      <label class="form-label small mb-2">Payment method</label>
+      <div id="payBtns" class="pay-btns">
         {% for a in accounts %}
         <button type="button" class="pay-btn{% if loop.first %} active{% endif %}" data-acct="{{ a.id }}">
           {{ a.name }}
@@ -133,33 +284,33 @@
         {% endfor %}
       </div>
       <input type="hidden" id="account" value="{{ accounts[0].id if accounts else '' }}">
-
-      <div class="mb-2">
-        <label class="form-label small mb-1">Amount received</label>
-        <input id="paid" type="number" step="0.01" min="0" class="form-control" placeholder="0.00">
-      </div>
-
-      <div class="d-flex justify-content-between align-items-center mb-3">
-        <span class="text-muted">Change</span>
-        <span class="pos-change" id="change">{{ currency }} 0.00</span>
-      </div>
-
-      <div class="d-grid gap-2">
-        <button id="checkout" class="btn btn-success btn-lg" disabled>
-          <i class="bi bi-check2-circle"></i> Complete Sale
-        </button>
-        <button id="holdBtn" class="btn btn-warning btn-lg" disabled>
-          <i class="bi bi-bookmark-fill"></i> Hold Bill
-        </button>
-        <a href="{{ url_for('list_pos_holds') }}" class="btn btn-info btn-lg">
-          <i class="bi bi-bookmark-check"></i> Held Bills
-        </a>
-        <button id="clearCartBtn" class="btn btn-outline-secondary btn-sm">
-          <i class="bi bi-trash"></i> Clear Cart
-        </button>
-      </div>
-      <div id="posMsg" class="small mt-2"></div>
     </div>
+
+    <div class="mb-3">
+      <label class="form-label small mb-2">Amount received</label>
+      <input id="paid" type="number" step="0.01" min="0" class="form-control" placeholder="0.00">
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mb-4 p-3" style="background: var(--surface); border-radius: var(--radius-1);">
+      <span class="text-muted fw-medium">Change</span>
+      <span class="pos-change" id="change">{{ currency }} 0.00</span>
+    </div>
+
+    <div class="d-grid gap-2">
+      <button id="checkout" class="btn btn-success btn-lg" disabled>
+        <i class="bi bi-check2-circle"></i> Complete Sale
+      </button>
+      <button id="holdBtn" class="btn btn-warning btn-lg" disabled>
+        <i class="bi bi-bookmark-fill"></i> Hold Bill
+      </button>
+      <a href="{{ url_for('list_pos_holds') }}" class="btn btn-info btn-lg">
+        <i class="bi bi-bookmark-check"></i> Held Bills
+      </a>
+      <button id="clearCartBtn" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-trash"></i> Clear Cart
+      </button>
+    </div>
+    <div id="posMsg" class="small mt-3"></div>
   </div>
 </div>
 

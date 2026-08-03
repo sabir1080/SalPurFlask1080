@@ -1,59 +1,85 @@
 {% extends 'base.html' %}
 {% block content %}
-<h2><i class="bi bi-cart-plus text-primary"></i> Purchases</h2>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-cart-plus"></i> Purchases</h1>
+    <p>Create and manage supplier purchase invoices</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('supplier_payment') }}" class="btn btn-primary" title="Record supplier payments">
+      <i class="bi bi-cash-coin"></i> Supplier Payments
+    </a>
+  </div>
+</div>
 
-<!-- Search -->
-<form method="GET" class="mb-4">
-    <div class="input-group">
-        <input type="text" class="form-control" name="search" placeholder="Search by supplier name" value="{{ search }}">
-        <button type="submit" class="btn btn-primary" title="Search purchases">Search</button>
-        {% if search %}<a href="{{ url_for('purchase') }}" class="btn btn-outline-secondary" title="Clear search">Clear</a>{% endif %}
-    </div>
-</form>
+<!-- Search Card -->
+<div class="card mb-6">
+  <div class="card-body">
+    <form method="GET" class="row g-3">
+      <div class="col-md-8">
+        <input type="text" class="form-control" name="search" placeholder="Search by supplier name..." value="{{ search }}">
+      </div>
+      <div class="col-md-4">
+        <div class="d-flex gap-2">
+          <button type="submit" class="btn btn-secondary w-100">
+            <i class="bi bi-search"></i> Search
+          </button>
+          {% if search %}<a href="{{ url_for('purchase') }}" class="btn btn-outline-secondary">Clear</a>{% endif %}
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
 
 {% if current_user.is_manager %}
 <!-- Add Purchase Form -->
-<div class="card border-0 shadow-sm mb-4">
-    <div class="card-header bg-primary text-white fw-semibold">
-        <i class="bi bi-plus-circle"></i> New Purchase Invoice
-    </div>
-    <div class="card-body">
-<form method="POST" id="purchaseForm">
-    <div class="row g-3 mb-3">
+<div class="card mb-6">
+  <div class="card-header">
+    <h4 class="mb-0"><i class="bi bi-plus-circle"></i> New Purchase Invoice</h4>
+  </div>
+  <div class="card-body">
+    <form method="POST" id="purchaseForm">
+      <div class="row g-3 mb-4">
         <div class="col-md-4">
-            <label class="form-label fw-semibold">Supplier <span class="text-danger">*</span></label>
+          <div class="form-group">
+            <label class="form-label required">Supplier</label>
             <select class="form-select" name="supplier_id" required>
-                <option value="">Select Supplier</option>
-                {% for s in suppliers %}
-                <option value="{{ s.id }}">{{ s.name }}</option>
-                {% endfor %}
+              <option value="">Select Supplier</option>
+              {% for s in suppliers %}
+              <option value="{{ s.id }}">{{ s.name }}</option>
+              {% endfor %}
             </select>
+          </div>
         </div>
         <div class="col-md-3">
-            <label class="form-label fw-semibold">Date <span class="text-danger">*</span></label>
+          <div class="form-group">
+            <label class="form-label required">Date</label>
             <input type="date" class="form-control" name="date" required value="{{ today }}">
+          </div>
         </div>
         <div class="col-md-5">
-            <label class="form-label fw-semibold">Notes</label>
+          <div class="form-group">
+            <label class="form-label">Notes</label>
             <input type="text" class="form-control" name="notes" placeholder="Optional invoice notes">
+          </div>
         </div>
-    </div>
+      </div>
 
-    <!-- Line Items Table -->
-    <div class="table-responsive mb-2">
-    <table class="table table-bordered table-sm align-middle" id="itemsTable">
-        <thead class="table-dark">
+      <!-- Line Items Table -->
+      <div class="table-wrapper mb-4">
+        <table class="table table-striped table-hover align-middle" id="itemsTable">
+          <thead>
             <tr>
-                <th style="min-width:200px">Item <span class="text-danger">*</span></th>
-                <th style="min-width:100px">Unit</th>
-                <th style="min-width:100px">Qty <span class="text-danger">*</span></th>
-                <th style="min-width:120px">Price / Unit <span class="text-danger">*</span></th>
-                <th style="min-width:120px">Discount</th>
-                <th style="min-width:90px">Tax (%)</th>
-                <th style="min-width:110px" class="text-end">Net Amount</th>
-                <th style="width:40px"></th>
+              <th style="min-width: 200px">Item <span class="text-danger">*</span></th>
+              <th style="min-width: 100px">Unit</th>
+              <th style="min-width: 100px">Qty <span class="text-danger">*</span></th>
+              <th style="min-width: 120px">Price / Unit <span class="text-danger">*</span></th>
+              <th style="min-width: 120px">Discount</th>
+              <th style="min-width: 90px">Tax (%)</th>
+              <th style="min-width: 110px" class="text-end">Net Amount</th>
+              <th style="width: 40px"></th>
             </tr>
-        </thead>
+          </thead>
         <tbody id="itemsBody">
             <tr class="item-row">
                 <td>
@@ -82,84 +108,104 @@
                     <button type="button" class="btn btn-danger btn-sm remove-row" onclick="removeRow(this)" title="Remove this row">×</button>
                 </td>
             </tr>
-        </tbody>
-        <tfoot>
-            <tr class="table-light">
-                <td colspan="6" class="text-end fw-bold">Grand Total:</td>
-                <td class="text-end fw-bold text-primary fs-5" id="grandTotal">0.00</td>
-                <td></td>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="6" class="text-end fw-bold">Grand Total:</td>
+              <td class="text-end fw-bold text-primary" id="grandTotal">0.00</td>
+              <td></td>
             </tr>
-        </tfoot>
-    </table>
-    </div>
+          </tfoot>
+        </table>
+      </div>
 
-    <div class="d-flex gap-2">
-        <button type="button" class="btn btn-outline-primary btn-sm" onclick="addRow()" title="Add another item row">
-            <i class="bi bi-plus-circle"></i> Add Item
+      <div class="d-flex gap-2">
+        <button type="button" class="btn btn-outline-secondary" onclick="addRow()" title="Add another item row">
+          <i class="bi bi-plus-circle"></i> Add Item
         </button>
-        <button type="submit" class="btn btn-primary" title="Save purchase invoice">
-            <i class="bi bi-save"></i> Save Purchase
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check"></i> Save Purchase
         </button>
-    </div>
-</form>
-    </div>
+      </div>
+    </form>
+  </div>
 </div>
 {% endif %}
 
-<a href="{{ url_for('supplier_payment') }}" class="btn btn-outline-primary btn-sm mb-3" title="Go to supplier payments">
-    <i class="bi bi-cash-coin"></i> Record Supplier Payment
-</a>
-
-<!-- Purchase List -->
-<div class="table-responsive">
-<table class="table table-bordered table-sm table-hover">
-    <thead class="table-dark">
+<!-- Purchases List -->
+<div class="card">
+  <div class="table-wrapper">
+    <table class="table table-striped table-hover">
+      <thead>
         <tr>
-            <th>Invoice&nbsp;#</th><th>Supplier</th><th>Items</th>
-            <th class="text-end">Total Qty</th>
-            <th class="text-end">Net Total</th><th class="text-end">Paid</th>
-            <th class="text-end">Due</th><th>Status</th><th>Date</th><th>Notes</th><th>Actions</th>
+          <th>Invoice #</th>
+          <th>Supplier</th>
+          <th>Items</th>
+          <th class="text-end">Total Qty</th>
+          <th class="text-end">Net Total</th>
+          <th class="text-end">Paid</th>
+          <th class="text-end">Due</th>
+          <th>Status</th>
+          <th>Date</th>
+          <th>Notes</th>
+          <th class="table-cell-center">Actions</th>
         </tr>
-    </thead>
-    <tbody>
+      </thead>
+      <tbody>
         {% for p in purchases %}
         {% set p_total = purchase_total(p) %}
         {% set p_paid = get_purchase_paid(p.id) %}
         {% set p_due = p_total - p_paid %}
         {% set p_status = get_payment_status(p_total, p_paid) %}
         <tr>
-            <td class="text-nowrap"><span class="fw-semibold">{{ p.invoice_no or p.id }}</span>{% if p.is_reversed %}<span class="badge bg-danger ms-1">reversed</span>{% endif %}</td>
-            <td>{{ p.id_supplier.name }}</td>
-            <td>
-                {% if p.line_items | length == 1 %}
-                    {{ p.line_items[0].item.name }}
-                {% else %}
-                    <span class="badge bg-info text-dark">{{ p.line_items | length }} items</span>
-                    <small class="text-muted d-block">{{ p.line_items | map(attribute='item.name') | list | join(', ') | truncate(40) }}</small>
-                {% endif %}
-            </td>
-            <td class="text-end">{{ p.line_items | sum(attribute='base_quantity') | fmt_num }}</td>
-            <td class="text-end fw-semibold">{{ p_total | fmt_num }}</td>
-            <td class="text-end">{{ p_paid | fmt_num }}</td>
-            <td class="text-end {% if p_due > 0 %}text-danger{% endif %}">{{ p_due | fmt_num }}</td>
-            <td><span class="badge pay-status-{{ p_status|lower }}">{{ p_status }}</span></td>
-            <td class="text-nowrap">{{ p.date.strftime('%Y-%m-%d') }}</td>
-            <td class="text-muted small">{{ p.notes or '—' }}</td>
-            <td class="text-nowrap">
-                <a href="{{ url_for('purchase_invoice', id=p.id) }}" class="btn btn-info btn-sm" target="_blank" title="View purchase invoice"><i class="bi bi-receipt"></i></a>
-                {% if current_user.is_manager %}
-                <a href="{{ url_for('edit_purchase', id=p.id) }}" class="btn btn-warning btn-sm" title="Edit this purchase"><i class="bi bi-pencil"></i></a>
-                {% endif %}
-                {% with doc = p, kind = "purchase" %}{% include "_reverse_button.html" %}{% endwith %}
-            </td>
+          <td class="text-nowrap">
+            <span class="fw-semibold">{{ p.invoice_no or p.id }}</span>
+            {% if p.is_reversed %}<span class="badge bg-danger ms-1">reversed</span>{% endif %}
+          </td>
+          <td class="font-medium">{{ p.id_supplier.name }}</td>
+          <td>
+            {% if p.line_items | length == 1 %}
+              {{ p.line_items[0].item.name }}
+            {% else %}
+              <span class="badge bg-info text-dark">{{ p.line_items | length }} items</span>
+              <small class="text-muted d-block">{{ p.line_items | map(attribute='item.name') | list | join(', ') | truncate(40) }}</small>
+            {% endif %}
+          </td>
+          <td class="text-end">{{ p.line_items | sum(attribute='base_quantity') | fmt_num }}</td>
+          <td class="text-end fw-semibold">{{ p_total | fmt_num }}</td>
+          <td class="text-end">{{ p_paid | fmt_num }}</td>
+          <td class="text-end {% if p_due > 0 %}text-danger{% endif %}">{{ p_due | fmt_num }}</td>
+          <td><span class="badge pay-status-{{ p_status|lower }}">{{ p_status }}</span></td>
+          <td class="text-nowrap text-tertiary">{{ p.date.strftime('%Y-%m-%d') }}</td>
+          <td class="text-muted small">{{ p.notes or '—' }}</td>
+          <td class="table-cell-center">
+            <a href="{{ url_for('purchase_invoice', id=p.id) }}" class="btn btn-sm btn-outline-primary" target="_blank" title="View invoice">
+              <i class="bi bi-receipt"></i>
+            </a>
+            {% if current_user.is_manager %}
+            <a href="{{ url_for('edit_purchase', id=p.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit purchase">
+              <i class="bi bi-pencil"></i>
+            </a>
+            {% endif %}
+            {% with doc = p, kind = "purchase" %}{% include "_reverse_button.html" %}{% endwith %}
+          </td>
         </tr>
         {% else %}
-        <tr><td colspan="11" class="text-center text-muted py-3">No purchases found</td></tr>
+        <tr>
+          <td colspan="11" class="text-center text-tertiary py-8">No purchases found</td>
+        </tr>
         {% endfor %}
-    </tbody>
-</table>
+      </tbody>
+    </table>
+  </div>
 </div>
-<div class="pagination">{{ pagination.links }}</div>
+
+<!-- Pagination -->
+{% if pagination.links %}
+<div class="mt-6">
+  {{ pagination.links }}
+</div>
+{% endif %}
 
 <script>
 const ITEMS_DATA = {{ purchase_item_options_for_js(items) | tojson }};

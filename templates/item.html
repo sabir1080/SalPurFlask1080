@@ -1,148 +1,184 @@
-<!--item.html-->
-
 {% extends 'base.html' %}
 {% block content %}
 <script>
-// AGGRESSIVE: Clear ALL localStorage on item list page load
-// This prevents stale form data from appearing
 try {
-    // Clear anything with 'edit' or 'form' in the key
-    const allKeys = Object.keys(localStorage);
-    allKeys.forEach(key => {
-        if (key.toLowerCase().includes('edit') ||
-            key.toLowerCase().includes('form') ||
-            key.toLowerCase().includes('item')) {
-            console.log('Removing old key:', key);
-            localStorage.removeItem(key);
-        }
-    });
-    console.log('localStorage cleaned on item list page load');
-} catch(e) {
-    console.log('localStorage cleanup error (expected in some cases):', e.message);
-}
+  const allKeys = Object.keys(localStorage);
+  allKeys.forEach(key => {
+    if (key.toLowerCase().includes('edit') ||
+        key.toLowerCase().includes('form') ||
+        key.toLowerCase().includes('item')) {
+      localStorage.removeItem(key);
+    }
+  });
+} catch(e) {}
 </script>
 {% set form_data = form_data|default({}) %}
-    <div class="d-flex justify-content-between align-items-center mb-2 mt-4">
-        <h2>Manage Items</h2>
-        <form method="POST" action="{{ url_for('send_low_stock_alert') }}" class="d-inline">
-            <button type="submit" class="btn btn-outline-danger btn-sm"
-                    title="Send low stock email alert to admin"
-                    onclick="return confirm('Send low stock alert email?')">
-                <i class="bi bi-bell"></i> Low Stock Alert
-            </button>
-        </form>
-    </div>
-    <form method="GET" class="mb-3">
-        <div class="row g-2">
-            <div class="col-md-5">
-                <input type="text" class="form-control" name="search" placeholder="Search by item or category" value="{{ search }}">
-            </div>
-            <div class="col-md-4">
-                <select class="form-control" name="business_category_id">
-                    <option value="">All Categories</option>
-                    {% for category in business_categories %}
-                    <option value="{{ category.id }}" {% if business_category_filter|string == category.id|string %}selected{% endif %}>{{ category.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-3">
-                <button type="submit" class="btn btn-primary w-100" title="Filter items by name or category">Search</button>
-            </div>
-        </div>
+
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-box2"></i> Inventory</h1>
+    <p>Manage product catalog, pricing, and stock levels</p>
+  </div>
+  <div class="page-header-actions">
+    <form method="POST" action="{{ url_for('send_low_stock_alert') }}" style="display:inline;">
+      <button type="submit" class="btn btn-warning" title="Send low stock alert email" onclick="return confirm('Send low stock alert email?')">
+        <i class="bi bi-bell"></i> Low Stock Alert
+      </button>
     </form>
-  {% if not business_categories %}
-    <div class="alert alert-warning">
-      No business categories are enabled. Please visit <a href="{{ url_for('admin_config.index') }}">Business Configuration</a> to enable at least one category before creating items.
-    </div>
-  {% endif %}
-    <form method="POST" class="mb-4">
-        <div class="mb-3">
-            <label for="name" class="form-label">Name</label>
+  </div>
+</div>
+
+<!-- Search & Filter Card -->
+<div class="card mb-6">
+  <div class="card-body">
+    <form method="GET" class="row g-3">
+      <div class="col-md-5">
+        <input type="text" class="form-control" name="search" placeholder="Search by item or category..." value="{{ search }}">
+      </div>
+      <div class="col-md-4">
+        <select class="form-select" name="business_category_id">
+          <option value="">All Categories</option>
+          {% for category in business_categories %}
+          <option value="{{ category.id }}" {% if business_category_filter|string == category.id|string %}selected{% endif %}>{{ category.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <button type="submit" class="btn btn-secondary w-100">
+          <i class="bi bi-search"></i> Search
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% if not business_categories %}
+<div class="alert alert-warning alert-dismissible fade show">
+  <i class="bi bi-exclamation-triangle"></i> No business categories are enabled. Please visit <a href="{{ url_for('admin_config.index') }}">Business Configuration</a> to enable at least one category before creating items.
+</div>
+{% endif %}
+
+<!-- Add Item Form -->
+<div class="card mb-6">
+  <div class="card-header">
+    <h4 class="mb-0"><i class="bi bi-plus-circle"></i> Add New Item</h4>
+  </div>
+  <div class="card-body">
+    <form method="POST">
+      <div class="row g-3 mb-4">
+        <div class="col-md-6">
+          <div class="form-group">
+            <label class="form-label required">Item Name</label>
             <input type="text" class="form-control" id="name" name="name" value="{{ form_data.get('name', '') }}" required>
+          </div>
         </div>
-        <div class="mb-3">
-            <label for="business_category_id" class="form-label">Category</label>
-            <select class="form-control" id="business_category_id" name="business_category_id" required>
-                <option value="">Select Category</option>
-                {% for category in business_categories %}
-                <option value="{{ category.id }}"
-                        data-category-name="{{ category.name }}"
-                        {% if form_data.get('business_category_id', '')|string == category.id|string %}selected{% endif %}>
-                    {{ category.name }}
-                </option>
-                {% endfor %}
+        <div class="col-md-6">
+          <div class="form-group">
+            <label class="form-label required">Category</label>
+            <select class="form-select" id="business_category_id" name="business_category_id" required>
+              <option value="">Select Category</option>
+              {% for category in business_categories %}
+              <option value="{{ category.id }}" data-category-name="{{ category.name }}" {% if form_data.get('business_category_id', '')|string == category.id|string %}selected{% endif %}>
+                {{ category.name }}
+              </option>
+              {% endfor %}
             </select>
-            <small class="text-muted">Showing enabled business categories. Configure more in Admin Settings.</small>
+          </div>
         </div>
-        <div class="mb-3">
-            <label for="unit" class="form-label">Unit of Measure</label>
-            <select class="form-control" id="unit" name="unit">
-                {% for u in item_units %}
-                <option value="{{ u }}" {% if form_data.get('unit', 'Pcs') == u %}selected{% endif %}>{{ u }}</option>
-                {% endfor %}
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-md-4">
+          <div class="form-group">
+            <label class="form-label">Unit of Measure</label>
+            <select class="form-select" id="unit" name="unit">
+              {% for u in item_units %}
+              <option value="{{ u }}" {% if form_data.get('unit', 'Pcs') == u %}selected{% endif %}>{{ u }}</option>
+              {% endfor %}
             </select>
+          </div>
         </div>
-        <div class="mb-3">
-            <label for="opening_stock" class="form-label">Opening Stock <small class="text-muted">(quantity on hand at start)</small></label>
+        <div class="col-md-4">
+          <div class="form-group">
+            <label class="form-label required">Opening Stock</label>
             <input type="number" class="form-control" id="opening_stock" name="opening_stock" value="{{ form_data.get('opening_stock', 0) }}" required>
+            <small class="form-text">Quantity on hand at start</small>
+          </div>
         </div>
-        <div class="mb-3">
-            <label for="reorder_level" class="form-label">Reorder Level</label>
+        <div class="col-md-4">
+          <div class="form-group">
+            <label class="form-label required">Reorder Level</label>
             <input type="text" class="form-control" id="reorder_level" name="reorder_level" value="{{ form_data.get('reorder_level', '') }}" required>
+          </div>
         </div>
-        <div class="mb-3">
-            <label for="purchase_price" class="form-label">Purchase Price (per unit)</label>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-md-4">
+          <div class="form-group">
+            <label class="form-label">Purchase Price (per unit)</label>
             <input type="number" step="0.01" class="form-control" id="purchase_price" name="purchase_price" value="{{ form_data.get('purchase_price', '') }}">
+          </div>
         </div>
-        <div class="mb-3">
-            <label for="sale_price" class="form-label">Sale Price (per unit)</label>
+        <div class="col-md-4">
+          <div class="form-group">
+            <label class="form-label">Sale Price (per unit)</label>
             <input type="number" step="0.01" class="form-control" id="sale_price" name="sale_price" value="{{ form_data.get('sale_price', '') }}">
+          </div>
         </div>
-        <div class="mb-3">
-            <label for="barcode" class="form-label">Barcode / QR <span class="text-muted small">(for the POS counter — optional)</span></label>
-            <input type="text" class="form-control" id="barcode" name="barcode" autocomplete="off"
-                   placeholder="Scan or type the item's code" value="{{ form_data.get('barcode', '') }}">
+        <div class="col-md-4">
+          <div class="form-group">
+            <label class="form-label">Barcode / QR Code</label>
+            <input type="text" class="form-control" id="barcode" name="barcode" autocomplete="off" placeholder="Scan or type code" value="{{ form_data.get('barcode', '') }}">
+            <small class="form-text">For POS counter</small>
+          </div>
         </div>
+      </div>
 
-        <!-- CATEGORY-SPECIFIC FIELDS -->
-        <div id="categoryFieldsContainer" style="display:none;">
-            <div class="card border-0 shadow-sm mb-3">
-                <div class="card-header bg-light fw-semibold">
-                    <span id="categoryFieldsTitle">Category-Specific Fields</span>
-                </div>
-                <div class="card-body" id="categoryFieldsBody">
-                    <!-- Fields will be loaded dynamically -->
-                </div>
-            </div>
+      <!-- CATEGORY-SPECIFIC FIELDS -->
+      <div id="categoryFieldsContainer" style="display: none;">
+        <div class="card mb-4">
+          <div class="card-header">
+            <h5 class="mb-0"><span id="categoryFieldsTitle">Category-Specific Fields</span></h5>
+          </div>
+          <div class="card-body" id="categoryFieldsBody"></div>
         </div>
+      </div>
 
-        <div class="card border-0 shadow-sm mb-3">
-            <div class="card-header bg-light fw-semibold d-flex justify-content-between align-items-center">
-                <span>Alternate Units</span>
-                <button type="button" class="btn btn-sm btn-outline-primary" onclick="addUnitRow()">+ Add Unit</button>
-            </div>
-            <div class="card-body">
-                <p class="text-muted small mb-2">
-                    Buy or sell this item in a unit other than its base unit above (e.g. a Box of 24, or a Strip
-                    of 10). Purchase/Sale forms will offer these as extra unit choices, alongside the base unit.
-                </p>
-                <table class="table table-sm mb-0" id="unitsTable">
-                    <thead>
-                        <tr>
-                            <th style="width:160px">Unit Name</th>
-                            <th style="width:160px">= how many base units</th>
-                            <th>Purchase Price <small class="text-muted">(optional)</small></th>
-                            <th>Sale Price <small class="text-muted">(optional)</small></th>
-                            <th style="width:40px"></th>
-                        </tr>
-                    </thead>
-                    <tbody id="unitsBody"></tbody>
-                </table>
-            </div>
+      <!-- ALTERNATE UNITS -->
+      <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="mb-0">Alternate Units</h5>
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addUnitRow()">
+            <i class="bi bi-plus-circle"></i> Add Unit
+          </button>
         </div>
+        <div class="card-body">
+          <p class="text-muted small mb-3">Buy or sell this item in alternate units (e.g., Box of 24, Strip of 10). These will be available in Purchase/Sale forms.</p>
+          <div class="table-wrapper">
+            <table class="table table-striped table-hover" id="unitsTable">
+              <thead>
+                <tr>
+                  <th style="min-width: 160px">Unit Name</th>
+                  <th style="min-width: 160px">= Base Units</th>
+                  <th>Purchase Price</th>
+                  <th>Sale Price</th>
+                  <th style="width: 40px"></th>
+                </tr>
+              </thead>
+              <tbody id="unitsBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
 
-        <button type="submit" class="btn btn-primary" title="Save new inventory item" {% if not business_categories %}disabled{% endif %}>Add Item</button>
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary" {% if not business_categories %}disabled{% endif %}>
+          <i class="bi bi-plus"></i> Add Item
+        </button>
+      </div>
     </form>
+  </div>
+</div>
 <script>
 // AUTO-SAVE FORM DATA TO localStorage
 const FORM_STORAGE_KEY = 'itemFormData';
@@ -342,57 +378,74 @@ function addUnitRow() {
     tbody.appendChild(tr);
 }
 </script>
-    <table class="table table-bordered">
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Name</th>
-                <th>Category</th>
-                <th>Unit</th>
-                <th>Opening Stock</th>
-                <th>Balance Stock</th>
-                <th>Reorder Level</th>
-                <th>Purchase Price</th>
-                <th>Sale Price</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for item in items %}
-                <tr>
-                    <td>{{ item.id }}</td>
-                    <td>{{ item.name }}</td>
-                    <td>
-                        {% if item.business_category %}
-                            {{ item.business_category.name }}
-                        {% elif item.id_category %}
-                            {{ item.id_category.name }}
-                        {% else %}
-                            N/A
-                        {% endif %}
-                    </td>
-                    <td><span class="badge bg-secondary">{{ item.unit or 'Pcs' }}</span></td>
-                    <td class="text-muted">{{ item.opening_stock | fmt_num }}</td>
-                    <td class="fw-semibold {% if item.stock <= item.reorder_level %}text-danger{% else %}text-success{% endif %}">
-                        {{ item.stock | fmt_num }}
-                    </td>
-                    <td>{{ item.reorder_level | fmt_num }}</td>
-                    <td>{{ item.purchase_price | fmt_num if item.purchase_price else 'N/A' }}</td>
-                    <td>{{ item.sale_price | fmt_num if item.sale_price else 'N/A' }}</td>
-                    <td>
-                        <a href="{{ url_for('item_ledger', id=item.id) }}" class="btn btn-sm btn-info" title="View full stock movement ledger for this item">Ledger</a>
-                        {% if current_user.is_manager %}
-                        <a href="{{ url_for('edit_item', id=item.id) }}" class="btn btn-sm btn-warning" title="Edit item details, prices and reorder level">Edit</a>
-                        {% endif %}
-                        {% if current_user.is_admin %}
-                        <form action="{{ url_for('delete_item', id=item.id) }}" method="POST" style="display:inline;">
-                            <button type="submit" class="btn btn-sm btn-danger" title="Permanently delete this item" onclick="return confirm('Are you sure you want to delete this item?')">Delete</button>
-                        </form>
-                        {% endif %}
-                    </td>
-                </tr>
-            {% endfor %}
-        </tbody>
+<!-- Items List -->
+<div class="card">
+  <div class="table-wrapper">
+    <table class="table table-striped table-hover">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Category</th>
+          <th>Unit</th>
+          <th class="text-end">Opening</th>
+          <th class="text-end">Current Stock</th>
+          <th class="text-end">Reorder Level</th>
+          <th class="text-end">Buy Price</th>
+          <th class="text-end">Sell Price</th>
+          <th class="table-cell-center">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td class="text-tertiary">{{ item.id }}</td>
+          <td class="font-medium">{{ item.name }}</td>
+          <td>
+            {% if item.business_category %}
+              {{ item.business_category.name }}
+            {% elif item.id_category %}
+              {{ item.id_category.name }}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td><span class="badge">{{ item.unit or 'Pcs' }}</span></td>
+          <td class="text-end text-muted">{{ item.opening_stock | fmt_num }}</td>
+          <td class="text-end fw-semibold {% if item.stock <= item.reorder_level %}text-danger{% else %}text-success{% endif %}">
+            {{ item.stock | fmt_num }}
+          </td>
+          <td class="text-end">{{ item.reorder_level | fmt_num }}</td>
+          <td class="text-end">{{ item.purchase_price | fmt_num if item.purchase_price else '—' }}</td>
+          <td class="text-end">{{ item.sale_price | fmt_num if item.sale_price else '—' }}</td>
+          <td class="table-cell-center">
+            <a href="{{ url_for('item_ledger', id=item.id) }}" class="btn btn-sm btn-outline-primary" title="View ledger">
+              <i class="bi bi-journal-text"></i>
+            </a>
+            {% if current_user.is_manager %}
+            <a href="{{ url_for('edit_item', id=item.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit item">
+              <i class="bi bi-pencil"></i>
+            </a>
+            {% endif %}
+            {% if current_user.is_admin %}
+            <form action="{{ url_for('delete_item', id=item.id) }}" method="POST" style="display: inline;">
+              <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete item" onclick="return confirm('Are you sure?')">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
     </table>
-    {{ pagination.links }}
+  </div>
+</div>
+
+<!-- Pagination -->
+{% if pagination.links %}
+<div class="mt-6">
+  {{ pagination.links }}
+</div>
+{% endif %}
 {% endblock %}
