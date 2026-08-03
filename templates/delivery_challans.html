@@ -1,12 +1,17 @@
 {% extends 'base.html' %}
-{% block title %}Delivery Challans{% endblock %}
+{% block title %}Delivery Challans — {{ app_name }}{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2><i class="bi bi-truck text-info"></i> Delivery Challans</h2>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-truck"></i> Delivery Challans</h1>
+    <p>Create and manage delivery documentation</p>
+  </div>
 </div>
 
-<!-- Filter Bar -->
-<form method="GET" class="row g-2 mb-3">
+<!-- Filter Card -->
+<div class="card mb-6">
+  <div class="card-body">
+    <form method="GET" class="row g-3">
     <div class="col-md-4">
         <input type="text" class="form-control" name="search" placeholder="Search customer" value="{{ search }}">
     </div>
