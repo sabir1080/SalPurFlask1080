@@ -1,11 +1,18 @@
 <!--edit_purchase.html-->
 {% extends 'base.html' %}
 {% block content %}
-<h2><i class="bi bi-pencil-square text-warning"></i> Edit Purchase #{{ purchase.id }}</h2>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-pencil-square"></i> Edit Purchase #{{ purchase.id }}</h1>
+    <p>Modify invoice details and line items</p>
+  </div>
+</div>
 
-<div class="card border-0 shadow-sm mb-4">
-    <div class="card-header bg-warning bg-opacity-25 fw-semibold">Edit Purchase Invoice</div>
-    <div class="card-body">
+<div class="card mb-6">
+  <div class="card-header bg-warning-subtle">
+    <h5 class="mb-0">Purchase Invoice Details</h5>
+  </div>
+  <div class="card-body">
 <form method="POST">
     <div class="row g-3 mb-3">
         <div class="col-md-4">
@@ -27,9 +34,9 @@
         </div>
     </div>
 
-    <div class="table-responsive mb-2">
-    <table class="table table-bordered table-sm align-middle" id="itemsTable">
-        <thead class="table-dark">
+    <div class="table-wrapper mb-4">
+    <table class="table table-striped table-hover align-middle" id="itemsTable">
+      <thead>
             <tr>
                 <th style="min-width:200px">Item *</th>
                 <th style="min-width:100px">Unit</th>
@@ -92,23 +99,23 @@
             </tr>
             {% endfor %}
         </tbody>
-        <tfoot>
-            <tr class="table-light">
-                <td colspan="6" class="text-end fw-bold">Grand Total:</td>
-                <td class="text-end fw-bold text-primary fs-5" id="grandTotal">0.00</td>
-                <td></td>
-            </tr>
-        </tfoot>
+      <tfoot>
+        <tr>
+          <td colspan="6" class="text-end fw-bold">Grand Total:</td>
+          <td class="text-end fw-bold text-primary fs-5" id="grandTotal">0.00</td>
+          <td></td>
+        </tr>
+      </tfoot>
     </table>
     </div>
 
     <div class="d-flex gap-2">
-        <button type="button" class="btn btn-outline-primary btn-sm" onclick="addRow()"><i class="bi bi-plus-circle"></i> Add Item</button>
-        <button type="submit" class="btn btn-warning"><i class="bi bi-save"></i> Update Purchase</button>
-        <a href="{{ url_for('purchase') }}" class="btn btn-secondary">Cancel</a>
+      <button type="button" class="btn btn-secondary" onclick="addRow()"><i class="bi bi-plus-circle"></i> Add Item</button>
+      <button type="submit" class="btn btn-primary"><i class="bi bi-check"></i> Update Purchase</button>
+      <a href="{{ url_for('purchase') }}" class="btn btn-outline-secondary">Cancel</a>
     </div>
-</form>
-    </div>
+  </form>
+  </div>
 </div>
 
 <script>
