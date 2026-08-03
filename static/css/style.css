@@ -2470,3 +2470,39 @@ body {
     background-color: #0d6efd !important;
     color: #ffffff !important;
 }
+
+/* Auth page navbar styling (navbar-dark) */
+.navbar-dark {
+    background-color: #1e293b !important;
+}
+
+.navbar-dark .navbar-nav > .nav-item > .nav-link {
+    color: #e9ecef !important;
+}
+
+.navbar-dark .navbar-nav > .nav-item > .nav-link:hover {
+    background-color: #2d3748 !important;
+    border-left-color: #0d6efd !important;
+    color: #0d6efd !important;
+}
+
+.navbar-dark .dropdown-menu {
+    background-color: #2d3748 !important;
+    border: 1px solid #4a5065 !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+}
+
+.navbar-dark .dropdown-menu .dropdown-item {
+    color: #e9ecef !important;
+}
+
+.navbar-dark .dropdown-menu .dropdown-item:hover {
+    background-color: #0d6efd !important;
+    border-left-color: #0d6efd !important;
+    color: #ffffff !important;
+}
+
+.navbar-dark .dropdown-menu .dropdown-item.active {
+    background-color: #0d6efd !important;
+    color: #ffffff !important;
+}

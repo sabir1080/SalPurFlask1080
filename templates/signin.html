@@ -8,6 +8,14 @@
 
 {% block content %}
 {% set form_data = form_data|default({}) %}
+
+<div style="position: fixed; top: 1rem; right: 1rem; z-index: 1001;">
+    <div class="theme-switcher" id="themeSwitcher">
+        <button class="theme-btn" data-theme="light" title="Light"><i class="bi bi-sun-fill"></i></button>
+        <button class="theme-btn" data-theme="dark" title="Dark"><i class="bi bi-moon-stars-fill"></i></button>
+    </div>
+</div>
+
 <div class="auth-layout">
     <div class="auth-brand-panel">
         <div class="auth-brand-content">
