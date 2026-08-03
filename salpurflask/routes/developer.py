@@ -2,6 +2,7 @@
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, current_app, jsonify
 from functools import wraps
+from sqlalchemy import text
 import os
 import sys
 from pathlib import Path
