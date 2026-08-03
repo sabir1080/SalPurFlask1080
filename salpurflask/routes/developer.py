@@ -89,7 +89,7 @@ def diagnostics():
     try:
         # Database connection test
         with db.engine.connect() as conn:
-            result = conn.execute("SELECT 1")
+            result = conn.execute(text("SELECT 1"))
         diagnostics_info["database_status"] = "Connected"
     except Exception as e:
         diagnostics_info["database_status"] = f"Failed: {str(e)[:100]}"
