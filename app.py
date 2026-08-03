@@ -1,11 +1,12 @@
 #app.py
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session, abort, Response
+from flask_compress import Compress
 from flask_paginate import Pagination, get_page_args
 from flask_login import UserMixin, login_user, logout_user, login_required, current_user
 from salpurflask.auth import verified_required, role_required, admin_required, manager_required
 import click
 from datetime import datetime, timedelta, timezone, date
-from functools import wraps
+from functools import wraps, lru_cache
 import csv
 from io import BytesIO, StringIO
 import openpyxl
@@ -218,6 +219,7 @@ from salpurflask.extensions import db, csrf, pwd_context, login_manager
 db.init_app(app)
 csrf.init_app(app)
 login_manager.init_app(app)
+Compress(app)
 
 # Import all models and helpers to register them with the db instance
 # Must happen AFTER db.init_app(app)
@@ -464,6 +466,7 @@ def is_signup_allowed():
 
 # is_demo_mode() moved to salpurflask/utils/config_utils.py
 
+@lru_cache(maxsize=1)
 def get_standard_tax_rate():
     """The single rate an admin sets on /tax_codes for their own country (17% Pakistan
     sales tax, 20% UK VAT, 8.5% a US state's sales tax, ...). Used only as a default on
@@ -823,7 +826,8 @@ def account_transactions(account):
 def active_accounts():
     """Return active selectable accounts (is_control=False) for POS and payment forms.
     Control accounts are headers only and not selectable."""
-    return (FinancialAccount.query.filter_by(is_active=True, is_control=False)
+    from sqlalchemy import and_
+    return (FinancialAccount.query.filter(and_(FinancialAccount.is_active==True, FinancialAccount.is_control==False))
             .order_by(FinancialAccount.parent_id, FinancialAccount.name).all())
 
 def parse_account_id(raw):
@@ -1932,7 +1936,6 @@ def code_svg(value, kind="barcode"):
     value cannot be encoded, so one bad code never takes the whole label sheet down."""
     if not value:
         return ""
-    from io import BytesIO
     buf = BytesIO()
     try:
         if kind == "qr":

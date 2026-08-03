@@ -2,6 +2,7 @@ flask
 flask-sqlalchemy
 flask-login
 flask-paginate
+flask-compress
 python-dotenv
 itsdangerous
 gunicorn
