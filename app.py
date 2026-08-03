@@ -1842,11 +1842,15 @@ def inject_form_defaults():
         "purchase_return_total": purchase_return_total,
         "sale_return_total": sale_return_total,
     }
-    if request.method == "POST":
-        data = request.form.to_dict(flat=True)
-        data.pop("password", None)
-        data.pop("confirm_password", None)
-        ctx["form_data"] = data
+    try:
+        if request.method == "POST":
+            data = request.form.to_dict(flat=True)
+            data.pop("password", None)
+            data.pop("confirm_password", None)
+            ctx["form_data"] = data
+    except RuntimeError:
+        # No request context available (e.g., in error handlers or test mode)
+        pass
     return ctx
 
 # get_paginated_results moved to salpurflask/utils/pagination.py
