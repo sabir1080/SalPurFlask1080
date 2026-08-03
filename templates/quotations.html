@@ -1,23 +1,35 @@
 {% extends 'base.html' %}
-{% block title %}Quotations{% endblock %}
+{% block title %}Quotations — {{ app_name }}{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2><i class="bi bi-file-earmark-ruled text-success"></i> Quotations / Proforma</h2>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-file-earmark-ruled"></i> Quotations / Proforma</h1>
+    <p>Manage sales quotations and proforma invoices</p>
+  </div>
 </div>
 
-<form method="GET" class="mb-3">
-    <div class="input-group">
+<!-- Search Card -->
+<div class="card mb-6">
+  <div class="card-body">
+    <form method="GET" class="row g-3">
+      <div class="col-md-10">
         <input type="text" class="form-control" name="search" placeholder="Search by customer" value="{{ search }}">
-        <button type="submit" class="btn btn-primary">Search</button>
-    </div>
-</form>
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-secondary w-100">Search</button>
+      </div>
+    </form>
+  </div>
+</div>
 
-<div class="card border-0 shadow-sm mb-4">
-    <div class="card-header bg-success text-white fw-semibold"><i class="bi bi-plus-circle"></i> New Quotation</div>
-    <div class="card-body">
-        <form method="POST">
-            <div class="row g-3 mb-3">
-                <div class="col-md-4">
+<div class="card mb-6">
+  <div class="card-header bg-success-subtle">
+    <h5 class="mb-0"><i class="bi bi-plus-circle"></i> New Quotation</h5>
+  </div>
+  <div class="card-body">
+    <form method="POST">
+      <div class="row g-3 mb-3">
+        <div class="col-md-4">
                     <label class="form-label fw-semibold">Customer <span class="text-danger">*</span></label>
                     <select class="form-select" name="customer_id" required>
                         <option value="">— Select Customer —</option>

@@ -1,23 +1,25 @@
 {% extends 'base.html' %}
 {% block title %}Tax Codes — {{ app_name }}{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-    <h2><i class="bi bi-percent text-dark"></i> Tax Codes</h2>
-    <a href="{{ url_for('chart_of_accounts') }}" class="btn btn-outline-secondary btn-sm">
-        <i class="bi bi-arrow-left"></i> Chart of Accounts
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-percent"></i> Tax Codes</h1>
+    <p>Configure tax rates and components</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('chart_of_accounts') }}" class="btn btn-secondary">
+      <i class="bi bi-arrow-left"></i> Chart of Accounts
     </a>
+  </div>
 </div>
 
-<div class="alert alert-info">
-    <i class="bi bi-globe me-1"></i>
-    A tax code is made of one or more <strong>components</strong>, and the rate lives on the
-    component. One component is a single tax (Pakistan's sales tax, UK VAT). Two components
-    are a split tax (India's CGST + SGST). Set your country's rate below.
+<div class="alert alert-info mb-6">
+  <i class="bi bi-globe"></i> A tax code is made of one or more <strong>components</strong>, and the rate lives on the component. One component is a single tax (Pakistan's sales tax, UK VAT). Two components are a split tax (India's CGST + SGST). Set your country's rate below.
 </div>
 
 <form method="POST">
-    {% for code in codes %}
-    <div class="card border-0 shadow-sm mb-3">
+  {% for code in codes %}
+  <div class="card mb-6">
         <div class="card-header bg-light fw-semibold d-flex justify-content-between align-items-center">
             <span><i class="bi bi-tag"></i> {{ code.name }}</span>
             <span class="badge bg-{{ 'success' if code.is_active else 'secondary' }}">

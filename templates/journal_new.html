@@ -1,33 +1,40 @@
 {% extends 'base.html' %}
 {% block title %}New Journal Entry — {{ app_name }}{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-    <h2><i class="bi bi-journal-plus text-dark"></i> New Journal Entry</h2>
-    <a href="{{ url_for('journal') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-journal-plus"></i> New Journal Entry</h1>
+    <p>Post an accounting entry to the general ledger</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('journal') }}" class="btn btn-secondary">
+      <i class="bi bi-arrow-left"></i> Back to Journal
+    </a>
+  </div>
 </div>
 
 <form method="POST">
-    <div class="card border-0 shadow-sm mb-3">
-        <div class="card-body">
-            <div class="row g-3">
-                <div class="col-md-3">
-                    <label class="form-label fw-semibold">Date</label>
-                    <input type="date" name="entry_date" class="form-control" required>
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label fw-semibold">Reference</label>
-                    <input type="text" name="reference" class="form-control" placeholder="optional">
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label fw-semibold">Description</label>
-                    <input type="text" name="description" class="form-control" placeholder="e.g. Depreciation for the month" required>
-                </div>
-            </div>
+  <div class="card mb-6">
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-3">
+          <label class="form-label fw-semibold">Date</label>
+          <input type="date" name="entry_date" class="form-control" required>
         </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold">Reference</label>
+          <input type="text" name="reference" class="form-control" placeholder="optional">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Description</label>
+          <input type="text" name="description" class="form-control" placeholder="e.g. Depreciation for the month" required>
+        </div>
+      </div>
     </div>
+  </div>
 
-    <div class="card border-0 shadow-sm mb-3">
-        <div class="card-header bg-light fw-semibold d-flex justify-content-between align-items-center">
+  <div class="card mb-6">
+    <div class="card-header bg-primary-subtle d-flex justify-content-between align-items-center">
             <span><i class="bi bi-list-columns"></i> Lines</span>
             <button type="button" class="btn btn-sm btn-outline-primary" id="addRow"><i class="bi bi-plus-lg"></i> Add Line</button>
         </div>
