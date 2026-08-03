@@ -197,14 +197,20 @@ document.querySelectorAll('.save-config').forEach(button => {
         const input = document.querySelector(`.config-input[data-key="${key}"]`);
         const value = input.value;
 
+        // Get CSRF token from meta tag
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ||
+                          document.querySelector('input[name="csrf_token"]')?.value;
+
         fetch('{{ url_for("developer.environment_edit") }}', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': csrfToken
             },
             body: new URLSearchParams({
                 key: key,
-                value: value
+                value: value,
+                csrf_token: csrfToken
             })
         }).then(response => {
             if (response.ok) {
