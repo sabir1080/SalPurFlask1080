@@ -10,7 +10,7 @@
                 <h5 class="mb-0">Last 100 Log Lines</h5>
             </div>
             <div class="card-body log-container" style="max-height: 600px; overflow-y: auto; background: #1e1e1e; padding: 15px;">
-                <div class="log-output" style="font-size: 0.85rem; font-family: 'Courier New', monospace; line-height: 1.6;">
+                <div class="log-output" style="font-size: 1rem; font-family: 'Courier New', monospace; line-height: 2; letter-spacing: 0.5px;">
                     {% for line in logs %}
                         {% if is_html %}
                             {{ line|safe }}
@@ -30,31 +30,49 @@
     .log-container {
         background: #1e1e1e !important;
         border: 1px solid #333;
+        padding: 15px !important;
     }
 
     .log-output {
         color: #d4d4d4;
         white-space: pre-wrap;
         word-wrap: break-word;
-        font-family: 'Courier New', 'Consolas', monospace;
+        font-family: 'Courier New', 'Consolas', 'Monaco', monospace;
+        font-size: 1rem !important;
+        line-height: 2 !important;
+        letter-spacing: 0.5px;
+    }
+
+    /* Ensure spans inside log-output are visible */
+    .log-output span {
+        display: block;
+        margin: 0;
+        padding: 2px 0;
     }
 
     /* Log level colors */
     .log-output span[style*="color: #ffc107"] {
-        font-weight: 500;
+        font-weight: 600;
+        color: #ffc107 !important;
     }
 
     .log-output span[style*="color: #dc3545"] {
-        font-weight: 500;
+        font-weight: 600;
+        color: #dc3545 !important;
     }
 
     .log-output span[style*="color: #17a2b8"] {
-        font-weight: 400;
+        font-weight: 500;
+        color: #17a2b8 !important;
+    }
+
+    .log-output span[style*="color: #d4d4d4"] {
+        color: #d4d4d4 !important;
     }
 
     /* Scrollbar styling */
     .log-container::-webkit-scrollbar {
-        width: 8px;
+        width: 10px;
     }
 
     .log-container::-webkit-scrollbar-track {
