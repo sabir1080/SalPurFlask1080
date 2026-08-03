@@ -3,110 +3,148 @@
 {% block extra_head %}
 <style>
 @media print {
-    nav, .navbar, .flash-messages, footer, .no-print { display: none !important; }
-    body { background: white !important; }
-    .container, .container-fluid { max-width: 100% !important; padding: 0 !important; }
-    @page { margin: 1.2cm; }
+  nav, .navbar, .flash-messages, footer, .no-print { display: none !important; }
+  body { background: white !important; }
+  .container, .container-fluid { max-width: 100% !important; padding: 0 !important; }
+  @page { margin: 1.2cm; }
 }
 </style>
 {% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-    <div>
-        <h2 class="mb-1">Supplier Ledger — {{ supplier.name }}</h2>
-        <p class="text-muted mb-0">
-            Current Balance:
-            <strong class="{% if balance > 0 %}text-danger{% elif balance < 0 %}text-primary{% else %}text-success{% endif %}">
-                {{ balance | fmt_num }} ({{ supplier_balance_label(balance) }})
-            </strong>
-        </p>
-    </div>
-    <div class="d-flex gap-2 flex-wrap no-print">
-        <a href="{{ url_for('export_supplier_ledger', id=supplier.id) }}" class="btn btn-secondary btn-sm" title="Download this supplier's full ledger as CSV">
-            <i class="bi bi-filetype-csv"></i> Export CSV
-        </a>
-        <a href="{{ url_for('export_supplier_ledger_excel', id=supplier.id) }}" class="btn btn-success btn-sm" title="Download this supplier's full ledger as Excel (.xlsx)">
-            <i class="bi bi-file-earmark-excel"></i> Export Excel
-        </a>
-        <button onclick="window.print()" class="btn btn-info btn-sm text-white" title="Print this supplier ledger">
-            <i class="bi bi-printer"></i> Print
-        </button>
-        <a href="{{ url_for('supplier') }}" class="btn btn-outline-secondary btn-sm" title="Go back to the suppliers list">
-            <i class="bi bi-arrow-left"></i> Back to Suppliers
-        </a>
-    </div>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-journal-text"></i> Supplier Ledger</h1>
+    <p>{{ supplier.name }}</p>
+  </div>
+  <div class="page-header-actions no-print">
+    <a href="{{ url_for('export_supplier_ledger', id=supplier.id) }}" class="btn btn-secondary" title="Download as CSV">
+      <i class="bi bi-download"></i> CSV
+    </a>
+    <a href="{{ url_for('export_supplier_ledger_excel', id=supplier.id) }}" class="btn btn-secondary" title="Download as Excel">
+      <i class="bi bi-download"></i> Excel
+    </a>
+    <button onclick="window.print()" class="btn btn-secondary" title="Print ledger">
+      <i class="bi bi-printer"></i> Print
+    </button>
+    <a href="{{ url_for('supplier') }}" class="btn btn-outline-secondary" title="Back to suppliers">
+      <i class="bi bi-arrow-left"></i> Back
+    </a>
+  </div>
 </div>
 
-<form method="GET" class="row g-2 mb-3 no-print">
-    <div class="col-md-4">
+<!-- Current Balance Summary -->
+<div class="card mb-6">
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <small class="text-muted">Current Balance</small>
+        <div class="fs-4 fw-bold {% if balance > 0 %}text-danger{% elif balance < 0 %}text-primary{% else %}text-success{% endif %}">
+          {{ balance | fmt_num }}
+        </div>
+        <small class="text-muted">{{ supplier_balance_label(balance) }}</small>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Date Range Filter -->
+<div class="card mb-6 no-print">
+  <div class="card-body">
+    <form method="GET" class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label small">Start Date</label>
         <input type="date" class="form-control" name="start_date" value="{{ start_date }}">
-    </div>
-    <div class="col-md-4">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small">End Date</label>
         <input type="date" class="form-control" name="end_date" value="{{ end_date }}">
-    </div>
-    <div class="col-md-4">
-        <button type="submit" class="btn btn-primary w-100" title="Filter ledger entries by date range">Filter</button>
-    </div>
-</form>
-
-<div class="card card-body border mb-4 no-print">
-    <h5>Manual Adjustment</h5>
-    <form method="POST" class="row g-2">
-        <input type="hidden" name="action" value="adjustment">
-        <div class="col-md-2">
-            <input type="date" class="form-control" name="adj_date" required>
-        </div>
-        <div class="col-md-2">
-            <select class="form-control" name="adj_type" required>
-                <option value="credit">Credit (Bill / Payable)</option>
-                <option value="debit">Debit (Payment)</option>
-            </select>
-        </div>
-        <div class="col-md-2">
-            <input type="number" step="0.01" class="form-control" name="adj_amount" placeholder="Amount" required>
-        </div>
-        <div class="col-md-4">
-            <input type="text" class="form-control" name="adj_description" placeholder="Description">
-        </div>
-        <div class="col-md-2">
-            <button type="submit" class="btn btn-warning w-100" title="Add a manual debit or credit adjustment entry to this ledger">Add Adjustment</button>
-        </div>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small">&nbsp;</label>
+        <button type="submit" class="btn btn-secondary w-100">
+          <i class="bi bi-funnel"></i> Filter
+        </button>
+      </div>
     </form>
-    <small class="text-muted">Credit = payable badhega | Debit = payment / advance</small>
+  </div>
 </div>
 
-<table class="table table-bordered table-sm">
-    <thead class="table-light">
+<!-- Manual Adjustment Card -->
+<div class="card mb-6 no-print">
+  <div class="card-header">
+    <h5 class="mb-0"><i class="bi bi-pencil-square"></i> Manual Adjustment</h5>
+  </div>
+  <div class="card-body">
+    <form method="POST" class="row g-3">
+      <input type="hidden" name="action" value="adjustment">
+      <div class="col-md-2">
+        <label class="form-label small">Date</label>
+        <input type="date" class="form-control" name="adj_date" required>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small">Type</label>
+        <select class="form-select" name="adj_type" required>
+          <option value="credit">Credit (Bill)</option>
+          <option value="debit">Debit (Payment)</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small">Amount</label>
+        <input type="number" step="0.01" class="form-control" name="adj_amount" placeholder="0.00" required>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small">Description</label>
+        <input type="text" class="form-control" name="adj_description" placeholder="Optional note">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small">&nbsp;</label>
+        <button type="submit" class="btn btn-warning w-100">Add</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Ledger Entries Table -->
+<div class="card">
+  <div class="table-wrapper">
+    <table class="table table-striped table-hover">
+      <thead>
         <tr>
-            <th>Date</th>
-            <th>Type</th>
-            <th>Description</th>
-            <th>Debit</th>
-            <th>Credit</th>
-            <th>Balance</th>
-            <th class="no-print"></th>
+          <th>Date</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th class="text-end">Debit</th>
+          <th class="text-end">Credit</th>
+          <th class="text-end fw-bold">Balance</th>
+          <th class="table-cell-center no-print"></th>
         </tr>
-    </thead>
-    <tbody>
+      </thead>
+      <tbody>
         {% for e in entries %}
         <tr>
-            <td>{{ e.entry_date.strftime('%Y-%m-%d') }}</td>
-            <td><span class="badge bg-secondary">{{ e.entry_type }}</span></td>
-            <td>{{ e.description }}</td>
-            <td>{% if e.debit %}{{ e.debit | fmt_num }}{% else %}—{% endif %}</td>
-            <td>{% if e.credit %}{{ e.credit | fmt_num }}{% else %}—{% endif %}</td>
-            <td class="fw-semibold">{{ e.balance_after | fmt_num }}</td>
-            <td class="no-print">
-                {% if e.source_type == 'adjustment' %}
-                <form method="POST" action="{{ url_for('delete_supplier_ledger_adjustment', id=supplier.id, entry_id=e.id) }}" class="d-inline">
-                    <button type="submit" class="btn btn-danger btn-sm" title="Delete this manual adjustment entry" onclick="return confirm('Delete adjustment?')">Del</button>
-                </form>
-                {% endif %}
-            </td>
+          <td class="text-tertiary">{{ e.entry_date.strftime('%Y-%m-%d') }}</td>
+          <td><span class="badge">{{ e.entry_type }}</span></td>
+          <td>{{ e.description }}</td>
+          <td class="text-end">{% if e.debit %}{{ e.debit | fmt_num }}{% else %}—{% endif %}</td>
+          <td class="text-end">{% if e.credit %}{{ e.credit | fmt_num }}{% else %}—{% endif %}</td>
+          <td class="text-end fw-semibold">{{ e.balance_after | fmt_num }}</td>
+          <td class="table-cell-center no-print">
+            {% if e.source_type == 'adjustment' %}
+            <form method="POST" action="{{ url_for('delete_supplier_ledger_adjustment', id=supplier.id, entry_id=e.id) }}" style="display: inline;">
+              <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete" onclick="return confirm('Delete adjustment?')">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+            {% endif %}
+          </td>
         </tr>
         {% else %}
-        <tr><td colspan="7">No ledger entries</td></tr>
+        <tr>
+          <td colspan="7" class="text-center text-tertiary py-8">No ledger entries</td>
+        </tr>
         {% endfor %}
-    </tbody>
-</table>
+      </tbody>
+    </table>
+  </div>
+</div>
 {% endblock %}

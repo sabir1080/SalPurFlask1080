@@ -3,160 +3,174 @@
 {% block extra_head %}
 <style>
 @media print {
-    nav, .navbar, .flash-messages, footer, .no-print { display: none !important; }
-    body { background: white !important; }
-    .container, .container-fluid { max-width: 100% !important; padding: 0 !important; }
-    @page { margin: 1.2cm; }
+  nav, .navbar, .flash-messages, footer, .no-print { display: none !important; }
+  body { background: white !important; }
+  .container, .container-fluid { max-width: 100% !important; padding: 0 !important; }
+  @page { margin: 1.2cm; }
 }
 </style>
 {% endblock %}
 {% block content %}
-
-<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-    <div>
-        <h2 class="mb-1">
-            <i class="bi bi-box-seam text-primary"></i>
-            Item Ledger — <span class="text-primary">{{ item.name }}</span>
-        </h2>
-        <div class="d-flex flex-wrap gap-3 text-muted small mt-1">
-            <span>Category: <strong>{{ item.business_category.name if item.business_category else (item.id_category.name if item.id_category else '—') }}</strong></span>
-            <span>Unit: <strong><span class="badge bg-secondary">{{ item.unit or 'Pcs' }}</span></strong></span>
-        <span>Current Stock: <strong class="{% if item.stock <= item.reorder_level %}text-danger{% else %}text-success{% endif %}">{{ item.stock | fmt_num }} {{ item.unit or 'Pcs' }}</strong></span>
-            <span>Purchase Price: <strong>{{ item.purchase_price | fmt_num if item.purchase_price else '—' }}</strong></span>
-            <span>Sale Price: <strong>{{ item.sale_price | fmt_num if item.sale_price else '—' }}</strong></span>
-        </div>
-    </div>
-    <div class="d-flex gap-2 flex-wrap no-print">
-        <a href="{{ url_for('export_item_ledger', id=item.id) }}" class="btn btn-secondary btn-sm" title="Download item stock ledger as CSV">
-            <i class="bi bi-filetype-csv"></i> Export CSV
-        </a>
-        <a href="{{ url_for('export_item_ledger_excel', id=item.id) }}" class="btn btn-success btn-sm" title="Download item stock ledger as Excel (.xlsx)">
-            <i class="bi bi-file-earmark-excel"></i> Export Excel
-        </a>
-        <button onclick="window.print()" class="btn btn-info btn-sm text-white" title="Print this item ledger">
-            <i class="bi bi-printer"></i> Print
-        </button>
-        <a href="{{ url_for('item') }}" class="btn btn-outline-secondary btn-sm" title="Go back to items list">
-            <i class="bi bi-arrow-left"></i> Back to Items
-        </a>
-    </div>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-box-seam"></i> Item Ledger</h1>
+    <p>{{ item.name }}</p>
+  </div>
+  <div class="page-header-actions no-print">
+    <a href="{{ url_for('export_item_ledger', id=item.id) }}" class="btn btn-secondary" title="Download as CSV">
+      <i class="bi bi-download"></i> CSV
+    </a>
+    <a href="{{ url_for('export_item_ledger_excel', id=item.id) }}" class="btn btn-secondary" title="Download as Excel">
+      <i class="bi bi-download"></i> Excel
+    </a>
+    <button onclick="window.print()" class="btn btn-secondary" title="Print ledger">
+      <i class="bi bi-printer"></i> Print
+    </button>
+    <a href="{{ url_for('item') }}" class="btn btn-outline-secondary" title="Back to items">
+      <i class="bi bi-arrow-left"></i> Back
+    </a>
+  </div>
 </div>
 
-{# Date filter #}
-<form method="GET" class="row g-2 mb-4 no-print">
-    <div class="col-md-4">
-        <input type="date" class="form-control" name="start_date" value="{{ start_date }}" placeholder="Start Date">
+<!-- Item Info Summary -->
+<div class="card mb-6">
+  <div class="card-body">
+    <div class="row g-4">
+      <div class="col-md-3">
+        <small class="text-muted">Category</small>
+        <div class="font-medium">{{ item.business_category.name if item.business_category else (item.id_category.name if item.id_category else '—') }}</div>
+      </div>
+      <div class="col-md-3">
+        <small class="text-muted">Unit</small>
+        <div class="font-medium"><span class="badge">{{ item.unit or 'Pcs' }}</span></div>
+      </div>
+      <div class="col-md-3">
+        <small class="text-muted">Current Stock</small>
+        <div class="font-medium {% if item.stock <= item.reorder_level %}text-danger{% else %}text-success{% endif %}">
+          {{ item.stock | fmt_num }} {{ item.unit or 'Pcs' }}
+        </div>
+      </div>
+      <div class="col-md-3">
+        <small class="text-muted">Prices</small>
+        <div class="font-medium">Buy: {{ item.purchase_price | fmt_num if item.purchase_price else '—' }} | Sell: {{ item.sale_price | fmt_num if item.sale_price else '—' }}</div>
+      </div>
     </div>
-    <div class="col-md-4">
-        <input type="date" class="form-control" name="end_date" value="{{ end_date }}" placeholder="End Date">
-    </div>
-    <div class="col-md-4 d-flex gap-2">
-        <button type="submit" class="btn btn-primary flex-grow-1" title="Filter ledger by date range">
-            <i class="bi bi-funnel"></i> Filter
+  </div>
+</div>
+
+<!-- Date Filter -->
+<div class="card mb-6 no-print">
+  <div class="card-body">
+    <form method="GET" class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label small">Start Date</label>
+        <input type="date" class="form-control" name="start_date" value="{{ start_date }}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small">End Date</label>
+        <input type="date" class="form-control" name="end_date" value="{{ end_date }}">
+      </div>
+      <div class="col-md-4 d-flex gap-2">
+        <label class="form-label small" style="width: 100%">&nbsp;</label>
+        <button type="submit" class="btn btn-secondary flex-grow-1">
+          <i class="bi bi-funnel"></i> Filter
         </button>
         {% if start_date or end_date %}
-        <a href="{{ url_for('item_ledger', id=item.id) }}" class="btn btn-outline-secondary" title="Clear date filter and show all entries">
-            <i class="bi bi-x-circle"></i>
+        <a href="{{ url_for('item_ledger', id=item.id) }}" class="btn btn-outline-secondary">
+          <i class="bi bi-x-circle"></i> Clear
         </a>
         {% endif %}
-    </div>
-</form>
-
-{# Summary cards #}
-<div class="row g-3 mb-4">
-    <div class="col-6 col-md-3">
-        <div class="card border-0 bg-success bg-opacity-10 text-center p-3">
-            <div class="text-success fs-4 fw-bold">{{ total_in | fmt_num }}</div>
-            <div class="text-muted small">Total Stock In</div>
-        </div>
-    </div>
-    <div class="col-6 col-md-3">
-        <div class="card border-0 bg-danger bg-opacity-10 text-center p-3">
-            <div class="text-danger fs-4 fw-bold">{{ total_out | fmt_num }}</div>
-            <div class="text-muted small">Total Stock Out</div>
-        </div>
-    </div>
-    <div class="col-6 col-md-3">
-        <div class="card border-0 bg-primary bg-opacity-10 text-center p-3">
-            <div class="text-primary fs-4 fw-bold">{{ (total_in - total_out) | fmt_num }}</div>
-            <div class="text-muted small">Net Movement</div>
-        </div>
-    </div>
-    <div class="col-6 col-md-3">
-        <div class="card border-0 bg-secondary bg-opacity-10 text-center p-3">
-            <div class="text-secondary fs-4 fw-bold">{{ opening_stock | fmt_num }}</div>
-            <div class="text-muted small">Opening Stock</div>
-        </div>
-    </div>
-    <div class="col-6 col-md-3">
-        <div class="card border-0 bg-warning bg-opacity-10 text-center p-3">
-            <div class="fs-4 fw-bold {% if current_stock <= item.reorder_level %}text-danger{% else %}text-success{% endif %}">
-                {{ current_stock | fmt_num }}
-            </div>
-            <div class="text-muted small">Balance Stock</div>
-        </div>
-    </div>
+      </div>
+    </form>
+  </div>
 </div>
 
-{# Ledger table #}
-<div class="table-responsive">
-    <table class="table table-bordered table-hover table-sm align-middle">
-        <thead class="table-dark">
-            <tr>
-                <th>Date</th>
-                <th>Type</th>
-                <th>Reference</th>
-                <th>Party</th>
-                <th class="text-end">Rate</th>
-                <th class="text-center text-success">Stock In ({{ item.unit or 'Pcs' }})</th>
-                <th class="text-center text-danger">Stock Out ({{ item.unit or 'Pcs' }})</th>
-                <th class="text-end">Value</th>
-                <th class="text-end fw-bold">Balance</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for e in entries %}
-            <tr {% if e.get('is_opening') %}class="table-secondary fw-semibold"{% endif %}>
-                <td class="text-nowrap">{% if e.date %}{{ e.date.strftime('%Y-%m-%d') }}{% else %}<em class="text-muted">Opening</em>{% endif %}</td>
-                <td>
-                    <span class="badge bg-{{ e.badge }}">{{ e.type }}</span>
-                </td>
-                <td class="text-nowrap">{{ e.ref }}</td>
-                <td>{{ e.party }}</td>
-                <td class="text-end">{% if e.rate %}{{ e.rate | fmt_num }}{% else %}—{% endif %}</td>
-                <td class="text-center fw-semibold text-success">
-                    {% if e.stock_in %} +{{ e.stock_in | fmt_num }} {% else %} — {% endif %}
-                </td>
-                <td class="text-center fw-semibold text-danger">
-                    {% if e.stock_out %} -{{ e.stock_out | fmt_num }} {% else %} — {% endif %}
-                </td>
-                <td class="text-end">{% if e.value %}{{ e.value | fmt_num }}{% else %}—{% endif %}</td>
-                <td class="text-end fw-bold {% if e.balance <= 0 %}text-danger{% elif e.balance <= item.reorder_level %}text-warning{% else %}text-success{% endif %}">
-                    {{ e.balance | fmt_num }}
-                </td>
-            </tr>
-            {% else %}
-            <tr>
-                <td colspan="9" class="text-center text-muted py-4">
-                    <i class="bi bi-inbox fs-3 d-block mb-2"></i>
-                    No transactions found{% if start_date or end_date %} for the selected date range{% endif %}.
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-        {% if entries %}
-        <tfoot class="table-light fw-semibold">
-            <tr>
-                <td colspan="4" class="text-end">Totals:</td>
-                <td></td>
-                <td class="text-center text-success">+{{ total_in | fmt_num }}</td>
-                <td class="text-center text-danger">-{{ total_out | fmt_num }}</td>
-                <td></td>
-                <td class="text-end text-primary">{{ current_stock | fmt_num }}</td>
-            </tr>
-        </tfoot>
-        {% endif %}
+<!-- Summary Metrics -->
+<div class="row g-3 mb-6">
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-body text-center">
+        <div class="text-success fs-5 fw-bold">{{ total_in | fmt_num }}</div>
+        <small class="text-muted">Total Stock In</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-body text-center">
+        <div class="text-danger fs-5 fw-bold">{{ total_out | fmt_num }}</div>
+        <small class="text-muted">Total Stock Out</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-body text-center">
+        <div class="text-primary fs-5 fw-bold">{{ (total_in - total_out) | fmt_num }}</div>
+        <small class="text-muted">Net Movement</small>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Ledger Table -->
+<div class="card">
+  <div class="table-wrapper">
+    <table class="table table-striped table-hover">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Type</th>
+          <th>Reference</th>
+          <th>Party</th>
+          <th class="text-end">Rate</th>
+          <th class="text-center text-success">Stock In ({{ item.unit or 'Pcs' }})</th>
+          <th class="text-center text-danger">Stock Out ({{ item.unit or 'Pcs' }})</th>
+          <th class="text-end">Value</th>
+          <th class="text-end fw-bold">Balance</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in entries %}
+        <tr {% if e.get('is_opening') %}class="fw-semibold"{% endif %}>
+          <td class="text-nowrap text-tertiary">{% if e.date %}{{ e.date.strftime('%Y-%m-%d') }}{% else %}<em class="text-muted">Opening</em>{% endif %}</td>
+          <td><span class="badge bg-{{ e.badge }}">{{ e.type }}</span></td>
+          <td class="text-nowrap">{{ e.ref }}</td>
+          <td>{{ e.party }}</td>
+          <td class="text-end">{% if e.rate %}{{ e.rate | fmt_num }}{% else %}—{% endif %}</td>
+          <td class="text-center fw-semibold text-success">
+            {% if e.stock_in %} +{{ e.stock_in | fmt_num }} {% else %} — {% endif %}
+          </td>
+          <td class="text-center fw-semibold text-danger">
+            {% if e.stock_out %} -{{ e.stock_out | fmt_num }} {% else %} — {% endif %}
+          </td>
+          <td class="text-end">{% if e.value %}{{ e.value | fmt_num }}{% else %}—{% endif %}</td>
+          <td class="text-end fw-bold {% if e.balance <= 0 %}text-danger{% elif e.balance <= item.reorder_level %}text-warning{% else %}text-success{% endif %}">
+            {{ e.balance | fmt_num }}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="9" class="text-center text-tertiary py-8">
+            <i class="bi bi-inbox" style="font-size: 2rem; margin-bottom: 1rem; display: block;"></i>
+            No transactions found{% if start_date or end_date %} for the selected date range{% endif %}.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if entries %}
+      <tfoot>
+        <tr>
+          <td colspan="4" class="text-end fw-bold">Totals:</td>
+          <td></td>
+          <td class="text-center text-success fw-bold">+{{ total_in | fmt_num }}</td>
+          <td class="text-center text-danger fw-bold">-{{ total_out | fmt_num }}</td>
+          <td></td>
+          <td class="text-end text-primary fw-bold">{{ current_stock | fmt_num }}</td>
+        </tr>
+      </tfoot>
+      {% endif %}
     </table>
+  </div>
 </div>
-
 {% endblock %}

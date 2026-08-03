@@ -1,78 +1,99 @@
 {% extends 'base.html' %}
 {% block title %}Chart of Accounts — {{ app_name }}{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-    <h2><i class="bi bi-diagram-3 text-dark"></i> Chart of Accounts</h2>
-    <div class="d-flex gap-2">
-        {% if current_user.is_admin %}
-        <a href="{{ url_for('new_gl_account') }}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> New Account</a>
-        <a href="{{ url_for('tax_codes') }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-percent"></i> Tax Codes</a>
-        {% endif %}
-        <a href="{{ url_for('dashboard.dashboard') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Dashboard</a>
-    </div>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-diagram-3"></i> Chart of Accounts</h1>
+    <p>General ledger account structure and balances</p>
+  </div>
+  <div class="page-header-actions">
+    {% if current_user.is_admin %}
+    <a href="{{ url_for('new_gl_account') }}" class="btn btn-primary">
+      <i class="bi bi-plus-circle"></i> New Account
+    </a>
+    <a href="{{ url_for('tax_codes') }}" class="btn btn-secondary">
+      <i class="bi bi-percent"></i> Tax Codes
+    </a>
+    {% endif %}
+    <a href="{{ url_for('dashboard.dashboard') }}" class="btn btn-outline-secondary">
+      <i class="bi bi-arrow-left"></i> Dashboard
+    </a>
+  </div>
 </div>
 
-<form method="GET" class="row g-2 align-items-end mb-3 d-print-none">
-    <div class="col-auto">
-        <label class="form-label fw-semibold mb-1">Balances as of</label>
-        <input type="date" name="as_of" class="form-control form-control-sm" value="{{ as_of.strftime('%Y-%m-%d') }}">
-    </div>
-    <div class="col-auto"><button class="btn btn-sm btn-primary">Show</button></div>
-</form>
-
-<div class="alert alert-info">
-    <i class="bi bi-info-circle me-1"></i>
-    <strong>Group</strong> accounts are headings: the balance shown against one is the total of
-    the accounts beneath it. <strong>Control</strong> accounts are owned by their subledger —
-    Accounts Receivable by the customer ledgers, Accounts Payable by the supplier ledgers,
-    Inventory by stock movements — so no journal entry may be posted to them by hand.
-    Every balance is shown on its natural side, so a positive number means what the account
-    normally holds.
+<!-- Date Filter -->
+<div class="card mb-6">
+  <div class="card-body">
+    <form method="GET" class="row g-3 align-items-end">
+      <div class="col-md-4">
+        <label class="form-label">Balances as of</label>
+        <input type="date" name="as_of" class="form-control" value="{{ as_of.strftime('%Y-%m-%d') }}">
+      </div>
+      <div class="col-md-2">
+        <button class="btn btn-secondary w-100">Show</button>
+      </div>
+    </form>
+  </div>
 </div>
 
-<div class="card border-0 shadow-sm">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-        <table class="table table-hover mb-0 align-middle">
-            <thead class="table-dark">
-                <tr><th>Code</th><th>Account</th><th>Type</th><th>Flags</th>
-                    <th class="text-end">Balance</th>
-                    {% if current_user.is_admin %}<th class="text-end">Actions</th>{% endif %}</tr>
-            </thead>
-            <tbody>
-                {% for a, level, balance in rows %}
-                <tr {% if a.is_group %}class="table-light fw-bold"{% endif %}>
-                    <td class="text-muted">{{ a.code }}</td>
-                    <td>
-                        {%- if level > 1 -%}
-                        {# 25 characters per level: 23 spaces, the elbow, a space. #}
-                        <span class="text-muted" style="white-space:pre">{{ ' ' * (25 * (level - 1) - 2) }}└ </span>
-                        {%- endif -%}
-                        {{ a.name }}
-                        <span class="text-muted small ms-1">L{{ level }}</span>
-                    </td>
-                    <td><span class="badge bg-{{ {'Asset':'primary','Liability':'danger','Equity':'dark','Income':'success','Expense':'warning text-dark'}[a.type] }}">{{ a.type }}</span></td>
-                    <td>
-                        {% if a.is_group %}<span class="badge bg-secondary">group</span>{% endif %}
-                        {% if a.is_control %}<span class="badge bg-info text-dark">control</span>{% endif %}
-                        {% if a.code in system_codes or a.role %}<span class="badge bg-light text-dark border" title="Used by the posting layer">system</span>{% endif %}
-                        {% if not a.is_active %}<span class="badge bg-light text-dark border">inactive</span>{% endif %}
-                    </td>
-                    <td class="text-end {{ 'text-danger' if balance < 0 }}">
-                        {% if balance %}{{ balance | fmt_num }}{% else %}<span class="text-muted">—</span>{% endif %}
-                    </td>
-                    {% if current_user.is_admin %}
-                    <td class="text-end">
-                        <a href="{{ url_for('edit_gl_account', id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></a>
-                    </td>
-                    {% endif %}
-                </tr>
-                {% else %}
-                <tr><td colspan="6" class="text-center text-muted py-4">No accounts. Run <code>flask seed-accounting</code>.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        </div>
-    </div>
+<!-- Info Alert -->
+<div class="alert alert-info alert-dismissible fade show">
+  <i class="bi bi-info-circle"></i>
+  <strong>Group</strong> accounts are headings showing totals of sub-accounts. <strong>Control</strong> accounts are managed by subledgers (Customers, Suppliers, Inventory), so journal entries cannot be posted to them manually. All balances shown on their natural side.
+</div>
+
+<!-- Accounts Table -->
+<div class="card">
+  <div class="table-wrapper">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Account</th>
+          <th>Type</th>
+          <th>Flags</th>
+          <th class="text-end">Balance</th>
+          {% if current_user.is_admin %}<th class="table-cell-center">Actions</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for a, level, balance in rows %}
+        <tr {% if a.is_group %}class="fw-bold"{% endif %}>
+          <td class="text-tertiary">{{ a.code }}</td>
+          <td>
+            {%- if level > 1 -%}
+            <span class="text-muted" style="white-space: pre;">{{ ' ' * (25 * (level - 1) - 2) }}└ </span>
+            {%- endif -%}
+            {{ a.name }}
+            <span class="text-muted small ms-1">L{{ level }}</span>
+          </td>
+          <td><span class="badge bg-{{ {'Asset':'primary','Liability':'danger','Equity':'dark','Income':'success','Expense':'warning text-dark'}[a.type] }}">{{ a.type }}</span></td>
+          <td>
+            {% if a.is_group %}<span class="badge">group</span>{% endif %}
+            {% if a.is_control %}<span class="badge bg-info text-dark">control</span>{% endif %}
+            {% if a.code in system_codes or a.role %}<span class="badge bg-light text-dark border" title="System">system</span>{% endif %}
+            {% if not a.is_active %}<span class="badge bg-light text-dark border">inactive</span>{% endif %}
+          </td>
+          <td class="text-end {{ 'text-danger' if balance < 0 }}">
+            {% if balance %}{{ balance | fmt_num }}{% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          {% if current_user.is_admin %}
+          <td class="table-cell-center">
+            <a href="{{ url_for('edit_gl_account', id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit">
+              <i class="bi bi-pencil"></i>
+            </a>
+          </td>
+          {% endif %}
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="{% if current_user.is_admin %}6{% else %}5{% endif %}" class="text-center text-tertiary py-8">
+            No accounts. Run <code>flask seed-accounting</code>.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endblock %}

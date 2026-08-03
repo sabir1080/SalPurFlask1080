@@ -1,99 +1,109 @@
 {% extends 'base.html' %}
 {% block title %}User Management{% endblock %}
 {% block content %}
-
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="bi bi-shield-person"></i> User Management</h2>
-    <a href="{{ url_for('admin_create_user') }}" class="btn btn-primary" title="Create a new user account and set their role">
-        <i class="bi bi-person-plus-fill"></i> Create User
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-shield-person"></i> User Management</h1>
+    <p>Create and manage user accounts and roles</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('admin_create_user') }}" class="btn btn-primary">
+      <i class="bi bi-person-plus-fill"></i> Create User
     </a>
+  </div>
 </div>
 
-<!-- Role legend -->
-<div class="d-flex gap-3 mb-3 small flex-wrap">
-    <span><span class="badge bg-danger">Admin</span> — Full access + user management</span>
-    <span><span class="badge bg-primary">Manager</span> — Add/edit + reports (no delete)</span>
-    <span><span class="badge bg-secondary">Staff</span> — Transactions add/view only</span>
-    <span class="text-muted ms-auto"><i class="bi bi-info-circle"></i> Select from dropdown to change role</span>
-</div>
-
-<div class="card border-0 shadow-sm">
-    <div class="table-responsive">
-    <table class="table table-bordered table-hover mb-0">
-        <thead class="table-dark">
-            <tr>
-                <th>#</th>
-                <th>Name</th>
-                <th>Email</th>
-                <th style="min-width:160px">Role <small class="opacity-75 fw-normal">(edit)</small></th>
-                <th>Status</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for u in users %}
-            <tr {% if u.id == current_user.id %}class="table-warning"{% endif %}>
-                <td>{{ u.id }}</td>
-                <td class="fw-semibold">
-                    {{ u.name }}
-                    {% if u.id == current_user.id %}<span class="badge bg-warning text-dark ms-1">You</span>{% endif %}
-                </td>
-                <td>{{ u.email }}</td>
-                <td>
-                    {% if u.id == current_user.id %}
-                        <span class="badge bg-danger">Admin</span>
-                        <br><small class="text-muted">(You)</small>
-                    {% else %}
-                    <form method="POST" action="{{ url_for('admin_change_role', id=u.id) }}"
-                          class="d-flex align-items-center gap-1 role-form">
-                        <select name="role" class="form-select form-select-sm role-select"
-                                style="min-width:105px; font-size:0.82rem">
-                            {% for r in roles %}
-                            <option value="{{ r }}" {% if u.role == r %}selected{% endif %}
-                                    class="{% if r == 'admin' %}text-danger{% elif r == 'manager' %}text-primary{% else %}text-secondary{% endif %}">
-                                {{ r | capitalize }}
-                            </option>
-                            {% endfor %}
-                        </select>
-                        <button type="submit" class="btn btn-sm btn-outline-success px-2" title="Save role">
-                            <i class="bi bi-check-lg"></i>
-                        </button>
-                    </form>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if u.verified %}
-                        <span class="badge bg-success"><i class="bi bi-check-circle-fill"></i> Verified</span>
-                    {% else %}
-                        <span class="badge bg-warning text-dark"><i class="bi bi-clock-fill"></i> Unverified</span>
-                    {% endif %}
-                </td>
-                <td>
-                    <a href="{{ url_for('admin_edit_user', id=u.id) }}" class="btn btn-warning btn-sm" title="Edit this user's name, email and password">
-                        <i class="bi bi-pencil"></i> Edit
-                    </a>
-                    <form method="POST" action="{{ url_for('admin_toggle_verify', id=u.id) }}" class="d-inline">
-                        <button type="submit" class="btn btn-sm {% if u.verified %}btn-outline-warning{% else %}btn-outline-success{% endif %}"
-                                title="{% if u.verified %}Mark Unverified{% else %}Mark Verified{% endif %}">
-                            <i class="bi {% if u.verified %}bi-x-circle{% else %}bi-check-circle{% endif %}"></i>
-                        </button>
-                    </form>
-                    {% if u.id != current_user.id %}
-                    <form method="POST" action="{{ url_for('admin_delete_user', id=u.id) }}" class="d-inline"
-                          data-confirm="Delete user {{ u.name }}? This cannot be undone.">
-                        <button type="submit" class="btn btn-danger btn-sm" title="Permanently delete this user account">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </form>
-                    {% endif %}
-                </td>
-            </tr>
-            {% else %}
-            <tr><td colspan="6" class="text-center text-muted py-4">No users found.</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
+<!-- Role Legend -->
+<div class="card mb-6">
+  <div class="card-body">
+    <div class="row g-4 small">
+      <div class="col-md-4">
+        <span class="badge bg-danger">Admin</span> Full access + user management
+      </div>
+      <div class="col-md-4">
+        <span class="badge bg-primary">Manager</span> Add/edit + reports
+      </div>
+      <div class="col-md-4">
+        <span class="badge bg-secondary">Staff</span> View and add transactions only
+      </div>
     </div>
+    <small class="text-muted mt-3 d-block"><i class="bi bi-info-circle"></i> Select role dropdown to change user access level</small>
+  </div>
 </div>
 
+<!-- Users Table -->
+<div class="card">
+  <div class="table-wrapper">
+    <table class="table table-striped table-hover align-middle">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Name</th>
+          <th>Email</th>
+          <th style="min-width: 160px">Role</th>
+          <th>Status</th>
+          <th class="table-cell-center">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr {% if u.id == current_user.id %}class="table-light"{% endif %}>
+          <td class="text-tertiary">{{ u.id }}</td>
+          <td class="font-medium">
+            {{ u.name }}
+            {% if u.id == current_user.id %}<span class="badge bg-warning text-dark ms-1">You</span>{% endif %}
+          </td>
+          <td>{{ u.email }}</td>
+          <td>
+            {% if u.id == current_user.id %}
+              <span class="badge bg-danger">Admin</span>
+            {% else %}
+            <form method="POST" action="{{ url_for('admin_change_role', id=u.id) }}" class="d-flex gap-2 align-items-center">
+              <select name="role" class="form-select form-select-sm" style="min-width: 105px;">
+                {% for r in roles %}
+                <option value="{{ r }}" {% if u.role == r %}selected{% endif %}>
+                  {{ r | capitalize }}
+                </option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="btn btn-sm btn-outline-success px-2" title="Save role">
+                <i class="bi bi-check-lg"></i>
+              </button>
+            </form>
+            {% endif %}
+          </td>
+          <td>
+            {% if u.verified %}
+            <span class="badge bg-success"><i class="bi bi-check-circle-fill"></i> Verified</span>
+            {% else %}
+            <span class="badge bg-warning text-dark"><i class="bi bi-clock-fill"></i> Unverified</span>
+            {% endif %}
+          </td>
+          <td class="table-cell-center">
+            <a href="{{ url_for('admin_edit_user', id=u.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit user">
+              <i class="bi bi-pencil"></i>
+            </a>
+            <form method="POST" action="{{ url_for('admin_toggle_verify', id=u.id) }}" style="display: inline;">
+              <button type="submit" class="btn btn-sm {% if u.verified %}btn-outline-warning{% else %}btn-outline-success{% endif %}" title="{% if u.verified %}Mark unverified{% else %}Mark verified{% endif %}">
+                <i class="bi {% if u.verified %}bi-x-circle{% else %}bi-check-circle{% endif %}"></i>
+              </button>
+            </form>
+            {% if u.id != current_user.id %}
+            <form method="POST" action="{{ url_for('admin_delete_user', id=u.id) }}" style="display: inline;" data-confirm="Delete {{ u.name }}?">
+              <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete user">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="text-center text-tertiary py-8">No users found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 {% endblock %}
