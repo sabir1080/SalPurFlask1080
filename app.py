@@ -49,13 +49,13 @@ else:
 
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-# Production-safe connection pool settings for Render PostgreSQL
+# Production-safe connection pool settings for Neon PostgreSQL
 if DATABASE_URL:
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
         "pool_pre_ping": True,          # Detect and discard dead connections
         "pool_recycle": 300,            # Recycle connections every 5 minutes
-        "pool_size": 5,
-        "max_overflow": 10,
+        "pool_size": 3,                 # Neon free tier has limited connections
+        "max_overflow": 5,
         "pool_timeout": 30,             # Wait up to 30s for available connection
         "connect_args": {
             "sslmode": "require",
@@ -64,6 +64,7 @@ if DATABASE_URL:
             "keepalives_idle": 30,      # Start keepalive after 30s idle
             "keepalives_interval": 10,  # Send keepalive every 10s
             "keepalives_count": 5,      # Try 5 times before giving up
+            "application_name": "salpurflask",
         },
     }
 
