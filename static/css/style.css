@@ -2491,29 +2491,31 @@ body {
     color: #ffffff !important;
 }
 
-/* Auth page navbar styling (navbar-dark) */
+/* Auth page navbar styling (navbar-dark) - Light theme (default) */
 .navbar-dark {
-    background-color: #1e293b !important;
+    background-color: #f8f9fa !important;
+    border-bottom: 1px solid #dee2e6 !important;
 }
 
 .navbar-dark .navbar-nav > .nav-item > .nav-link {
-    color: #e9ecef !important;
+    color: #212529 !important;
+    font-weight: 500;
 }
 
 .navbar-dark .navbar-nav > .nav-item > .nav-link:hover {
-    background-color: #2d3748 !important;
+    background-color: #e9ecef !important;
     border-left-color: #0d6efd !important;
     color: #0d6efd !important;
 }
 
 .navbar-dark .dropdown-menu {
-    background-color: #2d3748 !important;
-    border: 1px solid #4a5065 !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+    background-color: #ffffff !important;
+    border: 1px solid #dee2e6 !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
 }
 
 .navbar-dark .dropdown-menu .dropdown-item {
-    color: #e9ecef !important;
+    color: #212529 !important;
 }
 
 .navbar-dark .dropdown-menu .dropdown-item:hover {
@@ -2523,6 +2525,43 @@ body {
 }
 
 .navbar-dark .dropdown-menu .dropdown-item.active {
+    background-color: #0d6efd !important;
+    color: #ffffff !important;
+}
+
+/* Dark theme override for navbar-dark */
+[data-theme="dark"] .navbar-dark {
+    background-color: #1e293b !important;
+    border-bottom-color: #334155 !important;
+}
+
+[data-theme="dark"] .navbar-dark .navbar-nav > .nav-item > .nav-link {
+    color: #e9ecef !important;
+}
+
+[data-theme="dark"] .navbar-dark .navbar-nav > .nav-item > .nav-link:hover {
+    background-color: #2d3748 !important;
+    border-left-color: #0d6efd !important;
+    color: #0d6efd !important;
+}
+
+[data-theme="dark"] .navbar-dark .dropdown-menu {
+    background-color: #2d3748 !important;
+    border: 1px solid #4a5065 !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+}
+
+[data-theme="dark"] .navbar-dark .dropdown-menu .dropdown-item {
+    color: #e9ecef !important;
+}
+
+[data-theme="dark"] .navbar-dark .dropdown-menu .dropdown-item:hover {
+    background-color: #0d6efd !important;
+    border-left-color: #0d6efd !important;
+    color: #ffffff !important;
+}
+
+[data-theme="dark"] .navbar-dark .dropdown-menu .dropdown-item.active {
     background-color: #0d6efd !important;
     color: #ffffff !important;
 }
