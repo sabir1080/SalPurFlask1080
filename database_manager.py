@@ -80,7 +80,7 @@ def show_database_summary(engine, db_name):
         tables = inspector.get_table_names()
 
         print(f"\n{'='*60}")
-        print(f"📊 Database Summary: {db_name}")
+        print(f"[STAT] Database Summary: {db_name}")
         print(f"{'='*60}")
         print(f"\nTotal Tables: {len(tables)}")
 
@@ -113,13 +113,13 @@ def show_database_summary(engine, db_name):
 
 def main():
     print("\n" + "="*60)
-    print("🗄️  Database Manager - Multi-Database Tool")
+    print("[DB] Database Manager - Multi-Database Tool")
     print("="*60)
 
     # Select database
     print("\nSelect Database:")
     for key, db in DATABASES.items():
-        status = "✓" if db["url"] else "✗"
+        status = "[OK]" if db["url"] else "[X]"
         print(f"  {key}. {status} {db['name']}")
     print("  0. Exit")
 
@@ -141,7 +141,7 @@ def main():
         print("Failed to connect!")
         return
 
-    print("✓ Connected!")
+    print("[OK] Connected!")
 
     while True:
         print(f"\n" + "-"*60)
@@ -175,7 +175,7 @@ def main():
 
             table_data = list_tables_with_counts(engine)
             for row in table_data:
-                print(f"  • {row['Table']:30s} ({row['Rows']:6,} rows)")
+                print(f"  * {row['Table']:30s} ({row['Rows']:6,} rows)")
 
         elif choice == "3":
             inspector = inspect(engine)
@@ -201,7 +201,7 @@ def main():
 
                     for col in columns:
                         nullable = "NULL" if col["nullable"] else "NOT NULL"
-                        print(f"  • {col['name']:30s} {str(col['type']):20s} {nullable}")
+                        print(f"  * {col['name']:30s} {str(col['type']):20s} {nullable}")
 
                 else:
                     print("Invalid table number!")

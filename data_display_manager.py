@@ -96,7 +96,7 @@ def get_table_info(engine, table_name):
 
 def main():
     print("\n" + "="*60)
-    print("📊 Data Display Manager - Multi-Database Viewer")
+    print("[STAT] Data Display Manager - Multi-Database Viewer")
     print("="*60)
 
     # Select database
@@ -123,7 +123,7 @@ def main():
         print("Failed to connect!")
         return
 
-    print("✓ Connected!")
+    print("[OK] Connected!")
 
     while True:
         # List tables
