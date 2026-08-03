@@ -1,83 +1,126 @@
 {% extends 'base.html' %}
 {% block title %}Create User{% endblock %}
 {% block content %}
-
-<div class="d-flex align-items-center mb-4 gap-3">
-    <a href="{{ url_for('admin_users') }}" class="btn btn-outline-secondary btn-sm">
-        <i class="bi bi-arrow-left"></i> Back
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-person-plus-fill"></i> Create New User</h1>
+    <p>Set up a new user account</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('admin_users') }}" class="btn btn-outline-secondary">
+      <i class="bi bi-arrow-left"></i> Back to Users
     </a>
-    <h2 class="mb-0"><i class="bi bi-person-plus-fill"></i> Create New User</h2>
+  </div>
 </div>
 
-<div class="card border-0 shadow-sm" style="max-width:560px">
-    <div class="card-body p-4">
-    <form method="POST">
-        <div class="mb-3">
-            <label class="form-label fw-semibold">Full Name</label>
+<div class="row">
+  <div class="col-md-8 col-lg-6">
+    <div class="card">
+      <div class="card-body">
+        <form method="POST">
+          <div class="form-group mb-3">
+            <label class="form-label required">Full Name</label>
             <input type="text" class="form-control" name="name" placeholder="e.g. Ahmed Khan" required>
-        </div>
-        <div class="mb-3">
-            <label class="form-label fw-semibold">Email Address</label>
+          </div>
+          <div class="form-group mb-3">
+            <label class="form-label required">Email Address</label>
             <input type="email" class="form-control" name="email" placeholder="user@example.com" required>
-        </div>
-        <div class="mb-3">
-            <label class="form-label fw-semibold">Password</label>
+          </div>
+          <div class="form-group mb-3">
+            <label class="form-label required">Password</label>
             <div class="input-group">
-                <input type="password" class="form-control" name="password" id="pw1"
-                       placeholder="Min 6 characters" autocomplete="new-password" required>
-                <button type="button" class="btn btn-outline-secondary" onclick="togglePw('pw1',this)" tabindex="-1">
-                    <i class="bi bi-eye"></i>
-                </button>
+              <input type="password" class="form-control" name="password" id="pw1" placeholder="Min 6 characters" autocomplete="new-password" required>
+              <button type="button" class="btn btn-outline-secondary" onclick="togglePw('pw1',this)" tabindex="-1" title="Show/hide password">
+                <i class="bi bi-eye"></i>
+              </button>
             </div>
-        </div>
-        <div class="mb-3">
-            <label class="form-label fw-semibold">Confirm Password</label>
+          </div>
+          <div class="form-group mb-3">
+            <label class="form-label required">Confirm Password</label>
             <div class="input-group">
-                <input type="password" class="form-control" name="confirm_password" id="pw2"
-                       placeholder="Retype password" autocomplete="new-password" required>
-                <button type="button" class="btn btn-outline-secondary" onclick="togglePw('pw2',this)" tabindex="-1">
-                    <i class="bi bi-eye"></i>
-                </button>
+              <input type="password" class="form-control" name="confirm_password" id="pw2" placeholder="Retype password" autocomplete="new-password" required>
+              <button type="button" class="btn btn-outline-secondary" onclick="togglePw('pw2',this)" tabindex="-1" title="Show/hide password">
+                <i class="bi bi-eye"></i>
+              </button>
             </div>
-            <div id="pwMatch" class="form-text"></div>
-        </div>
-        <div class="mb-3">
-            <label class="form-label fw-semibold">Role</label>
+            <div id="pwMatch" class="form-text mt-1"></div>
+          </div>
+          <div class="form-group mb-4">
+            <label class="form-label required">Role</label>
             <select class="form-select" name="role" required>
-                <option value="staff" selected>Staff — Add/view transactions only</option>
-                <option value="manager">Manager — Add/edit all data + reports (no delete)</option>
-                <option value="admin">Admin — Full access + user management</option>
+              <option value="staff" selected>Staff — Add/view transactions only</option>
+              <option value="manager">Manager — Add/edit all data + reports</option>
+              <option value="admin">Admin — Full access + user management</option>
             </select>
-        </div>
-        <div class="mb-4">
+          </div>
+          <div class="form-group mb-4">
             <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="verified" value="1" id="verified" checked>
-                <label class="form-check-label" for="verified">
-                    Mark as Verified (user can log in immediately)
-                </label>
+              <input class="form-check-input" type="checkbox" name="verified" value="1" id="verified" checked>
+              <label class="form-check-label" for="verified">
+                Mark as Verified (user can log in immediately)
+              </label>
             </div>
-        </div>
+          </div>
 
-        <!-- Role guide -->
-        <div class="bg-light rounded p-3 small mb-4">
-            <div class="fw-semibold mb-2">Role Permissions:</div>
-            <table class="table table-sm table-borderless mb-0">
-                <thead><tr><th>Action</th><th class="text-center">Staff</th><th class="text-center">Manager</th><th class="text-center">Admin</th></tr></thead>
-                <tbody>
-                    <tr><td>Add Transactions</td><td class="text-center text-success">✓</td><td class="text-center text-success">✓</td><td class="text-center text-success">✓</td></tr>
-                    <tr><td>Edit Records</td><td class="text-center text-danger">✗</td><td class="text-center text-success">✓</td><td class="text-center text-success">✓</td></tr>
-                    <tr><td>Delete Records</td><td class="text-center text-danger">✗</td><td class="text-center text-danger">✗</td><td class="text-center text-success">✓</td></tr>
-                    <tr><td>View Reports</td><td class="text-center text-danger">✗</td><td class="text-center text-success">✓</td><td class="text-center text-success">✓</td></tr>
-                    <tr><td>Manage Users</td><td class="text-center text-danger">✗</td><td class="text-center text-danger">✗</td><td class="text-center text-success">✓</td></tr>
-                </tbody>
-            </table>
-        </div>
-
-        <button type="submit" class="btn btn-primary w-100">
+          <button type="submit" class="btn btn-primary w-100">
             <i class="bi bi-person-plus-fill"></i> Create User
-        </button>
-    </form>
+          </button>
+        </form>
+      </div>
     </div>
+  </div>
+
+  <div class="col-md-8 col-lg-6">
+    <div class="card">
+      <div class="card-header">
+        <h5 class="mb-0">Role Permissions</h5>
+      </div>
+      <div class="table-wrapper">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>Action</th>
+              <th class="text-center">Staff</th>
+              <th class="text-center">Manager</th>
+              <th class="text-center">Admin</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Add Transactions</td>
+              <td class="text-center text-success"><i class="bi bi-check-circle-fill"></i></td>
+              <td class="text-center text-success"><i class="bi bi-check-circle-fill"></i></td>
+              <td class="text-center text-success"><i class="bi bi-check-circle-fill"></i></td>
+            </tr>
+            <tr>
+              <td>Edit Records</td>
+              <td class="text-center text-danger"><i class="bi bi-x-circle-fill"></i></td>
+              <td class="text-center text-success"><i class="bi bi-check-circle-fill"></i></td>
+              <td class="text-center text-success"><i class="bi bi-check-circle-fill"></i></td>
+            </tr>
+            <tr>
+              <td>Delete Records</td>
+              <td class="text-center text-danger"><i class="bi bi-x-circle-fill"></i></td>
+              <td class="text-center text-danger"><i class="bi bi-x-circle-fill"></i></td>
+              <td class="text-center text-success"><i class="bi bi-check-circle-fill"></i></td>
+            </tr>
+            <tr>
+              <td>View Reports</td>
+              <td class="text-center text-danger"><i class="bi bi-x-circle-fill"></i></td>
+              <td class="text-center text-success"><i class="bi bi-check-circle-fill"></i></td>
+              <td class="text-center text-success"><i class="bi bi-check-circle-fill"></i></td>
+            </tr>
+            <tr>
+              <td>Manage Users</td>
+              <td class="text-center text-danger"><i class="bi bi-x-circle-fill"></i></td>
+              <td class="text-center text-danger"><i class="bi bi-x-circle-fill"></i></td>
+              <td class="text-center text-success"><i class="bi bi-check-circle-fill"></i></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
