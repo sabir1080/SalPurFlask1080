@@ -1,20 +1,32 @@
 {% extends 'base.html' %}
-{% block title %}Stock Adjustments{% endblock %}
+{% block title %}Stock Adjustments — {{ app_name }}{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2><i class="bi bi-arrow-left-right text-warning"></i> Stock Adjustments</h2>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-arrow-left-right"></i> Stock Adjustments</h1>
+    <p>Record inventory corrections and adjustments</p>
+  </div>
 </div>
 
-<form method="GET" class="mb-3">
-    <div class="input-group">
+<!-- Search Card -->
+<div class="card mb-6">
+  <div class="card-body">
+    <form method="GET" class="row g-3">
+      <div class="col-md-10">
         <input type="text" class="form-control" name="search" placeholder="Search by item name" value="{{ search }}">
-        <button type="submit" class="btn btn-primary">Search</button>
-    </div>
-</form>
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-secondary w-100">Search</button>
+      </div>
+    </form>
+  </div>
+</div>
 
-<div class="card border-0 shadow-sm mb-4">
-    <div class="card-header bg-warning text-dark fw-semibold"><i class="bi bi-plus-circle"></i> New Adjustment</div>
-    <div class="card-body">
+<div class="card mb-6">
+  <div class="card-header bg-warning-subtle">
+    <h5 class="mb-0"><i class="bi bi-plus-circle"></i> New Adjustment</h5>
+  </div>
+  <div class="card-body">
         <form method="POST" class="row g-3">
             <div class="col-md-3">
                 <label class="form-label fw-semibold">Item <span class="text-danger">*</span></label>

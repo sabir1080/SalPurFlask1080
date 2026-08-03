@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Purchase Orders{% endblock %}
+{% block title %}Purchase Orders — {{ app_name }}{% endblock %}
 {% block extra_head %}
 <style>
 .po-badge-Draft{background:#6c757d}
@@ -9,20 +9,32 @@
 </style>
 {% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2><i class="bi bi-file-earmark-text text-primary"></i> Purchase Orders</h2>
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-file-earmark-text"></i> Purchase Orders</h1>
+    <p>Manage purchase orders and quotations</p>
+  </div>
 </div>
 
-<form method="GET" class="mb-3">
-    <div class="input-group">
+<!-- Search Card -->
+<div class="card mb-6">
+  <div class="card-body">
+    <form method="GET" class="row g-3">
+      <div class="col-md-10">
         <input type="text" class="form-control" name="search" placeholder="Search by supplier" value="{{ search }}">
-        <button type="submit" class="btn btn-primary">Search</button>
-    </div>
-</form>
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-secondary w-100">Search</button>
+      </div>
+    </form>
+  </div>
+</div>
 
-<div class="card border-0 shadow-sm mb-4">
-    <div class="card-header bg-primary text-white fw-semibold"><i class="bi bi-plus-circle"></i> New Purchase Order</div>
-    <div class="card-body">
+<div class="card mb-6">
+  <div class="card-header bg-primary-subtle">
+    <h5 class="mb-0"><i class="bi bi-plus-circle"></i> New Purchase Order</h5>
+  </div>
+  <div class="card-body">
         <form method="POST">
             <div class="row g-3 mb-3">
                 <div class="col-md-4">
