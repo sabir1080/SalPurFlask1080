@@ -5,10 +5,10 @@
     --success: #059669;
     --text-dark: #0f172a;
     --text-muted: #64748b;
-    --surface: #f2f5f9;
-    --border: #dde3ec;
-    --bg: #e6eaf1;
-    --card-bg: #f8fafc;
+    --surface: #e8ecf2;
+    --border: #d0d8e6;
+    --bg: #d6dce8;
+    --card-bg: #eff2f9;
     --shadow-sm: 0 4px 20px rgba(15, 23, 42, 0.06);
     --shadow-md: 0 12px 40px rgba(15, 23, 42, 0.12);
     --radius: 16px;
@@ -47,6 +47,16 @@
 
 * {
     box-sizing: border-box;
+}
+
+/* Light theme body background */
+body {
+    background-color: #d6dce8;
+}
+
+/* Ensure light theme is applied by default */
+:root:not([data-theme="dark"]) body {
+    background-color: #d6dce8;
 }
 
 html {
