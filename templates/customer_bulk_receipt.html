@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Customer Bulk Receipt{% endblock %}
+{% block title %}Customer Bulk Receipt — {{ app_name }}{% endblock %}
 {% block extra_head %}
 <style>
 .inv-row td { vertical-align: middle; }
@@ -8,46 +8,51 @@
 </style>
 {% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2><i class="bi bi-cash-stack text-success"></i> Customer Bulk Receipt</h2>
-    <a href="{{ url_for('customer_receipt') }}" class="btn btn-outline-secondary btn-sm">
-        <i class="bi bi-arrow-left"></i> Back to Receipts
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-cash-stack"></i> Customer Bulk Receipt</h1>
+    <p>Collect receipts from multiple invoices in one transaction</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('customer_receipt') }}" class="btn btn-secondary">
+      <i class="bi bi-arrow-left"></i> Back to Receipts
     </a>
+  </div>
 </div>
 
 <!-- Step 1: Customer Selection + Bulk Amount -->
-<div class="card border-0 shadow-sm mb-4">
-    <div class="card-header bg-success text-white fw-semibold">
-        <i class="bi bi-person-fill"></i> Step 1 — Select Customer &amp; Enter Total Amount
-    </div>
-    <div class="card-body">
-        <form method="GET" class="row g-3 align-items-end">
-            <div class="col-md-4">
-                <label class="form-label fw-semibold">Customer <span class="text-danger">*</span></label>
-                <select class="form-select" name="customer_id" required>
-                    <option value="">— Choose Customer —</option>
-                    {% for c in customers %}
-                    <option value="{{ c.id }}" {% if selected_customer and c.id == selected_customer.id %}selected{% endif %}>
-                        {{ c.name }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label fw-semibold">Total Receipt Amount</label>
-                <input type="number" step="0.01" min="0" class="form-control"
-                       name="bulk_amount"
-                       placeholder="Optional — auto-distribute"
-                       value="{{ bulk_amount_val if bulk_amount_val else '' }}">
-                <div class="form-text">Leave blank to fill each invoice in full.</div>
-            </div>
-            <div class="col-auto">
-                <button type="submit" class="btn btn-success">
-                    <i class="bi bi-magic"></i> Load &amp; Auto-Distribute
-                </button>
-            </div>
-        </form>
-    </div>
+<div class="card mb-6">
+  <div class="card-header bg-success-subtle">
+    <h5 class="mb-0"><i class="bi bi-person-fill"></i> Select Customer &amp; Enter Total Amount</h5>
+  </div>
+  <div class="card-body">
+    <form method="GET" class="row g-3 align-items-end">
+      <div class="col-md-4">
+        <label class="form-label">Customer</label>
+        <select class="form-select" name="customer_id" required>
+          <option value="">Choose Customer</option>
+          {% for c in customers %}
+          <option value="{{ c.id }}" {% if selected_customer and c.id == selected_customer.id %}selected{% endif %}>
+            {{ c.name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Total Receipt Amount</label>
+        <input type="number" step="0.01" min="0" class="form-control"
+               name="bulk_amount"
+               placeholder="Optional — auto-distribute"
+               value="{{ bulk_amount_val if bulk_amount_val else '' }}">
+        <small class="form-text">Leave blank to fill each invoice in full.</small>
+      </div>
+      <div class="col-md-4">
+        <button type="submit" class="btn btn-secondary w-100">
+          <i class="bi bi-magic"></i> Load &amp; Auto-Distribute
+        </button>
+      </div>
+    </form>
+  </div>
 </div>
 
 {% if selected_customer %}
@@ -78,119 +83,123 @@
     <input type="hidden" name="customer_id" value="{{ selected_customer.id }}">
 
     <!-- Invoice Table -->
-    <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header bg-light fw-semibold d-flex justify-content-between align-items-center">
-            <span><i class="bi bi-person"></i> {{ selected_customer.name }}</span>
-            {% if selected_customer.contact %}
-            <small class="text-muted">{{ selected_customer.contact }}</small>
-            {% endif %}
+    <div class="card mb-6">
+      <div class="card-header bg-secondary-subtle">
+        <div class="d-flex justify-content-between align-items-center">
+          <h5 class="mb-0"><i class="bi bi-person"></i> {{ selected_customer.name }}</h5>
+          {% if selected_customer.contact %}
+          <small class="text-tertiary">{{ selected_customer.contact }}</small>
+          {% endif %}
         </div>
-        <div class="card-body p-0">
-            <div class="table-responsive">
-            <table class="table table-bordered table-sm mb-0 align-middle">
-                <thead class="table-dark">
-                    <tr>
-                        <th style="width:60px">SAL #</th>
-                        <th>Date</th>
-                        <th>Items</th>
-                        <th class="text-end">Invoice Total</th>
-                        <th class="text-end">Already Received</th>
-                        <th class="text-end text-danger">Balance Due</th>
-                        <th class="text-end" style="min-width:140px">Receive Now</th>
-                    </tr>
-                </thead>
-                <tbody id="invoiceBody">
-                    {% for row in outstanding %}
-                    {% set s = row.s %}
-                    <tr class="inv-row">
-                        <td><a href="{{ url_for('sale_invoice', id=s.id) }}" target="_blank" class="fw-semibold">#{{ s.id }}</a></td>
-                        <td class="text-nowrap">{{ s.date.strftime('%d %b %Y') }}</td>
-                        <td>
-                            {% if s.line_items | length == 1 %}
-                                {{ s.line_items[0].item.name }}
-                            {% else %}
-                                <span class="badge bg-info text-dark due-badge">{{ s.line_items | length }} items</span>
-                                <small class="text-muted d-block">{{ s.line_items | map(attribute='item.name') | list | join(', ') | truncate(45) }}</small>
-                            {% endif %}
-                        </td>
-                        <td class="text-end">{{ row.total | fmt_num }}</td>
-                        <td class="text-end text-success">{{ row.received | fmt_num }}</td>
-                        <td class="text-end fw-bold text-danger">{{ row.due | fmt_num }}</td>
-                        <td class="text-end">
-                            <input type="hidden" name="sale_id[]" value="{{ s.id }}">
-                            <input type="number" step="0.01" min="0" max="{{ row.due }}"
-                                class="form-control form-control-sm amt-input recv-now-input"
-                                name="amount[]"
-                                value="{{ row.suggested }}"
-                                data-due="{{ row.due }}"
-                                oninput="updateTotal()">
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-                <tfoot class="table-light">
-                    <tr>
-                        <td colspan="5" class="text-end fw-bold text-muted">General / On Account (optional):</td>
-                        <td></td>
-                        <td class="text-end">
-                            <input type="number" step="0.01" min="0"
-                                class="form-control form-control-sm amt-input"
-                                id="generalAmount" name="general_amount"
-                                value="{{ general_suggested }}" oninput="updateTotal()">
-                        </td>
-                    </tr>
-                    <tr class="table-success">
-                        <td colspan="5" class="text-end fw-bold fs-6">Total Receipt:</td>
-                        <td></td>
-                        <td class="text-end fw-bold fs-5 text-success" id="grandTotal">0.00</td>
-                    </tr>
-                </tfoot>
-            </table>
-            </div>
-        </div>
+      </div>
+      <div class="table-wrapper">
+        <table class="table table-striped table-hover align-middle">
+          <thead>
+            <tr>
+              <th>SAL #</th>
+              <th>Date</th>
+              <th>Items</th>
+              <th class="text-end">Invoice Total</th>
+              <th class="text-end">Already Received</th>
+              <th class="text-end">Balance Due</th>
+              <th class="text-end" style="min-width:140px">Receive Now</th>
+            </tr>
+          </thead>
+          <tbody id="invoiceBody">
+            {% for row in outstanding %}
+            {% set s = row.s %}
+            <tr class="inv-row">
+              <td><a href="{{ url_for('sale_invoice', id=s.id) }}" target="_blank" class="font-medium">#{{ s.id }}</a></td>
+              <td class="text-nowrap text-tertiary">{{ s.date.strftime('%d %b %Y') }}</td>
+              <td>
+                {% if s.line_items | length == 1 %}
+                {{ s.line_items[0].item.name }}
+                {% else %}
+                <span class="badge bg-secondary due-badge">{{ s.line_items | length }} items</span>
+                <small class="text-muted d-block">{{ s.line_items | map(attribute='item.name') | list | join(', ') | truncate(45) }}</small>
+                {% endif %}
+              </td>
+              <td class="text-end">{{ row.total | fmt_num }}</td>
+              <td class="text-end text-success">{{ row.received | fmt_num }}</td>
+              <td class="text-end fw-bold text-danger">{{ row.due | fmt_num }}</td>
+              <td class="text-end">
+                <input type="hidden" name="sale_id[]" value="{{ s.id }}">
+                <input type="number" step="0.01" min="0" max="{{ row.due }}"
+                  class="form-control form-control-sm amt-input recv-now-input"
+                  name="amount[]"
+                  value="{{ row.suggested }}"
+                  data-due="{{ row.due }}"
+                  oninput="updateTotal()">
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="5" class="text-end fw-bold text-tertiary">General / On Account:</td>
+              <td></td>
+              <td class="text-end">
+                <input type="number" step="0.01" min="0"
+                  class="form-control form-control-sm amt-input"
+                  id="generalAmount" name="general_amount"
+                  value="{{ general_suggested }}" oninput="updateTotal()">
+              </td>
+            </tr>
+            <tr class="fw-bold">
+              <td colspan="5" class="text-end">Total Receipt:</td>
+              <td></td>
+              <td class="text-end fs-5" id="grandTotal">0.00</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
 
     <!-- Receipt Details -->
-    <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header bg-light fw-semibold"><i class="bi bi-credit-card"></i> Receipt Details</div>
-        <div class="card-body">
-            <div class="row g-3">
-                <div class="col-md-3">
-                    <label class="form-label fw-semibold">Receipt Date <span class="text-danger">*</span></label>
-                    <input type="date" class="form-control" name="payment_date" required value="{{ today }}">
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label fw-semibold">Payment Method <span class="text-danger">*</span></label>
-                    <select class="form-select" name="payment_method" required>
-                        {% for m in payment_methods %}
-                        <option value="{{ m }}">{{ m }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    {% with select_class = 'form-select', label_class = 'form-label fw-semibold' %}
-                    {% include '_account_select.html' %}
-                    {% endwith %}
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label fw-semibold">Reference / Cheque #</label>
-                    <input type="text" class="form-control" name="reference_no" placeholder="Optional">
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label fw-semibold">Notes</label>
-                    <input type="text" class="form-control" name="notes" placeholder="Optional">
-                </div>
-            </div>
+    <div class="card mb-6">
+      <div class="card-header bg-secondary-subtle">
+        <h5 class="mb-0"><i class="bi bi-credit-card"></i> Receipt Details</h5>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-3">
+            <label class="form-label required">Receipt Date</label>
+            <input type="date" class="form-control" name="payment_date" required value="{{ today }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label required">Payment Method</label>
+            <select class="form-select" name="payment_method" required>
+              {% for m in payment_methods %}
+              <option value="{{ m }}">{{ m }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3">
+            {% with select_class = 'form-select', label_class = 'form-label' %}
+            {% include '_account_select.html' %}
+            {% endwith %}
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Reference / Cheque #</label>
+            <input type="text" class="form-control" name="reference_no" placeholder="Optional">
+          </div>
         </div>
+        <div class="row g-3 mt-0">
+          <div class="col-md-12">
+            <label class="form-label">Notes</label>
+            <input type="text" class="form-control" name="notes" placeholder="Optional">
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div class="d-flex gap-3 align-items-center">
-        <button type="submit" class="btn btn-success btn-lg">
-            <i class="bi bi-save-fill"></i> Save Bulk Receipt
-        </button>
-        <button type="button" class="btn btn-outline-secondary" onclick="clearAll()">Clear All</button>
-        <button type="button" class="btn btn-outline-success" onclick="receiveAll()">Receive Full Balance</button>
-        <span class="ms-auto text-muted small">Total: <strong class="text-success fs-5" id="grandTotal2">0.00</strong></span>
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+      <button type="submit" class="btn btn-primary">
+        <i class="bi bi-check"></i> Save Bulk Receipt
+      </button>
+      <button type="button" class="btn btn-outline-secondary" onclick="clearAll()">Clear All</button>
+      <button type="button" class="btn btn-outline-secondary" onclick="receiveAll()">Receive Full Balance</button>
+      <span class="ms-auto text-muted small">Total: <strong class="text-primary fs-5" id="grandTotal2">0.00</strong></span>
     </div>
 </form>
 
