@@ -2859,6 +2859,110 @@ def create_user_cmd(name, email, password):
     db.session.commit()
     click.echo(f"User created: {email} (verified, role=admin)")
 
+@app.cli.command("create-admin")
+@click.option("--name", prompt="Admin Name", default="Administrator")
+@click.option("--email", prompt="Admin Email")
+@click.option("--password", prompt="Password", hide_input=True, confirmation_prompt="Confirm password")
+@click.option("--sync", is_flag=True, help="Also sync to Render databases")
+def create_admin_cmd(name, email, password, sync):
+    """Create admin user and optionally sync to all databases"""
+    email = email.strip().lower()
+    name = name.strip()
+
+    if not name or not email:
+        click.echo("[!] Name and email are required.")
+        return
+
+    if len(password) < 6:
+        click.echo("[!] Password must be at least 6 characters.")
+        return
+
+    if User.query.filter_by(email=email).first():
+        click.echo(f"[!] Email {email} is already registered.")
+        return
+
+    # Create admin user
+    user = User(name=name, email=email, password=pwd_context.hash(password), verified=True, role="admin")
+    db.session.add(user)
+    db.session.commit()
+    click.echo(f"[OK] Admin created locally: {email}")
+
+    # Sync to Render if requested
+    if sync:
+        try:
+            sync_admin_to_render(user)
+            click.echo(f"[OK] Synced to SalPurFlask (Neon)")
+            click.echo(f"[OK] Synced to TradeFlow (Neon)")
+        except Exception as e:
+            click.echo(f"[!] Sync error: {str(e)}")
+            click.echo("[!] Admin created locally, but sync failed. Check your .env.render files.")
+
+def sync_admin_to_render(user):
+    """Sync admin user to Render databases"""
+    from pathlib import Path
+    from dotenv import load_dotenv
+
+    # Load Render env files
+    env_salpurflask = Path(".env.render-salpurflask")
+    env_tradeflow = Path(".env.render-tradeflow")
+
+    if not env_salpurflask.exists() or not env_tradeflow.exists():
+        raise Exception("Render env files not found")
+
+    # Sync to SalPurFlask
+    load_dotenv(env_salpurflask)
+    db_url = os.getenv("DATABASE_URL")
+    if db_url:
+        try:
+            engine = create_engine(db_url)
+            with engine.begin() as conn:
+                # Check if user exists
+                result = conn.execute(text(
+                    "SELECT id FROM \"user\" WHERE email = :email"
+                ), {"email": user.email})
+                existing = result.scalar()
+
+                if not existing:
+                    conn.execute(text("""
+                        INSERT INTO "user" (name, email, password, verified, role)
+                        VALUES (:name, :email, :password, :verified, :role)
+                    """), {
+                        "name": user.name,
+                        "email": user.email,
+                        "password": user.password,
+                        "verified": user.verified,
+                        "role": user.role
+                    })
+        except Exception as e:
+            raise Exception(f"SalPurFlask sync failed: {str(e)}")
+
+    # Sync to TradeFlow
+    load_dotenv(env_tradeflow)
+    db_url = os.getenv("DATABASE_URL")
+    if db_url:
+        try:
+            engine = create_engine(db_url)
+            with engine.begin() as conn:
+                # Check if user exists
+                result = conn.execute(text(
+                    "SELECT id FROM \"user\" WHERE email = :email"
+                ), {"email": user.email})
+                existing = result.scalar()
+
+                if not existing:
+                    conn.execute(text("""
+                        INSERT INTO "user" (name, email, password, verified, role)
+                        VALUES (:name, :email, :password, :verified, :role)
+                    """), {
+                        "name": user.name,
+                        "email": user.email,
+                        "password": user.password,
+                        "verified": user.verified,
+                        "role": user.role
+                    })
+        except Exception as e:
+            raise Exception(f"TradeFlow sync failed: {str(e)}")
+
 # ─── Admin: User Management ────────────────────────────────────────────────
 
 @app.route("/admin/users")
