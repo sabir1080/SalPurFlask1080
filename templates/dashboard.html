@@ -232,6 +232,25 @@
     </div>
 </div>
 
+<style>
+.grid { display: grid; gap: var(--space-8); }
+.grid-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+
+.py-8 { padding-top: var(--space-8); padding-bottom: var(--space-8); }
+.space-y-2 > * + * { margin-top: var(--space-2); }
+
+@media (max-width: 1440px) {
+    .grid-4 { grid-template-columns: repeat(2, 1fr); }
+    .grid-3 { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 768px) {
+    .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
+}
+</style>
+
 <!-- Low Stock Alert Section (if applicable) -->
 {% if low_stock_count > 0 %}
 <div class="alert alert-warning" role="alert" style="margin-bottom: 2rem;">
@@ -356,14 +375,20 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Stock Levels Chart
     const stockCtx = document.getElementById('stockChart').getContext('2d');
+    const stockLabels = [{% for item in items[:10] %}'{{ item.name[:15] }}'{% if not loop.last %},{% endif %}{% endfor %}];
+    const stockData = [{% for item in items[:10] %}{{ item.stock | default(0) }}{% if not loop.last %},{% endif %}{% endfor %}];
+    const stockThresholds = [{% for item in items[:10] %}{{ item.reorder_level }}{% if not loop.last %},{% endif %}{% endfor %}];
+
+    const stockColors = stockData.map((val, idx) => stockData[idx] <= stockThresholds[idx] ? '#dc2626' : colors.primary);
+
     new Chart(stockCtx, {
         type: 'bar',
         data: {
-            labels: [{% for item in items[:10] %}'{{ item.name[:15] }}'{% if not loop.last %},{% endif %}{% endfor %}],
+            labels: stockLabels,
             datasets: [{
                 label: 'Stock Quantity',
-                data: [{% for item in items[:10] %}{{ item.stock | default(0) }}{% if not loop.last %},{% endif %}{% endfor %}],
-                backgroundColor: [{% for item in items[:10] %}{% if item.stock <= item.reorder_level %}'#dc2626'{% else %}'{{ colors.primary }}'{% endif %}{% if not loop.last %},{% endif %}{% endfor %}],
+                data: stockData,
+                backgroundColor: stockColors,
                 borderRadius: 6,
                 borderWidth: 0
             }]
