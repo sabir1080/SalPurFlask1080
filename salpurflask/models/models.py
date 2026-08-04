@@ -39,7 +39,6 @@ class Supplier(db.Model):
     contact             = db.Column(db.String(15), nullable=False)
     address             = db.Column(db.String(200), nullable=False)
     opening_balance     = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
-    purchases           = db.relationship("Purchase", lazy=True)
 
 class Customer(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
@@ -47,7 +46,6 @@ class Customer(db.Model):
     contact             = db.Column(db.String(15), nullable=False)
     address             = db.Column(db.String(200), nullable=False)
     opening_balance     = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
-    sales               = db.relationship("Sale", lazy=True)
 
 class Category(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
