@@ -81,6 +81,50 @@ def create_category():
         return jsonify({'error': str(e)}), 400
 
 
+@config_bp.route('/category/<int:category_id>/edit', methods=['POST'])
+@login_required
+def edit_category(category_id):
+    """Edit category name and description"""
+    if current_user.role != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    cat = BusinessCategory.query.get(category_id)
+    if not cat:
+        return jsonify({'error': 'Category not found'}), 404
+
+    data = request.json
+    name = data.get('name', '').strip()
+    description = data.get('description', '').strip()
+
+    if not name:
+        return jsonify({'error': 'Category name is required'}), 400
+
+    # Check if new name already exists (exclude current category)
+    existing = BusinessCategory.query.filter(
+        BusinessCategory.name == name,
+        BusinessCategory.id != category_id
+    ).first()
+    if existing:
+        return jsonify({'error': 'Category name already exists'}), 400
+
+    try:
+        cat.name = name
+        cat.description = description
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'category': {
+                'id': cat.id,
+                'name': cat.name,
+                'description': cat.description
+            }
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 400
+
+
 @config_bp.route('/category/<int:category_id>', methods=['GET', 'POST'])
 @login_required
 def manage_category(category_id):
