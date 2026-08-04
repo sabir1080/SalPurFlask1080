@@ -467,9 +467,9 @@ def delete_sale_return(id):
 def sale_invoice(id):
     """Display sale invoice with payment details."""
     from app import get_payment_status, get_sale_received, get_sale_returned_qty
+    from sqlalchemy.orm import joinedload
 
-    sale      = db.session.get(Sale, id) or abort(404)
-    _ = sale.customer  # Force load customer relationship
+    sale      = db.session.get(Sale, id, options=[joinedload(Sale.customer)]) or abort(404)
     received  = get_sale_received(id)
     total     = sale_total(sale)
     status    = get_payment_status(total, received)

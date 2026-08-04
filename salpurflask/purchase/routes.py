@@ -491,9 +491,9 @@ def delete_purchase_return(id):
 def purchase_invoice(id):
     """Display purchase invoice with payment details."""
     from app import get_payment_status
+    from sqlalchemy.orm import joinedload
 
-    purchase = db.session.get(Purchase, id) or abort(404)
-    _ = purchase.supplier  # Force load supplier relationship
+    purchase = db.session.get(Purchase, id, options=[joinedload(Purchase.supplier)]) or abort(404)
     paid     = get_purchase_paid(id)
     total    = purchase_total(purchase)
     status   = get_payment_status(total, paid)
