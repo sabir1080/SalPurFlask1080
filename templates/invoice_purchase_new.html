@@ -246,7 +246,7 @@ body { background: #f8f9fa; }
             <div>
                 <div class="total-row">
                     <span>Gross Amount:</span>
-                    <strong>{{ purchase.purchase_price * purchase.quantity | fmt_num }}</strong>
+                    <strong>{{ gross_amount | fmt_num }}</strong>
                 </div>
                 {% if purchase.discount_amount > 0 %}
                 <div class="total-row discount">
