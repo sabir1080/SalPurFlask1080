@@ -158,14 +158,16 @@ def purchase():
         else:
             try:
                 purchase_date = datetime.strptime(date_str, "%Y-%m-%d")
-                first_iid, first_qty, first_price = rows[0][0], rows[0][1], rows[0][2]
+                first_iid, first_qty, first_price, first_d_type, first_d_val, first_tax = rows[0][0], rows[0][1], rows[0][2], rows[0][3], rows[0][4], rows[0][5]
+                gross = int(first_qty) * float(first_price)
+                disc_amt, tax_amt, _ = calc_discount_tax(gross, first_d_type or "percent", float(first_d_val or 0), float(first_tax or 0))
                 pur = Purchase(
                     supplier_id=int(supplier_id),
                     item_id=int(first_iid),
                     quantity=int(first_qty),
                     purchase_price=float(first_price),
-                    discount_type="percent", discount_value=0, discount_amount=0,
-                    tax_percent=0, tax_amount=0,
+                    discount_type=first_d_type or "percent", discount_value=float(first_d_val or 0), discount_amount=disc_amt,
+                    tax_percent=float(first_tax or 0), tax_amount=tax_amt,
                     date=purchase_date, notes=notes or None,
                 )
                 db.session.add(pur)
@@ -267,11 +269,14 @@ def edit_purchase(id):
                 pur.item_id        = int(rows[0][0])
                 pur.quantity       = int(rows[0][1])
                 pur.purchase_price = float(rows[0][2])
-                pur.discount_type  = "percent"
-                pur.discount_value = 0
-                pur.discount_amount= 0
-                pur.tax_percent = 0
-                pur.tax_amount = 0
+                first_d_type, first_d_val, first_tax = rows[0][3], rows[0][4], rows[0][5]
+                gross = int(rows[0][1]) * float(rows[0][2])
+                disc_amt, tax_amt, _ = calc_discount_tax(gross, first_d_type or "percent", float(first_d_val or 0), float(first_tax or 0))
+                pur.discount_type  = first_d_type or "percent"
+                pur.discount_value = float(first_d_val or 0)
+                pur.discount_amount= disc_amt
+                pur.tax_percent = float(first_tax or 0)
+                pur.tax_amount = tax_amt
                 pur.date           = datetime.strptime(date_str, "%Y-%m-%d")
                 pur.notes          = notes or None
                 for iid, qty, price, d_type, d_val, tax, unit_key in rows:
