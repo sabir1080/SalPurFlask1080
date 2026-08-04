@@ -493,8 +493,8 @@ def purchase_invoice(id):
     from app import get_payment_status
     from salpurflask.models import Supplier
 
-    purchase = db.session.get(Purchase, id) or abort(404)
-    supplier = db.session.get(Supplier, purchase.supplier_id) or None
+    purchase = db.session.query(Purchase).filter_by(id=id).first() or abort(404)
+    supplier = db.session.query(Supplier).filter_by(id=purchase.supplier_id).first()
     paid     = get_purchase_paid(id)
     total    = purchase_total(purchase)
     status   = get_payment_status(total, paid)

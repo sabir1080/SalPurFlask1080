@@ -469,8 +469,8 @@ def sale_invoice(id):
     from app import get_payment_status, get_sale_received, get_sale_returned_qty
     from salpurflask.models import Customer
 
-    sale      = db.session.get(Sale, id) or abort(404)
-    customer  = db.session.get(Customer, sale.customer_id) or None
+    sale      = db.session.query(Sale).filter_by(id=id).first() or abort(404)
+    customer  = db.session.query(Customer).filter_by(id=sale.customer_id).first()
     received  = get_sale_received(id)
     total     = sale_total(sale)
     status    = get_payment_status(total, received)
