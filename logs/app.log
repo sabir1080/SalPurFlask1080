@@ -94,3 +94,16 @@
 [2026-08-03 19:58:38] INFO in app: Flask application started
 [2026-08-03 19:58:39] INFO in app: Flask application started
 [2026-08-03 19:58:39] INFO in app: Flask application started
+[2026-08-04 10:08:54] INFO in app: Flask application started
+[2026-08-04 10:08:55] INFO in app: Flask application started
+[2026-08-04 10:08:55] INFO in app: Flask application started
+[2026-08-04 10:08:58] INFO in app: Flask application started
+[2026-08-04 10:08:59] INFO in app: Flask application started
+[2026-08-04 10:08:59] INFO in app: Flask application started
+[2026-08-04 10:13:25] WARNING in auth: Login FAILED (bad password): sabir1@sabir1.com from 127.0.0.1
+[2026-08-04 10:13:25] WARNING in auth: Login FAILED (bad password): sabir1@sabir1.com from 127.0.0.1
+[2026-08-04 10:13:39] INFO in auth: Login OK: sabir1@sabir1.com (role=admin) from 127.0.0.1
+[2026-08-04 10:13:39] INFO in auth: Login OK: sabir1@sabir1.com (role=admin) from 127.0.0.1
+[2026-08-04 10:59:28] INFO in app: Flask application started
+[2026-08-04 10:59:28] INFO in app: Flask application started
+[2026-08-04 10:59:28] INFO in app: Flask application started

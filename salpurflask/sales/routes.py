@@ -102,15 +102,19 @@ def sale():
                 if stock_errors:
                     flash("Insufficient stock — " + "; ".join(stock_errors), "danger")
                 else:
-                    first_iid, first_qty, first_price = rows[0][0], rows[0][1], rows[0][2]
+                    first_iid, first_qty, first_price, first_d_type, first_d_val, first_tax = rows[0][0], rows[0][1], rows[0][2], rows[0][3], rows[0][4], rows[0][5]
+                    first_d_val_f = float(first_d_val or 0)
+                    first_tax_f = float(first_tax or 0)
+                    first_gross = int(first_qty) * float(first_price)
+                    first_disc_amt, first_tax_amt, _ = calc_discount_tax(first_gross, first_d_type or "percent", first_d_val_f, first_tax_f)
                     sal = Sale(
                         customer_id=int(customer_id),
                         item_id=int(first_iid),
                         quantity=int(first_qty),
                         sale_price=float(first_price),
                         cost_price=0.0,
-                        discount_type="percent", discount_value=0, discount_amount=0,
-                        tax_percent=0, tax_amount=0,
+                        discount_type=first_d_type or "percent", discount_value=first_d_val_f, discount_amount=first_disc_amt,
+                        tax_percent=first_tax_f, tax_amount=first_tax_amt,
                         date=sale_date, notes=notes or None,
                     )
                     db.session.add(sal)
@@ -229,12 +233,16 @@ def edit_sale(id):
                     flash("Insufficient stock — " + "; ".join(stock_errors), "danger")
                 else:
                     SaleItem.query.filter_by(sale_id=sal.id).delete()
-                    first_iid, first_qty, first_price = rows[0][0], rows[0][1], rows[0][2]
+                    first_iid, first_qty, first_price, first_d_type, first_d_val, first_tax = rows[0][0], rows[0][1], rows[0][2], rows[0][3], rows[0][4], rows[0][5]
+                    first_d_val_f = float(first_d_val or 0)
+                    first_tax_f = float(first_tax or 0)
+                    first_gross = int(first_qty) * float(first_price)
+                    first_disc_amt, first_tax_amt, _ = calc_discount_tax(first_gross, first_d_type or "percent", first_d_val_f, first_tax_f)
                     sal.customer_id = int(customer_id)
                     sal.item_id = int(first_iid); sal.quantity = int(first_qty)
                     sal.sale_price = float(first_price); sal.cost_price = 0.0
-                    sal.discount_type = "percent"; sal.discount_value = 0
-                    sal.discount_amount = 0; sal.tax_percent = 0; sal.tax_amount = 0
+                    sal.discount_type = first_d_type or "percent"; sal.discount_value = first_d_val_f
+                    sal.discount_amount = first_disc_amt; sal.tax_percent = first_tax_f; sal.tax_amount = first_tax_amt
                     sal.date = datetime.strptime(date_str, "%Y-%m-%d")
                     sal.notes = notes or None
                     for iid, qty, price, d_type, d_val, tax, unit_key in rows:
