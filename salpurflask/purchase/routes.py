@@ -520,15 +520,8 @@ def purchase_invoice(id):
     status   = get_payment_status(total, paid)
     returned_qty = get_purchase_returned_qty(id)
 
-    # Calculate gross amount for display
-    gross_amount = float(purchase.purchase_price or 0) * int(purchase.quantity or 0)
-
-    # Check if format parameter is passed (for new invoice type)
-    invoice_format = request.args.get('format', 'old')
-    template = "invoice_purchase_new.html" if invoice_format == 'new' else "invoice_purchase.html"
-
     return render_template(
-        template,
+        "invoice_purchase.html",
         purchase=purchase,
         supplier=supplier,
         paid=paid,
@@ -536,7 +529,6 @@ def purchase_invoice(id):
         balance=total - paid,
         status=status,
         returned_qty=returned_qty,
-        gross_amount=gross_amount,
     )
 
 

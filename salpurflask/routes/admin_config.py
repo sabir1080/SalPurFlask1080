@@ -7,6 +7,7 @@ from salpurflask.models.business_config import (
     BusinessCategory, ProductField, ProductCategoryData
 )
 from salpurflask.services.config_service import ConfigurationService
+from sqlalchemy import func
 
 config_bp = Blueprint('admin_config', __name__, url_prefix='/admin/config')
 
@@ -27,6 +28,51 @@ def index():
         categories=categories,
         stats=stats
     )
+
+
+@config_bp.route('/category/create', methods=['POST'])
+@login_required
+def create_category():
+    """Create new business category"""
+    if current_user.role != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    data = request.json
+    name = data.get('name', '').strip()
+    description = data.get('description', '').strip()
+
+    if not name:
+        return jsonify({'error': 'Category name is required'}), 400
+
+    # Check if category already exists
+    existing = BusinessCategory.query.filter_by(name=name).first()
+    if existing:
+        return jsonify({'error': 'Category already exists'}), 400
+
+    try:
+        # Get next priority
+        max_priority = db.session.query(func.max(BusinessCategory.priority)).scalar() or 0
+
+        new_category = BusinessCategory(
+            name=name,
+            description=description,
+            priority=max_priority + 1,
+            is_enabled=True
+        )
+        db.session.add(new_category)
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'category': {
+                'id': new_category.id,
+                'name': new_category.name,
+                'description': new_category.description
+            }
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 400
 
 
 @config_bp.route('/category/<int:category_id>', methods=['GET', 'POST'])
