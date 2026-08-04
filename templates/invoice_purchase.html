@@ -113,7 +113,7 @@
             <div class="inv-label">Bill From (Supplier)</div>
             <!-- DEBUG: supplier={{ supplier }}, supplier.name={{ supplier.name if supplier else 'NO SUPPLIER' }} -->
             {% if supplier %}
-                <div class="fw-bold fs-6 mt-1">{% if supplier.name %}{{ supplier.name }}{% else %}[NAME IS EMPTY]{% endif %}</div>
+                <div class="fw-bold fs-6 mt-1" style="color: #333;">{{ supplier.name }}</div>
                 {% if supplier.contact %}<div class="text-muted small">{{ supplier.contact }}</div>{% endif %}
                 {% if supplier.address %}<div class="text-muted small">{{ supplier.address }}</div>{% endif %}
             {% else %}
