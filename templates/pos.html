@@ -82,11 +82,16 @@
 
   .cart-line-controls {
     display: grid;
-    grid-template-columns: 50px 30px 50px 1fr 50px 50px 20px;
+    grid-template-columns: 50px 45px 50px 1fr 50px 50px 50px 20px;
     gap: var(--spacing-1);
     align-items: center;
     font-size: 0.75rem;
     margin-top: var(--spacing-2);
+  }
+
+  .cart-disc-type {
+    width: 50px;
+    padding: var(--spacing-1) var(--spacing-2);
   }
 
   .cart-qty,
@@ -467,7 +472,7 @@
         '<div class="cart-line-controls">' +
           '<input type="number" min="1" class="form-control form-control-sm cart-qty" value="' + l.qty + '" data-i="' + i + '" title="Qty">' +
           '<span style="color: var(--text-muted);">Disc:</span>' +
-          '<select class="form-select form-select-sm" data-i="' + i + '" data-disc-type="' + i + '" onchange="updateLineDiscount(' + i + ')">' +
+          '<select class="form-select form-select-sm cart-disc-type" data-i="' + i + '" data-disc-type="' + i + '" onchange="updateLineDiscount(' + i + ')">' +
             '<option value="percent" ' + (l.discount_type === 'percent' ? 'selected' : '') + '>%</option>' +
             '<option value="fixed" ' + (l.discount_type === 'fixed' ? 'selected' : '') + '>Rs</option>' +
           '</select>' +
