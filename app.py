@@ -4302,6 +4302,64 @@ def seed_data_cmd(yes, demo_user):
     click.echo("Seed complete. Log in and explore.")
 
 
+@app.cli.command("seed-categories")
+def seed_categories_cmd():
+    """Seed 21 business categories into the database."""
+    from salpurflask.models.business_config import BusinessCategory
+
+    categories_data = [
+        ("Medical Store", "medical-store", "Pharmaceuticals and medical products", "bi-pill", 0),
+        ("Grocery", "grocery", "Food and grocery items", "bi-bag-check", 1),
+        ("Garments", "garments", "Clothing and apparel", "bi-bag", 2),
+        ("Footwear", "footwear", "Shoes and footwear", "bi-shoe", 3),
+        ("Electronics", "electronics", "Electronic devices and gadgets", "bi-lightning-charge", 4),
+        ("Cosmetics", "cosmetics", "Beauty and cosmetic products", "bi-heart-fill", 5),
+        ("Hardware", "hardware", "Hardware and tools", "bi-hammer", 6),
+        ("Kitchen & Home", "kitchen-home", "Kitchen appliances and home items", "bi-cup-hot", 7),
+        ("Stationery", "stationery", "Office and school supplies", "bi-pencil-square", 8),
+        ("Bakery", "bakery", "Bakery and bread products", "bi-cake2", 9),
+        ("Dairy", "dairy", "Dairy and milk products", "bi-cup", 10),
+        ("Frozen Foods", "frozen-foods", "Frozen and refrigerated items", "bi-snow", 11),
+        ("Fruits & Vegetables", "fruits-vegetables", "Fresh fruits and vegetables", "bi-apple", 12),
+        ("Meat & Poultry", "meat-poultry", "Meat and poultry products", "bi-dice-5", 13),
+        ("Toys", "toys", "Toys and games", "bi-puzzle", 14),
+        ("Gift Shop", "gift-shop", "Gifts and gift items", "bi-gift", 15),
+        ("Mobile Shop", "mobile-shop", "Mobile phones and accessories", "bi-phone", 16),
+        ("Departmental Store", "departmental-store", "Multi-category departmental store", "bi-shop", 17),
+        ("Premium Products", "premium", "Premium and luxury products", "bi-gem", 18),
+        ("Budget Range", "budget", "Budget-friendly products", "bi-cash-coin", 19),
+        ("Seasonal Items", "seasonal", "Seasonal and special items", "bi-calendar-event", 20),
+    ]
+
+    with app.app_context():
+        imported = 0
+        skipped = 0
+
+        for name, slug, description, icon, priority in categories_data:
+            existing = BusinessCategory.query.filter_by(slug=slug).first()
+            if existing:
+                click.echo(f"⊘ {name} (already exists)")
+                skipped += 1
+                continue
+
+            cat = BusinessCategory(
+                name=name,
+                slug=slug,
+                description=description,
+                icon=icon,
+                color="primary",
+                priority=priority,
+                is_enabled=True
+            )
+            db.session.add(cat)
+            imported += 1
+            click.echo(f"✓ {name}")
+
+        db.session.commit()
+        click.echo(f"\n✓ Imported: {imported} categories")
+        click.echo(f"⊘ Skipped: {skipped} categories")
+
+
 if __name__ == "__main__":
     # Debugger stays off in production. FLASK_DEBUG overrides explicitly;
     # otherwise default to on only for local SQLite dev (no DATABASE_URL) so a
