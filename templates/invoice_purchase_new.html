@@ -1,0 +1,295 @@
+{% extends 'base.html' %}
+{% block title %}Purchase Invoice {{ purchase.invoice_no or ('#PUR-' ~ purchase.id) }}{% endblock %}
+{% block extra_head %}
+<style>
+@media print {
+    nav, .btn-print-bar, .flash-messages, footer, .navbar { display: none !important; }
+    body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .invoice-container { box-shadow: none !important; }
+    .container, .container-fluid { max-width: 100% !important; padding: 0 !important; }
+    @page { margin: 1cm; }
+}
+
+body { background: #f8f9fa; }
+
+.invoice-container {
+    max-width: 900px;
+    margin: 20px auto;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    overflow: hidden;
+}
+
+.inv-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 25px;
+    border-bottom: 1px solid #e9ecef;
+    margin-bottom: 20px;
+}
+
+.inv-header-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+    padding: 25px;
+    border-bottom: 2px solid #007bff;
+}
+
+.inv-company-info h1 { font-size: 24px; font-weight: 700; margin: 0 0 5px; }
+.inv-company-info p { margin: 3px 0; color: #666; font-size: 13px; }
+
+.inv-invoice-info { text-align: right; }
+.inv-invoice-info .label { font-size: 11px; color: #999; text-transform: uppercase; font-weight: 600; }
+.inv-invoice-info .value { font-size: 16px; font-weight: 600; color: #333; margin: 5px 0; }
+
+.inv-party-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+    padding: 25px;
+    background: #f8f9fa;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.party-block h4 { font-size: 12px; color: #999; text-transform: uppercase; font-weight: 600; margin: 0 0 10px; }
+.party-block .name { font-size: 16px; font-weight: 600; color: #333; margin-bottom: 8px; }
+.party-block .detail { font-size: 13px; color: #666; margin: 2px 0; }
+
+.items-section {
+    padding: 25px;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.items-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.items-table th {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    padding: 12px;
+    text-align: left;
+    font-weight: 600;
+    color: #333;
+}
+
+.items-table td {
+    border: 1px solid #e9ecef;
+    padding: 12px;
+}
+
+.items-table .text-right {
+    text-align: right;
+}
+
+.items-table tr:nth-child(even) {
+    background: #fafbfc;
+}
+
+.totals-section {
+    padding: 25px;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.totals-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 30px;
+}
+
+.total-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    font-size: 13px;
+}
+
+.total-row.final {
+    border-top: 2px solid #333;
+    padding-top: 12px;
+    font-weight: 600;
+    font-size: 15px;
+}
+
+.total-row.discount { color: #dc3545; }
+.total-row.tax { color: #007bff; }
+
+.footer-section {
+    padding: 25px;
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 30px;
+    border-top: 1px solid #e9ecef;
+    background: #f8f9fa;
+    font-size: 12px;
+    color: #666;
+}
+
+.signature-box {
+    border-top: 1px solid #333;
+    padding-top: 30px;
+    text-align: center;
+    margin-top: 20px;
+}
+
+.btn-print-bar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.btn-print-bar .btn {
+    padding: 8px 16px;
+    font-size: 13px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="btn-print-bar">
+    <a href="{{ url_for('purchase') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+    <button class="btn btn-primary btn-sm" onclick="window.print()">
+        <i class="bi bi-printer"></i> Print / PDF
+    </button>
+</div>
+
+<div class="invoice-container">
+
+    <!-- Header Section -->
+    <div class="inv-header-section">
+        <div class="inv-company-info">
+            <h1>{{ company_name }}</h1>
+            <p>{{ company_tagline }}</p>
+        </div>
+        <div class="inv-invoice-info">
+            <div class="label">Purchase Invoice</div>
+            <div class="value">{{ purchase.invoice_no or ('#PUR-' ~ purchase.id) }}</div>
+            <div class="label" style="margin-top: 15px;">Date</div>
+            <div class="value">{{ purchase.date.strftime('%d %b %Y') }}</div>
+        </div>
+    </div>
+
+    <!-- Party Section -->
+    <div class="inv-party-section">
+        <div class="party-block">
+            <h4>Bill From</h4>
+            <div class="name">{{ supplier.name if supplier else 'N/A' }}</div>
+            <div class="detail">{{ supplier.contact if supplier else '' }}</div>
+            <div class="detail">{{ supplier.address if supplier else '' }}</div>
+        </div>
+        <div class="party-block" style="text-align: right;">
+            <h4>Payment Status</h4>
+            {% if status == 'Paid' %}
+                <span style="background: #28a745; color: white; padding: 5px 10px; border-radius: 4px; font-size: 12px; font-weight: 600;">PAID</span>
+            {% elif status == 'Partial' %}
+                <span style="background: #ffc107; color: #333; padding: 5px 10px; border-radius: 4px; font-size: 12px; font-weight: 600;">PARTIAL</span>
+            {% else %}
+                <span style="background: #dc3545; color: white; padding: 5px 10px; border-radius: 4px; font-size: 12px; font-weight: 600;">UNPAID</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Items Table -->
+    <div class="items-section">
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th style="width: 5%">#</th>
+                    <th style="width: 30%">Item</th>
+                    <th style="width: 12%">Category</th>
+                    <th class="text-right" style="width: 8%">Qty</th>
+                    <th class="text-right" style="width: 12%">Unit Price</th>
+                    <th class="text-right" style="width: 12%">Discount</th>
+                    <th class="text-right" style="width: 10%">Tax</th>
+                    <th class="text-right" style="width: 11%">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for pi in purchase.line_items %}
+                {% set row_gross = pi.quantity * pi.purchase_price %}
+                {% set row_disc = pi.discount_amount or 0 %}
+                {% set row_tax = pi.tax_amount or 0 %}
+                {% set row_net = row_gross - row_disc + row_tax %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td><strong>{{ pi.item.name }}</strong></td>
+                    <td>{{ pi.item.business_category.name if pi.item.business_category else (pi.item.id_category.name if pi.item.id_category else '—') }}</td>
+                    <td class="text-right">{{ pi.quantity }} {{ pi.display_unit }}</td>
+                    <td class="text-right">{{ pi.purchase_price | fmt_num }}</td>
+                    <td class="text-right {% if row_disc > 0 %}discount{% endif %}">
+                        {% if row_disc > 0 %}− {{ row_disc | fmt_num }}{% else %}—{% endif %}
+                    </td>
+                    <td class="text-right {% if row_tax > 0 %}tax{% endif %}">
+                        {% if row_tax > 0 %}+ {{ row_tax | fmt_num }}{% else %}—{% endif %}
+                    </td>
+                    <td class="text-right"><strong>{{ row_net | fmt_num }}</strong></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" style="text-align: center; color: #999;">No items</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Totals Section -->
+    <div class="totals-section">
+        <div class="totals-grid">
+            <div></div>
+            <div>
+                <div class="total-row">
+                    <span>Gross Amount:</span>
+                    <strong>{{ purchase.purchase_price * purchase.quantity | fmt_num }}</strong>
+                </div>
+                {% if purchase.discount_amount > 0 %}
+                <div class="total-row discount">
+                    <span>Total Discount:</span>
+                    <strong>− {{ purchase.discount_amount | fmt_num }}</strong>
+                </div>
+                {% endif %}
+                {% if purchase.tax_amount > 0 %}
+                <div class="total-row tax">
+                    <span>Total Tax:</span>
+                    <strong>+ {{ purchase.tax_amount | fmt_num }}</strong>
+                </div>
+                {% endif %}
+                <div class="total-row final">
+                    <span>Net Total:</span>
+                    <strong>{{ total | money }}</strong>
+                </div>
+                <div class="total-row">
+                    <span>Amount Paid:</span>
+                    <strong>{{ paid | money }}</strong>
+                </div>
+                <div class="total-row final {% if balance > 0 %}discount{% endif %}">
+                    <span>Balance Due:</span>
+                    <strong>{{ balance | money }}</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer-section">
+        <div>
+            <p style="margin: 0 0 10px;"><strong>{{ company_name }}</strong></p>
+            <p style="margin: 0;">{{ company_tagline }}</p>
+            <p style="margin-top: 10px; font-size: 11px;">Print Date: {{ purchase.date.strftime('%d %B %Y') }}</p>
+        </div>
+        <div style="text-align: right;">
+            <div class="signature-box">
+                <div style="font-weight: 600;">Authorized Signature</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+{% endblock %}
