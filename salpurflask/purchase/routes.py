@@ -494,7 +494,27 @@ def purchase_invoice(id):
     from salpurflask.models import Supplier
 
     purchase = db.session.query(Purchase).filter_by(id=id).first() or abort(404)
-    supplier = db.session.query(Supplier).filter_by(id=purchase.supplier_id).first()
+    supplier_row = db.session.execute(
+        db.text("SELECT id, name, contact, address FROM supplier WHERE id = :sid"),
+        {"sid": purchase.supplier_id}
+    ).fetchone()
+
+    # Create a simple dict-like object with the data
+    class SupplierData:
+        def __init__(self, row):
+            if row:
+                self.id = row[0]
+                self.name = row[1]
+                self.contact = row[2]
+                self.address = row[3]
+            else:
+                self.id = None
+                self.name = None
+                self.contact = None
+                self.address = None
+
+    supplier = SupplierData(supplier_row) if supplier_row else None
+
     paid     = get_purchase_paid(id)
     total    = purchase_total(purchase)
     status   = get_payment_status(total, paid)
