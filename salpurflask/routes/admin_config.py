@@ -12,6 +12,64 @@ from sqlalchemy import func
 config_bp = Blueprint('admin_config', __name__, url_prefix='/admin/config')
 
 
+@config_bp.route('/import-categories', methods=['POST'])
+@login_required
+def import_categories():
+    """Import categories from JSON data"""
+    if current_user.role != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    data = request.json
+    categories_data = data.get('categories', [])
+
+    if not categories_data:
+        return jsonify({'error': 'No categories provided'}), 400
+
+    try:
+        imported_count = 0
+        skipped_count = 0
+
+        for cat_data in categories_data:
+            name = cat_data.get('name', '').strip()
+            slug = cat_data.get('slug', '').strip()
+
+            if not name or not slug:
+                skipped_count += 1
+                continue
+
+            # Check if already exists
+            existing = BusinessCategory.query.filter_by(slug=slug).first()
+            if existing:
+                skipped_count += 1
+                continue
+
+            # Create category
+            new_cat = BusinessCategory(
+                name=name,
+                slug=slug,
+                description=cat_data.get('description', ''),
+                icon=cat_data.get('icon', 'bi-box'),
+                color=cat_data.get('color', 'primary'),
+                priority=cat_data.get('priority', 0),
+                is_enabled=cat_data.get('is_enabled', True)
+            )
+            db.session.add(new_cat)
+            imported_count += 1
+
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'imported': imported_count,
+            'skipped': skipped_count,
+            'message': f'Imported {imported_count} categories, skipped {skipped_count}'
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 400
+
+
 @config_bp.route('/')
 @login_required
 def index():
