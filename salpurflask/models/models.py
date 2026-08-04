@@ -167,7 +167,7 @@ def purchase_return_options_for_js(rows):
     """Line-picker rows for the purchase return form. See purchase_item_options_for_js."""
     return [
         {"id": row["pi"].id,
-         "label": f"#PUR-{row['pi'].purchase_header.id} — {row['pi'].purchase_header.id_supplier.name} — "
+         "label": f"#PUR-{row['pi'].purchase_header.id} — {row['pi'].purchase_header.supplier.name} — "
                   f"{row['pi'].item.name} (Rem: {row['remaining']} {row['pi'].display_unit})",
          "price": float(row["pi"].purchase_price),
          "remaining": row["remaining"]}
@@ -178,7 +178,7 @@ def sale_return_options_for_js(rows):
     """Line-picker rows for the sale return form. See purchase_item_options_for_js."""
     return [
         {"id": row["si"].id,
-         "label": f"#SAL-{row['si'].sale_header.id} — {row['si'].sale_header.id_customer.name} — "
+         "label": f"#SAL-{row['si'].sale_header.id} — {row['si'].sale_header.customer.name} — "
                   f"{row['si'].item.name} (Rem: {row['remaining']} {row['si'].display_unit})",
          "price": float(row["si"].sale_price),
          "remaining": row["remaining"]}
@@ -1317,7 +1317,7 @@ def post_purchase(pur, created_by_id=None):
     if tax:
         lines.append({"code": ACC_TAX_INPUT, "debit": tax, "credit": 0, "memo": "Recoverable tax"})
     lines.append({"code": ACC_AP, "debit": 0, "credit": goods + tax,
-                  "memo": pur.id_supplier.name if pur.id_supplier else None})
+                  "memo": pur.supplier.name if pur.supplier else None})
     return post_entry(entry_date=pur.date, description=f"Purchase #{pur.id}",
                       reference=f"PUR-{pur.id}", source_type="purchase", source_id=pur.id,
                       allow_control=True, created_by_id=created_by_id, lines=lines)
@@ -1330,7 +1330,7 @@ def post_sale(sale, created_by_id=None):
     revenue, tax = _doc_lines(sale, "sale_price")
     cogs = _cogs_of(sale)
     lines = [{"code": ACC_AR, "debit": revenue + tax, "credit": 0,
-              "memo": sale.id_customer.name if sale.id_customer else None},
+              "memo": sale.customer.name if sale.customer else None},
              {"code": ACC_SALES, "debit": 0, "credit": revenue}]
     if tax:
         lines.append({"code": ACC_TAX_OUTPUT, "debit": 0, "credit": tax, "memo": "Tax payable"})

@@ -346,7 +346,7 @@ def delete_purchase(id):
         if item_obj:
             cost_removed = pi.amount - pi.tax_amount
             item_remove_stock(item_obj, line_base_qty(pi), cost_total=cost_removed)
-    audit_summary = f"Purchase #{pur.id} ({pur.id_supplier.name if pur.id_supplier else 'supplier'}) deleted"
+    audit_summary = f"Purchase #{pur.id} ({pur.supplier.name if pur.supplier else 'supplier'}) deleted"
     supplier_id = remove_supplier_ledger_entry("purchase", pur.id)
     db.session.delete(pur)
     db.session.commit()
@@ -685,7 +685,7 @@ def export_purchase_report():
         )
         col_headers = ["ID", "Supplier", "Item", "Category", "Quantity", "Purchase Price", "Total", "Date"]
         rows = [
-            [pi.purchase_id, pi.purchase_header.id_supplier.name, pi.item.name,
+            [pi.purchase_id, pi.purchase_header.supplier.name, pi.item.name,
              pi.item.id_category.name if pi.item.id_category else "N/A",
              pi.base_quantity, round(float(pi.purchase_price), 2),
              round(float(pi.amount), 2), pi.purchase_header.date.strftime("%Y-%m-%d")]

@@ -60,7 +60,7 @@ def item_ledger(id):
         factor = pi.unit_factor or 1
         entries.append({
             "date": pi.purchase_header.date, "type": "Purchase", "badge": "success",
-            "ref": f"PO #{pi.purchase_header.id}", "party": pi.purchase_header.id_supplier.name,
+            "ref": f"PO #{pi.purchase_header.id}", "party": pi.purchase_header.supplier.name,
             "stock_in": line_base_qty(pi), "stock_out": 0,
             "rate": pi.purchase_price / factor, "value": _purchase_line_value(pi),
         })
@@ -68,7 +68,7 @@ def item_ledger(id):
         factor = si.unit_factor or 1
         entries.append({
             "date": si.sale_header.date, "type": "Sale", "badge": "primary",
-            "ref": f"SO #{si.sale_header.id}", "party": si.sale_header.id_customer.name,
+            "ref": f"SO #{si.sale_header.id}", "party": si.sale_header.customer.name,
             "stock_in": 0, "stock_out": line_base_qty(si),
             "rate": si.sale_price / factor, "value": _sale_line_value(si),
         })
@@ -492,9 +492,9 @@ def export_item_ledger(id):
     # (item_ledger() above) — whatever unit a line was actually transacted in.
     rows = []
     for pi in purchase_items:
-        rows.append((pi.purchase_header.date, "Purchase", f"PO #{pi.purchase_header.id}", pi.purchase_header.id_supplier.name, line_base_qty(pi), 0, float(pi.purchase_price) / (pi.unit_factor or 1), purchase_item_total(pi)))
+        rows.append((pi.purchase_header.date, "Purchase", f"PO #{pi.purchase_header.id}", pi.purchase_header.supplier.name, line_base_qty(pi), 0, float(pi.purchase_price) / (pi.unit_factor or 1), purchase_item_total(pi)))
     for si in sale_items:
-        rows.append((si.sale_header.date, "Sale", f"SO #{si.sale_header.id}", si.sale_header.id_customer.name, 0, line_base_qty(si), float(si.sale_price) / (si.unit_factor or 1), sale_item_total(si)))
+        rows.append((si.sale_header.date, "Sale", f"SO #{si.sale_header.id}", si.sale_header.customer.name, 0, line_base_qty(si), float(si.sale_price) / (si.unit_factor or 1), sale_item_total(si)))
     for pr in purchase_returns:
         rows.append((pr.date, "Purchase Return", f"PR #{pr.id}", pr.supplier.name, 0, line_base_qty(pr), float(pr.return_price) / (pr.unit_factor or 1), round(pr.quantity * pr.return_price, 2)))
     for sr in sale_returns:
@@ -532,9 +532,9 @@ def export_item_ledger_excel(id):
     # (item_ledger() above) — whatever unit a line was actually transacted in.
     raw = []
     for pi in purchase_items:
-        raw.append((pi.purchase_header.date, "Purchase", f"PO #{pi.purchase_header.id}", pi.purchase_header.id_supplier.name, line_base_qty(pi), 0, float(pi.purchase_price) / (pi.unit_factor or 1), purchase_item_total(pi)))
+        raw.append((pi.purchase_header.date, "Purchase", f"PO #{pi.purchase_header.id}", pi.purchase_header.supplier.name, line_base_qty(pi), 0, float(pi.purchase_price) / (pi.unit_factor or 1), purchase_item_total(pi)))
     for si in sale_items:
-        raw.append((si.sale_header.date, "Sale", f"SO #{si.sale_header.id}", si.sale_header.id_customer.name, 0, line_base_qty(si), float(si.sale_price) / (si.unit_factor or 1), sale_item_total(si)))
+        raw.append((si.sale_header.date, "Sale", f"SO #{si.sale_header.id}", si.sale_header.customer.name, 0, line_base_qty(si), float(si.sale_price) / (si.unit_factor or 1), sale_item_total(si)))
     for pr in purchase_returns:
         raw.append((pr.date, "Purchase Return", f"PR #{pr.id}", pr.supplier.name, 0, line_base_qty(pr), float(pr.return_price) / (pr.unit_factor or 1), round(pr.quantity * pr.return_price, 2)))
     for sr in sale_returns:

@@ -303,7 +303,7 @@ def delete_sale(id):
         if item_obj:
             cost_returned = si.cost_price * line_base_qty(si)
             item_add_stock(item_obj, line_base_qty(si), cost_total=cost_returned)
-    audit_summary = f"Sale #{sal.id} ({sal.id_customer.name if sal.id_customer else 'customer'}) deleted"
+    audit_summary = f"Sale #{sal.id} ({sal.customer.name if sal.customer else 'customer'}) deleted"
     customer_id = remove_customer_ledger_entry("sale", sal.id)
     db.session.delete(sal)
     db.session.commit()
@@ -1017,7 +1017,7 @@ def export_sale_report():
         )
         col_headers = ["ID", "Customer", "Item", "Category", "Quantity", "Sale Price", "Total", "Date"]
         rows = [
-            [si.sale_id, si.sale_header.id_customer.name, si.item.name,
+            [si.sale_id, si.sale_header.customer.name, si.item.name,
              si.item.id_category.name if si.item.id_category else "N/A",
              si.base_quantity, round(float(si.sale_price), 2),
              round(float(si.amount), 2), si.sale_header.date.strftime("%Y-%m-%d")]

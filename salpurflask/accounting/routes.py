@@ -714,7 +714,7 @@ def report_gst():
         tax = sum(float(pi.tax_amount or 0) for pi in pur.line_items)
         if tax > 0:
             input_rows.append({"id": pur.id, "date": pur.date,
-                "party": pur.id_supplier.name, "tax": tax})
+                "party": pur.supplier.name, "tax": tax})
             input_total += tax
 
     output_rows = []
@@ -723,7 +723,7 @@ def report_gst():
         tax = sum(float(si.tax_amount or 0) for si in sal.line_items)
         if tax > 0:
             output_rows.append({"id": sal.id, "date": sal.date,
-                "party": sal.id_customer.name, "tax": tax})
+                "party": sal.customer.name, "tax": tax})
             output_total += tax
 
     net_gst = output_total - input_total
