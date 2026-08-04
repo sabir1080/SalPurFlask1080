@@ -50,11 +50,16 @@ def create_category():
         return jsonify({'error': 'Category already exists'}), 400
 
     try:
+        # Generate slug from name
+        import re
+        slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+
         # Get next priority
         max_priority = db.session.query(func.max(BusinessCategory.priority)).scalar() or 0
 
         new_category = BusinessCategory(
             name=name,
+            slug=slug,
             description=description,
             priority=max_priority + 1,
             is_enabled=True
@@ -67,6 +72,7 @@ def create_category():
             'category': {
                 'id': new_category.id,
                 'name': new_category.name,
+                'slug': new_category.slug,
                 'description': new_category.description
             }
         }), 201
