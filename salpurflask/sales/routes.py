@@ -467,9 +467,10 @@ def delete_sale_return(id):
 def sale_invoice(id):
     """Display sale invoice with payment details."""
     from app import get_payment_status, get_sale_received, get_sale_returned_qty
-    from sqlalchemy.orm import joinedload
+    from salpurflask.models import Customer
 
-    sale      = db.session.get(Sale, id, options=[joinedload(Sale.customer)]) or abort(404)
+    sale      = db.session.get(Sale, id) or abort(404)
+    customer  = db.session.get(Customer, sale.customer_id) or None
     received  = get_sale_received(id)
     total     = sale_total(sale)
     status    = get_payment_status(total, received)
@@ -477,6 +478,7 @@ def sale_invoice(id):
     return render_template(
         "invoice_sale.html",
         sale=sale,
+        customer=customer,
         received=received,
         total=total,
         balance=total - received,

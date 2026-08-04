@@ -491,9 +491,10 @@ def delete_purchase_return(id):
 def purchase_invoice(id):
     """Display purchase invoice with payment details."""
     from app import get_payment_status
-    from sqlalchemy.orm import joinedload
+    from salpurflask.models import Supplier
 
-    purchase = db.session.get(Purchase, id, options=[joinedload(Purchase.supplier)]) or abort(404)
+    purchase = db.session.get(Purchase, id) or abort(404)
+    supplier = db.session.get(Supplier, purchase.supplier_id) or None
     paid     = get_purchase_paid(id)
     total    = purchase_total(purchase)
     status   = get_payment_status(total, paid)
@@ -501,6 +502,7 @@ def purchase_invoice(id):
     return render_template(
         "invoice_purchase.html",
         purchase=purchase,
+        supplier=supplier,
         paid=paid,
         total=total,
         balance=total - paid,
