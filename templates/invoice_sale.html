@@ -109,9 +109,9 @@
     <div class="row mx-0 px-4 py-3 border-bottom bg-light">
         <div class="col-7">
             <div class="inv-label">Bill To (Customer)</div>
-            <div class="fw-bold fs-6 mt-1">{{ sale.id_customer.name }}</div>
-            {% if sale.id_customer.contact %}<div class="text-muted small">{{ sale.id_customer.contact }}</div>{% endif %}
-            {% if sale.id_customer.address %}<div class="text-muted small">{{ sale.id_customer.address }}</div>{% endif %}
+            <div class="fw-bold fs-6 mt-1">{{ sale.customer.name }}</div>
+            {% if sale.customer.contact %}<div class="text-muted small">{{ sale.customer.contact }}</div>{% endif %}
+            {% if sale.customer.address %}<div class="text-muted small">{{ sale.customer.address }}</div>{% endif %}
         </div>
         <div class="col-5 text-end">
             <div class="inv-label">Payment Status</div>

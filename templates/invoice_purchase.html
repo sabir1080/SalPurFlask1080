@@ -111,9 +111,9 @@
     <div class="row mx-0 px-4 py-3 border-bottom bg-light">
         <div class="col-7">
             <div class="inv-label">Bill From (Supplier)</div>
-            <div class="fw-bold fs-6 mt-1">{{ purchase.id_supplier.name }}</div>
-            {% if purchase.id_supplier.contact %}<div class="text-muted small">{{ purchase.id_supplier.contact }}</div>{% endif %}
-            {% if purchase.id_supplier.address %}<div class="text-muted small">{{ purchase.id_supplier.address }}</div>{% endif %}
+            <div class="fw-bold fs-6 mt-1">{{ purchase.supplier.name }}</div>
+            {% if purchase.supplier.contact %}<div class="text-muted small">{{ purchase.supplier.contact }}</div>{% endif %}
+            {% if purchase.supplier.address %}<div class="text-muted small">{{ purchase.supplier.address }}</div>{% endif %}
         </div>
         <div class="col-5 text-end">
             <div class="inv-label">Payment Status</div>
