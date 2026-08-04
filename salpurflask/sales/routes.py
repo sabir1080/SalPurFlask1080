@@ -469,6 +469,7 @@ def sale_invoice(id):
     from app import get_payment_status, get_sale_received, get_sale_returned_qty
 
     sale      = db.session.get(Sale, id) or abort(404)
+    _ = sale.customer  # Force load customer relationship
     received  = get_sale_received(id)
     total     = sale_total(sale)
     status    = get_payment_status(total, received)

@@ -493,6 +493,7 @@ def purchase_invoice(id):
     from app import get_payment_status
 
     purchase = db.session.get(Purchase, id) or abort(404)
+    _ = purchase.supplier  # Force load supplier relationship
     paid     = get_purchase_paid(id)
     total    = purchase_total(purchase)
     status   = get_payment_status(total, paid)
