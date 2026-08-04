@@ -57,7 +57,7 @@
                                 <option value="{{ row.si.id }}"
                                     data-price="{{ row.si.sale_price }}"
                                     data-remaining="{{ row.remaining }}">
-                                    #SAL-{{ row.si.sale_header.id }} — {{ row.si.sale_header.id_customer.name }} — {{ row.si.item.name }} (Rem: {{ row.remaining }} {{ row.si.display_unit }})
+                                    #SAL-{{ row.si.sale_header.id }} — {{ row.si.sale_header.customer.name }} — {{ row.si.item.name }} (Rem: {{ row.remaining }} {{ row.si.display_unit }})
                                 </option>
                                 {% endfor %}
                             </select>

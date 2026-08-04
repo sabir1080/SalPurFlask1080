@@ -41,7 +41,7 @@
                     <option value="">— Select Sale —</option>
                     {% for s in pending_sales %}
                     <option value="{{ s.id }}">
-                        #{{ s.id }} — {{ s.id_customer.name }} ({{ s.date.strftime('%d %b %Y') }})
+                        #{{ s.id }} — {{ s.customer.name }} ({{ s.date.strftime('%d %b %Y') }})
                     </option>
                     {% endfor %}
                 </select>
@@ -85,7 +85,7 @@
                 <tr>
                     <td><strong>#{{ dc.id }}</strong></td>
                     <td><a href="{{ url_for('sale_invoice', id=dc.sale_id) }}" target="_blank">#{{ dc.sale_id }}</a></td>
-                    <td>{{ dc.sale.id_customer.name }}</td>
+                    <td>{{ dc.sale.customer.name }}</td>
                     <td class="text-nowrap">{{ dc.challan_date.strftime('%d %b %Y') }}</td>
                     <td class="text-nowrap">{{ dc.dispatch_date.strftime('%d %b %Y') if dc.dispatch_date else '—' }}</td>
                     <td class="text-nowrap">{{ dc.delivery_date.strftime('%d %b %Y') if dc.delivery_date else '—' }}</td>

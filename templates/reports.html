@@ -429,7 +429,7 @@ ${tblClone.outerHTML}
                     {% for p in purchase_report %}
                     <tr>
                         <td>{{ p.id }}</td>
-                        <td>{{ p.id_supplier.name }}</td>
+                        <td>{{ p.supplier.name }}</td>
                         <td>
                             {% if p.line_items | length == 1 %}{{ p.line_items[0].item.name }}
                             {% else %}<span class="badge bg-info text-dark">{{ p.line_items | length }} items</span>{% endif %}
@@ -524,7 +524,7 @@ ${tblClone.outerHTML}
                     {% for s in sale_report %}
                     <tr>
                         <td>{{ s.id }}</td>
-                        <td>{{ s.id_customer.name }}</td>
+                        <td>{{ s.customer.name }}</td>
                         <td>
                             {% if s.line_items | length == 1 %}{{ s.line_items[0].item.name }}
                             {% else %}<span class="badge bg-info text-dark">{{ s.line_items | length }} items</span>{% endif %}

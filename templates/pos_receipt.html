@@ -50,8 +50,8 @@
     <tr><td>Date</td><td class="r">{{ sale.date | bizdate('%d %b %Y') }}</td></tr>
     <tr><td>Time</td><td class="r">{{ sale.date | bizdate('%H:%M') }}</td></tr>
     <tr><td>Cashier</td><td class="r">{{ current_user.name }}</td></tr>
-    {% if sale.id_customer and sale.id_customer.name != 'Walk-in Customer' %}
-    <tr><td>Customer</td><td class="r">{{ sale.id_customer.name }}</td></tr>
+    {% if sale.customer and sale.customer.name != 'Walk-in Customer' %}
+    <tr><td>Customer</td><td class="r">{{ sale.customer.name }}</td></tr>
     {% endif %}
   </table>
 

@@ -166,7 +166,7 @@
             <span class="fw-semibold">{{ s.invoice_no or s.id }}</span>
             {% if s.is_reversed %}<span class="badge bg-danger ms-1">reversed</span>{% endif %}
           </td>
-          <td class="font-medium">{{ s.id_customer.name }}</td>
+          <td class="font-medium">{{ s.customer.name }}</td>
           <td>
             {% if s.line_items | length == 1 %}
               {{ s.line_items[0].item.name }}

@@ -167,7 +167,7 @@
                     {% if purchases %}
                         {% for p in purchases %}
                         <tr>
-                            <td class="font-medium">{{ p.id_supplier.name }}</td>
+                            <td class="font-medium">{{ p.supplier.name }}</td>
                             <td>
                                 {% if p.line_items | length == 1 %}
                                     {{ p.line_items[0].item.name }}
@@ -209,7 +209,7 @@
                     {% if sales %}
                         {% for s in sales %}
                         <tr>
-                            <td class="font-medium">{{ s.id_customer.name }}</td>
+                            <td class="font-medium">{{ s.customer.name }}</td>
                             <td>
                                 {% if s.line_items | length == 1 %}
                                     {{ s.line_items[0].item.name }}

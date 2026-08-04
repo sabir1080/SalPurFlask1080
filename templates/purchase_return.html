@@ -57,7 +57,7 @@
                                 <option value="{{ row.pi.id }}"
                                     data-price="{{ row.pi.purchase_price }}"
                                     data-remaining="{{ row.remaining }}">
-                                    #PUR-{{ row.pi.purchase_header.id }} — {{ row.pi.purchase_header.id_supplier.name }} — {{ row.pi.item.name }} (Rem: {{ row.remaining }} {{ row.pi.display_unit }})
+                                    #PUR-{{ row.pi.purchase_header.id }} — {{ row.pi.purchase_header.supplier.name }} — {{ row.pi.item.name }} (Rem: {{ row.remaining }} {{ row.pi.display_unit }})
                                 </option>
                                 {% endfor %}
                             </select>
