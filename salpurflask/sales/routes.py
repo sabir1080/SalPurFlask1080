@@ -532,11 +532,13 @@ def pos_lookup():
                    .filter(sql_or(Item.name.ilike(f"%{q}%"), Item.barcode.ilike(f"%{q}%")))
                    .filter(Item.business_category_id != None)
                    .order_by(Item.name).limit(20).all())
+    from app import get_standard_tax_rate
+    std_tax = get_standard_tax_rate()
     return {"items": [{
         "id": it.id, "name": it.name, "barcode": it.barcode or "",
         "price": float(it.sale_price or 0), "stock": it.stock,
         "unit": it.unit or "Pcs",
-        "default_tax_percent": float(it.default_tax_percent or 0),
+        "default_tax_percent": float(it.default_tax_percent or std_tax or 0),
         "is_taxable": bool(it.is_taxable),
         "units": [{"key": u["key"], "name": u["name"], "factor": u["factor"],
                    "price": float(u["sale_price"] or 0) or float(it.sale_price or 0)}
