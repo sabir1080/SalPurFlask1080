@@ -388,6 +388,7 @@ function addUnitRow() {
           <th>Name</th>
           <th>Category</th>
           <th>Unit</th>
+          <th>Barcode</th>
           <th class="text-end">Opening</th>
           <th class="text-end">Current Stock</th>
           <th class="text-end">Reorder Level</th>
@@ -411,6 +412,7 @@ function addUnitRow() {
             {% endif %}
           </td>
           <td><span class="badge">{{ item.unit or 'Pcs' }}</span></td>
+          <td><code class="text-monospace">{{ item.barcode if item.barcode else '—' }}</code></td>
           <td class="text-end text-muted">{{ item.opening_stock | fmt_num }}</td>
           <td class="text-end fw-semibold {% if item.stock <= item.reorder_level %}text-danger{% else %}text-success{% endif %}">
             {{ item.stock | fmt_num }}
