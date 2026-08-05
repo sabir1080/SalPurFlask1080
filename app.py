@@ -4360,6 +4360,25 @@ def seed_categories_cmd():
         click.echo(f"⊘ Skipped: {skipped} categories")
 
 
+@app.cli.command("fix-sequences")
+def fix_sequences_cmd():
+    """Fix PostgreSQL sequence issues (e.g., audit_log primary key duplicates)."""
+    with app.app_context():
+        try:
+            # Get max ID from audit_log
+            result = db.session.execute(text("SELECT MAX(id) FROM audit_log"))
+            max_id = result.scalar() or 0
+
+            # Reset sequence to max_id + 1
+            db.session.execute(text(f"SELECT setval('audit_log_id_seq', {max_id + 1}, false)"))
+            db.session.commit()
+
+            click.echo(f"✓ audit_log sequence reset to {max_id + 1}")
+        except Exception as e:
+            click.echo(f"✗ Error fixing sequences: {str(e)}", err=True)
+            db.session.rollback()
+
+
 if __name__ == "__main__":
     # Debugger stays off in production. FLASK_DEBUG overrides explicitly;
     # otherwise default to on only for local SQLite dev (no DATABASE_URL) so a
