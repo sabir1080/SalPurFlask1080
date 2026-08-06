@@ -4420,7 +4420,7 @@ def setup_production_cmd(demo_user):
                 db.session.flush()
 
                 cash_subsidiary = FinancialAccount(
-                    name="Cash in Hand", account_type="Cash",
+                    name="Cash in Hand", method="cash_subsidiary", account_type="Cash",
                     opening_balance=100000, parent_id=cash_control.id
                 )
                 db.session.add(cash_subsidiary)
@@ -4435,7 +4435,7 @@ def setup_production_cmd(demo_user):
                 db.session.flush()
 
                 bank_subsidiary = FinancialAccount(
-                    name="HBL Checking", account_type="Bank",
+                    name="HBL Checking", method="bank_subsidiary", account_type="Bank",
                     opening_balance=500000, parent_id=bank_control.id
                 )
                 db.session.add(bank_subsidiary)
