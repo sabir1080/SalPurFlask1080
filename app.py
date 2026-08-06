@@ -4445,14 +4445,28 @@ def setup_production_cmd(demo_user):
             else:
                 click.echo("   [SKIP] Financial accounts already exist\n")
 
-            # 5. Seed business categories
+            # 5. Seed business categories FIRST (before items)
             click.echo("[5/8] Seeding Business Categories...")
-            try:
-                seed_categories_cmd.invoke(click.Context(seed_categories_cmd))
-            except:
-                click.echo("   [SKIP] Categories already seeded\n")
+            if not BusinessCategory.query.first():
+                # Categories don't exist, seed them
+                categories_to_seed = [
+                    ("Medical Store", "medical-store", "Pharmaceuticals and medical products", "bi-pill", 0, True),
+                    ("Grocery", "grocery", "Food and grocery items", "bi-bag-check", 1, True),
+                    ("Garments", "garments", "Clothing and apparel", "bi-bag", 2, True),
+                    ("Footwear", "footwear", "Shoes and footwear", "bi-shoe", 3, True),
+                ]
+                for name, slug, desc, icon, priority, enabled in categories_to_seed:
+                    if not BusinessCategory.query.filter_by(slug=slug).first():
+                        db.session.add(BusinessCategory(
+                            name=name, slug=slug, description=desc, icon=icon,
+                            color="primary", priority=priority, is_enabled=enabled
+                        ))
+                db.session.commit()
+                click.echo("   [OK] Categories seeded\n")
+            else:
+                click.echo("   [SKIP] Categories already exist\n")
 
-            # 6. Create master items
+            # 6. Create master items (after categories exist)
             click.echo("[6/8] Creating Master Items...")
             items_data = [
                 ("Ibuprofen 200mg", "medical-store", "Pcs", 100, 150, 10),
@@ -4465,6 +4479,7 @@ def setup_production_cmd(demo_user):
                 ("Running Shoes", "footwear", "Pcs", 2500, 4000, 10),
             ]
 
+            items_created = 0
             for name, cat_slug, unit, cost, price, reorder in items_data:
                 if not Item.query.filter_by(name=name).first():
                     cat = BusinessCategory.query.filter_by(slug=cat_slug).first()
@@ -4475,8 +4490,9 @@ def setup_production_cmd(demo_user):
                             purchase_price=cost, sale_price=price
                         )
                         db.session.add(item)
+                        items_created += 1
             db.session.commit()
-            click.echo("   [OK] 8 items created\n")
+            click.echo(f"   [OK] {items_created} items created\n")
 
             # 7. Create master customers & suppliers
             click.echo("[7/8] Creating Master Customers & Suppliers...")
