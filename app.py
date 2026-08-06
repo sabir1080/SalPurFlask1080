@@ -4483,22 +4483,22 @@ def setup_production_cmd(demo_user):
 
             # Customers
             customers_data = [
-                ("Alpha Pharmacy", "Karachi", "03001234567", 0),
-                ("Beta Medical Store", "Lahore", "03009876543", 0),
+                ("Alpha Pharmacy", "Karachi, Pakistan", "03001234567", 0),
+                ("Beta Medical Store", "Lahore, Pakistan", "03009876543", 0),
             ]
-            for name, city, phone, balance in customers_data:
+            for name, address, phone, balance in customers_data:
                 if not Customer.query.filter_by(name=name).first():
-                    cust = Customer(name=name, city=city, contact=phone, opening_balance=balance)
+                    cust = Customer(name=name, address=address, contact=phone, opening_balance=balance)
                     db.session.add(cust)
 
             # Suppliers
             suppliers_data = [
-                ("ABC Pharma Ltd", "Rawalpindi", "03111111111", 0),
-                ("XYZ Trading Co", "Islamabad", "03122222222", 0),
+                ("ABC Pharma Ltd", "Rawalpindi, Pakistan", "03111111111", 0),
+                ("XYZ Trading Co", "Islamabad, Pakistan", "03122222222", 0),
             ]
-            for name, city, phone, balance in suppliers_data:
+            for name, address, phone, balance in suppliers_data:
                 if not Supplier.query.filter_by(name=name).first():
-                    supp = Supplier(name=name, city=city, contact=phone, opening_balance=balance)
+                    supp = Supplier(name=name, address=address, contact=phone, opening_balance=balance)
                     db.session.add(supp)
 
             db.session.commit()
