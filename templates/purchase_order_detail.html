@@ -92,34 +92,58 @@
 <div class="card border-0 shadow-sm">
     <div class="card-header bg-light fw-semibold">Line Items</div>
     <div class="card-body p-0">
-        <table class="table table-bordered mb-0">
+        <div class="table-responsive">
+        <table class="table table-bordered mb-0 align-middle">
             <thead class="table-dark">
                 <tr>
                     <th>#</th><th>Item</th><th class="text-end">Qty</th>
-                    <th class="text-end">Price</th><th class="text-end">Total</th>
+                    <th class="text-end">Price</th><th>Discount</th>
+                    <th class="text-end">Tax (%)</th><th class="text-end">Total</th>
                 </tr>
             </thead>
             <tbody>
                 {% set ns = namespace(grand=0) %}
                 {% for poi in po.line_items %}
-                {% set row_total = poi.quantity * poi.purchase_price %}
+                {% set gross = poi.quantity * poi.purchase_price %}
+                {% set discount = poi.discount_amount or 0 %}
+                {% set tax = poi.tax_amount or 0 %}
+                {% set row_total = gross - discount + tax %}
                 {% set ns.grand = ns.grand + row_total %}
                 <tr>
                     <td>{{ loop.index }}</td>
                     <td>{{ poi.item.name }}</td>
                     <td class="text-end">{{ poi.quantity }} {{ poi.display_unit }}</td>
                     <td class="text-end">{{ poi.purchase_price | fmt_num }}</td>
-                    <td class="text-end fw-semibold">{{ row_total | fmt_num }}</td>
+                    <td>
+                        {% if poi.discount_value and poi.discount_value > 0 %}
+                            {% if poi.discount_type == 'percent' %}
+                                <small class="text-muted">{{ poi.discount_value | fmt_num }}% ({{ poi.discount_amount | fmt_num }})</small>
+                            {% else %}
+                                <small class="text-muted">Fixed: {{ poi.discount_amount | fmt_num }}</small>
+                            {% endif %}
+                        {% else %}
+                            <small class="text-muted">—</small>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        {% if poi.tax_percent and poi.tax_percent > 0 %}
+                            <small class="text-muted">{{ poi.tax_percent | fmt_num }}% ({{ poi.tax_amount | fmt_num }})</small>
+                        {% else %}
+                            <small class="text-muted">—</small>
+                        {% endif %}
+                    </td>
+                    <td class="text-end fw-semibold text-success">{{ row_total | fmt_num }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
             <tfoot class="table-light">
                 <tr>
-                    <td colspan="4" class="text-end fw-bold">Total</td>
-                    <td class="text-end fw-bold fs-5">{{ ns.grand | fmt_num }}</td>
+                    <td colspan="6" class="text-end fw-bold">Grand Total</td>
+                    <td class="text-end fw-bold fs-5 text-primary">{{ ns.grand | fmt_num }}</td>
                 </tr>
             </tfoot>
         </table>
+        </div>
     </div>
 </div>
 {% endblock %}

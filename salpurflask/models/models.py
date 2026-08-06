@@ -2206,7 +2206,11 @@ class PurchaseOrderItem(db.Model):
     item_id         = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
     quantity        = db.Column(db.Integer, nullable=False)
     purchase_price  = db.Column(db.Numeric(14, 4), nullable=False)
-    # See PurchaseItem.unit_name/unit_factor. Carried onto the Purchase this PO converts to.
+    discount_type   = db.Column(db.String(10), nullable=False, default="percent")
+    discount_value  = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    discount_amount = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    tax_percent     = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
+    tax_amount      = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     unit_name       = db.Column(db.String(20), nullable=True)
     unit_factor     = db.Column(db.Integer, nullable=False, default=1)
     item            = db.relationship("Item", foreign_keys=[item_id])

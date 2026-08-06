@@ -32,7 +32,15 @@ app = Flask(__name__)
 
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-load_dotenv(os.path.join(BASE_DIR, ".env"))
+env_path = os.path.join(BASE_DIR, ".env")
+
+# Safety check: warn if .env is missing
+if not os.path.exists(env_path):
+    print(f"⚠️  WARNING: .env file not found at {env_path}")
+    print("   Create .env from .env.example or .env.local")
+    print("   Running with defaults — this may cause issues!")
+
+load_dotenv(env_path)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -1607,6 +1615,21 @@ def migrate_database():
         if "exp_date" in cols:
             with db.engine.begin() as conn:
                 conn.execute(text("ALTER TABLE item DROP COLUMN exp_date"))
+
+    # Add discount and tax fields to PurchaseOrderItem (for per-line-item pricing flexibility)
+    if "purchase_order_item" in inspector.get_table_names():
+        cols = {c["name"] for c in inspector.get_columns("purchase_order_item")}
+        with db.engine.begin() as conn:
+            if "discount_type" not in cols:
+                conn.execute(text("ALTER TABLE purchase_order_item ADD COLUMN discount_type VARCHAR(10) NOT NULL DEFAULT 'percent'"))
+            if "discount_value" not in cols:
+                conn.execute(text("ALTER TABLE purchase_order_item ADD COLUMN discount_value NUMERIC(14,4) NOT NULL DEFAULT 0"))
+            if "discount_amount" not in cols:
+                conn.execute(text("ALTER TABLE purchase_order_item ADD COLUMN discount_amount NUMERIC(14,4) NOT NULL DEFAULT 0"))
+            if "tax_percent" not in cols:
+                conn.execute(text("ALTER TABLE purchase_order_item ADD COLUMN tax_percent NUMERIC(14,4) NOT NULL DEFAULT 0"))
+            if "tax_amount" not in cols:
+                conn.execute(text("ALTER TABLE purchase_order_item ADD COLUMN tax_amount NUMERIC(14,4) NOT NULL DEFAULT 0"))
 
     # A document records the cost it moved, so its reversal undoes exactly that.
     for table, col in (("purchase_return", "cost_removed"),

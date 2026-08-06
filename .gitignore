@@ -6,6 +6,8 @@ instance/
 *.bak
 *.sqbpro
 .env
+.env.local
+.env.*.local
 for_my_information.txt
 static/*.csv
 .claude/

@@ -558,7 +558,13 @@ def purchase_orders():
         quantities    = request.form.getlist("quantity[]")
         prices        = request.form.getlist("purchase_price[]")
         unit_ids      = request.form.getlist("unit_id[]")
-        rows = [(iid.strip(), qty.strip(), pr.strip(), unit_ids[i] if i < len(unit_ids) else "")
+        disc_types    = request.form.getlist("discount_type[]")
+        disc_values   = request.form.getlist("discount_value[]")
+        tax_percents  = request.form.getlist("tax_percent[]")
+        rows = [(iid.strip(), qty.strip(), pr.strip(), unit_ids[i] if i < len(unit_ids) else "",
+                 disc_types[i] if i < len(disc_types) else "percent",
+                 disc_values[i] if i < len(disc_values) else "0",
+                 tax_percents[i] if i < len(tax_percents) else "0")
                 for i, (iid, qty, pr) in enumerate(zip(item_ids, quantities, prices))
                 if iid.strip() and qty.strip() and pr.strip()]
         row_error = validate_line_rows(rows) if rows else None
@@ -577,12 +583,26 @@ def purchase_orders():
             )
             db.session.add(po)
             db.session.flush()
-            for iid, qty, price, unit_key in rows:
+            for row_data in rows:
+                iid, qty, price, unit_key, disc_type, disc_val, tax_pct = row_data
                 item_obj = db.session.get(Item, int(iid)) or abort(404)
                 unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
+
+                # Calculate discount and tax amounts
+                qty_int = int(qty)
+                price_float = float(price)
+                gross = qty_int * price_float
+                disc_type_str = disc_type.strip() if disc_type.strip() in ("percent", "fixed") else "percent"
+                disc_val_float = float(disc_val or 0)
+                disc_amount = (gross * disc_val_float / 100) if disc_type_str == "percent" else disc_val_float
+                tax_pct_float = float(tax_pct or 0)
+                tax_amount = (gross - disc_amount) * tax_pct_float / 100
+
                 db.session.add(PurchaseOrderItem(
                     po_id=po.id, item_id=int(iid),
-                    quantity=int(qty), purchase_price=float(price),
+                    quantity=qty_int, purchase_price=price_float,
+                    discount_type=disc_type_str, discount_value=disc_val_float,
+                    discount_amount=disc_amount, tax_percent=tax_pct_float, tax_amount=tax_amount,
                     unit_name=unit_name, unit_factor=unit_factor,
                 ))
             db.session.commit()
@@ -649,16 +669,18 @@ def convert_po_to_purchase(id):
     db.session.flush()
     for poi in po.line_items:
         gross = poi.quantity * poi.purchase_price
+        amount = gross - (poi.discount_amount or 0) + (poi.tax_amount or 0)
         db.session.add(PurchaseItem(
             purchase_id=pur.id, item_id=poi.item_id,
             quantity=poi.quantity, purchase_price=poi.purchase_price,
-            discount_type="percent", discount_value=0,
-            discount_amount=0, tax_percent=0, tax_amount=0, amount=gross,
+            discount_type=poi.discount_type, discount_value=poi.discount_value or 0,
+            discount_amount=poi.discount_amount or 0, tax_percent=poi.tax_percent or 0,
+            tax_amount=poi.tax_amount or 0, amount=amount,
             unit_name=poi.unit_name, unit_factor=poi.unit_factor or 1,
         ))
         item_obj = db.session.get(Item, poi.item_id)
         if item_obj:
-            item_add_stock(item_obj, poi.quantity * (poi.unit_factor or 1), gross)
+            item_add_stock(item_obj, poi.quantity * (poi.unit_factor or 1), amount)
     db.session.flush()
     db.session.refresh(pur)
     pur.invoice_no = allocate_document_number("purchase", pur.date)

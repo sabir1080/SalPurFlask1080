@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear Browser Cache - TradeFlow</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 40px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; }
+        .steps {
+            background: #f0f7ff;
+            padding: 20px;
+            border-left: 4px solid #007bff;
+            margin: 20px 0;
+        }
+        .step {
+            margin: 15px 0;
+            padding: 10px;
+        }
+        .key { background: #fff3cd; padding: 2px 6px; font-weight: bold; }
+        .success { color: #28a745; font-weight: bold; }
+        .warning { color: #dc3545; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔄 Browser Cache Clear Instructions</h1>
+
+        <h2>Kya Problem Hai?</h2>
+        <p>Backend sahi Rs output deh raha hai, lekin browser purana Rs11 dikha raha hai (cache se)</p>
+
+        <h2>Chrome/Edge - Method 1 (Fastest)</h2>
+        <div class="steps">
+            <div class="step">
+                1. Press <span class="key">Ctrl + Shift + R</span> (Hard Refresh)
+            </div>
+            <div class="step">
+                2. If still showing Rs11, press <span class="key">Ctrl + Shift + R</span> again
+            </div>
+            <div class="step">
+                3. Wait 5 seconds, refresh again
+            </div>
+        </div>
+
+        <h2>Chrome/Edge - Method 2 (Complete Clear)</h2>
+        <div class="steps">
+            <div class="step">
+                1. Open DevTools: <span class="key">F12</span>
+            </div>
+            <div class="step">
+                2. Right-click Reload button (↻)
+            </div>
+            <div class="step">
+                3. Select "Empty cache and hard reload"
+            </div>
+            <div class="step">
+                4. Wait for page to fully load
+            </div>
+        </div>
+
+        <h2>Chrome/Edge - Method 3 (Nuclear Option)</h2>
+        <div class="steps">
+            <div class="step">
+                1. Click three dots (⋮) → Settings
+            </div>
+            <div class="step">
+                2. Left sidebar → "Privacy and security"
+            </div>
+            <div class="step">
+                3. Click "Clear browsing data"
+            </div>
+            <div class="step">
+                4. Select:
+                <ul>
+                    <li>✓ Cookies and other site data</li>
+                    <li>✓ Cached images and files</li>
+                </ul>
+            </div>
+            <div class="step">
+                5. Time range: "All time"
+            </div>
+            <div class="step">
+                6. Click "Clear data"
+            </div>
+            <div class="step">
+                7. Close ALL browser tabs
+            </div>
+            <div class="step">
+                8. Reopen browser, go to http://127.0.0.1:5172/purchase/1
+            </div>
+        </div>
+
+        <h2>Verify It Works</h2>
+        <div class="steps">
+            <div class="step">
+                <span class="success">Should see:</span> Rs 1,375.00
+            </div>
+            <div class="step">
+                <span class="warning">Should NOT see:</span> Rs11 1,375.00
+            </div>
+        </div>
+
+        <h2>Still Not Working?</h2>
+        <div class="steps">
+            <div class="step">
+                1. Close browser completely
+            </div>
+            <div class="step">
+                2. Wait 3 seconds
+            </div>
+            <div class="step">
+                3. Reopen browser
+            </div>
+            <div class="step">
+                4. Go to: http://127.0.0.1:5172/purchase/1
+            </div>
+        </div>
+
+        <hr>
+        <p>Agar abhi bhi Rs11 dikhe, to terminal screenshot bhejo!</p>
+    </div>
+</body>
+</html>
