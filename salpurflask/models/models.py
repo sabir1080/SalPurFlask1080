@@ -79,9 +79,6 @@ class Item(db.Model):
     # Default tax % applied to this item when sold — auto-populated in POS/forms, can be overridden.
     default_tax_percent = db.Column(db.Numeric(5, 2), nullable=False, default=0.0)
     is_taxable          = db.Column(db.Boolean, nullable=False, default=True)
-    # Batch tracking
-    batch               = db.Column(db.String(100), nullable=True)
-    exp_date            = db.Column(db.Date, nullable=True)
     purchases           = db.relationship("Purchase", backref="id_item", lazy=True)
     sales               = db.relationship("Sale", backref="id_item", lazy=True)
     business_category   = db.relationship("BusinessCategory", backref="items", lazy=True, foreign_keys=[business_category_id])

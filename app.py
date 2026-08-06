@@ -1598,6 +1598,16 @@ def migrate_database():
             with db.engine.begin() as conn:
                 conn.execute(text("ALTER TABLE item ADD COLUMN barcode VARCHAR(64)"))
 
+    # Drop dead columns (batch and exp_date) - these were never used; category-specific data is stored in ProductCategoryData
+    if "item" in inspector.get_table_names():
+        cols = {c["name"] for c in inspector.get_columns("item")}
+        if "batch" in cols:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE item DROP COLUMN batch"))
+        if "exp_date" in cols:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE item DROP COLUMN exp_date"))
+
     # A document records the cost it moved, so its reversal undoes exactly that.
     for table, col in (("purchase_return", "cost_removed"),
                        ("sale_return", "cost_restored"),
