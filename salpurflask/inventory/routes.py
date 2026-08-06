@@ -956,3 +956,21 @@ def send_low_stock_alert():
     if ok:
         flash(f"Low stock alert sent for {len(low_items)} item(s).", "success")
     return redirect(url_for("item"))
+
+
+@verified_required
+def get_product_category_data(product_id, category_id):
+    """Get existing category-specific data for a product (AJAX endpoint)."""
+    from salpurflask.models.business_config import ProductCategoryData
+    from flask import jsonify
+
+    data = ProductCategoryData.query.filter_by(
+        product_id=product_id,
+        category_id=category_id
+    ).all()
+
+    result = {}
+    for entry in data:
+        result[entry.field_name] = entry.field_value
+
+    return jsonify(result)

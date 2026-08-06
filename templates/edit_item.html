@@ -201,10 +201,15 @@ async function loadCategoryFields() {
       </li>
     `).join('');
 
+    // Fetch existing category data for this item
+    const existingData = await fetch(`/api/product-category-data/${ITEM_ID}/${categoryId}`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : {})
+      .catch(() => ({}));
+
     const contentHtml = Object.entries(fieldsByTab).map(([tab, tabFields]) => `
       <div class="tab-pane fade ${Object.keys(fieldsByTab)[0] === tab ? 'show active' : ''}"
            id="tab-${tab.replace(/\s+/g, '-')}">
-        ${tabFields.map(field => renderField(field)).join('')}
+        ${tabFields.map(field => renderField(field, existingData[field.field_name] || '')).join('')}
       </div>
     `).join('');
 
@@ -229,7 +234,7 @@ async function loadCategoryFields() {
   }
 }
 
-function renderField(field) {
+function renderField(field, currentValue = '') {
   const fieldId = `category_field_${field.id}`;
   const required = field.is_required ? 'required' : '';
   const requiredLabel = field.is_required ? '<span class="text-danger">*</span>' : '';
@@ -239,14 +244,14 @@ function renderField(field) {
   switch (field.field_type) {
     case 'text':
       inputHtml = `<input type="text" class="form-control" id="${fieldId}" name="${field.field_name}"
-                           placeholder="${field.placeholder || ''}" ${required}>`;
+                           placeholder="${field.placeholder || ''}" value="${currentValue || ''}" ${required}>`;
       break;
     case 'number':
       inputHtml = `<input type="number" class="form-control" id="${fieldId}" name="${field.field_name}"
-                           placeholder="${field.placeholder || ''}" ${required}>`;
+                           placeholder="${field.placeholder || ''}" value="${currentValue || ''}" ${required}>`;
       break;
     case 'date':
-      inputHtml = `<input type="date" class="form-control" id="${fieldId}" name="${field.field_name}" ${required}>`;
+      inputHtml = `<input type="date" class="form-control" id="${fieldId}" name="${field.field_name}" value="${currentValue || ''}" ${required}>`;
       break;
     case 'select':
       const options = field.options && Array.isArray(field.options) ? field.options : [];

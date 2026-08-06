@@ -268,7 +268,8 @@ from salpurflask.inventory.routes import (
     export_item_ledger, export_item_ledger_excel,
     bulk_import, process_import,
     stock_adjustment, delete_stock_adjustment,
-    labels, labels_assign, send_low_stock_alert
+    labels, labels_assign, send_low_stock_alert,
+    get_product_category_data
 )
 
 # Register purchase routes directly (not via blueprint, to preserve endpoint names)
@@ -320,6 +321,7 @@ app.add_url_rule("/category/edit/<int:id>", "edit_category", edit_category, meth
 app.add_url_rule("/category/delete/<int:id>", "delete_category", delete_category, methods=["POST"])
 app.add_url_rule("/item/<int:id>/ledger/export", "export_item_ledger", export_item_ledger)
 app.add_url_rule("/item/<int:id>/ledger/export/excel", "export_item_ledger_excel", export_item_ledger_excel)
+app.add_url_rule("/api/product-category-data/<int:product_id>/<int:category_id>", "get_product_category_data", get_product_category_data, methods=["GET"])
 app.add_url_rule("/import", "bulk_import", bulk_import, methods=["GET"])
 app.add_url_rule("/import/process", "process_import", process_import, methods=["POST"])
 app.add_url_rule("/stock_adjustment", "stock_adjustment", stock_adjustment, methods=["GET", "POST"])
