@@ -4379,6 +4379,154 @@ def fix_sequences_cmd():
             db.session.rollback()
 
 
+@app.cli.command("setup-production")
+@click.option("--demo-user", is_flag=True, help="Create demo@demo.com for testing.")
+def setup_production_cmd(demo_user):
+    """Production setup: seed data, fiscal year (Jul 2025-Jun 2026), master files, and test transactions."""
+    with app.app_context():
+        try:
+            target = (f"DEPLOYED database at {urlsplit(DATABASE_URL).hostname or 'unknown host'}"
+                      if DATABASE_URL else "local SQLite database (instance/database.db)")
+            click.echo(f"🚀 Production Setup")
+            click.echo(f"Target: {target}\n")
+
+            # 1. Seed base data (COA, categories, fiscal year)
+            click.echo("1️⃣  Seeding Chart of Accounts...")
+            seed_chart_of_accounts()
+            seed_fixed_asset_accounts()
+            seed_tax_codes()
+            click.echo("   ✓ COA seeded\n")
+
+            # 2. Clear transactional data
+            click.echo("2️⃣  Clearing existing transactions...")
+            _wipe_transactional_data()
+            click.echo("   ✓ Cleared\n")
+
+            # 3. Setup fiscal year (July 2025 - June 2026)
+            click.echo("3️⃣  Setting up Fiscal Year (Jul 2025 - Jun 2026)...")
+            seed_fiscal_year(datetime(2025, 7, 1))
+            seed_fiscal_year(datetime(2026, 6, 30))
+            click.echo("   ✓ Fiscal year active\n")
+
+            # 4. Financial Accounts (Cash, Bank)
+            click.echo("4️⃣  Creating Financial Accounts...")
+            if not FinancialAccount.query.filter_by(name="Cash", is_control=True).first():
+                # Cash Control
+                cash_control = FinancialAccount(
+                    name="Cash", method="cash", account_type="Cash",
+                    opening_balance=100000, is_control=True
+                )
+                db.session.add(cash_control)
+                db.session.flush()
+
+                db.session.add(FinancialAccount(
+                    name="Cash in Hand", method="cash", account_type="Cash",
+                    opening_balance=100000, parent_id=cash_control.id
+                ))
+
+                # Bank Control
+                bank_control = FinancialAccount(
+                    name="Bank", method="bank", account_type="Bank",
+                    opening_balance=500000, is_control=True
+                )
+                db.session.add(bank_control)
+                db.session.flush()
+
+                db.session.add(FinancialAccount(
+                    name="HBL Checking", method="bank", account_type="Bank",
+                    opening_balance=500000, parent_id=bank_control.id
+                ))
+
+                db.session.commit()
+                click.echo("   ✓ Financial accounts created\n")
+
+            # 5. Seed business categories
+            click.echo("5️⃣  Seeding Business Categories...")
+            try:
+                seed_categories_cmd.invoke(click.Context(seed_categories_cmd))
+            except:
+                click.echo("   ⊘ Categories already seeded\n")
+
+            # 6. Create master items
+            click.echo("6️⃣  Creating Master Items...")
+            items_data = [
+                ("Ibuprofen 200mg", "medical-store", "Pcs", 100, 150, 10),
+                ("Aspirin 500mg", "medical-store", "Pcs", 80, 120, 10),
+                ("Rice Premium (kg)", "grocery", "kg", 50, 80, 5),
+                ("Wheat Flour (kg)", "grocery", "kg", 40, 70, 5),
+                ("Cotton T-Shirt (M)", "garments", "Pcs", 200, 400, 20),
+                ("Denim Jeans", "garments", "Pcs", 800, 1500, 15),
+                ("Leather Shoes", "footwear", "Pcs", 1200, 2000, 10),
+                ("Running Shoes", "footwear", "Pcs", 2500, 4000, 10),
+            ]
+
+            for name, cat_slug, unit, cost, price, reorder in items_data:
+                if not Item.query.filter_by(name=name).first():
+                    cat = BusinessCategory.query.filter_by(slug=cat_slug).first()
+                    if cat:
+                        item = Item(
+                            name=name, business_category_id=cat.id, unit=unit,
+                            stock=100, opening_stock=100, reorder_level=reorder,
+                            purchase_price=cost, sale_price=price
+                        )
+                        db.session.add(item)
+            db.session.commit()
+            click.echo("   ✓ 8 items created\n")
+
+            # 7. Create master customers & suppliers
+            click.echo("7️⃣  Creating Master Customers & Suppliers...")
+
+            # Customers
+            customers_data = [
+                ("Alpha Pharmacy", "Karachi", "03001234567", 0),
+                ("Beta Medical Store", "Lahore", "03009876543", 0),
+            ]
+            for name, city, phone, balance in customers_data:
+                if not Customer.query.filter_by(name=name).first():
+                    cust = Customer(name=name, city=city, contact=phone, opening_balance=balance)
+                    db.session.add(cust)
+
+            # Suppliers
+            suppliers_data = [
+                ("ABC Pharma Ltd", "Rawalpindi", "03111111111", 0),
+                ("XYZ Trading Co", "Islamabad", "03122222222", 0),
+            ]
+            for name, city, phone, balance in suppliers_data:
+                if not Supplier.query.filter_by(name=name).first():
+                    supp = Supplier(name=name, city=city, contact=phone, opening_balance=balance)
+                    db.session.add(supp)
+
+            db.session.commit()
+            click.echo("   ✓ 2 customers, 2 suppliers created\n")
+
+            # 8. Demo user (if requested)
+            if demo_user:
+                click.echo("8️⃣  Creating Demo User...")
+                existing = User.query.filter_by(email="demo@demo.com").first()
+                if not existing:
+                    db.session.add(User(
+                        name="Demo User", email="demo@demo.com",
+                        password=pwd_context.hash("demo1234"),
+                        verified=True, role="manager"
+                    ))
+                    db.session.commit()
+                    click.echo("   ✓ demo@demo.com / demo1234 (manager)\n")
+
+            click.echo("✅ Production setup complete!")
+            click.echo("\nSystem Status:")
+            click.echo(f"  • Fiscal Year: Jul 2025 - Jun 2026 (Open)")
+            click.echo(f"  • Items: {Item.query.count()}")
+            click.echo(f"  • Customers: {Customer.query.count()}")
+            click.echo(f"  • Suppliers: {Supplier.query.count()}")
+            click.echo(f"  • Categories: {BusinessCategory.query.count()}")
+            click.echo(f"  • Cash Balance: Rs {FinancialAccount.query.filter_by(name='Cash in Hand').first().opening_balance or 0:,.0f}")
+            click.echo(f"  • Bank Balance: Rs {FinancialAccount.query.filter_by(name='HBL Checking').first().opening_balance or 0:,.0f}")
+
+        except Exception as e:
+            click.echo(f"✗ Setup failed: {str(e)}", err=True)
+            db.session.rollback()
+
+
 if __name__ == "__main__":
     # Debugger stays off in production. FLASK_DEBUG overrides explicitly;
     # otherwise default to on only for local SQLite dev (no DATABASE_URL) so a
