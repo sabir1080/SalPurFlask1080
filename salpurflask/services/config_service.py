@@ -108,7 +108,7 @@ class ConfigurationService:
 
     @staticmethod
     def save_product_category_data(product_id, category_id, field_data):
-        """Save category-specific product data"""
+        """Save category-specific product data (does not commit - caller handles that)"""
         for field_name, field_value in field_data.items():
             if field_value is None or field_value == '':
                 continue
@@ -129,8 +129,6 @@ class ConfigurationService:
                     field_value=field_value
                 )
                 db.session.add(data)
-
-        db.session.commit()
 
     @staticmethod
     def get_product_category_data(product_id, category_id):
