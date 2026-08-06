@@ -4387,29 +4387,29 @@ def setup_production_cmd(demo_user):
         try:
             target = (f"DEPLOYED database at {urlsplit(DATABASE_URL).hostname or 'unknown host'}"
                       if DATABASE_URL else "local SQLite database (instance/database.db)")
-            click.echo(f"🚀 Production Setup")
+            click.echo(f"Production Setup")
             click.echo(f"Target: {target}\n")
 
             # 1. Seed base data (COA, categories, fiscal year)
-            click.echo("1️⃣  Seeding Chart of Accounts...")
+            click.echo("[1/8] Seeding Chart of Accounts...")
             seed_chart_of_accounts()
             seed_fixed_asset_accounts()
             seed_tax_codes()
-            click.echo("   ✓ COA seeded\n")
+            click.echo("   [OK] COA seeded\n")
 
             # 2. Clear transactional data
-            click.echo("2️⃣  Clearing existing transactions...")
+            click.echo("[2/8] Clearing existing transactions...")
             _wipe_transactional_data()
-            click.echo("   ✓ Cleared\n")
+            click.echo("   [OK] Cleared\n")
 
             # 3. Setup fiscal year (July 2025 - June 2026)
-            click.echo("3️⃣  Setting up Fiscal Year (Jul 2025 - Jun 2026)...")
+            click.echo("[3/8] Setting up Fiscal Year (Jul 2025 - Jun 2026)...")
             seed_fiscal_year(datetime(2025, 7, 1))
             seed_fiscal_year(datetime(2026, 6, 30))
-            click.echo("   ✓ Fiscal year active\n")
+            click.echo("   [OK] Fiscal year active\n")
 
             # 4. Financial Accounts (Cash, Bank)
-            click.echo("4️⃣  Creating Financial Accounts...")
+            click.echo("[4/8] Creating Financial Accounts...")
             if not FinancialAccount.query.filter_by(name="Cash", is_control=True).first():
                 # Cash Control
                 cash_control = FinancialAccount(
@@ -4438,17 +4438,17 @@ def setup_production_cmd(demo_user):
                 ))
 
                 db.session.commit()
-                click.echo("   ✓ Financial accounts created\n")
+                click.echo("   [OK] Financial accounts created\n")
 
             # 5. Seed business categories
-            click.echo("5️⃣  Seeding Business Categories...")
+            click.echo("[5/8] Seeding Business Categories...")
             try:
                 seed_categories_cmd.invoke(click.Context(seed_categories_cmd))
             except:
-                click.echo("   ⊘ Categories already seeded\n")
+                click.echo("   [SKIP] Categories already seeded\n")
 
             # 6. Create master items
-            click.echo("6️⃣  Creating Master Items...")
+            click.echo("[6/8] Creating Master Items...")
             items_data = [
                 ("Ibuprofen 200mg", "medical-store", "Pcs", 100, 150, 10),
                 ("Aspirin 500mg", "medical-store", "Pcs", 80, 120, 10),
@@ -4471,10 +4471,10 @@ def setup_production_cmd(demo_user):
                         )
                         db.session.add(item)
             db.session.commit()
-            click.echo("   ✓ 8 items created\n")
+            click.echo("   [OK] 8 items created\n")
 
             # 7. Create master customers & suppliers
-            click.echo("7️⃣  Creating Master Customers & Suppliers...")
+            click.echo("[7/8] Creating Master Customers & Suppliers...")
 
             # Customers
             customers_data = [
@@ -4497,11 +4497,11 @@ def setup_production_cmd(demo_user):
                     db.session.add(supp)
 
             db.session.commit()
-            click.echo("   ✓ 2 customers, 2 suppliers created\n")
+            click.echo("   [OK] 2 customers, 2 suppliers created\n")
 
             # 8. Demo user (if requested)
             if demo_user:
-                click.echo("8️⃣  Creating Demo User...")
+                click.echo("[8/8] Creating Demo User...")
                 existing = User.query.filter_by(email="demo@demo.com").first()
                 if not existing:
                     db.session.add(User(
@@ -4510,9 +4510,9 @@ def setup_production_cmd(demo_user):
                         verified=True, role="manager"
                     ))
                     db.session.commit()
-                    click.echo("   ✓ demo@demo.com / demo1234 (manager)\n")
+                    click.echo("   [OK] demo@demo.com / demo1234 (manager)\n")
 
-            click.echo("✅ Production setup complete!")
+            click.echo("[SUCCESS] Production setup complete!")
             click.echo("\nSystem Status:")
             click.echo(f"  • Fiscal Year: Jul 2025 - Jun 2026 (Open)")
             click.echo(f"  • Items: {Item.query.count()}")
