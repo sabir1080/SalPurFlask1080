@@ -288,9 +288,9 @@ function renderField(field, currentValue = '') {
   `;
 }
 
-// Clear saved data on successful submission
+// Clear saved data on successful submission (localStorage disabled)
 document.querySelector('form[method="POST"]').addEventListener('submit', function() {
-  localStorage.removeItem(EDIT_ITEM_STORAGE_KEY + '_' + ITEM_ID);
+  // localStorage disabled - form data not cached
 });
 
 // Add event listeners to all form inputs
