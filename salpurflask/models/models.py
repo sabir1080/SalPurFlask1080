@@ -258,9 +258,9 @@ class Purchase(db.Model):
 class Sale(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
     customer_id         = db.Column(db.Integer, db.ForeignKey("customer.id"), nullable=False)
-    item_id             = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
-    quantity            = db.Column(db.Integer, nullable=False)
-    sale_price          = db.Column(db.Numeric(14, 4), nullable=False)
+    item_id             = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=True)
+    quantity            = db.Column(db.Integer, nullable=True)
+    sale_price          = db.Column(db.Numeric(14, 4), nullable=True)
     cost_price          = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
     discount_type       = db.Column(db.String(10), nullable=False, default="percent")
     discount_value      = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)

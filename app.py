@@ -1374,13 +1374,14 @@ def migrate_database():
             INSERT INTO sale_item
                 (sale_id, item_id, quantity, sale_price, cost_price,
                  discount_type, discount_value, discount_amount,
-                 tax_percent, tax_amount, amount)
+                 tax_percent, tax_amount, amount, unit_factor)
             SELECT s.id, s.item_id, s.quantity, s.sale_price,
                 COALESCE(s.cost_price,0),
                 COALESCE(s.discount_type,'percent'), COALESCE(s.discount_value,0),
                 COALESCE(s.discount_amount,0), COALESCE(s.tax_percent,0),
                 COALESCE(s.tax_amount,0),
-                COALESCE(s.quantity,0) * COALESCE(s.sale_price,0)
+                COALESCE(s.quantity,0) * COALESCE(s.sale_price,0),
+                1.0
             FROM sale s
             WHERE s.item_id IS NOT NULL AND s.quantity IS NOT NULL
               AND s.id NOT IN (SELECT DISTINCT sale_id FROM sale_item)
@@ -2590,10 +2591,10 @@ def convert_quotation_to_sale(id):
     if stock_errors:
         flash("Insufficient stock — " + "; ".join(stock_errors), "danger")
         return redirect(url_for("quotation_detail", id=id))
-    first = q.line_items[0]
+
     sal = Sale(
         customer_id=q.customer_id,
-        item_id=first.item_id, quantity=first.quantity, sale_price=first.sale_price,
+        item_id=None, quantity=None, sale_price=None,
         cost_price=0.0,
         discount_type="percent", discount_value=0, discount_amount=0,
         tax_percent=0, tax_amount=0,
