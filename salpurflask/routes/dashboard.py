@@ -147,16 +147,17 @@ def dashboard():
     try:
         from sqlalchemy import func, text
         from datetime import datetime, timedelta
+        from app import sql_date_fmt
 
         # Get last 12 months of sales data
         monthly_data = db.session.query(
-            func.strftime('%Y-%m', Sale.date).label('month'),
+            sql_date_fmt(Sale.date).label('month'),
             func.sum(SaleItem.amount).label('sale_amt'),
             func.sum(SaleItem.amount - (SaleItem.quantity * SaleItem.cost_price)).label('profit_amt')
         ).join(SaleItem, Sale.id == SaleItem.sale_id).group_by(
-            func.strftime('%Y-%m', Sale.date)
+            sql_date_fmt(Sale.date)
         ).order_by(
-            func.strftime('%Y-%m', Sale.date)
+            sql_date_fmt(Sale.date)
         ).all()
 
         context['monthly_sales'] = [

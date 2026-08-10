@@ -1044,17 +1044,18 @@ def export_date_sale_report():
     try:
         start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
         end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+        from app import sql_date
         date_sale_report = (
             db.session.query(
-                db.func.date(Sale.date).label("sale_date"),
+                sql_date(Sale.date).label("sale_date"),
                 db.func.sum(SaleItem.amount).label("sale_amt"),
                 db.func.sum(SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.unit_factor * SaleItem.cost_price).label("profit_amt"),
             )
             .select_from(SaleItem)
             .join(Sale, SaleItem.sale_id == Sale.id)
             .filter(Sale.date.between(start_date, end_date))
-            .group_by(db.func.date(Sale.date))
-            .order_by(db.func.date(Sale.date))
+            .group_by(sql_date(Sale.date))
+            .order_by(sql_date(Sale.date))
             .all()
         )
         col_headers = ["Date", "Sale Amount", "Profit Amount"]

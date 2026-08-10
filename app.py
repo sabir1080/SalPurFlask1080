@@ -471,6 +471,12 @@ def sql_date_fmt(col, fmt="%Y-%m"):
         return db.func.to_char(col, fmt.replace("%Y", "YYYY").replace("%m", "MM"))
     return db.func.strftime(fmt, col)
 
+def sql_date(col):
+    """Extract date part from datetime, compatible with both SQLite and PostgreSQL."""
+    if db.engine.dialect.name == "postgresql":
+        return db.func.DATE(col)
+    return db.func.date(col)
+
 def is_signup_allowed():
     return os.getenv("ALLOW_SIGNUP", "false").lower() in ("1", "true", "yes")
 
@@ -2083,15 +2089,15 @@ def reports():
                 _sale_prof = SaleItem.quantity * SaleItem.sale_price - SaleItem.discount_amount - SaleItem.quantity * SaleItem.unit_factor * SaleItem.cost_price
                 date_profit_report = (
                     db.session.query(
-                        db.func.date(Sale.date).label("sale_date"),
+                        sql_date(Sale.date).label("sale_date"),
                         db.func.sum(_sale_net).label("sale_amt"),
                         db.func.sum(_sale_prof).label("profit_amt"),
                     )
                     .select_from(SaleItem)
                     .join(Sale, SaleItem.sale_id == Sale.id)
                     .filter(Sale.date.between(start_date, end_date))
-                    .group_by(db.func.date(Sale.date))
-                    .order_by(db.func.date(Sale.date))
+                    .group_by(sql_date(Sale.date))
+                    .order_by(sql_date(Sale.date))
                     .all()
                 )
                 item_profit = (
