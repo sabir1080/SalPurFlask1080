@@ -80,7 +80,7 @@ def test_can_hold_a_bill_with_items(appctx):
         "account_id": _cash_account_id(),
         "amount_paid": 100,
         "items": [
-            {"id": item.id, "qty": 2, "price": 100, "name": "Cola", "stock": 50,
+            {"item_id": item.id, "qty": 2, "price": 100, "name": "Cola", "stock": 50,
              "unit": "Pcs", "unitKey": "base", "unitName": "Pcs", "factor": 1,
              "units": [{"key": "base", "name": "Pcs", "factor": 1, "price": 100}]}
         ],
@@ -115,7 +115,7 @@ def test_hold_does_not_reduce_stock(appctx):
         "customer_id": cust.id,
         "account_id": _cash_account_id(),
         "items": [
-            {"id": item.id, "qty": 10, "price": 100, "name": "Cola", "stock": 50,
+            {"item_id": item.id, "qty": 10, "price": 100, "name": "Cola", "stock": 50,
              "unit": "Pcs", "unitKey": "base", "unitName": "Pcs", "factor": 1,
              "units": [{"key": "base", "name": "Pcs", "factor": 1, "price": 100}]}
         ],
@@ -137,7 +137,7 @@ def test_can_list_held_bills(appctx):
         "customer_id": cust.id,
         "account_id": _cash_account_id(),
         "items": [
-            {"id": item.id, "qty": 2, "price": 100, "name": "Cola", "stock": 50,
+            {"item_id": item.id, "qty": 2, "price": 100, "name": "Cola", "stock": 50,
              "unit": "Pcs", "unitKey": "base", "unitName": "Pcs", "factor": 1,
              "units": [{"key": "base", "name": "Pcs", "factor": 1, "price": 100}]}
         ],
@@ -162,7 +162,7 @@ def test_can_fetch_held_bill_as_json(appctx):
         "account_id": _cash_account_id(),
         "amount_paid": 200,
         "items": [
-            {"id": item.id, "qty": 2, "price": 100, "name": "Cola", "stock": 50,
+            {"item_id": item.id, "qty": 2, "price": 100, "name": "Cola", "stock": 50,
              "unit": "Pcs", "unitKey": "base", "unitName": "Pcs", "factor": 1,
              "units": [{"key": "base", "name": "Pcs", "factor": 1, "price": 100}]}
         ],
@@ -191,7 +191,7 @@ def test_can_delete_held_bill(appctx):
         "customer_id": cust.id,
         "account_id": _cash_account_id(),
         "items": [
-            {"id": item.id, "qty": 2, "price": 100, "name": "Cola", "stock": 50,
+            {"item_id": item.id, "qty": 2, "price": 100, "name": "Cola", "stock": 50,
              "unit": "Pcs", "unitKey": "base", "unitName": "Pcs", "factor": 1,
              "units": [{"key": "base", "name": "Pcs", "factor": 1, "price": 100}]}
         ],
@@ -228,7 +228,7 @@ def test_hold_requires_manager_role(appctx):
         "customer_id": cust.id,
         "account_id": _cash_account_id(),
         "items": [
-            {"id": item.id, "qty": 1, "price": 100, "name": "Cola", "stock": 50,
+            {"item_id": item.id, "qty": 1, "price": 100, "name": "Cola", "stock": 50,
              "unit": "Pcs", "unitKey": "base", "unitName": "Pcs", "factor": 1,
              "units": [{"key": "base", "name": "Pcs", "factor": 1, "price": 100}]}
         ],
@@ -246,7 +246,7 @@ def test_hold_with_invalid_customer_returns_error(appctx):
         "customer_id": 99999,
         "account_id": _cash_account_id(),
         "items": [
-            {"id": 1, "qty": 1, "price": 100, "name": "Cola", "stock": 50,
+            {"item_id": 1, "qty": 1, "price": 100, "name": "Cola", "stock": 50,
              "unit": "Pcs", "unitKey": "base", "unitName": "Pcs", "factor": 1,
              "units": [{"key": "base", "name": "Pcs", "factor": 1, "price": 100}]}
         ],
@@ -268,7 +268,7 @@ def test_checkout_after_hold_deletes_hold(appctx):
         "customer_id": cust.id,
         "account_id": _cash_account_id(),
         "items": [
-            {"id": item.id, "qty": 2, "price": 100, "name": "Cola", "stock": 50,
+            {"item_id": item.id, "qty": 2, "price": 100, "name": "Cola", "stock": 50,
              "unit": "Pcs", "unitKey": "base", "unitName": "Pcs", "factor": 1,
              "units": [{"key": "base", "name": "Pcs", "factor": 1, "price": 100}]}
         ],
