@@ -2643,6 +2643,68 @@ def delete_quotation(id):
     flash(f"Quotation #{id} deleted.", "success")
     return redirect(url_for("quotations"))
 
+@app.route("/quotations/<int:id>/edit", methods=["GET", "POST"])
+@manager_required
+def edit_quotation(id):
+    q = db.session.get(Quotation, id) or abort(404)
+    if q.status == "Converted":
+        flash("Converted quotations cannot be edited.", "danger")
+        return redirect(url_for("quotation_detail", id=id))
+    customers = Customer.query.order_by(Customer.name).all()
+    items = Item.query.order_by(Item.name).all()
+    if request.method == "POST":
+        customer_id = request.form.get("customer_id", "").strip()
+        quote_date = request.form.get("quote_date", "").strip()
+        valid_until = request.form.get("valid_until", "").strip()
+        notes = request.form.get("notes", "").strip()
+        item_ids = request.form.getlist("item_id[]")
+        quantities = request.form.getlist("quantity[]")
+        prices = request.form.getlist("sale_price[]")
+        disc_types = request.form.getlist("discount_type[]")
+        disc_values = request.form.getlist("discount_value[]")
+        tax_pcts = request.form.getlist("tax_percent[]")
+        unit_ids = request.form.getlist("unit_id[]")
+        rows = []
+        for i, (iid, qty, price) in enumerate(zip(item_ids, quantities, prices)):
+            if iid.strip() and qty.strip() and price.strip():
+                rows.append((iid.strip(), qty.strip(), price.strip(),
+                    disc_types[i] if i < len(disc_types) else "percent",
+                    disc_values[i] if i < len(disc_values) else "0",
+                    tax_pcts[i] if i < len(tax_pcts) else "0",
+                    unit_ids[i] if i < len(unit_ids) else ""))
+        row_error = validate_line_rows(rows) if rows else None
+        if not customer_id or not quote_date:
+            flash("Customer and date are required.", "danger")
+        elif not rows:
+            flash("At least one item is required.", "danger")
+        elif row_error:
+            flash(row_error, "danger")
+        else:
+            q.customer_id = int(customer_id)
+            q.quote_date = datetime.strptime(quote_date, "%Y-%m-%d")
+            q.valid_until = datetime.strptime(valid_until, "%Y-%m-%d") if valid_until else None
+            q.notes = notes or None
+            db.session.query(QuotationItem).filter_by(quotation_id=q.id).delete()
+            for iid, qty, price, d_type, d_val, tax, unit_key in rows:
+                item_obj = db.session.get(Item, int(iid)) or abort(404)
+                unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
+                db.session.add(QuotationItem(
+                    quotation_id=q.id, item_id=int(iid),
+                    quantity=int(qty), sale_price=float(price),
+                    discount_type=d_type or "percent",
+                    discount_value=float(d_val or 0),
+                    tax_percent=float(tax or 0),
+                    unit_name=unit_name, unit_factor=unit_factor,
+                ))
+            db.session.commit()
+            flash(f"Quotation #{q.id} updated.", "success")
+            return redirect(url_for("quotation_detail", id=id))
+    total = quotation_total(q)
+    return render_template("quotation_edit.html",
+        q=q, customers=customers, items=items, total=total,
+        q_item_net=quotation_item_net, quote_statuses=QUOTATION_STATUSES,
+        today=now_local().strftime("%Y-%m-%d"))
+
 # ─── Delivery Challan ──────────────────────────────────────────────────────────
 
 
