@@ -123,16 +123,20 @@
         <a href="#s7">7. Returns</a>
         <a href="#s8">8. Inventory</a>
         <a href="#s9">9. Fixed assets</a>
-        <a href="#s10">10. The general ledger</a>
-        <a href="#s11">11. Reports</a>
-        <a href="#s12">12. Month end</a>
-        <a href="#s13">13. Year end</a>
-        <a href="#s14">14. Fixing mistakes</a>
-        <a href="#s15">15. Users &amp; permissions</a>
-        <a href="#s16">16. Backup &amp; restore</a>
-        <a href="#s17">17. Starting fresh</a>
-        <a href="#s18">18. Rules &amp; limits</a>
-        <a href="#s19">19. Troubleshooting</a>
+        <a href="#s10">10. Point of Sale</a>
+        <a href="#s11">11. Delivery Challans</a>
+        <a href="#s12">12. Barcodes &amp; QR Codes</a>
+        <a href="#s13">13. Audit Log</a>
+        <a href="#s14">14. The general ledger</a>
+        <a href="#s15">15. Reports</a>
+        <a href="#s16">16. Month end</a>
+        <a href="#s17">17. Year end</a>
+        <a href="#s18">18. Fixing mistakes</a>
+        <a href="#s19">19. Users &amp; permissions</a>
+        <a href="#s20">20. Backup &amp; restore</a>
+        <a href="#s21">21. Starting fresh</a>
+        <a href="#s22">22. Rules &amp; limits</a>
+        <a href="#s23">23. Troubleshooting</a>
       </nav>
     </div>
 
@@ -458,7 +462,137 @@
       </section>
 
       <section id="s10" class="mn-sec">
-        <h3>10. The general ledger</h3>
+        <h3>10. Point of Sale</h3>
+        <p>
+          <span class="mn-path">Transactions → Point of Sale</span> — a cash counter for fast,
+          low-touch sales. It is especially useful if you ring up many small transactions in a day.
+        </p>
+        <h5>Starting a sale</h5>
+        <p>
+          Choose the customer (or leave it blank for "walk-in"), then type or scan an item code
+          (barcode / QR). The first match appears. Add the quantity and press Enter. Repeat for
+          each item. Discounts and taxes are applied per line, the same as in an invoice.
+        </p>
+        <h5>Payment and printing</h5>
+        <p>
+          When done, press <strong>Complete Sale</strong>. It creates a Sale invoice, numbered in
+          sequence, posts to the ledger, and updates stock. Choose a cash or bank account. The
+          receipt prints immediately.
+        </p>
+        <h5>Suspending a sale (Hold)</h5>
+        <p>
+          Press <strong>Hold</strong> to pause the current sale. It is held in memory and appears
+          in the <span class="mn-path">Held Bills</span> list. You can resume it later by opening
+          it and pressing <strong>Resume</strong>. A resumed sale keeps its customer, all items and
+          their quantities, and the moment it is completed it is numbered and posted normally.
+        </p>
+        <div class="mn-why">
+          <strong>Hold is for interruptions</strong>
+          If you are rung up halfway through a sale, hold it, serve another customer, and resume
+          when you are free. The second customer's sale goes onto the counter separately.
+        </div>
+        <p class="mb-0">
+          Hold does <em>not</em> post. The moment you press Complete Sale — whether immediately
+          or much later — a journal entry is posted, stock moves, and the invoice is numbered.
+        </p>
+      </section>
+
+      <section id="s11" class="mn-sec">
+        <h3>11. Delivery Challans</h3>
+        <p>
+          A delivery challan (or delivery note) is a transport document that moves with goods
+          between warehouse and customer. It is not an invoice; it does not post and moves no
+          stock. It is created before or alongside a sale to track what physically shipped.
+        </p>
+        <h5>Creating a challan</h5>
+        <p><span class="mn-path">Transactions → Delivery Challans</span></p>
+        <p>
+          Choose a sale or customer, enter the date, and add items with quantities. The challan is
+          numbered automatically (independent of invoice numbers) and printed. It travels with the
+          shipment as proof of what left the warehouse.
+        </p>
+        <div class="mn-why">
+          <strong>A challan is optional, but useful if goods are collected or shipped</strong>
+          You might create a challan to give to the customer's driver, or to yourself as a reminder
+          of what left the warehouse today. Some countries require them for tax or customs reasons.
+        </div>
+        <h5>Linking to a sale</h5>
+        <p class="mb-0">
+          A challan is not required to create a sale; the two are separate documents. But if you
+          link a challan to a sale (by choosing that sale when creating the challan), the two
+          appear together for reference. Changing one does not affect the other.
+        </p>
+      </section>
+
+      <section id="s12" class="mn-sec">
+        <h3>12. Barcodes &amp; QR Codes</h3>
+        <p>
+          Every item can have a barcode or QR code for quick lookup and scanning. Use these to
+          speed up the POS counter, reduce typing mistakes, and manage inventory.
+        </p>
+        <h5>Adding a barcode to an item</h5>
+        <p>
+          <span class="mn-path">Inventory → Items → [edit item]</span> — scroll to the
+          <strong>Barcode / QR</strong> field and enter a code. Typically:
+        </p>
+        <ul>
+          <li>A <strong>barcode</strong> is a product code (like a UPC or EAN) printed on the box.</li>
+          <li>A <strong>QR code</strong> you generate yourself (the system can create a unique QR
+            for the item's ID).</li>
+        </ul>
+        <p>
+          One item, one code. Save. The system will not let you use the same code twice.
+        </p>
+        <h5>Printing barcode labels</h5>
+        <p>
+          <span class="mn-path">Inventory → Items → [select items] → Print Labels</span> — the
+          system generates a sheet of barcode stickers that print to a label printer. Stick them
+          onto your shelves or products.
+        </p>
+        <h5>Scanning at the POS</h5>
+        <p class="mb-0">
+          At the POS counter, when prompted for an item, scan a barcode with a handheld scanner (a
+          <em>barcode gun</em>). It types the code into the search box, and the item appears. Add
+          quantity and press Enter. This is much faster than looking up item names.
+        </p>
+      </section>
+
+      <section id="s13" class="mn-sec">
+        <h3>13. Audit Log</h3>
+        <p>
+          <span class="mn-path">Admin → Audit Log</span> (admin only) — a permanent record of
+          every change made in the system. It records <strong>who</strong> made the change,
+          <strong>what</strong> they changed, <strong>when</strong>, and the <strong>detail</strong>
+          of what changed.
+        </p>
+        <h5>What is recorded</h5>
+        <ul>
+          <li>Every purchase, sale, payment, receipt and expense created, edited, or reversed.</li>
+          <li>Every user login and every password change.</li>
+          <li>Every backup downloaded and every restore performed.</li>
+          <li>Every manual journal entry created or reversed.</li>
+          <li>Every item, supplier, customer, or account added or changed.</li>
+          <li>Every period or fiscal year closed.</li>
+          <li>Every user role change or account created / deleted.</li>
+        </ul>
+        <h5>Reading the log</h5>
+        <p>
+          The log lists actions in reverse chronological order (newest first). Click any row to see
+          the full detail: the exact before-and-after values, the user who made the change, and the
+          exact timestamp.
+        </p>
+        <div class="mn-why">
+          <strong>The audit log cannot be edited or deleted</strong>
+          It is stored separately and is read-only. You cannot hide what you did, and nobody can
+          hide what they did either. This is exactly what the accounting standard expects.
+        </div>
+        <p class="mb-0">
+          Export the audit log as CSV for your own records or for an auditor to review.
+        </p>
+      </section>
+
+      <section id="s14" class="mn-sec">
+        <h3>14. The general ledger</h3>
         <h5>Manual journal entries</h5>
         <p>
           <span class="mn-path">Accounting → Journal Entries → New Entry</span> — for things no
@@ -494,8 +628,8 @@
         </p>
       </section>
 
-      <section id="s11" class="mn-sec">
-        <h3>11. Reports</h3>
+      <section id="s15" class="mn-sec">
+        <h3>15. Reports</h3>
         <div class="table-responsive">
           <table class="table table-sm align-middle">
             <thead><tr><th style="width:30%;">Report</th><th>What it tells you</th></tr></thead>
@@ -523,8 +657,8 @@
         </div>
       </section>
 
-      <section id="s12" class="mn-sec">
-        <h3>12. Month end</h3>
+      <section id="s16" class="mn-sec">
+        <h3>16. Month end</h3>
         <ol class="mn-step">
           <li>Enter every invoice, payment and expense for the month.</li>
           <li><strong>Run depreciation</strong> for the month —
@@ -541,8 +675,8 @@
         </ol>
       </section>
 
-      <section id="s13" class="mn-sec">
-        <h3>13. Year end</h3>
+      <section id="s17" class="mn-sec">
+        <h3>17. Year end</h3>
         <p>
           Do everything in the month-end list, then
           <span class="mn-path">Accounting → Periods → Close Year</span>.
@@ -564,8 +698,8 @@
         </p>
       </section>
 
-      <section id="s14" class="mn-sec">
-        <h3>14. Fixing mistakes</h3>
+      <section id="s18" class="mn-sec">
+        <h3>18. Fixing mistakes</h3>
         <p>
           You cannot edit or delete a posted document. You <strong>reverse</strong> it — open it
           and press <strong>Reverse</strong> — and then enter it again correctly.
@@ -591,8 +725,8 @@
         </p>
       </section>
 
-      <section id="s15" class="mn-sec">
-        <h3>15. Users &amp; permissions</h3>
+      <section id="s19" class="mn-sec">
+        <h3>19. Users &amp; permissions</h3>
         <p>
           Three roles. Each higher role can do everything the ones below it can. The actions
           you cannot take back — reversing a document, closing a year, managing users,
@@ -627,8 +761,8 @@
         </p>
       </section>
 
-      <section id="s16" class="mn-sec">
-        <h3>16. Backup &amp; restore</h3>
+      <section id="s20" class="mn-sec">
+        <h3>20. Backup &amp; restore</h3>
         <p><span class="mn-path">Admin → System</span></p>
         <p>
           <strong>Download Backup</strong> writes every table in the database to a single file.
@@ -645,8 +779,8 @@
         </div>
       </section>
 
-      <section id="s17" class="mn-sec">
-        <h3>17. Starting fresh</h3>
+      <section id="s21" class="mn-sec">
+        <h3>21. Starting fresh</h3>
         <p><span class="mn-path">Admin → System → Start Fresh</span> — two options.</p>
         <div class="table-responsive">
           <table class="table table-sm align-middle">
@@ -668,8 +802,8 @@
         </div>
       </section>
 
-      <section id="s18" class="mn-sec">
-        <h3>18. Rules &amp; limits</h3>
+      <section id="s22" class="mn-sec">
+        <h3>22. Rules &amp; limits</h3>
         <h5>What the system will not let you do</h5>
         <ul>
           <li>Edit or delete a posted document.</li>
@@ -690,8 +824,8 @@
         </ul>
       </section>
 
-      <section id="s19" class="mn-sec">
-        <h3>19. Troubleshooting</h3>
+      <section id="s23" class="mn-sec">
+        <h3>23. Troubleshooting</h3>
         <h5>"The Profit &amp; Loss shows nothing"</h5>
         <p>
           Check the date range. It defaults to 1 January until today, so anything dated in the
@@ -748,16 +882,20 @@
         <a href="#u7">7. Returns</a>
         <a href="#u8">8. Inventory</a>
         <a href="#u9">9. Fixed assets</a>
-        <a href="#u10">10. General ledger</a>
-        <a href="#u11">11. Reports</a>
-        <a href="#u12">12. Mahine ka ikhtitam</a>
-        <a href="#u13">13. Saal ka ikhtitam</a>
-        <a href="#u14">14. Ghaltiyan theek karna</a>
-        <a href="#u15">15. Users aur permissions</a>
-        <a href="#u16">16. Backup aur restore</a>
-        <a href="#u17">17. Naye sire se shuru</a>
-        <a href="#u18">18. Usool aur hudood</a>
-        <a href="#u19">19. Masail ka hal</a>
+        <a href="#u10">10. Point of Sale</a>
+        <a href="#u11">11. Delivery Challans</a>
+        <a href="#u12">12. Barcodes aur QR Codes</a>
+        <a href="#u13">13. Audit Log</a>
+        <a href="#u14">14. General ledger</a>
+        <a href="#u15">15. Reports</a>
+        <a href="#u16">16. Mahine ka ikhtitam</a>
+        <a href="#u17">17. Saal ka ikhtitam</a>
+        <a href="#u18">18. Ghaltiyan theek karna</a>
+        <a href="#u19">19. Users aur permissions</a>
+        <a href="#u20">20. Backup aur restore</a>
+        <a href="#u21">21. Naye sire se shuru</a>
+        <a href="#u22">22. Usool aur hudood</a>
+        <a href="#u23">23. Masail ka hal</a>
       </nav>
     </div>
 
@@ -1087,7 +1225,143 @@
       </section>
 
       <section id="u10" class="mn-sec">
-        <h3>10. General ledger</h3>
+        <h3>10. Point of Sale</h3>
+        <p>
+          <span class="mn-path">Transactions → Point of Sale</span> — ek naqdaar counter jahan par
+          din bhar chhote-chhote farosh din mein tak ho jaayein. Agar aap ko dhela dheli ke
+          invoice din mein bahut karte hain to ye bikul sahi hai.
+        </p>
+        <h5>Sale shuru karna</h5>
+        <p>
+          Customer chunein (ya blank rakhen agar aaj ka customer nahi dikhta), phir item ka code
+          likhen ya scan karein (barcode / QR). Pehla match aa jaata hai. Quantity daalen aur Enter
+          daben. Har item ke liye ulta-pulta. Discounts aur taxes har line par lagti hain, bilkul
+          invoice ki tarah.
+        </p>
+        <h5>Payment aur printing</h5>
+        <p>
+          Jab sab khatam, <strong>Complete Sale</strong> daben. Ye ek Sale invoice banati hai, number
+          order se deti hai, ledger mein post karti hai, aur stock update karti hai. Cash ya bank
+          account chunein. Receipt fauran print ho jaati hai.
+        </p>
+        <h5>Sale ko hold karna (Suspend)</h5>
+        <p>
+          <strong>Hold</strong> daben to abhi ka sale pause ho jaata hai. Wo memory mein rakhta hai aur
+          <span class="mn-path">Held Bills</span> list mein dikhta hai. Baad mein usay doob sakte ho
+          — usay kholo aur <strong>Resume</strong> daben. Resume shuda sale apna customer, sab items,
+          quantities rakhta hai, aur jab usay complete karo to number aur posting normal tarah hoti
+          hai.
+        </p>
+        <div class="mn-why">
+          <strong>Hold taqatul ke liye hai</strong>
+          Agar ek customer ke beech mein doosra aajaye to hold kar do, doosre ko bilao, aur phir
+          resume kar. Doosre customer ka sale counter par alag se jaata hai.
+        </div>
+        <p class="mb-0">
+          Hold post nahi karta. Jab aap Complete Sale daben — chahe fauran ya bahut baad mein —
+          tab journal entry post hoti hai, stock hilta hai, aur invoice ko number milta hai.
+        </p>
+      </section>
+
+      <section id="u11" class="mn-sec">
+        <h3>11. Delivery Challans</h3>
+        <p>
+          Ek delivery challan (ya delivery note) ek transport document hai jo maal ke saath gaodaam
+          se customer tak jaata hai. Ye invoice nahi; post nahi karta aur stock nahi hilata. Invoice
+          ke pehle ya saath saath banaya jaata hai to track ho sake ke kya kya bheja.
+        </p>
+        <h5>Challan banana</h5>
+        <p><span class="mn-path">Transactions → Delivery Challans</span></p>
+        <p>
+          Ek sale ya customer chunein, tarikh daalen, aur items add karein quantities ke saath.
+          Challan ko apne aap number mil jata hai (invoice number se alag) aur print ho jaata hai.
+          Ye challan shipment ke saath jaata hai — proof kehne ke liye ke gaodaam se kya kya nikla.
+        </p>
+        <div class="mn-why">
+          <strong>Challan optional hai, lekin useful agar maal collect hota hai ya ship hota hai</strong>
+          Aap challan banate ho customer ke driver ko dene ke liye, ya apne aap ke liye reminder
+          ke liye — kal gaodaam se kya nikla. Kuch mulkon mein tax ya customs ke liye chahiye hota
+          hai.
+        </div>
+        <h5>Sale se link karna</h5>
+        <p class="mb-0">
+          Challan sale ke liye zaruri nahi; dono alag hain. Lekin agar challan ko sale se link kro
+          (challan banate waqt wo sale chunkar), to dono ek saath dikhte hain reference ke liye.
+          Ek ko badal ne se doosra nahi badlta.
+        </p>
+      </section>
+
+      <section id="u12" class="mn-sec">
+        <h3>12. Barcodes aur QR Codes</h3>
+        <p>
+          Har item ke liye barcode ya QR code rakh sakte ho jaldi lookup aur scanning ke liye. Ye
+          POS counter ko tez bna deta hai, typing ki ghalti kam hoti hai, aur inventory manage
+          hona aasan hota hai.
+        </p>
+        <h5>Item mein barcode daalna</h5>
+        <p>
+          <span class="mn-path">Inventory → Items → [item ko edit karein]</span> — scroll karke
+          <strong>Barcode / QR</strong> field tak jao aur code likho. Zyada tar:
+        </p>
+        <ul>
+          <li>Ek <strong>barcode</strong> product code hota hai (jaise UPC ya EAN) jo box par likha
+            hota hai.</li>
+          <li>Ek <strong>QR code</strong> tum apne aap banate ho (system item ke liye apne aap unique
+            QR bna sakta hai).</li>
+        </ul>
+        <p>
+          Ek item, ek code. Save karo. System dono ke liye ek hi code use nahi hone dega.
+        </p>
+        <h5>Barcode labels print karna</h5>
+        <p>
+          <span class="mn-path">Inventory → Items → [items chunein] → Print Labels</span> — system
+          barcode stickers ka ek sheet banata hai jo label printer par print hote hain. Unhe
+          shelves ya products par lagao.
+        </p>
+        <h5>POS mein scanning</h5>
+        <p class="mb-0">
+          POS counter par, jab item maanga jaye, barcode gun se scan kro. Ye search box mein code
+          likhdeta hai, aur item aa jaata hai. Quantity do aur Enter daben. Ye item name likh ne se
+          bahut tez hota hai.
+        </p>
+      </section>
+
+      <section id="u13" class="mn-sec">
+        <h3>13. Audit Log</h3>
+        <p>
+          <span class="mn-path">Admin → Audit Log</span> (admin ke liye hi) — ek hakimi record jo
+          har badlao ko likha rakhta hai. Likha rakhta hai <strong>kaunsa</strong> badlao kiya,
+          <strong>kya</strong> badla, <strong>kab</strong>, aur <strong>kyun</strong> likha.
+        </p>
+        <h5>Kya record hota hai</h5>
+        <ul>
+          <li>Har purchase, sale, payment, receipt aur expense jo bana ho, edit hua ho, ya reverse
+            hua ho.</li>
+          <li>Har user login aur har password change.</li>
+          <li>Har backup download hua aur har restore hua.</li>
+          <li>Har manual journal entry jo bana ya reverse hua.</li>
+          <li>Har item, supplier, customer, ya account jo add ya badla.</li>
+          <li>Har period ya fiscal year jo band hua.</li>
+          <li>Har user role badlao ya account add/delete.</li>
+        </ul>
+        <h5>Log padna</h5>
+        <p>
+          Log reverse order mein likha hai (naya pehle). Kisi bhi row par click kro to poori detail
+          aaye: exact before-after values, jo user ne kiya, aur exact timestamp.
+        </p>
+        <div class="mn-why">
+          <strong>Audit log ko edit ya delete nahi kar sakte</strong>
+          Ye alag jagah rakhta hai aur sirf read-only hota hai. Aap apne kiye ko chupa nahi sakte,
+          aur na hi koi aur apne kiye ko chupa sakta hai. Ye bilkul wohi hai jo accounting standard
+          chahta hai.
+        </div>
+        <p class="mb-0">
+          Audit log ko CSV mein export kro apne records ke liye ya auditor ko dekhane ke liye.
+        </p>
+      </section>
+
+      <section id="u14" class="mn-sec">
+        <h3>14. General ledger</h3>
         <h5>Manual journal entries</h5>
         <p>
           <span class="mn-path">Accounting → Journal Entries → New Entry</span> — un cheezon ke liye
@@ -1123,8 +1397,8 @@
         </p>
       </section>
 
-      <section id="u11" class="mn-sec">
-        <h3>11. Reports</h3>
+      <section id="u15" class="mn-sec">
+        <h3>15. Reports</h3>
         <div class="table-responsive">
           <table class="table table-sm align-middle">
             <thead><tr><th style="width:30%;">Report</th><th>Kya batati hai</th></tr></thead>
@@ -1152,8 +1426,8 @@
         </div>
       </section>
 
-      <section id="u12" class="mn-sec">
-        <h3>12. Mahine ka ikhtitam</h3>
+      <section id="u16" class="mn-sec">
+        <h3>16. Mahine ka ikhtitam</h3>
         <ol class="mn-step">
           <li>Us mahine ki har invoice, payment aur expense darj kar lein.</li>
           <li>Us mahine ki <strong>depreciation chalayein</strong> —
@@ -1171,8 +1445,8 @@
         </ol>
       </section>
 
-      <section id="u13" class="mn-sec">
-        <h3>13. Saal ka ikhtitam</h3>
+      <section id="u17" class="mn-sec">
+        <h3>17. Saal ka ikhtitam</h3>
         <p>
           Mahine wali poori list karein, phir
           <span class="mn-path">Accounting → Periods → Close Year</span>.
@@ -1194,8 +1468,8 @@
         </p>
       </section>
 
-      <section id="u14" class="mn-sec">
-        <h3>14. Ghaltiyan theek karna</h3>
+      <section id="u18" class="mn-sec">
+        <h3>18. Ghaltiyan theek karna</h3>
         <p>
           Posted document na edit hota hai na delete. Usay <strong>reverse</strong> karein — kholein aur
           <strong>Reverse</strong> dabayein — phir sahi tareeqe se dobara darj karein.
@@ -1221,8 +1495,8 @@
         </p>
       </section>
 
-      <section id="u15" class="mn-sec">
-        <h3>15. Users aur permissions</h3>
+      <section id="u19" class="mn-sec">
+        <h3>19. Users aur permissions</h3>
         <p>
           Teen roles. Har oopar wala role woh sab kuch kar sakta hai jo neeche wale karte
           hain. Jo kaam <em>wapas nahi hote</em> — document reverse karna, saal band karna,
@@ -1257,8 +1531,8 @@
         </p>
       </section>
 
-      <section id="u16" class="mn-sec">
-        <h3>16. Backup aur restore</h3>
+      <section id="u20" class="mn-sec">
+        <h3>20. Backup aur restore</h3>
         <p><span class="mn-path">Admin → System</span></p>
         <p>
           <strong>Download Backup</strong> poore database ki har table ko ek hi file mein likh deta hai.
@@ -1274,8 +1548,8 @@
         </div>
       </section>
 
-      <section id="u17" class="mn-sec">
-        <h3>17. Naye sire se shuru</h3>
+      <section id="u21" class="mn-sec">
+        <h3>21. Naye sire se shuru</h3>
         <p><span class="mn-path">Admin → System → Start Fresh</span> — do options.</p>
         <div class="table-responsive">
           <table class="table table-sm align-middle">
@@ -1296,8 +1570,8 @@
         </div>
       </section>
 
-      <section id="u18" class="mn-sec">
-        <h3>18. Usool aur hudood</h3>
+      <section id="u22" class="mn-sec">
+        <h3>22. Usool aur hudood</h3>
         <h5>System ye karne hi nahi dega</h5>
         <ul>
           <li>Posted document ko edit ya delete karna.</li>
@@ -1318,8 +1592,8 @@
         </ul>
       </section>
 
-      <section id="u19" class="mn-sec">
-        <h3>19. Masail ka hal</h3>
+      <section id="u23" class="mn-sec">
+        <h3>23. Masail ka hal</h3>
         <h5>"Profit &amp; Loss mein kuch nazar nahi aa raha"</h5>
         <p>
           Date range dekhein. Ye by default 1 January se aaj tak hoti hai — to jo cheez aage ki tareekh

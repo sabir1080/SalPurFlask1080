@@ -142,13 +142,15 @@
   <div class="row g-3 mb-5">
     {% set features_en = [
       ("bi-people",         "Suppliers &amp; Customers", "Opening balances, running ledgers, statements, ageing, and payments that can be applied to a specific bill."),
-      ("bi-box-seam",       "Inventory",                 "Items, categories, reorder alerts, stock adjustments, and stock valued at weighted-average cost."),
+      ("bi-box-seam",       "Inventory",                 "Items, categories, reorder alerts, stock adjustments, stock valued at weighted-average cost, and alternate units for multi-unit items."),
       ("bi-cart",           "Purchases &amp; Sales",     "Multi-line invoices with per-line discount and tax, returns both ways, quotations, purchase orders and delivery challans."),
       ("bi-cash-coin",      "Cash &amp; Bank",           "Any number of cash and bank accounts. Every payment, receipt and expense belongs to one, and its balance comes straight from the ledger."),
       ("bi-journal-text",   "General Ledger",            "Chart of accounts, manual journal entries, accounting periods, fiscal years, and year-end closing into Retained Earnings."),
-      ("bi-building",       "Fixed Assets",              "An asset register with straight-line and reducing-balance depreciation, posted monthly, and disposal with gain or loss."),
+      ("bi-building",       "Fixed Assets",              "An asset register with straight-line and reducing-balance depreciation, posted monthly, asset disposal with automatic gain or loss calculation, and depreciation reports."),
       ("bi-bar-chart-line", "Financial Reports",         "Balance Sheet, Profit &amp; Loss, Trial Balance, Cash Flow Statement, Stock Valuation, AP/AR Ageing, Cash Book, Tax Summary, Reconciliation."),
-      ("bi-shield-check",   "Controls",                  "Roles and permissions, an audit log of every change, rate-limited sign-in, and posted documents that cannot be edited or deleted."),
+      ("bi-shop",           "Point of Sale",             "A counter POS system for cash sales with item lookup, quantity management, suspended sales (hold) feature for later resumption, and receipt printing."),
+      ("bi-qr-code",        "Barcodes &amp; QR Codes",   "Generate barcodes and QR codes for items, print labels for inventory tracking, and barcode scanning at the POS counter."),
+      ("bi-shield-check",   "Controls",                  "Roles and permissions, a complete audit log of every change with user and timestamp, rate-limited sign-in, and posted documents that cannot be edited or deleted."),
       ("bi-hdd",            "Backup &amp; Restore",      "One portable file holding every table, restorable on either database engine — plus two levels of reset for handing the system over."),
     ] %}
     {% for icon, title, text in features_en %}
@@ -315,13 +317,15 @@
   <div class="row g-3 mb-5">
     {% set features_ur = [
       ("bi-people",         "Suppliers aur Customers", "Opening balances, chalte hue ledgers, statements, ageing, aur aisi payments jo kisi khaas bill par lagai ja sakein."),
-      ("bi-box-seam",       "Inventory",               "Items, categories, reorder alerts, stock adjustments, aur weighted-average cost par stock ki value."),
+      ("bi-box-seam",       "Inventory",               "Items, categories, reorder alerts, stock adjustments, weighted-average cost par stock ki value, aur multi-unit items ke liye alternate units."),
       ("bi-cart",           "Kharid aur Farokht",      "Multi-line invoices, har line par discount aur tax, dono taraf ke returns, quotations, purchase orders aur delivery challans."),
       ("bi-cash-coin",      "Cash aur Bank",           "Jitne chahein cash aur bank accounts. Har payment, receipt aur expense kisi ek se juda hota hai, aur uska balance seedha ledger se aata hai."),
       ("bi-journal-text",   "General Ledger",          "Chart of accounts, manual journal entries, accounting periods, fiscal years, aur saal ke ikhtitam par Retained Earnings mein closing."),
-      ("bi-building",       "Fixed Assets",            "Asset register, straight-line aur reducing-balance depreciation jo har mahine post hoti hai, aur disposal par nafa ya nuqsan."),
+      ("bi-building",       "Fixed Assets",            "Asset register, straight-line aur reducing-balance depreciation jo har mahine post hoti hai, disposal par automatic nafa ya nuqsan calculation, aur depreciation reports."),
       ("bi-bar-chart-line", "Financial Reports",       "Balance Sheet, Profit &amp; Loss, Trial Balance, Cash Flow Statement, Stock Valuation, AP/AR Ageing, Cash Book, Tax Summary, Reconciliation."),
-      ("bi-shield-check",   "Controls",                "Roles aur permissions, har tabdeeli ka audit log, sign-in par rate limit, aur posted documents jo na edit hote hain na delete."),
+      ("bi-shop",           "Point of Sale",           "Kauntir POS system naqdaar bikrī ke liye, item lookup, quantity manage, suspended sales feature (hold) jo baad mein resume ho sakein, aur receipt print."),
+      ("bi-qr-code",        "Barcodes aur QR Codes",   "Items ke liye barcodes aur QR codes banayein, inventory tracking ke liye stickers print karein, aur POS par barcode scanning karein."),
+      ("bi-shield-check",   "Controls",                "Roles aur permissions, har tabdeeli ka complete audit log user aur time ke saath, sign-in par rate limit, aur posted documents jo na edit hote hain na delete."),
       ("bi-hdd",            "Backup aur Restore",      "Ek hi file mein poora database, dono database engines par restore ho sakti hai — aur system aage dene ke liye do darje ka reset."),
     ] %}
     {% for icon, title, text in features_ur %}
