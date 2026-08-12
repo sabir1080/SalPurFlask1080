@@ -2,99 +2,99 @@
 {% block title %}Dashboard — {{ app_name }}{% endblock %}
 {% block content %}
 
-<div class="page-header">
+<div class="page-header" style="margin-bottom: 1rem;">
     <div class="page-header-title">
-        <h1><i class="bi bi-speedometer2"></i> Dashboard</h1>
-        <p>Business overview and key performance indicators</p>
+        <h2 style="margin: 0; font-size: 1.5rem;"><i class="bi bi-speedometer2"></i> Dashboard</h2>
+        <p style="margin: 0.25rem 0 0 0; font-size: 0.85rem;">Business overview and key performance indicators</p>
     </div>
     <div class="page-header-actions">
-        <a href="{{ url_for('reports') }}" class="btn btn-outline-primary">
+        <a href="{{ url_for('reports') }}" class="btn btn-outline-primary" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;">
             <i class="bi bi-bar-chart-line"></i> View Reports
         </a>
     </div>
 </div>
 
-<!-- KPI Metrics Grid (4 columns) -->
-<div class="grid grid-4 mb-8">
+<!-- KPI Metrics Grid (2x2 compact) -->
+<div class="grid grid-2 mb-3" style="gap: 0.75rem;">
     <!-- Total Sale Revenue -->
     <div class="card card-elevated">
-        <div class="card-body">
-            <div class="flex flex-between mb-4">
-                <div class="flex-column">
-                    <p class="text-tertiary text-sm mb-1">Total Sale Revenue</p>
-                    <h3 class="mb-0 text-success font-bold">{{ total_sale_revenue | fmt_num }}</h3>
+        <div class="card-body" style="padding: 0.75rem;">
+            <div class="flex flex-between mb-1">
+                <div style="flex: 1;">
+                    <p class="text-tertiary text-sm mb-0" style="margin: 0; font-size: 0.75rem;">Total Sale Revenue</p>
+                    <h5 class="mb-0 text-success font-bold" style="margin: 0; font-size: 0.95rem;">{{ total_sale_revenue | fmt_num }}</h5>
                 </div>
-                <span class="text-success text-4xl opacity-50"><i class="bi bi-graph-up-arrow"></i></span>
+                <span class="text-success opacity-50" style="font-size: 1rem;"><i class="bi bi-graph-up-arrow"></i></span>
             </div>
-            <small class="text-tertiary">Returns: <span class="text-primary font-medium">{{ total_sale_returns | fmt_num }}</span></small>
+            <small class="text-tertiary" style="font-size: 0.7rem;">Returns: <span class="text-primary font-medium">{{ total_sale_returns | fmt_num }}</span></small>
         </div>
     </div>
 
     <!-- Total Purchase Cost -->
     <div class="card card-elevated">
-        <div class="card-body">
-            <div class="flex flex-between mb-4">
-                <div class="flex-column">
-                    <p class="text-tertiary text-sm mb-1">Total Purchase Cost</p>
-                    <h3 class="mb-0 text-primary font-bold">{{ total_purchase_cost | fmt_num }}</h3>
+        <div class="card-body" style="padding: 0.75rem;">
+            <div class="flex flex-between mb-1">
+                <div style="flex: 1;">
+                    <p class="text-tertiary text-sm mb-0" style="margin: 0; font-size: 0.75rem;">Total Purchase Cost</p>
+                    <h5 class="mb-0 text-primary font-bold" style="margin: 0; font-size: 0.95rem;">{{ total_purchase_cost | fmt_num }}</h5>
                 </div>
-                <span class="text-primary text-4xl opacity-50"><i class="bi bi-cart"></i></span>
+                <span class="text-primary opacity-50" style="font-size: 1rem;"><i class="bi bi-cart"></i></span>
             </div>
-            <small class="text-tertiary">Returns: <span class="text-primary font-medium">{{ total_purchase_returns | fmt_num }}</span></small>
+            <small class="text-tertiary" style="font-size: 0.7rem;">Returns: <span class="text-primary font-medium">{{ total_purchase_returns | fmt_num }}</span></small>
         </div>
     </div>
 
-    <!-- Gross Profit (with dynamic color) -->
+    <!-- Gross Profit -->
     <div class="card card-elevated {% if total_gross_profit >= 0 %}card-success{% else %}card-danger{% endif %}">
-        <div class="card-body">
-            <div class="flex flex-between mb-4">
-                <div class="flex-column">
-                    <p class="text-tertiary text-sm mb-1">Gross Profit Margin</p>
-                    <h3 class="mb-0 {% if total_gross_profit >= 0 %}text-success{% else %}text-danger{% endif %} font-bold">
+        <div class="card-body" style="padding: 0.75rem;">
+            <div class="flex flex-between mb-1">
+                <div style="flex: 1;">
+                    <p class="text-tertiary text-sm mb-0" style="margin: 0; font-size: 0.75rem;">Gross Profit</p>
+                    <h5 class="mb-0 {% if total_gross_profit >= 0 %}text-success{% else %}text-danger{% endif %} font-bold" style="margin: 0; font-size: 0.95rem;">
                         {{ total_gross_profit | fmt_num }}
-                    </h3>
+                    </h5>
                 </div>
-                <span class="{% if total_gross_profit >= 0 %}text-success{% else %}text-danger{% endif %} text-4xl opacity-50">
+                <span class="{% if total_gross_profit >= 0 %}text-success{% else %}text-danger{% endif %} opacity-50" style="font-size: 1rem;">
                     <i class="bi bi-piggy-bank"></i>
                 </span>
             </div>
-            <small class="text-tertiary">Calculated on recorded sales</small>
+            <small class="text-tertiary" style="font-size: 0.7rem;">On recorded sales</small>
         </div>
     </div>
 
     <!-- Low Stock Alert -->
     <div class="card card-elevated card-warning">
-        <div class="card-body">
-            <div class="flex flex-between mb-4">
-                <div class="flex-column">
-                    <p class="text-tertiary text-sm mb-1">Low Stock Items</p>
-                    <h3 class="mb-0 text-warning font-bold">{{ low_stock_count }}</h3>
+        <div class="card-body" style="padding: 0.75rem;">
+            <div class="flex flex-between mb-1">
+                <div style="flex: 1;">
+                    <p class="text-tertiary text-sm mb-0" style="margin: 0; font-size: 0.75rem;">Low Stock Items</p>
+                    <h5 class="mb-0 text-warning font-bold" style="margin: 0; font-size: 0.95rem;">{{ low_stock_count }}</h5>
                 </div>
-                <span class="text-warning text-4xl opacity-50"><i class="bi bi-exclamation-circle"></i></span>
+                <span class="text-warning opacity-50" style="font-size: 1rem;"><i class="bi bi-exclamation-circle"></i></span>
             </div>
-            <a href="{{ url_for('reports') }}" class="text-primary text-sm font-medium">View details →</a>
+            <a href="{{ url_for('reports') }}" class="text-primary text-sm font-medium" style="font-size: 0.7rem;">View details →</a>
         </div>
     </div>
 </div>
 
-<!-- Financial Status Row -->
-<div class="grid grid-2 mb-8">
+<!-- Financial Status Row (compact 2 cols) -->
+<div class="grid grid-2 mb-3" style="gap: 0.75rem;">
     <!-- Payable to Suppliers -->
     <div class="card card-elevated card-danger">
-        <div class="card-body">
-            <h4 class="card-title">💳 Payable to Suppliers</h4>
-            <h3 class="text-danger font-bold mb-2">{{ total_payable_balance | fmt_num }}</h3>
-            <div class="text-tertiary text-sm space-y-2">
+        <div class="card-body" style="padding: 0.75rem;">
+            <h6 class="card-title" style="margin: 0 0 0.5rem 0; font-size: 0.85rem;">💳 Payable</h6>
+            <h5 class="text-danger font-bold mb-1" style="margin: 0 0 0.4rem 0; font-size: 0.9rem;">{{ total_payable_balance | fmt_num }}</h5>
+            <div class="text-tertiary text-sm space-y-1" style="font-size: 0.75rem;">
                 <div class="flex flex-between">
-                    <span>Total Payable</span>
+                    <span>Total</span>
                     <span class="font-medium">{{ total_payable | fmt_num }}</span>
                 </div>
                 <div class="flex flex-between">
-                    <span>Paid to Date</span>
+                    <span>Paid</span>
                     <span class="font-medium text-success">{{ total_paid_suppliers | fmt_num }}</span>
                 </div>
             </div>
-            <a href="{{ url_for('supplier_payment') }}" class="btn btn-primary btn-sm mt-4 w-100">
+            <a href="{{ url_for('supplier_payment') }}" class="btn btn-primary btn-sm mt-2 w-100" style="font-size: 0.7rem; padding: 0.25rem;">
                 <i class="bi bi-cash-coin"></i> Record Payment
             </a>
         </div>
@@ -102,45 +102,45 @@
 
     <!-- Receivable from Customers -->
     <div class="card card-elevated card-success">
-        <div class="card-body">
-            <h4 class="card-title">💰 Receivable from Customers</h4>
-            <h3 class="text-success font-bold mb-2">{{ total_receivable_balance | fmt_num }}</h3>
-            <div class="text-tertiary text-sm space-y-2">
+        <div class="card-body" style="padding: 0.75rem;">
+            <h6 class="card-title" style="margin: 0 0 0.5rem 0; font-size: 0.85rem;">💰 Receivable</h6>
+            <h5 class="text-success font-bold mb-1" style="margin: 0 0 0.4rem 0; font-size: 0.9rem;">{{ total_receivable_balance | fmt_num }}</h5>
+            <div class="text-tertiary text-sm space-y-1" style="font-size: 0.75rem;">
                 <div class="flex flex-between">
-                    <span>Total Receivable</span>
+                    <span>Total</span>
                     <span class="font-medium">{{ total_receivable | fmt_num }}</span>
                 </div>
                 <div class="flex flex-between">
-                    <span>Received to Date</span>
+                    <span>Received</span>
                     <span class="font-medium text-success">{{ total_received_customers | fmt_num }}</span>
                 </div>
             </div>
-            <a href="{{ url_for('customer_receipt') }}" class="btn btn-success btn-sm mt-4 w-100">
+            <a href="{{ url_for('customer_receipt') }}" class="btn btn-success btn-sm mt-2 w-100" style="font-size: 0.7rem; padding: 0.25rem;">
                 <i class="bi bi-receipt"></i> Record Receipt
             </a>
         </div>
     </div>
 </div>
 
-<!-- Charts Section -->
-<div class="grid grid-3 mb-8 gap-8">
-    <!-- Monthly Sales & Profit Chart (2 columns wide) -->
-    <div class="card card-elevated" style="grid-column: span 2;">
-        <div class="card-header">
-            <h4 class="card-title mb-0">📊 Monthly Sales & Profit Trend</h4>
+<!-- Charts Section (compact) -->
+<div class="grid grid-2 mb-4" style="gap: 0.75rem;">
+    <!-- Monthly Sales & Profit Chart -->
+    <div class="card card-elevated">
+        <div class="card-header" style="padding: 0.5rem;">
+            <h6 class="card-title mb-0" style="margin: 0; font-size: 0.85rem;">📊 Sales & Profit</h6>
         </div>
-        <div class="card-body">
-            <canvas id="salesChart" height="80"></canvas>
+        <div class="card-body" style="padding: 0.5rem; position: relative; height: 260px;">
+            <canvas id="salesChart"></canvas>
         </div>
     </div>
 
     <!-- Stock Levels Chart -->
     <div class="card card-elevated">
-        <div class="card-header">
-            <h4 class="card-title mb-0">📦 Top 10 Items by Stock</h4>
+        <div class="card-header" style="padding: 0.5rem;">
+            <h6 class="card-title mb-0" style="margin: 0; font-size: 0.85rem;">📦 Top Items</h6>
         </div>
-        <div class="card-body">
-            <canvas id="stockChart" height="250"></canvas>
+        <div class="card-body" style="padding: 0.5rem; position: relative; height: 260px;">
+            <canvas id="stockChart"></canvas>
         </div>
     </div>
 </div>
@@ -233,13 +233,24 @@
 </div>
 
 <style>
-.grid { display: grid; gap: var(--space-8); }
+.grid { display: grid; }
 .grid-2 { grid-template-columns: repeat(2, 1fr); }
 .grid-3 { grid-template-columns: repeat(3, 1fr); }
 .grid-4 { grid-template-columns: repeat(4, 1fr); }
 
 .py-8 { padding-top: var(--space-8); padding-bottom: var(--space-8); }
 .space-y-2 > * + * { margin-top: var(--space-2); }
+
+/* Chart container styling */
+.card-body canvas {
+    max-width: 100%;
+    height: auto !important;
+}
+
+/* Hide recent activity tables on first screen */
+.grid-2.gap-8.mb-8 {
+    display: none !important;
+}
 
 @media (max-width: 1440px) {
     .grid-4 { grid-template-columns: repeat(2, 1fr); }
@@ -351,7 +362,7 @@ document.addEventListener('DOMContentLoaded', function () {
         },
         options: {
             responsive: true,
-            maintainAspectRatio: true,
+            maintainAspectRatio: false,
             plugins: {
                 legend: {
                     position: 'top',
@@ -398,7 +409,7 @@ document.addEventListener('DOMContentLoaded', function () {
         options: {
             indexAxis: 'y',
             responsive: true,
-            maintainAspectRatio: true,
+            maintainAspectRatio: false,
             plugins: {
                 legend: { display: false }
             },

@@ -82,15 +82,15 @@
 
   .cart-line-controls {
     display: grid;
-    grid-template-columns: 50px 45px 50px 1fr 50px 50px 50px 20px;
-    gap: var(--spacing-1);
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 4px;
     align-items: center;
     font-size: 0.75rem;
     margin-top: var(--spacing-2);
   }
 
   .cart-disc-type {
-    width: 50px;
+    width: 35px;
     padding: var(--spacing-1) var(--spacing-2);
   }
 
@@ -98,6 +98,38 @@
   .cart-disc,
   .cart-tax {
     padding: var(--spacing-1) var(--spacing-2);
+  }
+
+  /* Compact spinner buttons for inputs */
+  .input-with-spinner {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .input-with-spinner input,
+  .input-with-spinner select {
+    flex: 1;
+    padding: 0.2rem 0.25rem !important;
+    font-size: 0.65rem !important;
+    min-width: 0;
+  }
+
+  .input-spinner-btns {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    flex-shrink: 0;
+  }
+
+  .input-spinner-btns button {
+    padding: 0.05rem 0.2rem !important;
+    font-size: 0.5rem !important;
+    line-height: 1 !important;
+    min-width: auto !important;
+    width: 18px !important;
+    height: 12px !important;
+    border: 1px solid var(--border) !important;
   }
 
   .cart-tax-label {
@@ -127,9 +159,16 @@
 
   .cart-x {
     cursor: pointer;
-    color: var(--color-error);
+    color: #fff;
     border: 0;
-    background: none;
+    background: var(--color-error);
+    padding: 0.1rem 0.25rem !important;
+    font-size: 0.65rem !important;
+    min-width: auto !important;
+    width: auto !important;
+    flex-shrink: 0;
+    height: 22px;
+    line-height: 1;
     font-size: 1.1rem;
     padding: 0;
   }
@@ -470,15 +509,31 @@
           '<div class="cart-amt">' + money(lineTotal) + '</div>' +
         '</div>' +
         '<div class="cart-line-controls">' +
-          '<input type="number" min="1" class="form-control form-control-sm cart-qty" value="' + l.qty + '" data-i="' + i + '" title="Qty">' +
-          '<span style="color: var(--text-muted);">Disc:</span>' +
-          '<select class="form-select form-select-sm cart-disc-type" data-i="' + i + '" data-disc-type="' + i + '" onchange="updateLineDiscount(' + i + ')">' +
-            '<option value="percent" ' + (l.discount_type === 'percent' ? 'selected' : '') + '>%</option>' +
-            '<option value="fixed" ' + (l.discount_type === 'fixed' ? 'selected' : '') + '>Rs</option>' +
-          '</select>' +
-          '<input type="number" step="0.01" min="0" class="form-control form-control-sm cart-disc" value="' + l.discount_value + '" data-i="' + i + '" data-disc-val="true" onchange="updateLineDiscount(' + i + ')" title="Discount">' +
-          '<span class="cart-tax-label">Tax%:</span>' +
-          '<input type="number" step="0.01" min="0" max="100" class="form-control form-control-sm cart-tax" value="' + l.tax_percent + '" data-i="' + i + '" data-tax-val="true" onchange="updateLineTax(' + i + ')" title="Tax %">' +
+          '<div class="input-with-spinner">' +
+            '<input type="number" min="1" class="form-control form-control-sm cart-qty" value="' + l.qty + '" data-i="' + i + '" title="Qty">' +
+            '<div class="input-spinner-btns">' +
+              '<button type="button" class="btn btn-sm btn-outline-secondary cart-qty-up-spinner" data-i="' + i + '" title="▲">▲</button>' +
+              '<button type="button" class="btn btn-sm btn-outline-secondary cart-qty-down-spinner" data-i="' + i + '" title="▼">▼</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="input-with-spinner">' +
+            '<select class="form-select form-select-sm cart-disc-type" data-i="' + i + '" data-disc-type="' + i + '" onchange="updateLineDiscount(' + i + ')">' +
+              '<option value="percent" ' + (l.discount_type === 'percent' ? 'selected' : '') + '>%</option>' +
+              '<option value="fixed" ' + (l.discount_type === 'fixed' ? 'selected' : '') + '>$</option>' +
+            '</select>' +
+            '<input type="number" step="0.01" min="0" class="form-control form-control-sm cart-disc" value="' + l.discount_value + '" data-i="' + i + '" data-disc-val="true" onchange="updateLineDiscount(' + i + ')" title="Discount">' +
+            '<div class="input-spinner-btns">' +
+              '<button type="button" class="btn btn-sm btn-outline-secondary cart-disc-up-spinner" data-i="' + i + '" title="▲">▲</button>' +
+              '<button type="button" class="btn btn-sm btn-outline-secondary cart-disc-down-spinner" data-i="' + i + '" title="▼">▼</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="input-with-spinner">' +
+            '<input type="number" step="0.01" min="0" max="100" class="form-control form-control-sm cart-tax" value="' + l.tax_percent + '" data-i="' + i + '" data-tax-val="true" onchange="updateLineTax(' + i + ')" title="Tax %">' +
+            '<div class="input-spinner-btns">' +
+              '<button type="button" class="btn btn-sm btn-outline-secondary cart-tax-up-spinner" data-i="' + i + '" title="▲">▲</button>' +
+              '<button type="button" class="btn btn-sm btn-outline-secondary cart-tax-down-spinner" data-i="' + i + '" title="▼">▼</button>' +
+            '</div>' +
+          '</div>' +
           '<button class="btn btn-danger btn-sm cart-x" data-x="' + i + '" title="Remove">&times;</button>' +
         '</div>';
       cartEl.appendChild(row);
@@ -673,6 +728,72 @@
   cartEl.addEventListener('click', function (e) {
     const x = e.target.getAttribute('data-x');
     if (x !== null) { cart.splice(x, 1); render(); refocus(); }
+
+    // Qty spinner up
+    const qtyUpSpinner = e.target.closest('.cart-qty-up-spinner');
+    if (qtyUpSpinner) {
+      const i = parseInt(qtyUpSpinner.getAttribute('data-i'));
+      if (cart[i].qty + 1 > cart[i].stock) {
+        flash('Only ' + cart[i].stock + ' in stock.', true);
+        return;
+      }
+      cart[i].qty += 1;
+      render();
+      refocus();
+    }
+
+    // Qty spinner down
+    const qtyDownSpinner = e.target.closest('.cart-qty-down-spinner');
+    if (qtyDownSpinner) {
+      const i = parseInt(qtyDownSpinner.getAttribute('data-i'));
+      if (cart[i].qty > 1) {
+        cart[i].qty -= 1;
+      } else {
+        cart.splice(i, 1);
+      }
+      render();
+      refocus();
+    }
+
+    // Discount spinner up
+    const discUpSpinner = e.target.closest('.cart-disc-up-spinner');
+    if (discUpSpinner) {
+      const i = parseInt(discUpSpinner.getAttribute('data-i'));
+      cart[i].discount_value = parseFloat((cart[i].discount_value || 0)) + 1;
+      render();
+      updateTotalsDisplay();
+    }
+
+    // Discount spinner down
+    const discDownSpinner = e.target.closest('.cart-disc-down-spinner');
+    if (discDownSpinner) {
+      const i = parseInt(discDownSpinner.getAttribute('data-i'));
+      cart[i].discount_value = Math.max(0, parseFloat((cart[i].discount_value || 0)) - 1);
+      render();
+      updateTotalsDisplay();
+    }
+
+    // Tax spinner up
+    const taxUpSpinner = e.target.closest('.cart-tax-up-spinner');
+    if (taxUpSpinner) {
+      const i = parseInt(taxUpSpinner.getAttribute('data-i'));
+      if (cart[i].is_taxable) {
+        cart[i].tax_percent = Math.min(100, parseFloat((cart[i].tax_percent || 0)) + 1);
+        render();
+        updateTotalsDisplay();
+      }
+    }
+
+    // Tax spinner down
+    const taxDownSpinner = e.target.closest('.cart-tax-down-spinner');
+    if (taxDownSpinner) {
+      const i = parseInt(taxDownSpinner.getAttribute('data-i'));
+      if (cart[i].is_taxable) {
+        cart[i].tax_percent = Math.max(0, parseFloat((cart[i].tax_percent || 0)) - 1);
+        render();
+        updateTotalsDisplay();
+      }
+    }
   });
 
   // Track manual editing of paid field

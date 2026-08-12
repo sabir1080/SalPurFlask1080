@@ -195,7 +195,11 @@ def item():
     category_filter = request.args.get("category_id", "")
     query = Item.query.outerjoin(BusinessCategory, Item.business_category_id == BusinessCategory.id)
     if search:
-        query = query.filter((Item.name.ilike(f"%{search}%")) | (BusinessCategory.name.ilike(f"%{search}%")))
+        query = query.filter(
+            (Item.name.ilike(f"%{search}%")) |
+            (BusinessCategory.name.ilike(f"%{search}%")) |
+            (Item.barcode.ilike(f"%{search}%"))
+        )
     if business_category_filter.isdigit():
         query = query.filter(Item.business_category_id == int(business_category_filter))
     items, pagination = get_paginated_results(query)

@@ -841,10 +841,13 @@ def account_transactions(account):
 
 def active_accounts():
     """Return active selectable accounts (is_control=False) for POS and payment forms.
-    Control accounts are headers only and not selectable."""
-    from sqlalchemy import and_
-    return (FinancialAccount.query.filter(and_(FinancialAccount.is_active==True, FinancialAccount.is_control==False))
-            .order_by(FinancialAccount.parent_id, FinancialAccount.name).all())
+    Control accounts are headers only and not selectable. Cash accounts come first."""
+    from sqlalchemy import and_, case
+    accounts = FinancialAccount.query.filter(and_(FinancialAccount.is_active==True, FinancialAccount.is_control==False)).all()
+
+    # Sort: Cash first, then Bank, then others
+    order = {'Cash': 0, 'Bank': 1}
+    return sorted(accounts, key=lambda a: (order.get(a.method, 2), a.name))
 
 def parse_account_id(raw):
     """Form value → (account_id or None, error or None). Blank means 'untagged',

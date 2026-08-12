@@ -517,7 +517,7 @@ def pos():
     )
 
 
-@sales_bp.route('/pos/lookup', methods=['POST'])
+@sales_bp.route('/pos/lookup', methods=['GET', 'POST'])
 @manager_required
 def pos_lookup():
     """Item lookup for POS."""
