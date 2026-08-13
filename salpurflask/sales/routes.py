@@ -95,7 +95,7 @@ def sale():
                 stock_errors = []
                 for iid, qty, price, d_type, d_val, tax, unit_key in rows:
                     item_obj = db.session.get(Item, int(iid))
-                    if item_obj:
+                    if item_obj and item_obj.item_type == "STOCK":
                         _, factor = resolve_item_unit(item_obj, unit_key)
                         if item_obj.stock < int(qty) * factor:
                             stock_errors.append(f"{item_obj.name}: only {item_obj.stock} {item_obj.unit} available")
