@@ -211,6 +211,7 @@ def item():
             return redirect(url_for("item"))
         name = request.form.get("name", "").strip()
         business_category_id = request.form.get("business_category_id", "").strip() or None
+        item_type = request.form.get("item_type", "STOCK").strip()
         unit = request.form.get("unit", "Pcs").strip()
         opening_stock = request.form.get("opening_stock", "0").strip() or "0"
         reorder_level = request.form.get("reorder_level", "").strip()
@@ -221,11 +222,13 @@ def item():
             unit = "Pcs"
         if not business_categories:
             flash("No business categories are enabled. Please enable categories in Admin Settings before adding items!", "danger")
-        elif not name or not reorder_level or not business_category_id:
-            flash("Name, Category, and Reorder Level are required!", "danger")
+        elif not name or not business_category_id:
+            flash("Name and Category are required!", "danger")
+        elif item_type == "STOCK" and not reorder_level:
+            flash("Reorder Level is required for Stock items!", "danger")
         elif not business_category_id.isdigit() or not db.session.get(BusinessCategory, int(business_category_id)):
             flash("Please select a valid category!", "danger")
-        elif not opening_stock.lstrip("-").isdigit() or not reorder_level.isdigit():
+        elif not opening_stock.lstrip("-").isdigit() or (reorder_level and not reorder_level.isdigit()):
             flash("Opening Stock and Reorder Level must be numbers!", "danger")
         elif purchase_price and (not purchase_price.replace(".", "", 1).isdigit() or float(purchase_price) < 0):
             flash("Purchase price must be a non-negative number!", "danger")
@@ -238,14 +241,16 @@ def item():
                   "A code must point at one item only.", "danger")
         else:
             os_val = int(opening_stock)
+            reorder_val = int(reorder_level) if reorder_level else 50
             item_obj = Item(
                 name=name,
                 category_id=None,  # Using business_category_id instead
                 business_category_id=int(business_category_id),
+                item_type=item_type,
                 unit=unit,
                 opening_stock=os_val,
                 stock=os_val,
-                reorder_level=int(reorder_level),
+                reorder_level=reorder_val,
                 purchase_price=float(purchase_price) if purchase_price else None,
                 sale_price=float(sale_price) if sale_price else None,
                 barcode=barcode,
@@ -312,6 +317,7 @@ def edit_item(id):
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         business_category_id = request.form.get("business_category_id", "").strip() or None
+        item_type = request.form.get("item_type", "STOCK").strip()
         unit = request.form.get("unit", "Pcs").strip()
         opening_stock = request.form.get("opening_stock", str(item.opening_stock)).strip()
         reorder_level = request.form.get("reorder_level", "").strip()
@@ -322,11 +328,13 @@ def edit_item(id):
             unit = "Pcs"
         if not business_categories:
             flash("No business categories are enabled. Please enable categories in Admin Settings!", "danger")
-        elif not name or not reorder_level or not business_category_id:
-            flash("Name, Category, and Reorder Level are required!", "danger")
+        elif not name or not business_category_id:
+            flash("Name and Category are required!", "danger")
+        elif item_type == "STOCK" and not reorder_level:
+            flash("Reorder Level is required for Stock items!", "danger")
         elif not business_category_id.isdigit() or not db.session.get(BusinessCategory, int(business_category_id)):
             flash("Please select a valid category!", "danger")
-        elif not opening_stock.lstrip("-").isdigit() or not reorder_level.isdigit():
+        elif not opening_stock.lstrip("-").isdigit() or (reorder_level and not reorder_level.isdigit()):
             flash("Opening Stock and Reorder Level must be numbers!", "danger")
         elif purchase_price and (not purchase_price.replace(".", "", 1).isdigit() or float(purchase_price) < 0):
             flash("Purchase price must be a non-negative number!", "danger")
@@ -353,9 +361,10 @@ def edit_item(id):
             item.name = name
             item.category_id = None  # Using business_category_id instead
             item.business_category_id = int(business_category_id)
+            item.item_type = item_type
             item.unit = unit
             item.opening_stock = new_os
-            item.reorder_level = int(reorder_level)
+            item.reorder_level = int(reorder_level) if reorder_level else 50
             item.purchase_price = float(purchase_price) if purchase_price else None
             item.sale_price = float(sale_price) if sale_price else None
             item.barcode = barcode
