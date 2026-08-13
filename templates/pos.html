@@ -622,10 +622,17 @@
   }
 
   function addItem(it) {
-    if (it.stock <= 0) { flash(it.name + ' is out of stock.', true); return; }
+    // Stock validation only for STOCK items, not SERVICE
+    if (it.item_type === 'STOCK') {
+      if (it.stock <= 0) { flash(it.name + ' is out of stock.', true); return; }
+    }
     const found = cart.find(l => l.id === it.id);
     if (found) {
-      if (found.qty + 1 > it.stock) { flash('Only ' + it.stock + ' in stock.', true); return; }
+      // Stock limit only for STOCK items, not SERVICE
+      if (it.item_type === 'STOCK' && found.qty + 1 > it.stock) {
+        flash('Only ' + it.stock + ' in stock.', true);
+        return;
+      }
       found.qty += 1;
     } else {
       cart.push({
@@ -636,6 +643,7 @@
         qty: 1,
         stock: it.stock,
         unit: it.unit,
+        item_type: it.item_type || 'STOCK',
         unit_id: '',  // Base unit by default
         unit_name: null,
         unit_factor: 1,

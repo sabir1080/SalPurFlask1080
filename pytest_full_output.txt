@@ -1,0 +1,324 @@
+============================= test session starts =============================
+platform win32 -- Python 3.14.0, pytest-9.1.1, pluggy-1.6.0 -- G:\Sbr\App\A6Flask\SalPurFlask1\venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: g:\Sbr\App\A6Flask\SalPurFlask1
+configfile: pytest.ini
+testpaths: tests
+plugins: anyio-4.14.1
+collecting ... collected 148 items
+
+tests/test_accounting.py::test_account_balance_from_movements PASSED     [  0%]
+tests/test_accounting.py::test_total_cash_bank_balance PASSED            [  1%]
+tests/test_accounting.py::test_cash_opening_balance_reaches_the_balance_sheet PASSED [  2%]
+tests/test_accounting.py::test_editing_the_opening_balance_reposts_it PASSED [  2%]
+tests/test_accounting.py::test_balance_sheet_balances_from_the_gl PASSED [  3%]
+tests/test_accounting.py::test_cash_flow_reconciles_and_classifies PASSED [  4%]
+tests/test_accounting.py::test_cash_flow_honours_an_investing_tag PASSED [  4%]
+tests/test_accounting.py::test_cash_flow_ignores_entries_that_never_touch_cash PASSED [  5%]
+tests/test_accounting.py::test_journal_balanced_accepted_unbalanced_rejected PASSED [  6%]
+tests/test_accounting.py::test_acquisition_and_straight_line_depreciation_post_to_the_gl PASSED [  6%]
+tests/test_accounting.py::test_depreciation_stops_at_the_salvage_value PASSED [  7%]
+tests/test_accounting.py::test_a_month_cannot_be_depreciated_twice PASSED [  8%]
+tests/test_accounting.py::test_depreciation_is_never_dated_in_the_future PASSED [  8%]
+tests/test_accounting.py::test_a_month_that_has_not_started_cannot_be_depreciated PASSED [  9%]
+tests/test_accounting.py::test_stock_value_is_what_the_goods_cost_not_the_catalogue_price PASSED [ 10%]
+tests/test_accounting.py::test_the_stock_report_renders_and_totals_what_the_balance_sheet_says PASSED [ 10%]
+tests/test_accounting.py::test_no_template_time_shifts_a_business_date PASSED [ 11%]
+tests/test_accounting.py::test_a_business_date_is_not_shifted_into_the_next_month PASSED [ 12%]
+tests/test_accounting.py::test_buying_an_asset_moves_the_cash_account_the_page_shows PASSED [ 12%]
+tests/test_accounting.py::test_reversing_depreciation_clears_the_register_and_frees_the_month PASSED [ 13%]
+tests/test_accounting.py::test_a_reversal_is_never_dated_before_the_entry_it_cancels PASSED [ 14%]
+tests/test_accounting.py::test_a_reversal_written_before_the_fix_is_pulled_back_onto_its_original PASSED [ 14%]
+tests/test_accounting.py::test_reversing_a_disposal_puts_the_asset_back PASSED [ 15%]
+tests/test_accounting.py::test_an_acquisition_cannot_be_reversed_from_the_journal PASSED [ 16%]
+tests/test_accounting.py::test_reducing_balance_charge_falls_each_month PASSED [ 16%]
+tests/test_accounting.py::test_disposal_above_book_value_posts_a_gain PASSED [ 17%]
+tests/test_accounting.py::test_disposal_below_book_value_posts_a_loss PASSED [ 18%]
+tests/test_accounting.py::test_buying_an_asset_is_investing_cash_not_operating PASSED [ 18%]
+tests/test_accounting.py::test_depreciation_never_reaches_the_cash_flow_statement PASSED [ 19%]
+tests/test_app.py::test_health_ok PASSED                                 [ 20%]
+tests/test_app.py::test_get_item_locked_returns_row PASSED               [ 20%]
+tests/test_app.py::test_timezone_conversion PASSED                       [ 21%]
+tests/test_audit.py::test_record_audit_creates_entry PASSED              [ 22%]
+tests/test_audit.py::test_record_audit_truncates_long_summary PASSED     [ 22%]
+tests/test_audit.py::test_record_audit_never_raises PASSED               [ 23%]
+tests/test_backup.py::test_backup_serializes_date_columns PASSED         [ 24%]
+tests/test_backup.py::test_dates_come_back_as_dates_not_strings PASSED   [ 25%]
+tests/test_backup.py::test_round_trip_preserves_rows_and_money PASSED    [ 25%]
+tests/test_edge_cases.py::TestDiscounts::test_zero_discount PASSED       [ 26%]
+tests/test_edge_cases.py::TestDiscounts::test_percentage_discount_50 PASSED [ 27%]
+tests/test_edge_cases.py::TestDiscounts::test_fixed_discount PASSED      [ 27%]
+tests/test_edge_cases.py::TestDiscounts::test_discount_greater_than_amount PASSED [ 28%]
+tests/test_edge_cases.py::TestTaxCalculations::test_zero_tax PASSED      [ 29%]
+tests/test_edge_cases.py::TestTaxCalculations::test_tax_17_percent PASSED [ 29%]
+tests/test_edge_cases.py::TestTaxCalculations::test_discount_then_tax PASSED [ 30%]
+tests/test_edge_cases.py::TestReversals::test_reversed_purchase_flag PASSED [ 31%]
+tests/test_edge_cases.py::TestReversals::test_sale_reversal_flag PASSED  [ 31%]
+tests/test_edge_cases.py::TestNumericEdgeCases::test_very_small_quantity PASSED [ 32%]
+tests/test_edge_cases.py::TestNumericEdgeCases::test_very_large_quantity PASSED [ 33%]
+tests/test_edge_cases.py::TestNumericEdgeCases::test_decimal_precision PASSED [ 33%]
+tests/test_fiscal_year.py::test_january_year_is_the_calendar_year PASSED [ 34%]
+tests/test_fiscal_year.py::test_pakistan_runs_july_to_june PASSED        [ 35%]
+tests/test_fiscal_year.py::test_the_uk_runs_april_to_march PASSED        [ 35%]
+tests/test_fiscal_year.py::test_a_july_year_seeds_twelve_months_starting_in_july PASSED [ 36%]
+tests/test_fiscal_year.py::test_seeding_the_same_year_twice_does_nothing PASSED [ 37%]
+tests/test_fiscal_year.py::test_changing_the_setting_on_a_live_database_is_reported PASSED [ 37%]
+tests/test_fiscal_year.py::test_reseeding_a_demo_drops_years_from_the_old_setting PASSED [ 38%]
+tests/test_fiscal_year.py::test_money_carries_the_currency PASSED        [ 39%]
+tests/test_fiscal_year.py::test_a_rate_prints_the_way_a_person_writes_one[17.0000-17] PASSED [ 39%]
+tests/test_fiscal_year.py::test_a_rate_prints_the_way_a_person_writes_one[17.5000-17.5] PASSED [ 40%]
+tests/test_fiscal_year.py::test_a_rate_prints_the_way_a_person_writes_one[0.2500-0.25] PASSED [ 41%]
+tests/test_fiscal_year.py::test_a_rate_prints_the_way_a_person_writes_one[5-5] PASSED [ 41%]
+tests/test_fiscal_year.py::test_a_rate_prints_the_way_a_person_writes_one[0.0000-0] PASSED [ 42%]
+tests/test_fiscal_year.py::test_a_rate_prints_the_way_a_person_writes_one[None-0] PASSED [ 43%]
+tests/test_international.py::test_a_phone_number_from_anywhere_is_accepted[03001234567] PASSED [ 43%]
+tests/test_international.py::test_a_phone_number_from_anywhere_is_accepted[+92 300 1234567] PASSED [ 44%]
+tests/test_international.py::test_a_phone_number_from_anywhere_is_accepted[+44 20 7946 0958] PASSED [ 45%]
+tests/test_international.py::test_a_phone_number_from_anywhere_is_accepted[(212) 555-0143] PASSED [ 45%]
+tests/test_international.py::test_a_phone_number_from_anywhere_is_accepted[+971 50 123 4567] PASSED [ 46%]
+tests/test_international.py::test_a_phone_number_from_anywhere_is_accepted[+1-415-555-0132] PASSED [ 47%]
+tests/test_international.py::test_a_phone_number_from_anywhere_is_accepted[021-34567890] PASSED [ 47%]
+tests/test_international.py::test_nonsense_is_still_rejected[] PASSED    [ 48%]
+tests/test_international.py::test_nonsense_is_still_rejected[12345] PASSED [ 49%]
+tests/test_international.py::test_nonsense_is_still_rejected[not a number] PASSED [ 50%]
+tests/test_international.py::test_nonsense_is_still_rejected[0300 abc 4567] PASSED [ 50%]
+tests/test_international.py::test_nonsense_is_still_rejected[+1111111111111111] PASSED [ 51%]
+tests/test_international.py::test_a_dubai_supplier_can_actually_be_saved PASSED [ 52%]
+tests/test_international.py::test_a_london_customer_can_actually_be_saved PASSED [ 52%]
+tests/test_inventory.py::test_reversing_a_purchase_whose_goods_were_sold_is_refused PASSED [ 53%]
+tests/test_inventory.py::test_a_sale_cannot_exceed_the_stock_on_hand PASSED [ 54%]
+tests/test_inventory.py::test_stock_can_never_be_taken_below_zero PASSED [ 54%]
+tests/test_inventory.py::test_value_cannot_be_taken_below_zero PASSED    [ 55%]
+tests/test_inventory.py::test_every_adjustment_type_declares_its_direction PASSED [ 56%]
+tests/test_inventory.py::test_a_stocktake_can_record_a_shortfall PASSED  [ 56%]
+tests/test_inventory.py::test_an_unknown_adjustment_type_is_refused_not_guessed PASSED [ 57%]
+tests/test_labels.py::test_a_barcode_and_a_qr_both_render_as_inline_svg PASSED [ 58%]
+tests/test_labels.py::test_a_blank_or_broken_code_does_not_crash_the_sheet PASSED [ 58%]
+tests/test_labels.py::test_the_label_sheet_shows_a_label_only_when_copies_are_asked_for PASSED [ 59%]
+tests/test_labels.py::test_qr_labels_render_when_asked_for PASSED        [ 60%]
+tests/test_labels.py::test_items_without_a_code_can_be_assigned_one_in_one_click FAILED [ 60%]
+tests/test_labels.py::test_two_items_cannot_share_a_barcode FAILED       [ 61%]
+tests/test_labels.py::test_editing_an_item_keeps_its_own_barcode FAILED  [ 62%]
+tests/test_labels.py::test_staff_cannot_open_the_label_printer PASSED    [ 62%]
+tests/test_ledger.py::test_calc_discount_tax PASSED                      [ 63%]
+tests/test_ledger.py::test_opening_balance_sets_ledger PASSED            [ 64%]
+tests/test_ledger.py::test_purchase_then_payment PASSED                  [ 64%]
+tests/test_ledger.py::test_delete_purchase_recalculates PASSED           [ 65%]
+tests/test_ledger.py::test_sale_then_receipt PASSED                      [ 66%]
+tests/test_ledger.py::test_money_stored_as_decimal PASSED                [ 66%]
+tests/test_ledger.py::test_stock_moves_with_transactions PASSED          [ 67%]
+tests/test_ledger.py::test_total_ledger_balance_matches_per_party_sum PASSED [ 68%]
+tests/test_numbering.py::test_numbers_are_sequential PASSED              [ 68%]
+tests/test_numbering.py::test_an_abandoned_save_gives_its_number_back PASSED [ 69%]
+tests/test_numbering.py::test_numbering_restarts_each_fiscal_year PASSED [ 70%]
+tests/test_numbering.py::test_purchases_and_sales_have_their_own_sequences PASSED [ 70%]
+tests/test_numbering.py::test_a_numbered_invoice_cannot_be_deleted PASSED [ 71%]
+tests/test_numbering.py::test_backfill_numbers_old_documents_oldest_first PASSED [ 72%]
+tests/test_pages.py::test_about_and_manual_render_for_a_visitor_with_no_account PASSED [ 72%]
+tests/test_pages.py::test_the_manual_covers_every_section_it_promises PASSED [ 73%]
+tests/test_pages.py::test_the_urdu_manual_does_not_fall_behind_the_english_one PASSED [ 74%]
+tests/test_pages.py::test_both_pages_offer_both_languages_and_default_to_english PASSED [ 75%]
+tests/test_pages.py::test_the_manual_tells_the_truth_about_the_rules PASSED [ 75%]
+tests/test_pages.py::test_about_links_to_the_manual PASSED               [ 76%]
+tests/test_pages.py::test_dark_mode_repoints_the_bootstrap_text_colours PASSED [ 77%]
+tests/test_pages.py::test_money_columns_are_never_allowed_to_fold_onto_a_second_line PASSED [ 77%]
+tests/test_pages.py::test_no_template_uses_a_css_variable_that_does_not_exist FAILED [ 78%]
+tests/test_pos.py::test_barcode_lookup_finds_exactly_that_item FAILED    [ 79%]
+tests/test_pos.py::test_a_pos_sale_posts_through_the_ledger_like_any_other_sale PASSED [ 79%]
+tests/test_pos.py::test_the_till_cannot_oversell PASSED                  [ 80%]
+tests/test_pos.py::test_overpayment_is_change_not_a_credit_on_the_customer PASSED [ 81%]
+tests/test_pos.py::test_a_partial_payment_leaves_the_balance_on_a_named_customer PASSED [ 81%]
+tests/test_pos.py::test_the_walk_in_customer_is_created_once_and_reused PASSED [ 82%]
+tests/test_pos.py::test_staff_cannot_use_the_pos PASSED                  [ 83%]
+tests/test_pos_hold.py::test_can_hold_an_empty_cart_returns_error PASSED [ 83%]
+tests/test_pos_hold.py::test_can_hold_a_bill_with_items PASSED           [ 84%]
+tests/test_pos_hold.py::test_hold_does_not_reduce_stock PASSED           [ 85%]
+tests/test_pos_hold.py::test_can_list_held_bills PASSED                  [ 85%]
+tests/test_pos_hold.py::test_can_fetch_held_bill_as_json PASSED          [ 86%]
+tests/test_pos_hold.py::test_can_delete_held_bill PASSED                 [ 87%]
+tests/test_pos_hold.py::test_resuming_nonexistent_hold_returns_error PASSED [ 87%]
+tests/test_pos_hold.py::test_hold_requires_manager_role PASSED           [ 88%]
+tests/test_pos_hold.py::test_hold_with_invalid_customer_returns_error PASSED [ 89%]
+tests/test_pos_hold.py::test_checkout_after_hold_deletes_hold PASSED     [ 89%]
+tests/test_reset.py::test_reset_leaves_no_trace_of_the_trial_data PASSED [ 90%]
+tests/test_reset.py::test_reset_leaves_a_working_system_not_a_stripped_one PASSED [ 91%]
+tests/test_reset.py::test_invoice_numbering_starts_again_from_one PASSED [ 91%]
+tests/test_reset.py::test_the_wrong_phrase_deletes_nothing PASSED        [ 92%]
+tests/test_reset.py::test_transaction_reset_keeps_the_parties_and_items PASSED [ 93%]
+tests/test_reset.py::test_transaction_reset_clears_the_opening_balances_it_kept_the_parties_for PASSED [ 93%]
+tests/test_reset.py::test_transaction_reset_leaves_a_system_that_can_still_trade PASSED [ 94%]
+tests/test_reset.py::test_a_closed_year_is_reopened_or_nothing_could_ever_post_again PASSED [ 95%]
+tests/test_reset.py::test_the_wrong_phrase_deletes_no_transactions_either PASSED [ 95%]
+tests/test_reset.py::test_the_keep_lists_name_tables_that_actually_exist PASSED [ 96%]
+tests/test_reset.py::test_nothing_that_holds_money_survives_a_wipe PASSED [ 97%]
+tests/test_reset.py::test_only_an_admin_can_reset PASSED                 [ 97%]
+tests/test_timezone.py::test_app_py_never_reads_the_machine_clock_for_a_business_date PASSED [ 98%]
+tests/test_timezone.py::test_now_local_follows_the_configured_timezone_not_the_machine PASSED [ 99%]
+tests/test_timezone.py::test_a_reversal_is_dated_on_the_business_clock PASSED [100%]
+
+================================== FAILURES ===================================
+_________ test_items_without_a_code_can_be_assigned_one_in_one_click __________
+
+appctx = None
+
+    def test_items_without_a_code_can_be_assigned_one_in_one_click(appctx):
+        a = _item("Coded", "111222333")
+        b = _item("No code", None)
+        c = _manager()
+    
+        # the page flags the item that has no code
+        assert "have no barcode yet" in c.get("/labels").get_data(as_text=True)
+    
+        c.post("/labels/assign", follow_redirects=True)
+    
+        db.session.expire_all()
+        assert db.session.get(Item, a.id).barcode == "111222333"      # untouched
+        assigned = db.session.get(Item, b.id).barcode
+        assert assigned and assigned.isdigit()                        # numeric, scanner-friendly
+        # and it is the value the POS will match on
+        r = c.get(f"/pos/lookup?q={assigned}")
+>       assert r.get_json()["items"][0]["id"] == b.id
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E       IndexError: list index out of range
+
+tests\test_labels.py:85: IndexError
+---------------------------- Captured stderr call -----------------------------
+[2026-08-11 16:05:06,074] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+------------------------------ Captured log call ------------------------------
+INFO     app:auth.py:123 Login OK: m@t.com (role=manager) from 127.0.0.1
+____________________ test_two_items_cannot_share_a_barcode ____________________
+
+appctx = None
+
+    def test_two_items_cannot_share_a_barcode(appctx):
+        """A scanned code has to name one product. If two items carried the same barcode, the
+        POS would ring up whichever it found first — silently the wrong thing."""
+        _item("Cola", "8964000112233")
+        c = _manager()
+        cat = Category.query.first()
+    
+        # adding a second item with the same code is refused
+        r = c.post("/item", data={
+            "name": "Pepsi", "category_id": cat.id, "unit": "Pcs", "opening_stock": "0",
+            "reorder_level": "5", "sale_price": "100", "barcode": "8964000112233",
+        }, follow_redirects=True)
+>       assert "already used by another item" in r.get_data(as_text=True)
+E       assert 'already used by another item' in '<!DOCTYPE html>\n<html lang="en" style="overflow-x: hidden;">\n<head>\n    <meta charset="UTF-8">\n    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n    <meta name="csrf-token" content="ImZiZDFkYjZhNzNjNGY2YjY1YTVjM2UxNzRhZWZkNDAyNWM1MWQ2ZjQi.ansB4w.NZE75sf4PtXfptSzE0zKW2RTigo">\n    <title>Multi Computer Forms</title>\n    <link rel="preconnect" href="https://fonts.googleapis.com">\n    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">\n    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">\n    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">\n    <!-- Design System CSS Files (in order of specificity) -->\n    <link rel="stylesheet" href="/static/css/design-tokens.css">\n    <link rel="stylesheet" href="/static/css/components.css">\n    <link rel="stylesheet" href="/static/css/layout.css">\n    <link rel="stylesheet" href="/static/css/style.css">\n    <style>\n        /* Navbar styling - m... me-2"><i class="bi \' + r.icon + \'"></i></span>\';\n                                html += \'<span class="search-name">\' + r.name + \'</span>\';\n                                html += \'<span class="search-detail">\' + r.detail + \'</span>\';\n                                html += \'<span class="search-extra">\' + r.extra + \'</span>\';\n                                html += \'</a>\';\n                            });\n                            searchDropdown.innerHTML = html;\n                            searchDropdown.classList.add(\'show\');\n                        });\n                    }, 300);\n                });\n\n                document.addEventListener(\'click\', function (e) {\n                    if (!e.target.closest(\'.nav-search-wrapper\')) {\n                        searchDropdown.classList.remove(\'show\');\n                    }\n                });\n\n                searchInput.addEventListener(\'focus\', function () {\n                    if (searchDropdown.innerHTML.trim()) {\n                        searchDropdown.classList.add(\'show\');\n                    }\n                });\n            }\n        });\n    </script>\n</body>\n</html>'
+E        +  where '<!DOCTYPE html>\n<html lang="en" style="overflow-x: hidden;">\n<head>\n    <meta charset="UTF-8">\n    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n    <meta name="csrf-token" content="ImZiZDFkYjZhNzNjNGY2YjY1YTVjM2UxNzRhZWZkNDAyNWM1MWQ2ZjQi.ansB4w.NZE75sf4PtXfptSzE0zKW2RTigo">\n    <title>Multi Computer Forms</title>\n    <link rel="preconnect" href="https://fonts.googleapis.com">\n    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">\n    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">\n    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">\n    <!-- Design System CSS Files (in order of specificity) -->\n    <link rel="stylesheet" href="/static/css/design-tokens.css">\n    <link rel="stylesheet" href="/static/css/components.css">\n    <link rel="stylesheet" href="/static/css/layout.css">\n    <link rel="stylesheet" href="/static/css/style.css">\n    <style>\n        /* Navbar styling - m... me-2"><i class="bi \' + r.icon + \'"></i></span>\';\n                                html += \'<span class="search-name">\' + r.name + \'</span>\';\n                                html += \'<span class="search-detail">\' + r.detail + \'</span>\';\n                                html += \'<span class="search-extra">\' + r.extra + \'</span>\';\n                                html += \'</a>\';\n                            });\n                            searchDropdown.innerHTML = html;\n                            searchDropdown.classList.add(\'show\');\n                        });\n                    }, 300);\n                });\n\n                document.addEventListener(\'click\', function (e) {\n                    if (!e.target.closest(\'.nav-search-wrapper\')) {\n                        searchDropdown.classList.remove(\'show\');\n                    }\n                });\n\n                searchInput.addEventListener(\'focus\', function () {\n                    if (searchDropdown.innerHTML.trim()) {\n                        searchDropdown.classList.add(\'show\');\n                    }\n                });\n            }\n        });\n    </script>\n</body>\n</html>' = get_data(as_text=True)
+E        +    where get_data = <WrapperTestResponse 44526 bytes [200 OK]>.get_data
+
+tests\test_labels.py:100: AssertionError
+---------------------------- Captured stderr call -----------------------------
+[2026-08-11 16:05:07,936] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+------------------------------ Captured log call ------------------------------
+INFO     app:auth.py:123 Login OK: m@t.com (role=manager) from 127.0.0.1
+_________________ test_editing_an_item_keeps_its_own_barcode __________________
+
+appctx = None
+
+    def test_editing_an_item_keeps_its_own_barcode(appctx):
+        """The duplicate check must not trip on the item's own code when it is edited."""
+        it = _item("Cola", "8964000112233")
+        c = _manager()
+        cat = Category.query.first()
+        r = c.post(f"/item/edit/{it.id}", data={
+            "name": "Cola 1L", "category_id": cat.id, "unit": "Pcs",
+            "opening_stock": "0", "reorder_level": "5", "sale_price": "120",
+            "barcode": "8964000112233",             # unchanged — its own code
+        }, follow_redirects=True)
+        assert "already used" not in r.get_data(as_text=True)
+        db.session.expire_all()
+>       assert db.session.get(Item, it.id).name == "Cola 1L"
+E       AssertionError: assert 'Cola' == 'Cola 1L'
+E         
+E         - Cola 1L
+E         + Cola
+
+tests\test_labels.py:123: AssertionError
+---------------------------- Captured stderr call -----------------------------
+[2026-08-11 16:05:09,038] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+------------------------------ Captured log call ------------------------------
+INFO     app:auth.py:123 Login OK: m@t.com (role=manager) from 127.0.0.1
+__________ test_no_template_uses_a_css_variable_that_does_not_exist ___________
+
+    def test_no_template_uses_a_css_variable_that_does_not_exist():
+        """A misspelt CSS variable fails silently. `color: var(--muted)` — when the variable
+        is actually `--text-muted` — is not an error: the browser simply has no colour to
+        apply, and the text renders in whatever it inherits. It looks washed out, and nothing
+        anywhere says why. That is exactly how the About page and the manual shipped
+        unreadable.
+        """
+        import re
+        from pathlib import Path
+    
+        css = Path(flask_app.static_folder, "css", "style.css").read_text(encoding="utf-8")
+        defined = set(re.findall(r"^\s*(--[\w-]+)\s*:", css, re.MULTILINE))
+        assert defined, "no CSS variables found — has style.css moved?"
+    
+        bad = []
+        for tpl in Path(flask_app.template_folder).rglob("*.html"):
+            text = tpl.read_text(encoding="utf-8")
+            for used in re.findall(r"var\(\s*(--[\w-]+)", text):
+                # Bootstrap defines its own (--bs-*); we only own ours.
+                if used.startswith("--bs-") or used in defined:
+                    continue
+                bad.append(f"{tpl.name}: var({used})")
+    
+>       assert not bad, "CSS variables used but never defined:\n  " + "\n  ".join(sorted(set(bad)))
+E       AssertionError: CSS variables used but never defined:
+E           dashboard.html: var(--space-2)
+E           dashboard.html: var(--space-8)
+E           error.html: var(--color-accent)
+E           error.html: var(--color-primary)
+E           pos.html: var(--color-error)
+E           pos.html: var(--radius-1)
+E           pos.html: var(--radius-2)
+E           pos.html: var(--spacing-1)
+E           pos.html: var(--spacing-2)
+E           pos.html: var(--spacing-3)
+E           pos.html: var(--spacing-4)
+E           pos.html: var(--spacing-6)
+E           pos.html: var(--spacing-8)
+E           pos.html: var(--transition-fast)
+E       assert not ['dashboard.html: var(--space-8)', 'dashboard.html: var(--space-8)', 'dashboard.html: var(--space-8)', 'dashboard.html: var(--space-2)', 'dashboard.html: var(--space-8)', 'dashboard.html: var(--space-8)', ...]
+
+tests\test_pages.py:201: AssertionError
+_________________ test_barcode_lookup_finds_exactly_that_item _________________
+
+appctx = None
+
+    def test_barcode_lookup_finds_exactly_that_item(appctx):
+        item = _world()
+        c = _manager()
+        r = c.get(f"/pos/lookup?q={item.barcode}")
+        data = r.get_json()
+>       assert len(data["items"]) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests\test_pos.py:69: AssertionError
+---------------------------- Captured stderr call -----------------------------
+[2026-08-11 16:05:30,233] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+------------------------------ Captured log call ------------------------------
+INFO     app:auth.py:123 Login OK: m@t.com (role=manager) from 127.0.0.1
+============================== warnings summary ===============================
+venv\Lib\site-packages\sqlalchemy\sql\schema.py:3624: 22 warnings
+  G:\Sbr\App\A6Flask\SalPurFlask1\venv\Lib\site-packages\sqlalchemy\sql\schema.py:3624: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    return util.wrap_callable(lambda ctx: fn(), fn)  # type: ignore
+
+tests/test_accounting.py::test_journal_balanced_accepted_unbalanced_rejected
+  G:\Sbr\App\A6Flask\SalPurFlask1\venv\Lib\site-packages\passlib\handlers\argon2.py:716: DeprecationWarning: Accessing argon2.__version__ is deprecated and will be removed in a future release. Use importlib.metadata directly to query for argon2-cffi's packaging metadata.
+    _argon2_cffi.__version__, max_version)
+
+tests/test_reset.py::test_transaction_reset_leaves_a_system_that_can_still_trade
+  g:\Sbr\App\A6Flask\SalPurFlask1\salpurflask\purchase\routes.py:174: SAWarning: Identity map already had an identity for (<class 'salpurflask.models.models.Purchase'>, (1,), None), replacing it with newly flushed object.   Are there load operations occurring inside of an event handler within the flush?
+    db.session.flush()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_labels.py::test_items_without_a_code_can_be_assigned_one_in_one_click
+FAILED tests/test_labels.py::test_two_items_cannot_share_a_barcode - assert '...
+FAILED tests/test_labels.py::test_editing_an_item_keeps_its_own_barcode - Ass...
+FAILED tests/test_pages.py::test_no_template_uses_a_css_variable_that_does_not_exist
+FAILED tests/test_pos.py::test_barcode_lookup_finds_exactly_that_item - asser...
+=========== 5 failed, 143 passed, 24 warnings in 195.57s (0:03:15) ============

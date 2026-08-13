@@ -124,15 +124,17 @@ def sale():
                         qty_i = int(qty); price_f = float(price)
                         unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
                         base_qty = qty_i * unit_factor
-                        if item_obj.stock < base_qty:
-                            db.session.rollback()
-                            flash(f"Insufficient stock for {item_obj.name}: only {item_obj.stock} "
-                                  "available now (it changed while saving). Please try again.", "danger")
-                            return redirect(url_for("sale"))
+                        # Stock validation and reduction only for STOCK items, not SERVICE
+                        if item_obj.item_type == "STOCK":
+                            if item_obj.stock < base_qty:
+                                db.session.rollback()
+                                flash(f"Insufficient stock for {item_obj.name}: only {item_obj.stock} "
+                                      "available now (it changed while saving). Please try again.", "danger")
+                                return redirect(url_for("sale"))
                         d_val_f = float(d_val or 0); tax_f = float(tax or 0)
                         gross = qty_i * price_f
                         disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
-                        unit_cost = item_obj.avg_cost
+                        unit_cost = item_obj.avg_cost if item_obj.item_type == "STOCK" else 0
                         si = SaleItem(
                             sale_id=sal.id, item_id=int(iid),
                             quantity=qty_i, sale_price=price_f,
@@ -143,7 +145,9 @@ def sale():
                             unit_name=unit_name, unit_factor=unit_factor,
                         )
                         db.session.add(si)
-                        item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)))
+                        # Only reduce stock for STOCK items, not SERVICE items
+                        if item_obj.item_type == "STOCK":
+                            item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)))
                     db.session.flush()
                     db.session.refresh(sal)
                     sal.invoice_no = allocate_document_number("sale", sal.date)
@@ -217,20 +221,20 @@ def edit_sale(id):
                 old_customer_id = sal.customer_id
                 for si in sal.line_items:
                     old_item = get_item_locked(si.item_id)
-                    if old_item:
+                    if old_item and old_item.item_type == "STOCK":
                         cost_returned = si.cost_price * line_base_qty(si)
                         item_add_stock(old_item, line_base_qty(si), cost_total=cost_returned)
                 stock_errors = []
                 for iid, qty, price, d_type, d_val, tax, unit_key in rows:
                     item_obj = get_item_locked(int(iid))
-                    if item_obj:
+                    if item_obj and item_obj.item_type == "STOCK":
                         _, factor = resolve_item_unit(item_obj, unit_key)
                         if item_obj.stock < int(qty) * factor:
                             stock_errors.append(f"{item_obj.name}: only {item_obj.stock} {item_obj.unit} available")
                 if stock_errors:
                     for si in sal.line_items:
                         old_item = get_item_locked(si.item_id)
-                        if old_item:
+                        if old_item and old_item.item_type == "STOCK":
                             cost_removed = si.cost_price * line_base_qty(si)
                             item_remove_stock(old_item, line_base_qty(si), cost_total=cost_removed)
                     flash("Insufficient stock — " + "; ".join(stock_errors), "danger")
@@ -256,7 +260,7 @@ def edit_sale(id):
                         disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
                         unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
                         base_qty = qty_i * unit_factor
-                        unit_cost = item_obj.avg_cost
+                        unit_cost = item_obj.avg_cost if item_obj.item_type == "STOCK" else 0
                         si = SaleItem(
                             sale_id=sal.id, item_id=int(iid),
                             quantity=qty_i, sale_price=price_f,
@@ -267,7 +271,9 @@ def edit_sale(id):
                             unit_name=unit_name, unit_factor=unit_factor,
                         )
                         db.session.add(si)
-                        item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)))
+                        # Only reduce stock for STOCK items, not SERVICE items
+                        if item_obj.item_type == "STOCK":
+                            item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)))
                     db.session.flush()
                     db.session.refresh(sal)
                     if old_customer_id != int(customer_id):
@@ -305,7 +311,7 @@ def delete_sale(id):
         return redirect(url_for("sale"))
     for si in sal.line_items:
         item_obj = db.session.get(Item, si.item_id)
-        if item_obj:
+        if item_obj and item_obj.item_type == "STOCK":
             cost_returned = si.cost_price * line_base_qty(si)
             item_add_stock(item_obj, line_base_qty(si), cost_total=cost_returned)
     audit_summary = f"Sale #{sal.id} ({sal.customer.name if sal.customer else 'customer'}) deleted"
@@ -546,6 +552,7 @@ def pos_lookup():
         "id": it.id, "name": it.name, "barcode": it.barcode or "",
         "price": float(it.sale_price or 0), "stock": it.stock,
         "unit": it.unit or "Pcs",
+        "item_type": it.item_type or "STOCK",
         "default_tax_percent": float(it.default_tax_percent or std_tax or 0),
         "is_taxable": bool(it.is_taxable),
         "units": [{"key": u["key"], "name": u["name"], "factor": u["factor"],

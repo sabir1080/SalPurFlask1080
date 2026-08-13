@@ -1609,3 +1609,459 @@
 [2026-08-10 19:17:20] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
 [2026-08-10 19:17:23] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
 [2026-08-10 19:17:25] INFO in auth: Login OK: s@t.com (role=staff) from 127.0.0.1
+[2026-08-10 19:32:57] INFO in app: Flask application started
+[2026-08-10 19:33:11] INFO in app: Flask application started
+[2026-08-10 19:33:12] INFO in app: Bad request (400): 400 Bad Request: The CSRF token is missing.
+[2026-08-10 19:33:32] INFO in app: Flask application started
+[2026-08-10 19:33:47] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-10 19:33:49] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-10 19:33:51] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-10 19:33:53] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-10 19:33:55] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-10 19:33:57] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-10 19:34:00] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-10 19:34:02] INFO in auth: Login OK: s@t.com (role=staff) from 127.0.0.1
+[2026-08-10 19:34:04] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-10 19:34:05] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-10 19:34:08] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-10 19:34:10] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-10 19:34:12] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-10 19:34:15] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-10 19:34:17] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-10 19:34:20] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-10 19:34:22] INFO in auth: Login OK: s@t.com (role=staff) from 127.0.0.1
+[2026-08-11 11:50:51] INFO in app: Flask application started
+[2026-08-11 11:51:11] INFO in app: Flask application started
+[2026-08-11 11:51:11] INFO in app: Flask application started
+[2026-08-11 11:51:11] INFO in app: Flask application started
+[2026-08-11 11:51:14] INFO in app: Flask application started
+[2026-08-11 11:51:14] INFO in app: Flask application started
+[2026-08-11 11:51:14] INFO in app: Flask application started
+[2026-08-11 11:54:36] INFO in app: Flask application started
+[2026-08-11 11:54:36] INFO in app: Flask application started
+[2026-08-11 11:54:36] INFO in app: Flask application started
+[2026-08-11 11:54:38] INFO in app: Flask application started
+[2026-08-11 11:54:38] INFO in app: Flask application started
+[2026-08-11 11:54:38] INFO in app: Flask application started
+[2026-08-11 12:03:03] INFO in app: Bad request (400): 400 Bad Request: The CSRF token is missing.
+[2026-08-11 12:03:03] INFO in app: Bad request (400): 400 Bad Request: The CSRF token is missing.
+[2026-08-11 12:15:47] INFO in app: Flask application started
+[2026-08-11 12:15:47] INFO in app: Flask application started
+[2026-08-11 12:15:47] INFO in app: Flask application started
+[2026-08-11 12:15:50] INFO in app: Flask application started
+[2026-08-11 12:15:50] INFO in app: Flask application started
+[2026-08-11 12:15:50] INFO in app: Flask application started
+[2026-08-11 13:18:41] INFO in app: Flask application started
+[2026-08-11 13:19:06] INFO in auth: Login OK: jn@test.com (role=manager) from 127.0.0.1
+[2026-08-11 13:19:18] INFO in auth: Login OK: jn@test.com (role=manager) from 127.0.0.1
+[2026-08-11 13:20:39] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:20:40] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:20:43] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:20:44] INFO in app: Posting refused: Only 20 × Widget in stock, so 100 cannot be taken out. If you are reversing a document, the goods it brought in have already been sold or issued — reverse those first.
+[2026-08-11 13:20:46] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:20:52] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:20:55] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:20:57] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:20:58] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:20:59] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:21:01] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:21:02] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:21:03] INFO in auth: Login OK: s@t.com (role=staff) from 127.0.0.1
+[2026-08-11 13:21:31] INFO in app: Flask application started
+[2026-08-11 13:21:52] INFO in auth: Login OK: jn@test.com (role=manager) from 127.0.0.1
+[2026-08-11 13:22:01] INFO in auth: Login OK: jn@test.com (role=manager) from 127.0.0.1
+[2026-08-11 13:22:49] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:22:50] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:22:52] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:22:53] INFO in app: Posting refused: Only 20 × Widget in stock, so 100 cannot be taken out. If you are reversing a document, the goods it brought in have already been sold or issued — reverse those first.
+[2026-08-11 13:22:55] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:23:00] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:23:03] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:23:04] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:23:05] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:23:06] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:23:08] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:23:09] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:23:10] INFO in auth: Login OK: s@t.com (role=staff) from 127.0.0.1
+[2026-08-11 13:23:23] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:23:24] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:23:25] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:23:26] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:23:29] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:23:30] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:23:33] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:23:35] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:23:37] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:23:40] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:23:43] INFO in auth: Login OK: s@t.com (role=staff) from 127.0.0.1
+[2026-08-11 13:23:44] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:23:46] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:23:49] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:23:51] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:23:53] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:23:55] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:23:58] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:24:00] INFO in auth: Login OK: s@t.com (role=staff) from 127.0.0.1
+[2026-08-11 13:24:02] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:24:04] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 13:24:06] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:24:10] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:24:14] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:24:18] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:24:21] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:24:24] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:24:28] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:24:31] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:24:35] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 13:24:37] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 15:42:09] INFO in app: Flask application started
+[2026-08-11 15:42:10] INFO in app: Flask application started
+[2026-08-11 15:42:10] INFO in app: Flask application started
+[2026-08-11 15:42:12] INFO in app: Flask application started
+[2026-08-11 15:42:13] INFO in app: Flask application started
+[2026-08-11 15:42:13] INFO in app: Flask application started
+[2026-08-11 15:42:37] INFO in app: Flask application started
+[2026-08-11 15:42:54] INFO in app: Flask application started
+[2026-08-11 15:47:00] INFO in app: Flask application started
+[2026-08-11 15:47:00] INFO in app: Flask application started
+[2026-08-11 15:47:00] INFO in app: Flask application started
+[2026-08-11 15:47:05] INFO in app: Flask application started
+[2026-08-11 15:47:06] INFO in app: Flask application started
+[2026-08-11 15:47:06] INFO in app: Flask application started
+[2026-08-11 15:47:57] INFO in auth: Login OK: sabir1@sabir1.com (role=admin) from 127.0.0.1
+[2026-08-11 15:47:57] INFO in auth: Login OK: sabir1@sabir1.com (role=admin) from 127.0.0.1
+[2026-08-11 16:03:18] INFO in app: Flask application started
+[2026-08-11 16:03:41] INFO in auth: Login OK: jn@test.com (role=manager) from 127.0.0.1
+[2026-08-11 16:03:52] INFO in auth: Login OK: jn@test.com (role=manager) from 127.0.0.1
+[2026-08-11 16:04:47] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:04:48] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:04:50] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:04:51] INFO in app: Posting refused: Only 20 × Widget in stock, so 100 cannot be taken out. If you are reversing a document, the goods it brought in have already been sold or issued — reverse those first.
+[2026-08-11 16:04:54] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:04:59] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:05:01] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:05:03] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:05:04] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:05:06] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:05:07] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:05:09] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:05:09] INFO in auth: Login OK: s@t.com (role=staff) from 127.0.0.1
+[2026-08-11 16:05:24] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:05:26] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:05:26] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:05:27] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:05:30] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:05:32] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:05:34] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:05:36] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:05:39] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:05:42] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:05:45] INFO in auth: Login OK: s@t.com (role=staff) from 127.0.0.1
+[2026-08-11 16:05:47] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:05:49] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:05:52] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:05:54] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:05:56] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:05:59] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:06:01] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:06:03] INFO in auth: Login OK: s@t.com (role=staff) from 127.0.0.1
+[2026-08-11 16:06:05] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:06:07] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:06:11] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:06:15] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:06:20] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:06:24] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:06:27] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:06:30] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:06:34] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:06:38] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:06:42] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:06:44] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:11:22] INFO in app: Flask application started
+[2026-08-11 16:11:36] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:12:02] INFO in app: Flask application started
+[2026-08-11 16:12:40] INFO in app: Flask application started
+[2026-08-11 16:12:54] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:13:09] INFO in app: Flask application started
+[2026-08-11 16:13:10] INFO in app: Bad request (400): 400 Bad Request: The CSRF token is missing.
+[2026-08-11 16:13:10] INFO in app: Bad request (400): 400 Bad Request: The CSRF token is missing.
+[2026-08-11 16:13:31] INFO in app: Flask application started
+[2026-08-11 16:13:54] INFO in app: Flask application started
+[2026-08-11 16:13:55] INFO in app: Bad request (400): 400 Bad Request: The CSRF token is missing.
+[2026-08-11 16:13:55] INFO in app: Bad request (400): 400 Bad Request: The CSRF token is missing.
+[2026-08-11 16:14:08] INFO in app: Flask application started
+[2026-08-11 16:14:08] INFO in app: Bad request (400): 400 Bad Request: The CSRF token is missing.
+[2026-08-11 16:14:08] INFO in app: Bad request (400): 400 Bad Request: The CSRF token is missing.
+[2026-08-11 16:15:00] INFO in app: Flask application started
+[2026-08-11 16:15:01] INFO in app: Flask application started
+[2026-08-11 16:15:01] INFO in app: Flask application started
+[2026-08-11 16:15:10] INFO in app: Flask application started
+[2026-08-11 16:15:10] INFO in app: Flask application started
+[2026-08-11 16:15:10] INFO in app: Flask application started
+[2026-08-11 16:15:24] INFO in app: Flask application started
+[2026-08-11 16:15:24] INFO in app: Flask application started
+[2026-08-11 16:15:24] INFO in app: Flask application started
+[2026-08-11 16:15:33] INFO in app: Flask application started
+[2026-08-11 16:15:33] INFO in app: Flask application started
+[2026-08-11 16:15:33] INFO in app: Flask application started
+[2026-08-11 16:15:39] INFO in app: Flask application started
+[2026-08-11 16:15:53] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:15:54] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:15:56] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:16:12] INFO in app: Flask application started
+[2026-08-11 16:16:23] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:16:41] INFO in app: Flask application started
+[2026-08-11 16:16:41] INFO in app: Flask application started
+[2026-08-11 16:16:41] INFO in app: Flask application started
+[2026-08-11 16:16:46] INFO in app: Flask application started
+[2026-08-11 16:16:58] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:17:15] INFO in app: Flask application started
+[2026-08-11 16:17:15] INFO in app: Flask application started
+[2026-08-11 16:17:15] INFO in app: Flask application started
+[2026-08-11 16:17:26] INFO in app: Flask application started
+[2026-08-11 16:17:26] INFO in app: Flask application started
+[2026-08-11 16:17:26] INFO in app: Flask application started
+[2026-08-11 16:17:31] INFO in app: Flask application started
+[2026-08-11 16:17:46] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:18:26] INFO in app: Flask application started
+[2026-08-11 16:18:50] INFO in app: Flask application started
+[2026-08-11 16:19:13] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:19:15] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:19:17] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:19:21] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:23:52] INFO in app: Flask application started
+[2026-08-11 16:24:17] INFO in auth: Login OK: jn@test.com (role=manager) from 127.0.0.1
+[2026-08-11 16:24:27] INFO in auth: Login OK: jn@test.com (role=manager) from 127.0.0.1
+[2026-08-11 16:25:42] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:25:44] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:25:47] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:25:48] INFO in app: Posting refused: Only 20 × Widget in stock, so 100 cannot be taken out. If you are reversing a document, the goods it brought in have already been sold or issued — reverse those first.
+[2026-08-11 16:25:51] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:25:57] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:26:00] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:26:02] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:26:04] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:26:05] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:26:07] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:26:09] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:26:10] INFO in auth: Login OK: s@t.com (role=staff) from 127.0.0.1
+[2026-08-11 16:26:25] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:26:26] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:26:27] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:26:27] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:26:30] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:26:32] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:26:35] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:26:37] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:26:39] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:26:42] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:26:44] INFO in auth: Login OK: s@t.com (role=staff) from 127.0.0.1
+[2026-08-11 16:26:46] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:26:48] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:26:51] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:26:53] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:26:56] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:26:58] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:27:01] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:27:03] INFO in auth: Login OK: s@t.com (role=staff) from 127.0.0.1
+[2026-08-11 16:27:05] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:27:07] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-11 16:27:09] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:27:13] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:27:18] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:27:22] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:27:25] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:27:29] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:27:33] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:27:37] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:27:40] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-11 16:27:43] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-12 16:41:34] INFO in app: Flask application started
+[2026-08-12 16:41:34] INFO in app: Flask application started
+[2026-08-12 16:41:34] INFO in app: Flask application started
+[2026-08-12 16:41:37] INFO in app: Flask application started
+[2026-08-12 16:41:37] INFO in app: Flask application started
+[2026-08-12 16:41:37] INFO in app: Flask application started
+[2026-08-12 16:41:52] WARNING in auth: Login FAILED (unknown email): sabir1@sabir1.com from 127.0.0.1
+[2026-08-12 16:41:52] WARNING in auth: Login FAILED (unknown email): sabir1@sabir1.com from 127.0.0.1
+[2026-08-12 16:42:01] WARNING in auth: Login FAILED (unknown email): sabir1@sabir1.com from 127.0.0.1
+[2026-08-12 16:42:01] WARNING in auth: Login FAILED (unknown email): sabir1@sabir1.com from 127.0.0.1
+[2026-08-12 16:42:28] WARNING in auth: Login FAILED (unknown email): sabir1@sabir1.com from 127.0.0.1
+[2026-08-12 16:42:28] WARNING in auth: Login FAILED (unknown email): sabir1@sabir1.com from 127.0.0.1
+[2026-08-12 16:43:29] WARNING in auth: Login FAILED (unknown email): sabir1212@yahoo.com from 127.0.0.1
+[2026-08-12 16:43:29] WARNING in auth: Login FAILED (unknown email): sabir1212@yahoo.com from 127.0.0.1
+[2026-08-12 16:44:01] INFO in app: Flask application started
+[2026-08-12 16:44:47] INFO in auth: Login OK: sabir1@sabir1.com (role=admin) from 127.0.0.1
+[2026-08-12 16:44:47] INFO in auth: Login OK: sabir1@sabir1.com (role=admin) from 127.0.0.1
+[2026-08-12 16:53:16] INFO in app: Flask application started
+[2026-08-12 16:55:58] INFO in app: Flask application started
+[2026-08-12 16:55:58] INFO in app: Flask application started
+[2026-08-12 16:55:58] INFO in app: Flask application started
+[2026-08-12 16:56:00] INFO in app: Flask application started
+[2026-08-12 16:56:00] INFO in app: Flask application started
+[2026-08-12 16:56:00] INFO in app: Flask application started
+[2026-08-12 18:00:50] INFO in app: Flask application started
+[2026-08-12 18:01:22] INFO in app: Flask application started
+[2026-08-12 18:01:23] INFO in app: Flask application started
+[2026-08-12 18:01:23] INFO in app: Flask application started
+[2026-08-12 18:01:25] INFO in app: Flask application started
+[2026-08-12 18:01:25] INFO in app: Flask application started
+[2026-08-12 18:01:25] INFO in app: Flask application started
+[2026-08-12 18:04:02] INFO in app: Flask application started
+[2026-08-12 18:04:40] INFO in app: Flask application started
+[2026-08-12 18:04:41] INFO in app: Flask application started
+[2026-08-12 18:04:41] INFO in app: Flask application started
+[2026-08-12 18:04:43] INFO in app: Flask application started
+[2026-08-12 18:04:43] INFO in app: Flask application started
+[2026-08-12 18:04:43] INFO in app: Flask application started
+[2026-08-12 18:06:54] INFO in app: Flask application started
+[2026-08-12 18:07:30] INFO in app: Flask application started
+[2026-08-12 18:07:30] INFO in app: Flask application started
+[2026-08-12 18:07:30] INFO in app: Flask application started
+[2026-08-12 18:07:32] INFO in app: Flask application started
+[2026-08-12 18:07:32] INFO in app: Flask application started
+[2026-08-12 18:07:32] INFO in app: Flask application started
+[2026-08-12 18:10:16] INFO in app: Flask application started
+[2026-08-12 18:10:43] INFO in app: Flask application started
+[2026-08-12 18:10:43] INFO in app: Flask application started
+[2026-08-12 18:10:43] INFO in app: Flask application started
+[2026-08-12 18:10:45] INFO in app: Flask application started
+[2026-08-12 18:10:46] INFO in app: Flask application started
+[2026-08-12 18:10:46] INFO in app: Flask application started
+[2026-08-12 18:13:20] INFO in app: Flask application started
+[2026-08-12 18:13:53] INFO in app: Flask application started
+[2026-08-12 18:13:53] INFO in app: Flask application started
+[2026-08-12 18:13:53] INFO in app: Flask application started
+[2026-08-12 18:13:55] INFO in app: Flask application started
+[2026-08-12 18:13:56] INFO in app: Flask application started
+[2026-08-12 18:13:56] INFO in app: Flask application started
+[2026-08-12 18:19:52] INFO in app: Flask application started
+[2026-08-12 18:20:23] INFO in app: Flask application started
+[2026-08-12 18:20:24] INFO in app: Flask application started
+[2026-08-12 18:20:24] INFO in app: Flask application started
+[2026-08-12 18:20:26] INFO in app: Flask application started
+[2026-08-12 18:20:26] INFO in app: Flask application started
+[2026-08-12 18:20:26] INFO in app: Flask application started
+[2026-08-12 18:26:29] INFO in app: Flask application started
+[2026-08-12 18:26:53] INFO in app: Flask application started
+[2026-08-12 18:26:53] INFO in app: Flask application started
+[2026-08-12 18:26:53] INFO in app: Flask application started
+[2026-08-12 18:26:57] INFO in app: Flask application started
+[2026-08-12 18:26:57] INFO in app: Flask application started
+[2026-08-12 18:26:57] INFO in app: Flask application started
+[2026-08-12 18:29:13] INFO in app: Flask application started
+[2026-08-12 18:29:43] INFO in app: Flask application started
+[2026-08-12 18:29:43] INFO in app: Flask application started
+[2026-08-12 18:29:43] INFO in app: Flask application started
+[2026-08-12 18:29:45] INFO in app: Flask application started
+[2026-08-12 18:29:45] INFO in app: Flask application started
+[2026-08-12 18:29:45] INFO in app: Flask application started
+[2026-08-12 18:31:29] INFO in app: Flask application started
+[2026-08-12 18:31:58] INFO in app: Flask application started
+[2026-08-12 18:31:59] INFO in app: Flask application started
+[2026-08-12 18:31:59] INFO in app: Flask application started
+[2026-08-12 18:32:02] INFO in app: Flask application started
+[2026-08-12 18:32:02] INFO in app: Flask application started
+[2026-08-12 18:32:02] INFO in app: Flask application started
+[2026-08-12 18:40:13] INFO in app: Flask application started
+[2026-08-12 18:41:01] INFO in app: Flask application started
+[2026-08-12 18:41:01] INFO in app: Flask application started
+[2026-08-12 18:41:01] INFO in app: Flask application started
+[2026-08-12 18:41:03] INFO in app: Flask application started
+[2026-08-12 18:41:04] INFO in app: Flask application started
+[2026-08-12 18:41:04] INFO in app: Flask application started
+[2026-08-12 18:43:43] INFO in app: Flask application started
+[2026-08-12 18:44:12] INFO in app: Flask application started
+[2026-08-12 18:44:13] INFO in app: Flask application started
+[2026-08-12 18:44:13] INFO in app: Flask application started
+[2026-08-12 18:44:15] INFO in app: Flask application started
+[2026-08-12 18:44:15] INFO in app: Flask application started
+[2026-08-12 18:44:15] INFO in app: Flask application started
+[2026-08-12 18:48:11] INFO in app: Flask application started
+[2026-08-12 18:48:33] INFO in app: Flask application started
+[2026-08-12 18:48:33] INFO in app: Flask application started
+[2026-08-12 18:48:33] INFO in app: Flask application started
+[2026-08-12 18:48:35] INFO in app: Flask application started
+[2026-08-12 18:48:36] INFO in app: Flask application started
+[2026-08-12 18:48:36] INFO in app: Flask application started
+[2026-08-12 18:50:51] INFO in app: Flask application started
+[2026-08-12 18:50:52] INFO in app: Flask application started
+[2026-08-12 18:50:52] INFO in app: Flask application started
+[2026-08-12 18:50:54] INFO in app: Flask application started
+[2026-08-12 18:50:54] INFO in app: Flask application started
+[2026-08-12 18:50:54] INFO in app: Flask application started
+[2026-08-12 18:54:52] INFO in app: Flask application started
+[2026-08-12 18:54:52] INFO in app: Flask application started
+[2026-08-12 18:54:52] INFO in app: Flask application started
+[2026-08-12 18:54:54] INFO in app: Flask application started
+[2026-08-12 18:54:54] INFO in app: Flask application started
+[2026-08-12 18:54:54] INFO in app: Flask application started
+[2026-08-12 18:57:44] INFO in app: Flask application started
+[2026-08-12 18:57:45] INFO in app: Flask application started
+[2026-08-12 18:57:45] INFO in app: Flask application started
+[2026-08-12 18:57:48] INFO in app: Flask application started
+[2026-08-12 18:57:48] INFO in app: Flask application started
+[2026-08-12 18:57:48] INFO in app: Flask application started
+[2026-08-12 19:11:22] INFO in app: Flask application started
+[2026-08-12 19:11:22] INFO in app: Flask application started
+[2026-08-12 19:11:22] INFO in app: Flask application started
+[2026-08-12 19:28:25] INFO in app: Flask application started
+[2026-08-12 19:28:26] INFO in app: Flask application started
+[2026-08-12 19:28:26] INFO in app: Flask application started
+[2026-08-12 19:28:29] INFO in app: Flask application started
+[2026-08-12 19:28:30] INFO in app: Flask application started
+[2026-08-12 19:28:30] INFO in app: Flask application started
+[2026-08-13 10:27:16] INFO in app: Flask application started
+[2026-08-13 10:27:17] INFO in app: Flask application started
+[2026-08-13 10:27:17] INFO in app: Flask application started
+[2026-08-13 10:27:22] INFO in app: Flask application started
+[2026-08-13 10:27:23] INFO in app: Flask application started
+[2026-08-13 10:27:23] INFO in app: Flask application started
+[2026-08-13 10:32:23] WARNING in auth: Login FAILED (bad password): sabir1@sabir1.com from 127.0.0.1
+[2026-08-13 10:32:23] WARNING in auth: Login FAILED (bad password): sabir1@sabir1.com from 127.0.0.1
+[2026-08-13 10:32:36] WARNING in auth: Login FAILED (bad password): sabir1@sabir1.com from 127.0.0.1
+[2026-08-13 10:32:36] WARNING in auth: Login FAILED (bad password): sabir1@sabir1.com from 127.0.0.1
+[2026-08-13 10:32:59] WARNING in auth: Login FAILED (unknown email): sabir1212@yahoo.com from 127.0.0.1
+[2026-08-13 10:32:59] WARNING in auth: Login FAILED (unknown email): sabir1212@yahoo.com from 127.0.0.1
+[2026-08-13 10:33:24] INFO in auth: Login OK: sabir1@sabir1.com (role=admin) from 127.0.0.1
+[2026-08-13 10:33:24] INFO in auth: Login OK: sabir1@sabir1.com (role=admin) from 127.0.0.1
+[2026-08-13 10:42:03] INFO in app: Flask application started
+[2026-08-13 10:42:04] INFO in app: Flask application started
+[2026-08-13 10:42:04] INFO in app: Flask application started
+[2026-08-13 10:42:10] INFO in app: Flask application started
+[2026-08-13 10:42:11] INFO in app: Flask application started
+[2026-08-13 10:42:11] INFO in app: Flask application started
+[2026-08-13 11:58:53] INFO in app: Flask application started
+[2026-08-13 11:58:53] INFO in app: Flask application started
+[2026-08-13 11:58:53] INFO in app: Flask application started
+[2026-08-13 11:59:31] INFO in app: Flask application started
+[2026-08-13 11:59:31] INFO in app: Flask application started
+[2026-08-13 11:59:31] INFO in app: Flask application started
+[2026-08-13 12:08:05] INFO in app: Flask application started
+[2026-08-13 12:08:06] INFO in app: Flask application started
+[2026-08-13 12:08:06] INFO in app: Flask application started
+[2026-08-13 12:08:24] INFO in app: Flask application started
+[2026-08-13 12:08:24] INFO in app: Flask application started
+[2026-08-13 12:08:24] INFO in app: Flask application started
+[2026-08-13 12:08:40] INFO in app: Flask application started
+[2026-08-13 12:08:41] INFO in app: Flask application started
+[2026-08-13 12:08:41] INFO in app: Flask application started
+[2026-08-13 12:09:47] INFO in app: Flask application started
+[2026-08-13 12:10:16] INFO in auth: Login OK: jn@test.com (role=manager) from 127.0.0.1
+[2026-08-13 12:10:27] INFO in auth: Login OK: jn@test.com (role=manager) from 127.0.0.1
+[2026-08-13 12:11:38] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-13 12:11:40] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-13 12:11:43] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-13 12:11:44] INFO in app: Posting refused: Only 20 × Widget in stock, so 100 cannot be taken out. If you are reversing a document, the goods it brought in have already been sold or issued — reverse those first.
+[2026-08-13 12:11:48] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-13 12:11:56] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-13 12:12:00] INFO in auth: Login OK: a@t.com (role=admin) from 127.0.0.1
+[2026-08-13 12:12:05] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-13 12:12:08] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-13 12:12:12] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-13 12:12:14] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-13 12:12:16] INFO in auth: Login OK: m@t.com (role=manager) from 127.0.0.1
+[2026-08-13 12:12:18] INFO in auth: Login OK: s@t.com (role=staff) from 127.0.0.1
+[2026-08-13 12:13:18] INFO in app: Flask application started
+[2026-08-13 12:13:43] INFO in auth: Login OK: jn@test.com (role=manager) from 127.0.0.1
+[2026-08-13 12:13:52] INFO in auth: Login OK: jn@test.com (role=manager) from 127.0.0.1

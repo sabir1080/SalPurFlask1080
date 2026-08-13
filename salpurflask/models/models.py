@@ -58,6 +58,8 @@ class Item(db.Model):
     category_id         = db.Column(db.Integer, db.ForeignKey("category.id"), nullable=True)
     business_category_id = db.Column(db.Integer, db.ForeignKey("business_category.id"), nullable=True)
     unit                = db.Column(db.String(20), nullable=False, default="Pcs")
+    # Item type: STOCK (normal inventory item) or SERVICE (no inventory tracking)
+    item_type           = db.Column(db.String(20), nullable=False, default="STOCK")
     # A barcode or QR value, whichever the item is labelled with. One field serves both:
     # a scanner types the code and presses Enter, and the POS looks the item up by it —
     # it does not care whether the label was a barcode or a QR. Nullable, because an item

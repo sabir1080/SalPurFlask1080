@@ -16,6 +16,7 @@ from app import (
     seed_chart_of_accounts, seed_fixed_asset_accounts, seed_fiscal_year,
     seed_financial_account_links, post_item_opening, post_account_opening,
 )
+from salpurflask.models.business_config import BusinessCategory
 from salpurflask.sales.routes import get_walkin_customer
 
 
@@ -38,10 +39,10 @@ def _world():
     db.session.commit()
     seed_financial_account_links()
 
-    cat = Category(name="Drinks")
-    db.session.add(cat)
+    bcat = BusinessCategory(name="Beverages", slug="beverages", is_enabled=True)
+    db.session.add(bcat)
     db.session.flush()
-    item = Item(name="Cola 500ml", category_id=cat.id, unit="Pcs",
+    item = Item(name="Cola 500ml", business_category_id=bcat.id, unit="Pcs",
                 barcode="8964000112233", purchase_price=Decimal("60"),
                 sale_price=Decimal("100"), opening_stock=50, stock=50, reorder_level=5,
                 inventory_value=Decimal("3000"))          # 50 @ 60

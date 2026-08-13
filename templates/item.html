@@ -99,13 +99,23 @@ try {
         </div>
         <div class="col-md-4">
           <div class="form-group">
+            <label class="form-label required">Item Type</label>
+            <select class="form-select" id="item_type" name="item_type" onchange="toggleStockFields()">
+              <option value="STOCK" {% if form_data.get('item_type', 'STOCK') == 'STOCK' %}selected{% endif %}>Stock Item</option>
+              <option value="SERVICE" {% if form_data.get('item_type') == 'SERVICE' %}selected{% endif %}>Service Item</option>
+            </select>
+            <small class="form-text">Stock: inventory tracking | Service: no inventory</small>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="form-group" id="opening_stock_group">
             <label class="form-label required">Opening Stock</label>
             <input type="number" class="form-control" id="opening_stock" name="opening_stock" value="{{ form_data.get('opening_stock', 0) }}" required>
             <small class="form-text">Quantity on hand at start</small>
           </div>
         </div>
         <div class="col-md-4">
-          <div class="form-group">
+          <div class="form-group" id="reorder_level_group">
             <label class="form-label required">Reorder Level</label>
             <input type="text" class="form-control" id="reorder_level" name="reorder_level" value="{{ form_data.get('reorder_level', '') }}" required>
           </div>
@@ -183,11 +193,33 @@ try {
 // AUTO-SAVE FORM DATA TO localStorage
 const FORM_STORAGE_KEY = 'itemFormData';
 
+// Toggle stock fields based on item type
+function toggleStockFields() {
+  const itemType = document.getElementById('item_type').value;
+  const openingStockGroup = document.getElementById('opening_stock_group');
+  const reorderLevelGroup = document.getElementById('reorder_level_group');
+  const openingStockInput = document.getElementById('opening_stock');
+  const reorderLevelInput = document.getElementById('reorder_level');
+
+  if (itemType === 'SERVICE') {
+    openingStockGroup.style.display = 'none';
+    reorderLevelGroup.style.display = 'none';
+    openingStockInput.removeAttribute('required');
+    reorderLevelInput.removeAttribute('required');
+  } else {
+    openingStockGroup.style.display = 'block';
+    reorderLevelGroup.style.display = 'block';
+    openingStockInput.setAttribute('required', 'required');
+    reorderLevelInput.setAttribute('required', 'required');
+  }
+}
+
 // Save form data whenever user types
 function saveFormData() {
   const formData = {
     name: document.getElementById('name').value,
     business_category_id: document.getElementById('business_category_id').value,
+    item_type: document.getElementById('item_type').value,
     unit: document.getElementById('unit').value,
     opening_stock: document.getElementById('opening_stock').value,
     reorder_level: document.getElementById('reorder_level').value,
@@ -207,16 +239,24 @@ function restoreFormData() {
     const formData = JSON.parse(saved);
     if (formData.name) document.getElementById('name').value = formData.name;
     if (formData.business_category_id) document.getElementById('business_category_id').value = formData.business_category_id;
+    if (formData.item_type) document.getElementById('item_type').value = formData.item_type;
     if (formData.unit) document.getElementById('unit').value = formData.unit;
     if (formData.opening_stock) document.getElementById('opening_stock').value = formData.opening_stock;
     if (formData.reorder_level) document.getElementById('reorder_level').value = formData.reorder_level;
     if (formData.purchase_price) document.getElementById('purchase_price').value = formData.purchase_price;
     if (formData.sale_price) document.getElementById('sale_price').value = formData.sale_price;
     if (formData.barcode) document.getElementById('barcode').value = formData.barcode;
+    toggleStockFields();
   } catch (e) {
     console.error('Failed to restore form data:', e);
   }
 }
+
+// Initialize on page load
+window.addEventListener('DOMContentLoaded', () => {
+  restoreFormData();
+  toggleStockFields();
+});
 
 // Clear saved data on successful submission
 document.querySelector('form[method="POST"]').addEventListener('submit', function() {

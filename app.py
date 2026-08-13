@@ -1261,6 +1261,9 @@ def migrate_database():
         if "business_category_id" not in item_columns:
             with db.engine.begin() as conn:
                 conn.execute(text("ALTER TABLE item ADD COLUMN business_category_id INTEGER REFERENCES business_category(id)"))
+        if "item_type" not in item_columns:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE item ADD COLUMN item_type VARCHAR(20) DEFAULT 'STOCK'"))
     # Multi-unit: the unit a line was transacted in, and its factor into the item's
     # base unit. Nullable/default-1, so every existing row reads back as "the base
     # unit, factor 1" — exactly what it always implicitly was.

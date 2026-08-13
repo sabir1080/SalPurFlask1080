@@ -9,6 +9,7 @@ from app import (
     app as flask_app, db, User, pwd_context, Category, Item,
     code_svg,
 )
+from salpurflask.models.business_config import BusinessCategory
 
 
 def _manager(email="m@t.com"):
@@ -21,10 +22,10 @@ def _manager(email="m@t.com"):
 
 
 def _item(name="Widget", barcode="8964000112233"):
-    cat = Category.query.first() or Category(name="X")
-    if cat.id is None:
-        db.session.add(cat); db.session.flush()
-    it = Item(name=name, category_id=cat.id, unit="Pcs", barcode=barcode,
+    bcat = BusinessCategory.query.first() or BusinessCategory(name="General", slug="general", is_enabled=True)
+    if bcat.id is None:
+        db.session.add(bcat); db.session.flush()
+    it = Item(name=name, business_category_id=bcat.id, unit="Pcs", barcode=barcode,
               sale_price=Decimal("100"), opening_stock=0, stock=0, reorder_level=0,
               inventory_value=0)
     db.session.add(it); db.session.commit()
@@ -90,11 +91,11 @@ def test_two_items_cannot_share_a_barcode(appctx):
     POS would ring up whichever it found first — silently the wrong thing."""
     _item("Cola", "8964000112233")
     c = _manager()
-    cat = Category.query.first()
+    bcat = BusinessCategory.query.first()
 
     # adding a second item with the same code is refused
     r = c.post("/item", data={
-        "name": "Pepsi", "category_id": cat.id, "unit": "Pcs", "opening_stock": "0",
+        "name": "Pepsi", "business_category_id": bcat.id, "unit": "Pcs", "opening_stock": "0",
         "reorder_level": "5", "sale_price": "100", "barcode": "8964000112233",
     }, follow_redirects=True)
     assert "already used by another item" in r.get_data(as_text=True)
@@ -102,7 +103,7 @@ def test_two_items_cannot_share_a_barcode(appctx):
 
     # a different (company) barcode is fine
     c.post("/item", data={
-        "name": "Pepsi", "category_id": cat.id, "unit": "Pcs", "opening_stock": "0",
+        "name": "Pepsi", "business_category_id": bcat.id, "unit": "Pcs", "opening_stock": "0",
         "reorder_level": "5", "sale_price": "100", "barcode": "8964000999999",
     }, follow_redirects=True)
     assert Item.query.filter_by(name="Pepsi").one().barcode == "8964000999999"
@@ -112,9 +113,9 @@ def test_editing_an_item_keeps_its_own_barcode(appctx):
     """The duplicate check must not trip on the item's own code when it is edited."""
     it = _item("Cola", "8964000112233")
     c = _manager()
-    cat = Category.query.first()
+    bcat = BusinessCategory.query.first()
     r = c.post(f"/item/edit/{it.id}", data={
-        "name": "Cola 1L", "category_id": cat.id, "unit": "Pcs",
+        "name": "Cola 1L", "business_category_id": bcat.id, "unit": "Pcs",
         "opening_stock": "0", "reorder_level": "5", "sale_price": "120",
         "barcode": "8964000112233",             # unchanged — its own code
     }, follow_redirects=True)
