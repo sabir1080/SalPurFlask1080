@@ -156,6 +156,8 @@ def sale():
                     return redirect(url_for("sale"))
             except ValueError as e:
                 flash(f"Invalid data: {e}", "danger")
+    from app import get_standard_tax_rate
+    default_tax = get_standard_tax_rate() or 0
     return render_template(
         "sale.html",
         customers=customers,
@@ -164,6 +166,7 @@ def sale():
         pagination=pagination,
         search=search,
         today=now_local().strftime("%Y-%m-%d"),
+        default_tax_rate=default_tax,
     )
 
 
@@ -278,7 +281,9 @@ def edit_sale(id):
                     return redirect(url_for("sale"))
             except ValueError as e:
                 flash(f"Invalid data: {e}", "danger")
-    return render_template("edit_sale.html", sale=sal, customers=customers, items=items_all)
+    from app import get_standard_tax_rate
+    default_tax = get_standard_tax_rate() or 0
+    return render_template("edit_sale.html", sale=sal, customers=customers, items=items_all, default_tax_rate=default_tax)
 
 
 @sales_bp.route('/sale/<int:id>/delete', methods=['POST'])
