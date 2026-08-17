@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Payroll Preview{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-calculator"></i> Payroll Preview</h1>
+    <p>{{ employee.name }} — {{ period.name }} <span class="badge bg-secondary">nothing saved</span></p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('payroll.period_detail', period_id=period.id) }}" class="btn btn-secondary">
+      <i class="bi bi-arrow-left"></i> Back
+    </a>
+  </div>
+</div>
+
+{% if not result.attendance_tracked %}
+<div class="alert alert-info">
+  <i class="bi bi-info-circle"></i>
+  No attendance is recorded for this period, so a full period is assumed.
+</div>
+{% endif %}
+
+<div class="card mb-3">
+  <div class="card-body row g-2 text-center">
+    {% for label, value in [('Period Days', result.period_days), ('Payable Days', result.payable_days),
+                            ('Absent', result.absent_days), ('Overtime (h)', result.overtime_hours)] %}
+    <div class="col-6 col-md-3">
+      <div class="small text-muted">{{ label }}</div>
+      <div class="fw-bold">{{ '%.2f' | format(value | float) }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <table class="table table-sm mb-0">
+      {% for i in result.lines %}
+      <tr>
+        <td>
+          {{ i.name }}
+          {% if i.note %}<span class="small text-muted">({{ i.note }})</span>{% endif %}
+        </td>
+        <td class="text-end {% if i.component_type == 'deduction' %}text-danger{% endif %}">
+          {% if i.component_type == 'deduction' %}-{% endif %}{{ currency }} {{ i.amount | fmt_num }}
+        </td>
+      </tr>
+      {% endfor %}
+      <tr>
+        <td>Gross Salary</td>
+        <td class="text-end">{{ currency }} {{ result.gross_salary | fmt_num }}</td>
+      </tr>
+      <tr>
+        <td>Total Deductions</td>
+        <td class="text-end text-danger">-{{ currency }} {{ result.total_deductions | fmt_num }}</td>
+      </tr>
+      <tr class="table-active fw-bold">
+        <td>Net Salary</td>
+        <td class="text-end">{{ currency }} {{ result.net_salary | fmt_num }}</td>
+      </tr>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Payroll{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-cash-stack"></i> Payroll</h1>
+    <p>Salary structures, periods and payslips</p>
+  </div>
+  <div class="page-header-actions">
+    {% if has_permission('payroll.create') %}
+    <a href="{{ url_for('payroll.period_new') }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> New Period</a>
+    {% endif %}
+    <a href="{{ url_for('payroll.structures') }}" class="btn btn-secondary">Salary Structures</a>
+    <a href="{{ url_for('payroll.advances') }}" class="btn btn-secondary">Advances</a>
+  </div>
+</div>
+
+<div class="row g-2 mb-3">
+  {% for label, value, icon in [('Active Employees', employees, 'bi-people'),
+                                ('Salary Structures', structures, 'bi-file-earmark-text'),
+                                ('Open Advances', open_advances, 'bi-wallet2')] %}
+  <div class="col-12 col-md-4">
+    <div class="card h-100">
+      <div class="card-body py-3">
+        <div class="small text-muted"><i class="bi {{ icon }}"></i> {{ label }}</div>
+        <div class="fs-4 fw-bold">{{ value }}</div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <div class="card-header"><strong>Payroll Periods</strong></div>
+  <div class="card-body">
+    <div class="table-wrapper table-responsive">
+      <table class="table table-striped table-hover align-middle">
+        <thead>
+          <tr>
+            <th>Period</th><th>From</th><th>To</th><th>Status</th>
+            <th class="text-center">Payslips</th><th class="text-end">Net Total</th>
+            <th class="text-center">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in periods %}
+          {% set t = p.totals %}
+          <tr>
+            <td><strong>{{ p.name }}</strong></td>
+            <td>{{ p.start_date.strftime('%Y-%m-%d') }}</td>
+            <td>{{ p.end_date.strftime('%Y-%m-%d') }}</td>
+            <td>
+              {% set cls = {'Draft':'secondary','Processing':'info','Finalized':'success','Cancelled':'danger'} %}
+              <span class="badge bg-{{ cls.get(p.status,'secondary') }}">{{ p.status }}</span>
+            </td>
+            <td class="text-center">{{ t.employees }}</td>
+            <td class="text-end">{{ currency }} {{ t.net | fmt_num }}</td>
+            <td class="text-center table-cell-center">
+              <a href="{{ url_for('payroll.period_detail', period_id=p.id) }}" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-eye"></i> Open
+              </a>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="text-center text-muted py-4">No payroll periods yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -34,3 +34,17 @@ from salpurflask.models.attendance import (  # noqa: F401
     WORKED_STATUSES,
     STANDARD_DAY_HOURS,
 )
+
+# Payroll (optional module — depends on HR for employees)
+from salpurflask.models.payroll import (  # noqa: F401
+    SalaryComponent,
+    SalaryStructure,
+    SalaryStructureLine,
+    PayrollPeriod,
+    PayrollEntry,
+    PayrollItem,
+    EmployeeAdvance,
+    PERIOD_STATUSES,
+    ADVANCE_STATUSES,
+    seed_default_components,
+)

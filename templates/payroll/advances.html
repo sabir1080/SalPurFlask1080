@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Employee Advances{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-wallet2"></i> Employee Advances</h1>
+    <p>{{ rows | length }} record{{ '' if rows | length == 1 else 's' }}</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('payroll.index') }}" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Payroll</a>
+  </div>
+</div>
+
+<div class="row g-3">
+  {% if has_permission('payroll.create') %}
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-header"><strong>Record an Advance</strong></div>
+      <div class="card-body">
+        <form method="POST">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="mb-3">
+            <label class="form-label">Employee <span class="text-danger">*</span></label>
+            <select name="employee_id" class="form-select" required>
+              <option value="">— Select —</option>
+              {% for e in employees %}
+              <option value="{{ e.id }}">{{ e.code }} — {{ e.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Date <span class="text-danger">*</span></label>
+            <input type="date" name="advance_date" class="form-control" required value="{{ today.isoformat() }}">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Amount <span class="text-danger">*</span></label>
+            <input type="number" step="0.01" min="0" name="amount" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Instalment per period</label>
+            <input type="number" step="0.01" min="0" name="instalment" class="form-control" value="0">
+            <div class="form-text">Zero recovers the whole balance in the next payroll run.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Remarks</label>
+            <input type="text" name="remarks" class="form-control">
+          </div>
+          <button type="submit" class="btn btn-primary w-100"><i class="bi bi-plus-lg"></i> Record</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="{% if has_permission('payroll.create') %}col-md-8{% else %}col-12{% endif %}">
+    <div class="card">
+      <div class="card-body">
+        <form method="GET" class="mb-3 d-flex gap-2 align-items-end">
+          <div>
+            <label class="form-label small mb-1">Status</label>
+            <select name="status" class="form-select form-select-sm">
+              <option value="">All</option>
+              {% for s in statuses %}
+              <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="btn btn-sm btn-primary">Filter</button>
+        </form>
+
+        <div class="table-wrapper table-responsive">
+          <table class="table table-striped table-hover align-middle">
+            <thead>
+              <tr>
+                <th>Date</th><th>Employee</th>
+                <th class="text-end">Amount</th><th class="text-end">Recovered</th>
+                <th class="text-end">Outstanding</th><th>Status</th>
+                <th class="text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for a in rows %}
+              {% set cls = {'Active':'info','Settled':'success','Cancelled':'secondary'} %}
+              <tr>
+                <td>{{ a.advance_date.strftime('%Y-%m-%d') }}</td>
+                <td>{{ a.employee.name }}</td>
+                <td class="text-end">{{ currency }} {{ a.amount | fmt_num }}</td>
+                <td class="text-end">{{ currency }} {{ a.recovered | fmt_num }}</td>
+                <td class="text-end"><strong>{{ currency }} {{ a.outstanding | fmt_num }}</strong></td>
+                <td><span class="badge bg-{{ cls.get(a.status,'secondary') }}">{{ a.status }}</span></td>
+                <td class="text-center table-cell-center">
+                  {% if a.status == 'Active' and has_permission('payroll.edit') %}
+                  <form method="POST" action="{{ url_for('payroll.advance_cancel', row_id=a.id) }}" class="d-inline"
+                        onsubmit="return confirm('Cancel this advance?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Cancel">
+                      <i class="bi bi-x"></i>
+                    </button>
+                  </form>
+                  {% endif %}
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="7" class="text-center text-muted py-4">No advances recorded.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

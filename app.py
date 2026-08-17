@@ -247,6 +247,7 @@ from salpurflask.routes.developer import dev_bp
 from salpurflask.sales.routes import sales_bp
 from salpurflask.hr import hr_bp
 from salpurflask.attendance import attendance_bp
+from salpurflask.payroll import payroll_bp
 from salpurflask.services.feature_flags import module_enabled
 from salpurflask.services.hr_permissions import has_permission
 app.register_blueprint(auth_bp)
@@ -258,6 +259,7 @@ app.register_blueprint(dev_bp)
 # registering it unconditionally costs nothing and keeps url_for() resolvable.
 app.register_blueprint(hr_bp)
 app.register_blueprint(attendance_bp)
+app.register_blueprint(payroll_bp)
 
 # Configure logging
 logs_dir = os.path.join(BASE_DIR, "logs")

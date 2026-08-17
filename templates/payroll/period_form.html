@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}New Payroll Period{% endblock %}
+{% block content %}
+{% set d = form_data if form_data else {} %}
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-calendar-range"></i> New Payroll Period</h1>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('payroll.index') }}" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Back</a>
+  </div>
+</div>
+
+<form method="POST">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="card">
+    <div class="card-body row g-3">
+      <div class="col-md-4">
+        <label class="form-label">Period Name <span class="text-danger">*</span></label>
+        <input type="text" name="name" class="form-control" required
+               value="{{ d.get('name','') }}" placeholder="January 2026">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Start Date <span class="text-danger">*</span></label>
+        <input type="date" name="start_date" class="form-control" required value="{{ d.get('start_date','') }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">End Date <span class="text-danger">*</span></label>
+        <input type="date" name="end_date" class="form-control" required value="{{ d.get('end_date','') }}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Status</label>
+        <input type="text" class="form-control" value="Draft" disabled>
+      </div>
+      <div class="col-12">
+        <label class="form-label">Notes</label>
+        <input type="text" name="notes" class="form-control" value="{{ d.get('notes','') }}">
+      </div>
+    </div>
+  </div>
+  <div class="mt-3">
+    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Create Period</button>
+    <a href="{{ url_for('payroll.index') }}" class="btn btn-secondary">Cancel</a>
+  </div>
+</form>
+{% endblock %}
