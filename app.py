@@ -245,11 +245,17 @@ from salpurflask.routes import auth_bp, dashboard_bp
 from salpurflask.routes.admin_config import config_bp
 from salpurflask.routes.developer import dev_bp
 from salpurflask.sales.routes import sales_bp
+from salpurflask.hr import hr_bp
+from salpurflask.services.feature_flags import module_enabled
+from salpurflask.services.hr_permissions import has_permission
 app.register_blueprint(auth_bp)
 app.register_blueprint(dashboard_bp)
 app.register_blueprint(config_bp)
 app.register_blueprint(sales_bp)
 app.register_blueprint(dev_bp)
+# Optional module. Its routes refuse themselves while the flag is off, so
+# registering it unconditionally costs nothing and keeps url_for() resolvable.
+app.register_blueprint(hr_bp)
 
 # Configure logging
 logs_dir = os.path.join(BASE_DIR, "logs")
@@ -1891,6 +1897,10 @@ def inject_form_defaults():
         "designed_developed": app.config["DESIGNED_DEVELOPED"],
         "demo_mode": is_demo_mode(),
         "default_tax_rate": get_standard_tax_rate(),
+        # Optional-module switches and their permissions, so a template can hide
+        # a menu the user cannot use or that belongs to a module that is off.
+        "module_enabled": module_enabled,
+        "has_permission": has_permission,
         "item_units_for_js": item_units_for_js,
         "purchase_item_options_for_js": purchase_item_options_for_js,
         "sale_item_options_for_js": sale_item_options_for_js,

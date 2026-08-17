@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}{{ employee.name }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-person-badge"></i> {{ employee.name }}</h1>
+    <p><code>{{ employee.code }}</code>
+      {% if employee.active %}<span class="badge bg-success">Active</span>
+      {% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}
+    </p>
+  </div>
+  <div class="page-header-actions">
+    {% if has_permission('hr.edit') %}
+    <a href="{{ url_for('hr.employee_edit', emp_id=employee.id) }}" class="btn btn-primary">
+      <i class="bi bi-pencil"></i> Edit
+    </a>
+    {% endif %}
+    <a href="{{ url_for('hr.employees') }}" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Back</a>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header"><strong>Employment</strong></div>
+      <div class="card-body">
+        <table class="table table-sm mb-0">
+          <tr><th style="width:45%">Department</th><td>{{ employee.department.name if employee.department else '—' }}</td></tr>
+          <tr><th>Designation</th><td>{{ employee.designation.name if employee.designation else '—' }}</td></tr>
+          <tr><th>Joining Date</th><td>{{ employee.joining_date.strftime('%Y-%m-%d') if employee.joining_date else '—' }}</td></tr>
+          <tr><th>Status</th><td>{{ employee.employment_status }}</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header"><strong>Contact</strong></div>
+      <div class="card-body">
+        <table class="table table-sm mb-0">
+          <tr><th style="width:45%">Phone</th><td>{{ employee.phone or '—' }}</td></tr>
+          <tr><th>Email</th><td>{{ employee.email or '—' }}</td></tr>
+          <tr><th>CNIC</th><td>{{ employee.cnic or '—' }}</td></tr>
+          <tr><th>Address</th><td>{{ employee.address or '—' }}</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header"><strong>Salary</strong></div>
+      <div class="card-body">
+        <table class="table table-sm mb-0">
+          <tr><th style="width:45%">Basic Salary</th><td class="text-end">{{ currency }} {{ employee.basic_salary | fmt_num }}</td></tr>
+          <tr><th>Allowances</th><td class="text-end">{{ currency }} {{ employee.allowances | fmt_num }}</td></tr>
+          <tr><th>Deductions</th><td class="text-end">{{ currency }} {{ employee.deductions | fmt_num }}</td></tr>
+          <tr class="table-active"><th>Gross</th><td class="text-end"><strong>{{ currency }} {{ employee.gross_salary | fmt_num }}</strong></td></tr>
+          <tr class="table-active"><th>Net</th><td class="text-end"><strong>{{ currency }} {{ employee.net_salary | fmt_num }}</strong></td></tr>
+        </table>
+        <p class="small text-muted mt-2 mb-0">
+          Indicative figures from the employee record. A payroll run computes its own totals.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header"><strong>Documents &amp; Notes</strong></div>
+      <div class="card-body">
+        <h6 class="small text-muted">Documents held</h6>
+        <p>{{ employee.documents or '—' }}</p>
+        <hr>
+        <h6 class="small text-muted">Notes</h6>
+        <p class="mb-0">{{ employee.notes or '—' }}</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

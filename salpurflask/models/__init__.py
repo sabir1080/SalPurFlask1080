@@ -17,3 +17,12 @@ from salpurflask.models.business_config import (  # noqa: F401, F403
 
 # Import application configuration model
 from salpurflask.models.configuration import AppConfiguration  # noqa: F401
+
+# Import HR models (optional module — tables are created but stay empty and
+# unreferenced while the HR module is switched off)
+from salpurflask.models.hr import (  # noqa: F401
+    Department,
+    Designation,
+    Employee,
+    EMPLOYMENT_STATUSES,
+)

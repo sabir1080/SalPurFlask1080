@@ -331,6 +331,24 @@
                         </ul>
                     </li>
 
+                    {# HR & Payroll — optional modules. The whole menu disappears
+                       when every one of them is switched off in Developer Setup.
+                       Same dropdown + perm_item structure as the menus above. #}
+                    {% if module_enabled('module_hr') or module_enabled('module_attendance') or module_enabled('module_payroll') %}
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-people-fill"></i> HR &amp; Payroll
+                        </a>
+                        <ul class="dropdown-menu">
+                            {% if module_enabled('module_hr') %}
+                            {{ perm_item('hr.employees', 'bi-person-badge', 'Employees', has_permission('hr.view')) }}
+                            {{ perm_item('hr.departments', 'bi-diagram-3', 'Departments', has_permission('hr.view')) }}
+                            {{ perm_item('hr.designations', 'bi-award', 'Designations', has_permission('hr.view')) }}
+                            {% endif %}
+                        </ul>
+                    </li>
+                    {% endif %}
+
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
                             <i class="bi bi-shield-person"></i> Admin
