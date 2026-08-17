@@ -26,6 +26,7 @@ from salpurflask.models.payroll import (SalaryComponent, SalaryStructure,
 from salpurflask.services.feature_flags import module_required
 from salpurflask.services.hr_permissions import permission_required, has_permission
 from salpurflask.services import payroll_engine as engine
+from salpurflask.services import payroll_accounting as accounting
 
 payroll_bp = Blueprint("payroll", __name__, url_prefix="/payroll")
 
@@ -233,7 +234,9 @@ def period_detail(period_id):
     entries = (period.entries.join(Employee).order_by(Employee.code).all())
     return render_template("payroll/period_detail.html", period=period,
                            entries=entries, totals=period.totals,
-                           statuses=PERIOD_STATUSES)
+                           statuses=PERIOD_STATUSES,
+                           accounting_status=accounting.accounting_status(period),
+                           journal=accounting.journal_summary(period))
 
 
 @payroll_bp.route("/periods/<int:period_id>/process", methods=["POST"])
@@ -285,17 +288,38 @@ def period_finalize(period_id):
         flash("Nothing to finalize — process the period first.", "warning")
         return redirect(url_for("payroll.period_detail", period_id=period.id))
 
-    engine.recover_advances(period)
-    period.status = "Finalized"
-    period.finalized_at = datetime.utcnow()
-    try:
-        period.finalized_by = current_user.id
-    except Exception:
-        period.finalized_by = None
-    db.session.commit()
+    # Finalising and posting are one transaction. If the ledger refuses the
+    # entry, the period must not be left finalised with nothing behind it, so
+    # everything below rolls back together.
+    from app import PostingError
 
-    _audit("finalize", "payroll_period", period.id, period.name)
-    flash(f"{period.name} finalized. Accounting posting arrives in the next phase.",
+    try:
+        engine.recover_advances(period)
+        period.status = "Finalized"
+        period.finalized_at = datetime.utcnow()
+        try:
+            period.finalized_by = current_user.id
+        except Exception:
+            period.finalized_by = None
+
+        entry = accounting.post_payroll_period(
+            period, created_by_id=getattr(current_user, "id", None))
+        db.session.commit()
+    except PostingError as e:
+        db.session.rollback()
+        flash(f"{period.name} was not finalized — accounting refused the entry: {e}",
+              "danger")
+        return redirect(url_for("payroll.period_detail", period_id=period.id))
+    except Exception:
+        db.session.rollback()
+        flash(f"{period.name} was not finalized — posting failed and nothing was saved.",
+              "danger")
+        return redirect(url_for("payroll.period_detail", period_id=period.id))
+
+    _audit("finalize", "payroll_period", period.id,
+           f"{period.name} posted as JE#{entry.id}" if entry else period.name)
+    flash(f"{period.name} finalized"
+          + (f" and posted to the ledger (entry #{entry.id})." if entry else "."),
           "success")
     return redirect(url_for("payroll.period_detail", period_id=period.id))
 
@@ -311,10 +335,30 @@ def period_cancel(period_id):
         flash("Already cancelled.", "warning")
         return redirect(url_for("payroll.period_detail", period_id=period.id))
 
-    period.status = "Cancelled"
-    db.session.commit()
-    _audit("cancel", "payroll_period", period.id, period.name)
-    flash(f"{period.name} cancelled. Its payslips are kept for the record.",
+    # A posted period is cancelled by reversing its entry, never by deleting it.
+    # Both rows stay in the ledger, which is the whole point of a reversal.
+    from app import PostingError
+
+    try:
+        reversal = accounting.reverse_payroll_period(
+            period, created_by_id=getattr(current_user, "id", None))
+        period.status = "Cancelled"
+        db.session.commit()
+    except PostingError as e:
+        db.session.rollback()
+        flash(f"{period.name} was not cancelled — the reversal was refused: {e}",
+              "danger")
+        return redirect(url_for("payroll.period_detail", period_id=period.id))
+    except Exception:
+        db.session.rollback()
+        flash(f"{period.name} was not cancelled — nothing was changed.", "danger")
+        return redirect(url_for("payroll.period_detail", period_id=period.id))
+
+    _audit("cancel", "payroll_period", period.id,
+           f"{period.name} reversed by JE#{reversal.id}" if reversal else period.name)
+    flash(f"{period.name} cancelled"
+          + (f" and reversed in the ledger (entry #{reversal.id})."
+             if reversal else ". Its payslips are kept for the record."),
           "success")
     return redirect(url_for("payroll.period_detail", period_id=period.id))
 

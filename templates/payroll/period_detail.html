@@ -44,6 +44,47 @@
 </div>
 
 <div class="card mb-3">
+  <div class="card-body">
+    <div class="d-flex flex-wrap gap-3 align-items-center">
+      <div>
+        <div class="small text-muted">Accounting</div>
+        {% if accounting_status == 'POSTED' %}
+          <span class="badge bg-success">Posted</span>
+        {% elif accounting_status == 'REVERSED' %}
+          <span class="badge bg-warning text-dark">Reversed</span>
+        {% else %}
+          <span class="badge bg-secondary">Not Posted</span>
+        {% endif %}
+      </div>
+      {% if journal %}
+      <div>
+        <div class="small text-muted">Journal Entry</div>
+        <a href="{{ url_for('journal') }}"><code>{{ journal.reference }}</code> #{{ journal.entry.id }}</a>
+      </div>
+      <div>
+        <div class="small text-muted">Posting Date</div>
+        <strong>{{ journal.entry_date.strftime('%Y-%m-%d') }}</strong>
+      </div>
+      <div>
+        <div class="small text-muted">Total Debit</div>
+        <strong>{{ currency }} {{ journal.total_debit | fmt_num }}</strong>
+      </div>
+      <div>
+        <div class="small text-muted">Total Credit</div>
+        <strong>{{ currency }} {{ journal.total_credit | fmt_num }}</strong>
+      </div>
+      {% if journal.reverses %}
+      <div>
+        <div class="small text-muted">Reverses</div>
+        <strong>#{{ journal.reverses }}</strong>
+      </div>
+      {% endif %}
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="card mb-3">
   <div class="card-body d-flex flex-wrap gap-2">
     {% if period.editable and has_permission('payroll.create') %}
     <form method="POST" action="{{ url_for('payroll.period_process', period_id=period.id) }}" class="d-inline">
