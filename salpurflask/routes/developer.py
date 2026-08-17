@@ -467,3 +467,32 @@ def table_count():
         return jsonify({"status": "ok", "count": count})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
+
+@dev_bp.route("/modules", methods=["GET"])
+@developer_login_required
+def modules():
+    """Optional-module switches (HR, Attendance, Payroll).
+
+    Turning one off hides its menus and refuses its routes. It never deletes a
+    row — posted payroll stays in the general ledger either way.
+    """
+    from salpurflask.services.feature_flags import all_modules
+
+    return render_template("developer/modules.html", modules=all_modules())
+
+@dev_bp.route("/modules/toggle", methods=["POST"])
+@developer_login_required
+def modules_toggle():
+    """Flip one module flag."""
+    from salpurflask.services.feature_flags import MODULES, set_module
+
+    key = request.form.get("key")
+    if key not in MODULES:
+        flash("Unknown module.", "danger")
+        return redirect(url_for("developer.modules"))
+
+    enabled = (request.form.get("enabled") or "").lower() in ("1", "true", "on", "yes")
+    set_module(key, enabled, updated_by=session.get("developer_user", "developer"))
+    flash(f"{MODULES[key][0]} turned {'ON' if enabled else 'OFF'}. "
+          f"No records were changed.", "success")
+    return redirect(url_for("developer.modules"))

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Modules - Developer{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-toggles"></i> Optional Modules</h1>
+    <p>Turn add-on modules on or off. Records are never deleted by switching a module off.</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('developer.dashboard') }}" class="btn btn-secondary">
+      <i class="bi bi-arrow-left"></i> Back
+    </a>
+  </div>
+</div>
+
+<div class="alert alert-info">
+  <i class="bi bi-info-circle"></i>
+  Switching a module <strong>off</strong> only hides its menus and refuses its routes.
+  Employees, attendance and posted payroll journal entries stay exactly where they are —
+  turn the module back on and everything is as it was.
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <div class="table-wrapper">
+      <table class="table table-hover align-middle">
+        <thead>
+          <tr>
+            <th>Module</th>
+            <th>Description</th>
+            <th class="text-center">Status</th>
+            <th class="text-end">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in modules %}
+          <tr>
+            <td><strong>{{ m.label }}</strong><br><code class="small">{{ m.key }}</code></td>
+            <td class="small text-muted">
+              {{ m.description }}
+              {% if m.requires %}<br><em>Requires: {{ m.requires }}</em>{% endif %}
+            </td>
+            <td class="text-center">
+              {% if m.effective %}
+                <span class="badge bg-success">ON</span>
+              {% elif m.enabled and m.blocked_by %}
+                <span class="badge bg-warning text-dark" title="Blocked by its parent module">
+                  ON, blocked
+                </span>
+              {% else %}
+                <span class="badge bg-secondary">OFF</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <form method="POST" action="{{ url_for('developer.modules_toggle') }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="key" value="{{ m.key }}">
+                <input type="hidden" name="enabled" value="{{ '0' if m.enabled else '1' }}">
+                <button type="submit" class="btn btn-sm {{ 'btn-outline-danger' if m.enabled else 'btn-outline-success' }}">
+                  {{ 'Turn OFF' if m.enabled else 'Turn ON' }}
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% if modules | selectattr('blocked_by') | list %}
+<div class="alert alert-warning mt-3">
+  <i class="bi bi-exclamation-triangle"></i>
+  A module marked <strong>blocked</strong> is switched on but its parent module is off,
+  so it stays unavailable until the parent is turned on.
+</div>
+{% endif %}
+{% endblock %}
