@@ -345,6 +345,12 @@
                             {{ perm_item('hr.departments', 'bi-diagram-3', 'Departments', has_permission('hr.view')) }}
                             {{ perm_item('hr.designations', 'bi-award', 'Designations', has_permission('hr.view')) }}
                             {% endif %}
+                            {% if module_enabled('module_attendance') %}
+                            {% if module_enabled('module_hr') %}<li><hr class="dropdown-divider"></li>{% endif %}
+                            {{ perm_item('attendance.daily', 'bi-calendar-check', 'Daily Attendance', has_permission('attendance.view')) }}
+                            {{ perm_item('attendance.index', 'bi-clock-history', 'Attendance History', has_permission('attendance.view')) }}
+                            {{ perm_item('attendance.summary', 'bi-calendar3', 'Monthly Summary', has_permission('attendance.view')) }}
+                            {% endif %}
                         </ul>
                     </li>
                     {% endif %}

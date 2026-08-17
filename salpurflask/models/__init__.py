@@ -26,3 +26,11 @@ from salpurflask.models.hr import (  # noqa: F401
     Employee,
     EMPLOYMENT_STATUSES,
 )
+
+# Attendance (optional sub-module of HR)
+from salpurflask.models.attendance import (  # noqa: F401
+    Attendance,
+    ATTENDANCE_STATUSES,
+    WORKED_STATUSES,
+    STANDARD_DAY_HOURS,
+)
