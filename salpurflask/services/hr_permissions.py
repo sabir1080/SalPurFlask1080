@@ -41,6 +41,15 @@ PERMISSIONS = {
     # Finalise/post writes journal entries to the GL — admin only.
     "payroll.post":       ("admin",),
     "payroll.reports":    ("admin", "manager"),
+
+    # Leave. Staff may look at leave and raise a request for themselves; only a
+    # manager or admin decides one, so nobody approves their own leave.
+    "leave.view":         ("admin", "manager", "staff"),
+    "leave.create":       ("admin", "manager", "staff"),
+    "leave.edit":         ("admin", "manager"),
+    "leave.delete":       ("admin",),
+    "leave.approve":      ("admin", "manager"),
+    "leave.configure":    ("admin",),
 }
 
 

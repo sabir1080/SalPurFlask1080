@@ -351,6 +351,13 @@
                             {{ perm_item('attendance.index', 'bi-clock-history', 'Attendance History', has_permission('attendance.view')) }}
                             {{ perm_item('attendance.summary', 'bi-calendar3', 'Monthly Summary', has_permission('attendance.view')) }}
                             {% endif %}
+                            {% if module_enabled('module_leave') %}
+                            {% if module_enabled('module_hr') or module_enabled('module_attendance') %}<li><hr class="dropdown-divider"></li>{% endif %}
+                            {{ perm_item('leave.index', 'bi-calendar-heart', 'Leave Balances', has_permission('leave.view')) }}
+                            {{ perm_item('leave.requests_list', 'bi-calendar-check', 'Leave Requests', has_permission('leave.view')) }}
+                            {{ perm_item('leave.allocations', 'bi-calendar2-week', 'Leave Allocations', has_permission('leave.view')) }}
+                            {{ perm_item('leave.types', 'bi-tags', 'Leave Types', has_permission('leave.view')) }}
+                            {% endif %}
                             {% if module_enabled('module_payroll') %}
                             {% if module_enabled('module_hr') or module_enabled('module_attendance') %}<li><hr class="dropdown-divider"></li>{% endif %}
                             {{ perm_item('payroll.index', 'bi-cash-stack', 'Payroll', has_permission('payroll.view')) }}

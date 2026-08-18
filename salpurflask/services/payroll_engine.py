@@ -12,7 +12,7 @@ The shape of the calculation:
   + Overtime                       from attendance
   ---------------------------------
   = Gross Salary
-  - Absence deduction              from attendance
+  - Absence deduction              from attendance + approved unpaid leave
   - Tax
   - Loan deduction
   - Advance recovery               from open advances
@@ -70,6 +70,32 @@ def attendance_facts(employee_id, start, end):
             "late": s["late"], "leave": s["leave"],
             "overtime_hours": s["overtime_hours"], "records": s["records"],
             "tracked": s["records"] > 0}
+
+
+def _leave_enabled():
+    from salpurflask.services.feature_flags import module_enabled
+    return module_enabled("module_leave")
+
+
+def leave_facts(employee_id, start, end):
+    """Approved leave for one employee inside this period.
+
+    Asks the leave module the one question payroll needs and gets days back,
+    split paid from unpaid. Same arrangement as attendance: the other module
+    owns the facts, this one decides what they are worth. With leave switched
+    off the answer is zeros, so nothing downstream needs an `if`.
+
+    Only the portion of a request falling inside the period is counted, so a
+    leave running from August into September is charged to each month once.
+    """
+    blank = {"paid_days": 0.0, "unpaid_days": 0.0, "total_days": 0.0,
+             "requests": 0, "tracked": False}
+    if not _leave_enabled():
+        return blank
+    from salpurflask.models.leave import leave_facts as _facts
+    out = _facts(employee_id, start, end)
+    out["tracked"] = True
+    return out
 
 
 def period_days(period):
@@ -131,21 +157,38 @@ def calculate(employee, period, structure=None, overrides=None):
         raise PayrollError(f"{employee.name} has a basic salary of zero.")
 
     facts = attendance_facts(employee.id, period.start_date, period.end_date)
+    leave = leave_facts(employee.id, period.start_date, period.end_date)
     total_days = period_days(period)
     day_rate = _money(basic / Decimal(total_days)) if total_days else Decimal("0")
 
-    # Payable days. Attendance off, or a period with nothing recorded, means a
-    # full period -- see the module docstring.
+    # Days not paid for. Two sources, deliberately kept apart:
+    #
+    #   * attendance "Absent" -- someone did not come and did not say why;
+    #   * approved UNPAID leave -- someone did not come and it was agreed.
+    #
+    # Approved PAID leave costs a normal day, so it is not here at all: the
+    # engine never deducted the attendance "Leave" status either, which is why
+    # paid leave needed no change to this line.
+    #
+    # An absent day that is also covered by approved unpaid leave is one day
+    # off, not two. Attendance marks it Leave rather than Absent in that case,
+    # but the guard below holds even when a sheet says otherwise -- the two are
+    # capped at the days actually in the period.
+    unpaid_leave = Decimal(str(leave["unpaid_days"]))
     if facts["tracked"]:
         absent = Decimal(str(facts["absent"]))
-        payable = Decimal(str(total_days)) - absent
-        if payable < 0:
-            payable = Decimal("0")
     else:
         absent = Decimal("0")
-        payable = Decimal(str(total_days))
 
-    absence_deduction = _money(day_rate * absent) if facts["tracked"] else Decimal("0")
+    unworked = absent + unpaid_leave
+    if unworked > Decimal(str(total_days)):
+        unworked = Decimal(str(total_days))
+
+    payable = Decimal(str(total_days)) - unworked
+    if payable < 0:
+        payable = Decimal("0")
+
+    absence_deduction = _money(day_rate * unworked)
 
     # Overtime: hours beyond a standard day, paid at the hourly rate implied by
     # the basic salary over a standard working day.
@@ -228,6 +271,9 @@ def calculate(employee, period, structure=None, overrides=None):
         "net_salary": net,
         "worked_days": facts["worked_days"],
         "absent_days": facts["absent"],
+        "paid_leave_days": leave["paid_days"],
+        "unpaid_leave_days": leave["unpaid_days"],
+        "leave_tracked": leave["tracked"],
         "late_days": facts["late"],
         "leave_days": facts["leave"],
         "overtime_hours": facts["overtime_hours"],

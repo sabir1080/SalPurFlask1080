@@ -38,6 +38,11 @@ MODULES = {
         False,
         "Salary structures, payroll runs, payslips (needs HR)",
     ),
+    "module_leave": (
+        "Leave Module",
+        False,
+        "Leave types, allocations and requests (needs HR)",
+    ),
 }
 
 # A module that cannot work without another. Attendance and Payroll both hang
@@ -45,6 +50,7 @@ MODULES = {
 MODULE_REQUIRES = {
     "module_attendance": "module_hr",
     "module_payroll": "module_hr",
+    "module_leave": "module_hr",
 }
 
 

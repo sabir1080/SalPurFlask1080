@@ -49,6 +49,16 @@ from salpurflask.models.payroll import (  # noqa: F401
     seed_default_components,
 )
 
+# Leave (optional module — depends on HR for employees)
+from salpurflask.models.leave import (  # noqa: F401
+    LeaveType,
+    LeaveAllocation,
+    LeaveRequest,
+    LEAVE_STATUSES,
+    leave_facts,
+    seed_leave_types,
+)
+
 # Salary payments (settles the liability payroll posting creates)
 from salpurflask.models.payroll_payment import (  # noqa: F401
     PayrollPayment,
