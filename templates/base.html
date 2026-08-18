@@ -331,6 +331,30 @@
                         </ul>
                     </li>
 
+                    {# My Work — self-service. Shown only to a user whose login is
+                       linked to an employee record; a manager without one sees nothing. #}
+                    {% if my_employee %}
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-person-workspace"></i> My Work
+                        </a>
+                        <ul class="dropdown-menu">
+                            {% if module_enabled('module_hr') %}
+                            {{ perm_item('selfservice.profile', 'bi-person-badge', 'My Profile', true) }}
+                            {% endif %}
+                            {% if module_enabled('module_attendance') %}
+                            {{ perm_item('selfservice.attendance', 'bi-calendar-check', 'My Attendance', true) }}
+                            {% endif %}
+                            {% if module_enabled('module_leave') %}
+                            {{ perm_item('selfservice.leaves', 'bi-calendar-heart', 'My Leaves', true) }}
+                            {% endif %}
+                            {% if module_enabled('module_payroll') %}
+                            {{ perm_item('selfservice.payslips', 'bi-receipt', 'My Payslips', true) }}
+                            {% endif %}
+                        </ul>
+                    </li>
+                    {% endif %}
+
                     {# HR & Payroll — optional modules. The whole menu disappears
                        when every one of them is switched off in Developer Setup.
                        Same dropdown + perm_item structure as the menus above. #}

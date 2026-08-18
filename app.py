@@ -249,8 +249,10 @@ from salpurflask.hr import hr_bp
 from salpurflask.attendance import attendance_bp
 from salpurflask.payroll import payroll_bp
 from salpurflask.leave import leave_bp
+from salpurflask.selfservice import selfservice_bp
 from salpurflask.services.feature_flags import module_enabled
 from salpurflask.services.hr_permissions import has_permission
+from salpurflask.services.self_service import current_employee
 app.register_blueprint(auth_bp)
 app.register_blueprint(dashboard_bp)
 app.register_blueprint(config_bp)
@@ -262,6 +264,7 @@ app.register_blueprint(hr_bp)
 app.register_blueprint(attendance_bp)
 app.register_blueprint(payroll_bp)
 app.register_blueprint(leave_bp)
+app.register_blueprint(selfservice_bp)
 
 # Configure logging
 logs_dir = os.path.join(BASE_DIR, "logs")
@@ -1245,6 +1248,21 @@ def migrate_database():
     is_postgres = db.engine.dialect.name == "postgresql"
     pk_type = "SERIAL PRIMARY KEY" if is_postgres else "INTEGER PRIMARY KEY AUTOINCREMENT"
     datetime_type = "TIMESTAMP" if is_postgres else "DATETIME"
+    # HR: the login link added in phase 5. create_all() builds new tables but
+    # never alters an existing one, and hr_employee predates this column.
+    #
+    # Nullable, no UNIQUE index: adding a nullable column is safe on both
+    # engines, while creating a unique index would be blocking DDL -- the class
+    # of statement that hangs a zero-downtime deploy (see CLAUDE.md). The
+    # one-user-one-employee rule is enforced by the model and by the link route,
+    # which checks for an existing holder before assigning.
+    if "hr_employee" in inspector.get_table_names():
+        employee_columns = {col["name"] for col in inspector.get_columns("hr_employee")}
+        if "user_id" not in employee_columns:
+            with db.engine.begin() as conn:
+                conn.execute(text(
+                    'ALTER TABLE hr_employee ADD COLUMN user_id INTEGER REFERENCES "user"(id)'))
+
     if "item" in inspector.get_table_names():
         item_columns = {col["name"] for col in inspector.get_columns("item")}
         if "category_id" not in item_columns:
@@ -1907,6 +1925,9 @@ def inject_form_defaults():
         # a menu the user cannot use or that belongs to a module that is off.
         "module_enabled": module_enabled,
         "has_permission": has_permission,
+        # The employee record behind the signed-in login, or None. Templates use
+        # it to decide whether the My Work menu exists at all.
+        "my_employee": current_employee(),
         "item_units_for_js": item_units_for_js,
         "purchase_item_options_for_js": purchase_item_options_for_js,
         "sale_item_options_for_js": sale_item_options_for_js,

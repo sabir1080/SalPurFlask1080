@@ -195,7 +195,9 @@ def employee_profile(emp_id):
     emp = db.session.get(Employee, emp_id)
     if emp is None:
         abort(404)
-    return render_template("hr/employee_profile.html", employee=emp)
+    from salpurflask.services.self_service import linkable_users
+    return render_template("hr/employee_profile.html", employee=emp,
+                           linkable_users=linkable_users())
 
 
 @hr_bp.route("/employees/<int:emp_id>/edit", methods=["GET", "POST"])
@@ -267,6 +269,60 @@ def employee_delete(emp_id):
     _audit("delete", "employee", emp_id, f"{code} {name}")
     flash(f"Employee {code} deleted.", "success")
     return redirect(url_for("hr.employees"))
+
+
+# ── login link ────────────────────────────────────────────────────────────────
+
+@hr_bp.route("/employees/<int:emp_id>/link-user", methods=["POST"])
+@module_required("module_hr")
+@permission_required("hr.edit")
+def employee_link_user(emp_id):
+    """Attach a login to an employee, or detach the one it has.
+
+    Deliberately explicit: nothing guesses a link from a matching name or email,
+    because a wrong guess would show one person another person's salary. An
+    administrator chooses, and the unique constraint on user_id makes a second
+    link impossible even if two people submit at once.
+    """
+    from app import User
+    from salpurflask.models.hr import Employee as _Emp
+
+    emp = db.session.get(Employee, emp_id)
+    if emp is None:
+        abort(404)
+
+    raw = (request.form.get("user_id") or "").strip()
+
+    if not raw:                                   # unlink
+        if emp.user_id is None:
+            flash(f"{emp.name} has no login linked.", "warning")
+        else:
+            emp.user_id = None
+            db.session.commit()
+            _audit("edit", "employee", emp.id, f"{emp.code} login unlinked")
+            flash(f"Login unlinked from {emp.name}.", "success")
+        return redirect(url_for("hr.employee_profile", emp_id=emp.id))
+
+    try:
+        user = db.session.get(User, int(raw))
+    except (TypeError, ValueError):
+        user = None
+    if user is None:
+        flash("That user was not found.", "danger")
+        return redirect(url_for("hr.employee_profile", emp_id=emp.id))
+
+    taken = _Emp.query.filter(_Emp.user_id == user.id,
+                              _Emp.id != emp.id).first()
+    if taken is not None:
+        flash(f"{user.email} is already linked to {taken.name}. "
+              f"Unlink it there first.", "danger")
+        return redirect(url_for("hr.employee_profile", emp_id=emp.id))
+
+    emp.user_id = user.id
+    db.session.commit()
+    _audit("edit", "employee", emp.id, f"{emp.code} linked to {user.email}")
+    flash(f"{user.email} is now linked to {emp.name}.", "success")
+    return redirect(url_for("hr.employee_profile", emp_id=emp.id))
 
 
 # ── departments & designations ────────────────────────────────────────────────

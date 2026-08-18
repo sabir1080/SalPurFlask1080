@@ -84,6 +84,13 @@ class Employee(db.Model):
     allowances   = db.Column(db.Numeric(14, 4), nullable=False, default=0)
     deductions   = db.Column(db.Numeric(14, 4), nullable=False, default=0)
 
+    # The login this employee uses, when they have one. Nullable and unique:
+    # most employees never sign in, and the ones who do own exactly one account.
+    # Nothing in payroll, attendance or leave reads it -- it exists so a signed-in
+    # user can be resolved to their own records and to nobody else's.
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True,
+                        unique=True, index=True)
+
     notes     = db.Column(db.Text, nullable=True)
     documents = db.Column(db.Text, nullable=True)   # free-text list of held documents
 
@@ -94,6 +101,10 @@ class Employee(db.Model):
 
     department  = db.relationship("Department", backref="employees", lazy="joined")
     designation = db.relationship("Designation", backref="employees", lazy="joined")
+    # uselist=False on the backref: one user is at most one employee, so
+    # `user.employee` is a record or None rather than a list of one.
+    user        = db.relationship("User", lazy="joined",
+                                  backref=db.backref("employee", uselist=False))
 
     @property
     def gross_salary(self):

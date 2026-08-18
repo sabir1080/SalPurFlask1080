@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Request Leave{% endblock %}
+{% block content %}
+{% set d = form_data if form_data else {} %}
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-calendar-plus"></i> Request Leave</h1>
+    <p>{{ employee.name }}</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('selfservice.leaves') }}" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Back</a>
+  </div>
+</div>
+
+<form method="POST">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="card">
+    <div class="card-body row g-3">
+      <div class="col-md-5">
+        <label class="form-label">Leave Type <span class="text-danger">*</span></label>
+        <select name="leave_type_id" class="form-select" required>
+          <option value="">— Select —</option>
+          {% for t in types %}
+          <option value="{{ t.id }}" {% if d.get('leave_type_id') | string == t.id | string %}selected{% endif %}>
+            {{ t.name }}{% if not t.paid %} (unpaid){% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Duration</label>
+        <select name="day_portion" class="form-select">
+          {% for p in portions %}
+          <option value="{{ p }}" {% if (d.get('day_portion') or 'full') == p %}selected{% endif %}>
+            {{ 'Full day' if p == 'full' else 'Half day (single date)' }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Start Date <span class="text-danger">*</span></label>
+        <input type="date" name="start_date" class="form-control" required value="{{ d.get('start_date','') }}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">End Date <span class="text-danger">*</span></label>
+        <input type="date" name="end_date" class="form-control" required value="{{ d.get('end_date','') }}">
+      </div>
+      <div class="col-12">
+        <label class="form-label">Reason</label>
+        <input type="text" name="reason" class="form-control" value="{{ d.get('reason','') }}">
+      </div>
+      <div class="col-12">
+        <p class="small text-muted mb-0">
+          <i class="bi bi-info-circle"></i>
+          The number of days is worked out from your dates, skipping weekends.
+          Your request goes to your manager for approval.
+        </p>
+      </div>
+    </div>
+  </div>
+  <div class="mt-3">
+    <button type="submit" class="btn btn-primary"><i class="bi bi-send"></i> Submit Request</button>
+    <a href="{{ url_for('selfservice.leaves') }}" class="btn btn-secondary">Cancel</a>
+  </div>
+</form>
+{% endblock %}

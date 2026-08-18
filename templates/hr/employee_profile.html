@@ -68,6 +68,50 @@
 
   <div class="col-md-6">
     <div class="card h-100">
+      <div class="card-header"><strong>Login Access</strong></div>
+      <div class="card-body">
+        {% if employee.user %}
+          <p class="mb-2">
+            Linked to <strong>{{ employee.user.email }}</strong>
+            <span class="badge bg-info text-dark">{{ employee.user.role }}</span>
+          </p>
+          <p class="small text-muted">This employee can sign in and see their own
+            profile, attendance, leave and payslips.</p>
+        {% else %}
+          <p class="text-muted mb-2">No login linked. This employee cannot use
+            self-service until one is attached.</p>
+        {% endif %}
+
+        {% if has_permission('hr.edit') %}
+        <form method="POST" action="{{ url_for('hr.employee_link_user', emp_id=employee.id) }}"
+              class="d-flex gap-2 align-items-end flex-wrap">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="flex-grow-1">
+            <label class="form-label small mb-1">Link a login</label>
+            <select name="user_id" class="form-select form-select-sm">
+              <option value="">— none (unlink) —</option>
+              {% for u in linkable_users %}
+              <option value="{{ u.id }}" {% if employee.user_id == u.id %}selected{% endif %}>
+                {{ u.name }} — {{ u.email }} ({{ u.role }})
+              </option>
+              {% endfor %}
+              {% if employee.user and employee.user not in linkable_users %}
+              <option value="{{ employee.user.id }}" selected>
+                {{ employee.user.name }} — {{ employee.user.email }} (current)
+              </option>
+              {% endif %}
+            </select>
+          </div>
+          <button type="submit" class="btn btn-sm btn-primary">Save</button>
+        </form>
+        <div class="form-text">Only verified logins not already linked are listed.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card h-100">
       <div class="card-header"><strong>Documents &amp; Notes</strong></div>
       <div class="card-body">
         <h6 class="small text-muted">Documents held</h6>

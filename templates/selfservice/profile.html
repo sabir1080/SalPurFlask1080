@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}My Profile{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-person-badge"></i> My Profile</h1>
+    <p><code>{{ employee.code }}</code> {{ employee.name }}
+      {% if employee.active %}<span class="badge bg-success">Active</span>
+      {% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}
+    </p>
+  </div>
+  <div class="page-header-actions">
+    {% if attendance_on %}<a href="{{ url_for('selfservice.attendance') }}" class="btn btn-secondary"><i class="bi bi-calendar-check"></i> My Attendance</a>{% endif %}
+    {% if leave_on %}<a href="{{ url_for('selfservice.leaves') }}" class="btn btn-secondary"><i class="bi bi-calendar-heart"></i> My Leaves</a>{% endif %}
+    {% if payroll_on %}<a href="{{ url_for('selfservice.payslips') }}" class="btn btn-secondary"><i class="bi bi-receipt"></i> My Payslips</a>{% endif %}
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header"><strong>Employment</strong></div>
+      <div class="card-body">
+        <table class="table table-sm mb-0">
+          <tr><th style="width:45%">Department</th><td>{{ employee.department.name if employee.department else '—' }}</td></tr>
+          <tr><th>Designation</th><td>{{ employee.designation.name if employee.designation else '—' }}</td></tr>
+          <tr><th>Joining Date</th><td>{{ employee.joining_date.strftime('%Y-%m-%d') if employee.joining_date else '—' }}</td></tr>
+          <tr><th>Status</th><td>{{ employee.employment_status }}</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header"><strong>My Contact Details</strong></div>
+      <div class="card-body">
+        <table class="table table-sm mb-0">
+          <tr><th style="width:45%">Phone</th><td>{{ employee.phone or '—' }}</td></tr>
+          <tr><th>Email</th><td>{{ employee.email or '—' }}</td></tr>
+          <tr><th>CNIC</th><td>{{ employee.cnic or '—' }}</td></tr>
+          <tr><th>Address</th><td>{{ employee.address or '—' }}</td></tr>
+        </table>
+        <p class="small text-muted mb-0 mt-2">
+          <i class="bi bi-info-circle"></i>
+          Ask HR to update anything that is out of date.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

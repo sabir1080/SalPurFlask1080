@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}My Payslips{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-receipt"></i> My Payslips</h1>
+    <p>{{ employee.name }} — {{ rows | length }} finalized payslip{{ '' if rows | length == 1 else 's' }}</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('selfservice.profile') }}" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> My Profile</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <div class="table-wrapper table-responsive">
+      <table class="table table-striped table-hover align-middle">
+        <thead>
+          <tr><th>Period</th><th>From</th><th>To</th>
+              <th class="text-end">Gross</th><th class="text-end">Deductions</th>
+              <th class="text-end">Net</th><th class="text-center">View</th></tr>
+        </thead>
+        <tbody>
+          {% for e in rows %}
+          <tr>
+            <td><strong>{{ e.period.name }}</strong></td>
+            <td>{{ e.period.start_date.strftime('%Y-%m-%d') }}</td>
+            <td>{{ e.period.end_date.strftime('%Y-%m-%d') }}</td>
+            <td class="text-end">{{ currency }} {{ e.gross_salary | fmt_num }}</td>
+            <td class="text-end">{{ currency }} {{ e.total_deductions | fmt_num }}</td>
+            <td class="text-end"><strong>{{ currency }} {{ e.net_salary | fmt_num }}</strong></td>
+            <td class="text-center table-cell-center">
+              <a href="{{ url_for('selfservice.payslip', entry_id=e.id) }}" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-eye"></i>
+              </a>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="text-center text-muted py-4">
+            You have no finalized payslips yet.
+          </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="small text-muted mb-0 mt-2">
+      <i class="bi bi-info-circle"></i>
+      Only finalized payroll periods appear here. A period still being processed can still change.
+    </p>
+  </div>
+</div>
+{% endblock %}
