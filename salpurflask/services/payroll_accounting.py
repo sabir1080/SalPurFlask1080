@@ -226,6 +226,80 @@ def reverse_payroll_period(period, created_by_id=None):
     return reverse_entry(entry, created_by_id=created_by_id)
 
 
+# ── salary payment (phase 3C) ─────────────────────────────────────────────────
+# Settling the liability phase 3B created. Kept beside that posting rather than
+# in another module so payroll still meets the ledger in exactly one file.
+
+PAYMENT_SOURCE_TYPE = "payroll_payment"
+
+
+def posted_payment_entry(payment):
+    """The live entry for one payment row, or None."""
+    from app import posted_entry
+    return posted_entry(PAYMENT_SOURCE_TYPE, payment.id)
+
+
+def post_payroll_payment(payment, created_by_id=None):
+    """Dr Salaries Payable / Cr Cash or Bank.
+
+        Salaries Payable   DR   amount
+            Cash / Bank        CR   amount
+
+    Salary expense is NOT touched: the cost was recognised when the period was
+    finalised, and debiting it again would double it in the P&L. This entry only
+    moves the liability off the balance sheet.
+
+    Idempotent through `posted_entry`, keyed on the payment row's own id, so a
+    double-click posts once. Does not commit — the caller owns the transaction.
+    """
+    from app import post_entry, PostingError
+    # These two are module-private helpers in models.py and are not re-exported
+    # through app, so they are imported from where they actually live. They are
+    # the same pair post_supplier_payment and post_expense use.
+    from salpurflask.models.models import _cash_gl, _resolve_financial_account
+
+    if posted_payment_entry(payment) is not None:
+        return None
+
+    amount = _money(payment.amount)
+    if amount <= 0:
+        raise PostingError("A salary payment must be more than zero.")
+
+    account = _resolve_financial_account(payment)
+    if account is None:
+        raise PostingError("Pick the cash or bank account the salary was paid from.")
+
+    payable = account_for("salaries_payable")
+    period = payment.period
+
+    return post_entry(
+        entry_date=payment.payment_date,
+        description=f"Salary payment: {period.name}",
+        reference=payment.reference_no or f"SALPAY-{payment.id}",
+        source_type=PAYMENT_SOURCE_TYPE, source_id=payment.id,
+        allow_control=True,
+        created_by_id=created_by_id,
+        lines=[{"account_id": payable.id, "debit": amount, "credit": 0,
+                "memo": f"Salaries payable {period.name}"},
+               {"account_id": _cash_gl(account), "debit": 0, "credit": amount,
+                "memo": account.name}],
+    )
+
+
+def reverse_payroll_payment(payment, created_by_id=None):
+    """Reverse one salary payment. The original entry is never deleted.
+
+    Returns the reversal, or None when nothing live is there to reverse — so a
+    repeated reversal cannot produce two.
+    """
+    from app import reverse_entry
+
+    entry = posted_payment_entry(payment)
+    if entry is None:
+        return None
+    return reverse_entry(entry, created_by_id=created_by_id)
+
+
 def accounting_status(period):
     """NOT_POSTED / POSTED / REVERSED, derived from the ledger itself.
 
@@ -269,7 +343,10 @@ def journal_summary(period):
 
 
 __all__ = ["PAYROLL_ACCOUNTS", "PAYROLL_ROLES", "SOURCE_TYPE",
+           "PAYMENT_SOURCE_TYPE",
            "EARNING_ACCOUNTS", "DEDUCTION_ACCOUNTS",
            "seed_payroll_accounts", "account_for", "posted_journal_entry",
            "build_lines", "post_payroll_period", "reverse_payroll_period",
+           "posted_payment_entry", "post_payroll_payment",
+           "reverse_payroll_payment",
            "accounting_status", "journal_summary"]

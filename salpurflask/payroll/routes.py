@@ -27,6 +27,7 @@ from salpurflask.services.feature_flags import module_required
 from salpurflask.services.hr_permissions import permission_required, has_permission
 from salpurflask.services import payroll_engine as engine
 from salpurflask.services import payroll_accounting as accounting
+from salpurflask.models import payroll_payment as payments
 
 payroll_bp = Blueprint("payroll", __name__, url_prefix="/payroll")
 
@@ -236,7 +237,14 @@ def period_detail(period_id):
                            entries=entries, totals=period.totals,
                            statuses=PERIOD_STATUSES,
                            accounting_status=accounting.accounting_status(period),
-                           journal=accounting.journal_summary(period))
+                           journal=accounting.journal_summary(period),
+                           payment_status=payments.period_payment_status(period),
+                           net_total=payments.period_net_total(period),
+                           paid_total=payments.period_paid_total(period),
+                           payable_balance=payments.period_payable_balance(period),
+                           payment_rows=period.payments.order_by(
+                               payments.PayrollPayment.payment_date).all(),
+                           today=date.today())
 
 
 @payroll_bp.route("/periods/<int:period_id>/process", methods=["POST"])
@@ -381,6 +389,144 @@ def period_delete(period_id):
     _audit("delete", "payroll_period", period_id, name)
     flash(f"Payroll period '{name}' deleted.", "success")
     return redirect(url_for("payroll.index"))
+
+
+# ── salary payment ────────────────────────────────────────────────────────────
+
+@payroll_bp.route("/periods/<int:period_id>/pay", methods=["POST"])
+@module_required("module_payroll")
+@permission_required("payroll.post")
+def period_pay(period_id):
+    """Pay salary for a finalised period: Dr Salaries Payable / Cr Cash or Bank.
+
+    Every rule is checked here, server-side. Hiding the button is not a control —
+    a stale form or a crafted POST reaches this function either way.
+    """
+    from app import PostingError, parse_account_id
+
+    period = db.session.get(PayrollPeriod, period_id)
+    if period is None:
+        abort(404)
+
+    # Only a finalised period owes anything: draft and processing figures can
+    # still change, and a cancelled period's liability has been reversed away.
+    if period.status != "Finalized":
+        flash(f"{period.name} is {period.status.lower()} — only a finalized "
+              f"payroll can be paid.", "danger")
+        return redirect(url_for("payroll.period_detail", period_id=period.id))
+
+    if accounting.accounting_status(period) != "POSTED":
+        flash(f"{period.name} has no live posting to settle.", "danger")
+        return redirect(url_for("payroll.period_detail", period_id=period.id))
+
+    balance = payments.period_payable_balance(period)
+    if balance <= 0:
+        flash(f"{period.name} is already fully paid.", "warning")
+        return redirect(url_for("payroll.period_detail", period_id=period.id))
+
+    account_id, err = parse_account_id(request.form.get("account_id"))
+    if err or not account_id:
+        flash(err or "Pick the cash or bank account the salary was paid from.",
+              "danger")
+        return redirect(url_for("payroll.period_detail", period_id=period.id))
+
+    # Blank amount means "settle the balance", which is what a user clicking Pay
+    # Salary almost always means.
+    raw_amount = (request.form.get("amount") or "").strip()
+    try:
+        amount = _money(raw_amount, "Payment amount") if raw_amount else balance
+    except ValueError as e:
+        flash(str(e), "danger")
+        return redirect(url_for("payroll.period_detail", period_id=period.id))
+
+    if amount <= 0:
+        flash("Payment amount must be more than zero.", "danger")
+        return redirect(url_for("payroll.period_detail", period_id=period.id))
+    if amount > balance:
+        flash(f"{period.name} has {amount - balance:,.2f} less outstanding than "
+              f"that — the payable balance is {balance:,.2f}.", "danger")
+        return redirect(url_for("payroll.period_detail", period_id=period.id))
+
+    try:
+        adate = (_parse_date(request.form.get("payment_date"), "Payment date")
+                 if (request.form.get("payment_date") or "").strip() else date.today())
+    except ValueError as e:
+        flash(str(e), "danger")
+        return redirect(url_for("payroll.period_detail", period_id=period.id))
+
+    # The payment row and its journal entry are one transaction: a refused entry
+    # must not leave a payment that was never really made.
+    try:
+        payment = payments.PayrollPayment(
+            period_id=period.id, amount=amount, payment_date=adate,
+            account_id=account_id,
+            reference_no=(request.form.get("reference_no") or "").strip() or None,
+            notes=(request.form.get("notes") or "").strip() or None,
+            created_by_id=getattr(current_user, "id", None))
+        db.session.add(payment)
+        db.session.flush()
+
+        entry = accounting.post_payroll_payment(
+            payment, created_by_id=getattr(current_user, "id", None))
+        db.session.commit()
+    except PostingError as e:
+        db.session.rollback()
+        flash(f"Salary was not paid — accounting refused the entry: {e}", "danger")
+        return redirect(url_for("payroll.period_detail", period_id=period.id))
+    except Exception:
+        db.session.rollback()
+        flash("Salary was not paid — the payment failed and nothing was saved.",
+              "danger")
+        return redirect(url_for("payroll.period_detail", period_id=period.id))
+
+    _audit("pay", "payroll_period", period.id,
+           f"{period.name} paid {amount} via account {account_id}"
+           + (f" as JE#{entry.id}" if entry else ""))
+
+    remaining = payments.period_payable_balance(period)
+    flash(f"Salary payment of {amount:,.2f} recorded for {period.name}"
+          + (f" (entry #{entry.id})." if entry else ".")
+          + (f" {remaining:,.2f} still outstanding." if remaining > 0 else ""),
+          "success")
+    return redirect(url_for("payroll.period_detail", period_id=period.id))
+
+
+@payroll_bp.route("/payments/<int:payment_id>/reverse", methods=["POST"])
+@module_required("module_payroll")
+@permission_required("payroll.post")
+def payment_reverse(payment_id):
+    """Undo one salary payment by reversing its entry. Nothing is deleted."""
+    from app import PostingError
+
+    payment = db.session.get(payments.PayrollPayment, payment_id)
+    if payment is None:
+        abort(404)
+    if payment.is_reversed:
+        flash("That payment has already been reversed.", "warning")
+        return redirect(url_for("payroll.period_detail",
+                                period_id=payment.period_id))
+
+    try:
+        reversal = accounting.reverse_payroll_payment(
+            payment, created_by_id=getattr(current_user, "id", None))
+        payment.is_reversed = True
+        payment.reversed_at = datetime.utcnow()
+        db.session.commit()
+    except PostingError as e:
+        db.session.rollback()
+        flash(f"The payment was not reversed: {e}", "danger")
+        return redirect(url_for("payroll.period_detail", period_id=payment.period_id))
+    except Exception:
+        db.session.rollback()
+        flash("The payment was not reversed — nothing was changed.", "danger")
+        return redirect(url_for("payroll.period_detail", period_id=payment.period_id))
+
+    _audit("reverse", "payroll_payment", payment.id,
+           f"reversed by JE#{reversal.id}" if reversal else "reversed")
+    flash("Salary payment reversed"
+          + (f" in the ledger (entry #{reversal.id})." if reversal else "."),
+          "success")
+    return redirect(url_for("payroll.period_detail", period_id=payment.period_id))
 
 
 # ── payslip ───────────────────────────────────────────────────────────────────

@@ -48,3 +48,12 @@ from salpurflask.models.payroll import (  # noqa: F401
     ADVANCE_STATUSES,
     seed_default_components,
 )
+
+# Salary payments (settles the liability payroll posting creates)
+from salpurflask.models.payroll_payment import (  # noqa: F401
+    PayrollPayment,
+    period_net_total,
+    period_paid_total,
+    period_payable_balance,
+    period_payment_status,
+)
