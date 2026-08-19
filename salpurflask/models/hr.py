@@ -19,6 +19,51 @@ from salpurflask.extensions import db
 
 EMPLOYMENT_STATUSES = ("Permanent", "Probation", "Contract", "Intern")
 
+# Employee codes are issued by the app, not typed by a user: EMP-0001, EMP-0002.
+EMPLOYEE_CODE_PREFIX = "EMP"
+# Invoices restart their numbering every fiscal year; staff numbers do not, so a
+# single bucket holds the counter forever. The value is the "year" column of the
+# shared DocumentSequence table, chosen so it can never collide with a real one.
+EMPLOYEE_CODE_SCOPE = "all"
+
+
+def next_employee_code():
+    """The next unused employee code, e.g. EMP-0007.
+
+    Uses the counter table the invoice numbering already uses, so the concurrency
+    story is the one this codebase has already proven: SELECT ... FOR UPDATE holds
+    the row for the rest of the transaction, and two people saving at the same
+    moment queue up and get consecutive codes rather than the same one.
+
+    Does NOT commit -- the code and the employee land in one transaction. A save
+    that fails hands its number straight back, so a validation error leaves no gap.
+    A DELETED employee is different: its number was already spent and the counter
+    has moved on, so the code is never handed out twice.
+
+    The loop is a belt-and-braces guard for a database that already holds codes
+    typed in by hand before this existed.
+    """
+    from salpurflask.models.models import DocumentSequence
+
+    seq = (DocumentSequence.query
+           .filter_by(doc_type="employee", year=EMPLOYEE_CODE_SCOPE)
+           .with_for_update()
+           .first())
+    if seq is None:
+        seq = DocumentSequence(doc_type="employee", year=EMPLOYEE_CODE_SCOPE,
+                               prefix=EMPLOYEE_CODE_PREFIX, next_number=1)
+        db.session.add(seq)
+        db.session.flush()
+
+    # Skip any number a hand-typed code already occupies.
+    for _ in range(10000):
+        number = seq.next_number
+        seq.next_number = number + 1
+        code = f"{EMPLOYEE_CODE_PREFIX}-{number:04d}"
+        if not Employee.query.filter_by(code=code).first():
+            return code
+    raise RuntimeError("Could not find a free employee code")
+
 
 class Department(db.Model):
     """A grouping for employees — Sales, Warehouse, Accounts."""
@@ -124,4 +169,5 @@ class Employee(db.Model):
         return f"<Employee {self.code} {self.name}>"
 
 
-__all__ = ["Department", "Designation", "Employee", "EMPLOYMENT_STATUSES"]
+__all__ = ["Department", "Designation", "Employee", "EMPLOYMENT_STATUSES",
+           "EMPLOYEE_CODE_PREFIX", "EMPLOYEE_CODE_SCOPE", "next_employee_code"]

@@ -34,7 +34,9 @@ def _enable_hr():
 
 
 def _employee_form(**over):
-    data = {"code": "E-001", "name": "Ali Raza", "joining_date": "2026-01-15",
+    # No "code": it is issued by the app now, never posted. A code left in here
+    # would be ignored, and asserting on it would test nothing.
+    data = {"name": "Ali Raza", "joining_date": "2026-01-15",
             "employment_status": "Permanent", "basic_salary": "50000",
             "allowances": "5000", "deductions": "1000", "active": "1"}
     data.update(over)
@@ -164,26 +166,31 @@ def test_creating_an_employee(appctx):
     c = _client("admin")
     c.post("/hr/employees/new", data=_employee_form(), follow_redirects=True)
 
-    emp = Employee.query.filter_by(code="E-001").one()
+    emp = Employee.query.one()
+    assert emp.code == "EMP-0001"          # issued by the app
     assert emp.name == "Ali Raza"
     assert emp.joining_date == date(2026, 1, 15)
     assert float(emp.basic_salary) == 50000
     assert emp.active is True
 
 
-def test_employee_code_must_be_unique(appctx):
+def test_employee_codes_are_unique_and_sequential(appctx):
+    """Two employees can no longer collide: the app issues the codes."""
     _enable_hr()
     c = _client("admin")
     c.post("/hr/employees/new", data=_employee_form(), follow_redirects=True)
     c.post("/hr/employees/new", data=_employee_form(name="Someone Else"),
            follow_redirects=True)
-    assert Employee.query.filter_by(code="E-001").count() == 1
+
+    codes = sorted(e.code for e in Employee.query.all())
+    assert codes == ["EMP-0001", "EMP-0002"]
 
 
-def test_an_employee_needs_a_code_a_name_and_a_joining_date(appctx):
+def test_an_employee_needs_a_name_and_a_joining_date(appctx):
+    """The code is no longer among the required fields -- the app supplies it."""
     _enable_hr()
     c = _client("admin")
-    for bad in ({"code": ""}, {"name": ""}, {"joining_date": ""}):
+    for bad in ({"name": ""}, {"joining_date": ""}):
         c.post("/hr/employees/new", data=_employee_form(**bad), follow_redirects=True)
     assert Employee.query.count() == 0
 
@@ -208,7 +215,7 @@ def test_editing_an_employee(appctx):
     _enable_hr()
     c = _client("admin")
     c.post("/hr/employees/new", data=_employee_form(), follow_redirects=True)
-    emp = Employee.query.filter_by(code="E-001").one()
+    emp = Employee.query.one()
 
     c.post(f"/hr/employees/{emp.id}/edit",
            data=_employee_form(name="Ali Raza Khan", basic_salary="60000"),
@@ -223,7 +230,7 @@ def test_deleting_an_employee_with_no_history(appctx):
     _enable_hr()
     c = _client("admin")
     c.post("/hr/employees/new", data=_employee_form(), follow_redirects=True)
-    emp = Employee.query.filter_by(code="E-001").one()
+    emp = Employee.query.one()
 
     c.post(f"/hr/employees/{emp.id}/delete", follow_redirects=True)
     assert Employee.query.count() == 0

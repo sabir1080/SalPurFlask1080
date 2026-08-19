@@ -22,9 +22,14 @@
     <div class="card-header"><strong>Identity</strong></div>
     <div class="card-body row g-3">
       <div class="col-md-3">
-        <label class="form-label">Employee Code <span class="text-danger">*</span></label>
-        <input type="text" name="code" class="form-control" required
-               value="{{ val('code', employee.code if employee else '') }}">
+        <label class="form-label">Employee Code</label>
+        {% if employee %}
+        <input type="text" class="form-control" value="{{ employee.code }}" readonly disabled>
+        <div class="form-text">Issued by the system and never changed.</div>
+        {% else %}
+        <input type="text" class="form-control" value="Assigned on save" readonly disabled>
+        <div class="form-text">The next code (EMP-0001, EMP-0002, …) is allocated when you save.</div>
+        {% endif %}
       </div>
       <div class="col-md-5">
         <label class="form-label">Name <span class="text-danger">*</span></label>

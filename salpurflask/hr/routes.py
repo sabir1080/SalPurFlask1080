@@ -65,16 +65,13 @@ def _employee_form(form, employee=None):
     errors = []
     data = {}
 
-    code = (form.get("code") or "").strip()
-    if not code:
-        errors.append("Employee code is required.")
-    else:
-        clash = Employee.query.filter(Employee.code == code)
-        if employee is not None:
-            clash = clash.filter(Employee.id != employee.id)
-        if clash.first():
-            errors.append(f"Employee code '{code}' is already used.")
-    data["code"] = code
+    # The code is issued by the app, never read from the form. On an edit it stays
+    # exactly as it was: a payslip, an attendance sheet and an audit entry all name
+    # an employee by their code, and changing it would quietly rewrite what those
+    # records refer to. On a new employee the caller allocates one -- see
+    # employee_new() -- so nothing is set here.
+    if employee is not None:
+        data["code"] = employee.code
 
     name = (form.get("name") or "").strip()
     if not name:
@@ -175,7 +172,10 @@ def employee_new():
                                    departments=Department.query.order_by(Department.name).all(),
                                    designations=Designation.query.order_by(Designation.name).all(),
                                    statuses=EMPLOYMENT_STATUSES)
-        emp = Employee(**data)
+        # Allocated inside the same transaction as the employee, so a failed save
+        # returns the number instead of burning it.
+        from salpurflask.models.hr import next_employee_code
+        emp = Employee(**data, code=next_employee_code())
         db.session.add(emp)
         db.session.commit()
         _audit("create", "employee", emp.id, f"{emp.code} {emp.name}")
