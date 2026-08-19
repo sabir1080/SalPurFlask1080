@@ -491,7 +491,33 @@ def modules_toggle():
         flash("Unknown module.", "danger")
         return redirect(url_for("developer.modules"))
 
+    from salpurflask.services.feature_flags import MODULE_REQUIRES, module_enabled
+
     enabled = (request.form.get("enabled") or "").lower() in ("1", "true", "on", "yes")
+
+    # A module that hangs off another cannot be switched on before its parent.
+    # Checked here and not only on the page, because hiding a button is not a
+    # control -- a stale form or a crafted POST arrives at this function either
+    # way, and a flag set on with its parent off is a switch that looks on and
+    # does nothing.
+    if enabled:
+        parent = MODULE_REQUIRES.get(key)
+        if parent and not module_enabled(parent):
+            flash(f"Turn {MODULES[parent][0]} on first — {MODULES[key][0]} "
+                  f"depends on it.", "warning")
+            return redirect(url_for("developer.modules"))
+
+    # Switching a parent off would leave its children on but unusable. Say so
+    # plainly rather than letting them sit in a blocked state.
+    if not enabled:
+        dependants = [MODULES[k][0] for k, p in MODULE_REQUIRES.items()
+                      if p == key and module_enabled(k)]
+        if dependants:
+            flash(f"{MODULES[key][0]} turned OFF. {', '.join(dependants)} "
+                  f"depend{'s' if len(dependants) == 1 else ''} on it and "
+                  f"{'is' if len(dependants) == 1 else 'are'} now unavailable "
+                  f"too. No records were changed.", "warning")
+
     set_module(key, enabled, updated_by=session.get("developer_user", "developer"))
     flash(f"{MODULES[key][0]} turned {'ON' if enabled else 'OFF'}. "
           f"No records were changed.", "success")

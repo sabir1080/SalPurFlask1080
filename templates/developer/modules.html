@@ -52,14 +52,25 @@
               {% endif %}
             </td>
             <td class="text-end">
+              {# A module cannot be switched on before the one it depends on.
+                 The button is disabled and says why; the route refuses it too. #}
+              {% set locked = (not m.enabled) and m.blocked_by %}
               <form method="POST" action="{{ url_for('developer.modules_toggle') }}" class="d-inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="key" value="{{ m.key }}">
                 <input type="hidden" name="enabled" value="{{ '0' if m.enabled else '1' }}">
-                <button type="submit" class="btn btn-sm {{ 'btn-outline-danger' if m.enabled else 'btn-outline-success' }}">
+                <button type="submit"
+                        class="btn btn-sm {{ 'btn-outline-danger' if m.enabled else 'btn-outline-success' }}"
+                        {% if locked %}disabled
+                        title="Turn on {{ m.requires }} first"{% endif %}>
                   {{ 'Turn OFF' if m.enabled else 'Turn ON' }}
                 </button>
               </form>
+              {% if locked %}
+              <div class="small text-muted mt-1">
+                <i class="bi bi-lock"></i> needs {{ m.requires }}
+              </div>
+              {% endif %}
             </td>
           </tr>
           {% endfor %}
