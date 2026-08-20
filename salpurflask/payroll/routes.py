@@ -15,6 +15,7 @@ from datetime import datetime, date
 from flask import (Blueprint, render_template, request, redirect, url_for,
                    flash, abort)
 from flask_login import current_user
+from sqlalchemy.exc import IntegrityError
 
 from salpurflask.extensions import db
 from salpurflask.models.hr import Employee
@@ -197,7 +198,14 @@ def period_new():
             errors.append(str(e))
 
         if start and end and not errors:
-            clash = PayrollPeriod.query.filter_by(start_date=start, end_date=end).first()
+            # A cancelled period does not hold its dates. It represents a run
+            # that was undone, not one that happened -- the same reasoning that
+            # already lets a cancelled advance be superseded and a rejected
+            # leave request re-submitted for the same days.
+            clash = (PayrollPeriod.query
+                     .filter_by(start_date=start, end_date=end)
+                     .filter(PayrollPeriod.status != "Cancelled")
+                     .first())
             if clash:
                 errors.append(f"Those dates are already covered by '{clash.name}'.")
 
@@ -211,7 +219,25 @@ def period_new():
                                status="Draft",
                                notes=(request.form.get("notes") or "").strip() or None)
         db.session.add(period)
-        db.session.commit()
+        try:
+            db.session.commit()
+        except IntegrityError:
+            # The clash check above only excludes Cancelled periods, but the
+            # column pair still carries a database-level unique constraint that
+            # does not know about status -- dropping it would be the kind of
+            # blocking DDL that hangs a zero-downtime deploy (see CLAUDE.md), so
+            # it stays. The practical effect: a cancelled period frees its dates
+            # for a period with a *different* name, but the exact same
+            # start_date/end_date pair as a row still in the table -- cancelled
+            # or not -- cannot be inserted twice. Caught here so the user sees a
+            # plain sentence instead of a stack trace.
+            db.session.rollback()
+            flash("Those exact dates already exist as a payroll period "
+                  "(including a cancelled one). Use different dates, or "
+                  "delete the old period first if it is no longer needed.",
+                  "danger")
+            return render_template("payroll/period_form.html",
+                                   form_data=request.form, today=today)
         _audit("create", "payroll_period", period.id, period.name)
         flash(f"Payroll period '{period.name}' created.", "success")
         return redirect(url_for("payroll.period_detail", period_id=period.id))
@@ -341,6 +367,17 @@ def period_cancel(period_id):
         abort(404)
     if period.status == "Cancelled":
         flash("Already cancelled.", "warning")
+        return redirect(url_for("payroll.period_detail", period_id=period.id))
+
+    # A period with a live salary payment cannot be cancelled out from under it:
+    # reversing the payroll posting alone would leave the payment's cash/bank
+    # movement standing while the liability it was settling disappears, so
+    # Salaries Payable would land on the wrong side of zero. The payment has to
+    # be reversed first, through its own reversal route, so cash and the
+    # liability move back together.
+    if payments.period_paid_total(period) > 0:
+        flash(f"{period.name} cannot be cancelled because salary payments exist. "
+              f"Reverse the salary payment(s) first.", "danger")
         return redirect(url_for("payroll.period_detail", period_id=period.id))
 
     # A posted period is cancelled by reversing its entry, never by deleting it.
