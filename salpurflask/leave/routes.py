@@ -28,6 +28,7 @@ from salpurflask.models.leave import (LeaveType, LeaveAllocation, LeaveRequest,
                                       used_days, working_days)
 from salpurflask.services.feature_flags import module_required
 from salpurflask.services.hr_permissions import permission_required, has_permission
+from salpurflask.services.notifications import notify, notify_roles
 
 leave_bp = Blueprint("leave", __name__, url_prefix="/leave")
 
@@ -404,6 +405,14 @@ def request_new():
         db.session.commit()
         _audit("create", "leave_request", row.id,
                f"{row.employee.code} {row.start_date}–{row.end_date} {row.status}")
+        if submit:
+            notify_roles(("admin", "manager"), "leave_pending",
+                        "Leave request awaiting approval",
+                        f"{row.employee.name} requested {row.days:g} day(s) of "
+                        f"{row.leave_type.name if row.leave_type else 'leave'} "
+                        f"({row.start_date}–{row.end_date}).",
+                        source_type="leave_request", source_id=row.id, severity="info")
+            db.session.commit()
         flash(f"Leave request {'submitted' if submit else 'saved as draft'} "
               f"for {row.employee.name} ({row.days:g} day(s)).", "success")
         return redirect(url_for("leave.requests_list"))
@@ -458,6 +467,13 @@ def request_submit(row_id):
     row.status = "Pending"
     db.session.commit()
     _audit("submit", "leave_request", row.id, str(row.days))
+    notify_roles(("admin", "manager"), "leave_pending",
+                "Leave request awaiting approval",
+                f"{row.employee.name} requested {row.days:g} day(s) of "
+                f"{row.leave_type.name if row.leave_type else 'leave'} "
+                f"({row.start_date}–{row.end_date}).",
+                source_type="leave_request", source_id=row.id, severity="info")
+    db.session.commit()
     flash("Leave request submitted for approval.", "success")
     return redirect(url_for("leave.requests_list"))
 
@@ -499,6 +515,12 @@ def request_approve(row_id):
     db.session.commit()
     _audit("approve", "leave_request", row.id,
            f"{row.employee.code} {row.days} day(s)")
+    if row.employee.user_id:
+        notify(row.employee.user_id, "leave_decided", "Leave request approved",
+              f"Your leave request for {row.start_date}–{row.end_date} "
+              f"({row.days:g} day(s)) was approved.",
+              source_type="leave_request", source_id=row.id, severity="info", dedupe=False)
+        db.session.commit()
     flash(f"Leave approved for {row.employee.name} ({row.days:g} day(s)).",
           "success")
     return redirect(url_for("leave.requests_list"))
@@ -520,6 +542,12 @@ def request_reject(row_id):
     row.decision_note = (request.form.get("note") or "").strip() or None
     db.session.commit()
     _audit("reject", "leave_request", row.id, row.employee.code)
+    if row.employee.user_id:
+        notify(row.employee.user_id, "leave_decided", "Leave request rejected",
+              f"Your leave request for {row.start_date}–{row.end_date} "
+              f"({row.days:g} day(s)) was rejected.",
+              source_type="leave_request", source_id=row.id, severity="warning", dedupe=False)
+        db.session.commit()
     flash("Leave request rejected.", "success")
     return redirect(url_for("leave.requests_list"))
 

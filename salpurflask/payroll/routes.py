@@ -29,6 +29,7 @@ from salpurflask.services.hr_permissions import permission_required, has_permiss
 from salpurflask.services import payroll_engine as engine
 from salpurflask.services import payroll_accounting as accounting
 from salpurflask.models import payroll_payment as payments
+from salpurflask.services.notifications import notify_roles
 
 payroll_bp = Blueprint("payroll", __name__, url_prefix="/payroll")
 
@@ -352,6 +353,10 @@ def period_finalize(period_id):
 
     _audit("finalize", "payroll_period", period.id,
            f"{period.name} posted as JE#{entry.id}" if entry else period.name)
+    notify_roles(("admin",), "payroll_finalized", "Payroll period finalized",
+                f"{period.name} was finalized and posted to the ledger.",
+                source_type="payroll_period", source_id=period.id, severity="info")
+    db.session.commit()
     flash(f"{period.name} finalized"
           + (f" and posted to the ledger (entry #{entry.id})." if entry else "."),
           "success")
@@ -401,6 +406,10 @@ def period_cancel(period_id):
 
     _audit("cancel", "payroll_period", period.id,
            f"{period.name} reversed by JE#{reversal.id}" if reversal else period.name)
+    notify_roles(("admin",), "payroll_cancelled", "Payroll period cancelled",
+                f"{period.name} was cancelled and its posting reversed in the ledger.",
+                source_type="payroll_period", source_id=period.id, severity="warning")
+    db.session.commit()
     flash(f"{period.name} cancelled"
           + (f" and reversed in the ledger (entry #{reversal.id})."
              if reversal else ". Its payslips are kept for the record."),

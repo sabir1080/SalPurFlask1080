@@ -1,5 +1,6 @@
 """SQLAlchemy database models."""
 
+import logging
 from datetime import datetime, date, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -1744,12 +1745,29 @@ def item_remove_stock(item, qty, cost_total=None):
             f"The cost of these goods has already been absorbed into stock that was sold. "
             f"Raise a return instead of reversing.")
 
+    was_above_reorder = (item.stock or 0) > (item.reorder_level or 0)
     item.stock -= qty
     item.inventory_value = value - cost
     if item.stock <= 0:
         # Last unit gone: any rounding residue would otherwise linger as value
         # against zero stock, which the reconciliation would (rightly) flag.
         item.inventory_value = Decimal("0")
+
+    if was_above_reorder and item.stock <= (item.reorder_level or 0):
+        # Only fires on the crossing, not on every sale of an already-low item —
+        # otherwise every further sale of a low-stock item would re-alert. The
+        # dedupe in notify() also collapses repeats while one alert is unread.
+        try:
+            from salpurflask.services.notifications import notify_roles
+            notify_roles(
+                ("admin", "manager"), "low_stock",
+                f"{item.name} is low on stock",
+                f"{item.name} is at {item.stock} units, at or below its reorder "
+                f"level of {item.reorder_level}.",
+                source_type="item", source_id=item.id, severity="warning")
+        except Exception:
+            logging.getLogger(__name__).exception("low-stock notification failed for item=%s", item.id)
+
     return cost
 
 def sale_line_cost(sale_return):

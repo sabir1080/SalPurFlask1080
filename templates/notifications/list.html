@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block title %}Notifications{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-bell"></i> Notifications</h1>
+    <p>Alerts across inventory, leave and payroll</p>
+  </div>
+  <div class="page-header-actions">
+    {% if rows|selectattr('is_read', 'equalto', false)|list %}
+    <form method="post" action="{{ url_for('notifications.mark_all_read') }}">
+      <button type="submit" class="btn btn-outline-secondary">
+        <i class="bi bi-check2-all"></i> Mark all read
+      </button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-wrapper">
+    <table class="table table-striped table-hover align-middle">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Severity</th>
+          <th>Title</th>
+          <th>Message</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for n in rows %}
+        <tr class="{% if not n.is_read %}fw-bold{% endif %}">
+          <td class="text-nowrap small text-tertiary">{{ n.created_at | localdt('%Y-%m-%d %H:%M') }}</td>
+          <td>
+            {% set color = {'critical':'danger','warning':'warning','info':'secondary'}.get(n.severity, 'secondary') %}
+            <span class="badge bg-{{ color }}">{{ n.severity }}</span>
+          </td>
+          <td class="text-nowrap">
+            {% if n.url %}<a href="{{ n.url }}">{{ n.title }}</a>{% else %}{{ n.title }}{% endif %}
+          </td>
+          <td class="small">{{ n.message }}</td>
+          <td class="text-nowrap">
+            {% if not n.is_read %}
+            <form method="post" action="{{ url_for('notifications.mark_read', row_id=n.id) }}">
+              <button type="submit" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-check2"></i> Mark read
+              </button>
+            </form>
+            {% else %}
+            <span class="small text-tertiary">Read</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="text-center text-tertiary py-8">No notifications yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

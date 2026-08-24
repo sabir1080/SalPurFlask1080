@@ -250,9 +250,11 @@ from salpurflask.attendance import attendance_bp
 from salpurflask.payroll import payroll_bp
 from salpurflask.leave import leave_bp
 from salpurflask.selfservice import selfservice_bp
+from salpurflask.notifications import notifications_bp
 from salpurflask.services.feature_flags import module_enabled
 from salpurflask.services.hr_permissions import has_permission
 from salpurflask.services.self_service import current_employee
+from salpurflask.services.notifications import unread_count as _unread_notification_count
 app.register_blueprint(auth_bp)
 app.register_blueprint(dashboard_bp)
 app.register_blueprint(config_bp)
@@ -265,6 +267,7 @@ app.register_blueprint(attendance_bp)
 app.register_blueprint(payroll_bp)
 app.register_blueprint(leave_bp)
 app.register_blueprint(selfservice_bp)
+app.register_blueprint(notifications_bp)
 
 # Configure logging
 logs_dir = os.path.join(BASE_DIR, "logs")
@@ -1928,6 +1931,9 @@ def inject_form_defaults():
         # The employee record behind the signed-in login, or None. Templates use
         # it to decide whether the My Work menu exists at all.
         "my_employee": current_employee(),
+        "unread_notification_count": (
+            _unread_notification_count(current_user.id)
+            if current_user.is_authenticated else 0),
         "item_units_for_js": item_units_for_js,
         "purchase_item_options_for_js": purchase_item_options_for_js,
         "sale_item_options_for_js": sale_item_options_for_js,

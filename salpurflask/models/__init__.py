@@ -67,3 +67,9 @@ from salpurflask.models.payroll_payment import (  # noqa: F401
     period_payable_balance,
     period_payment_status,
 )
+
+# Notifications (reusable by any module)
+from salpurflask.models.notification import (  # noqa: F401
+    Notification,
+    SEVERITIES,
+)
