@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+{% block title %}Inventory Reconciliation — {{ app_name }}{% endblock %}
+{% block extra_head %}
+<style>
+.recon-badge-Draft{background:#6c757d}
+.recon-badge-Counted{background:#0dcaf0;color:#000}
+.recon-badge-Approved{background:#0d6efd}
+.recon-badge-Posted{background:#198754}
+.recon-badge-Cancelled{background:#dc3545}
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-clipboard-check"></i> Inventory Reconciliation</h1>
+    <p>Compare physical counts to system stock, by warehouse</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('reconciliation_new') }}" class="btn btn-primary">
+      <i class="bi bi-plus-circle"></i> New Reconciliation
+    </a>
+  </div>
+</div>
+
+<div class="card mb-6">
+  <div class="card-body">
+    <form method="GET" class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label small mb-1">Status</label>
+        <select class="form-select form-select-sm" name="status">
+          <option value="">All statuses</option>
+          {% for s in statuses %}
+          <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small mb-1">Warehouse</label>
+        <select class="form-select form-select-sm" name="location_id">
+          <option value="">Any warehouse</option>
+          {% for loc in locations %}
+          <option value="{{ loc.id }}" {% if filters.location_id == loc.id|string %}selected{% endif %}>{{ loc.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4 d-flex align-items-end">
+        <button type="submit" class="btn btn-secondary btn-sm w-100">Filter</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+    <table class="table table-bordered table-hover mb-0">
+      <thead class="table-dark">
+        <tr>
+          <th>Reference</th><th>Warehouse</th><th>Date</th>
+          <th class="text-center">Items</th><th class="text-end">Net Variance</th>
+          <th class="text-center">Status</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in reconciliations %}
+        <tr>
+          <td><strong>{{ r.reference or ('DRAFT-' ~ r.id) }}</strong></td>
+          <td>{{ r.location.name }}</td>
+          <td class="text-nowrap">{{ r.date.strftime('%d %b %Y') }}</td>
+          <td class="text-center">{{ r.lines | length }}</td>
+          <td class="text-end">
+            {% if r.status in ('Counted', 'Approved', 'Posted') %}
+              {% set net = namespace(total=0) %}
+              {% for line in r.lines %}
+                {% if line.variance %}{% set net.total = net.total + line.variance %}{% endif %}
+              {% endfor %}
+              <span class="{% if net.total > 0 %}text-success{% elif net.total < 0 %}text-danger{% endif %}">
+                {{ '%+d' | format(net.total) }}
+              </span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="text-center">
+            <span class="badge recon-badge-{{ r.status }}">{{ r.status }}</span>
+          </td>
+          <td>
+            <a href="{{ url_for('reconciliation_detail', id=r.id) }}" class="btn btn-outline-primary btn-sm">View</a>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="text-center text-muted py-3">No reconciliations yet</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+{{ pagination.links }}
+{% endblock %}

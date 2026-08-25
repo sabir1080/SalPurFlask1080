@@ -304,6 +304,11 @@ from salpurflask.inventory.transfer_routes import (
 from salpurflask.inventory.location_access_routes import (
     admin_location_access, admin_grant_location_access, admin_revoke_location_access,
 )
+from salpurflask.inventory.reconciliation_routes import (
+    reconciliation_list, reconciliation_new, reconciliation_detail,
+    reconciliation_finalize, reconciliation_reopen, reconciliation_approve,
+    reconciliation_post, reconciliation_cancel,
+)
 
 # Register purchase routes directly (not via blueprint, to preserve endpoint names)
 from salpurflask.purchase.routes import (
@@ -369,6 +374,14 @@ app.add_url_rule("/transfers/<int:id>", "transfer_detail", transfer_detail, meth
 app.add_url_rule("/transfers/<int:id>/confirm", "transfer_confirm", transfer_confirm, methods=["POST"])
 app.add_url_rule("/transfers/<int:id>/cancel", "transfer_cancel", transfer_cancel, methods=["POST"])
 app.add_url_rule("/transfers/<int:id>/reverse", "transfer_reverse", transfer_reverse, methods=["POST"])
+app.add_url_rule("/reconciliations", "reconciliation_list", reconciliation_list, methods=["GET"])
+app.add_url_rule("/reconciliations/new", "reconciliation_new", reconciliation_new, methods=["GET", "POST"])
+app.add_url_rule("/reconciliations/<int:id>", "reconciliation_detail", reconciliation_detail, methods=["GET", "POST"])
+app.add_url_rule("/reconciliations/<int:id>/finalize", "reconciliation_finalize", reconciliation_finalize, methods=["POST"])
+app.add_url_rule("/reconciliations/<int:id>/reopen", "reconciliation_reopen", reconciliation_reopen, methods=["POST"])
+app.add_url_rule("/reconciliations/<int:id>/approve", "reconciliation_approve", reconciliation_approve, methods=["POST"])
+app.add_url_rule("/reconciliations/<int:id>/post", "reconciliation_post", reconciliation_post, methods=["POST"])
+app.add_url_rule("/reconciliations/<int:id>/cancel", "reconciliation_cancel", reconciliation_cancel, methods=["POST"])
 app.add_url_rule("/admin/location-access", "admin_location_access", admin_location_access, methods=["GET"])
 app.add_url_rule("/admin/location-access/grant/<int:user_id>", "admin_grant_location_access",
                  admin_grant_location_access, methods=["POST"])

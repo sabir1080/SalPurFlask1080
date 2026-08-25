@@ -679,7 +679,8 @@ class AccountingPeriod(db.Model):
     is_closed      = db.Column(db.Boolean, nullable=False, default=False)
 
 # ── Gapless document numbering ────────────────────────────────────────────────
-DOCUMENT_PREFIXES = {"purchase": "PUR", "sale": "INV", "transfer": "TRF"}
+DOCUMENT_PREFIXES = {"purchase": "PUR", "sale": "INV", "transfer": "TRF",
+                     "inventory_reconciliation": "RCN"}
 
 class DocumentSequence(db.Model):
     """The next invoice number for a document type in a fiscal year.

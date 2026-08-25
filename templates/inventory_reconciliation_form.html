@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% block title %}New Reconciliation — {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-clipboard-check"></i> New Inventory Reconciliation</h1>
+    <p>Start a physical count at one warehouse</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('reconciliation_list') }}" class="btn btn-secondary">
+      <i class="bi bi-arrow-left"></i> Back
+    </a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <form method="POST">
+      <div class="row g-3 mb-4">
+        <div class="col-md-4">
+          <label class="form-label required">Warehouse</label>
+          {% if locations|length > 1 %}
+          <select class="form-select" name="location_id" required>
+            {% for loc in locations %}
+            <option value="{{ loc.id }}" {% if loc.id == default_location.id %}selected{% endif %}>{{ loc.name }}</option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <input type="text" class="form-control" value="{{ default_location.name }}" disabled>
+          <input type="hidden" name="location_id" value="{{ default_location.id }}">
+          {% endif %}
+        </div>
+        <div class="col-md-4">
+          <label class="form-label required">Count Date</label>
+          <input type="date" class="form-control" name="date" value="{{ today }}" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Notes</label>
+          <input type="text" class="form-control" name="notes" placeholder="Optional">
+        </div>
+      </div>
+
+      <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" name="all_items" value="1" id="allItems">
+        <label class="form-check-label" for="allItems">
+          Count every active stock item at this warehouse (a full count)
+        </label>
+      </div>
+
+      <div id="itemPicker">
+        <label class="form-label">Or choose specific items (a partial count)</label>
+        <select class="form-select" name="item_id[]" multiple size="10">
+          {% for item in items %}
+          <option value="{{ item.id }}">{{ item.name }}</option>
+          {% endfor %}
+        </select>
+        <small class="text-muted">Ctrl/Cmd-click to select more than one.</small>
+      </div>
+
+      <div class="mt-4">
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check-circle"></i> Create Reconciliation
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+document.getElementById('allItems').addEventListener('change', function () {
+  document.getElementById('itemPicker').style.display = this.checked ? 'none' : '';
+});
+</script>
+{% endblock %}

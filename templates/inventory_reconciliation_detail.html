@@ -1,0 +1,190 @@
+{% extends 'base.html' %}
+{% block title %}Reconciliation {{ reconciliation.reference or reconciliation.id }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-clipboard-check"></i>
+      Reconciliation {{ reconciliation.reference or ('DRAFT-' ~ reconciliation.id) }}</h1>
+    <p>{{ reconciliation.location.name }}</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('reconciliation_list') }}" class="btn btn-secondary">
+      <i class="bi bi-arrow-left"></i> Back
+    </a>
+  </div>
+</div>
+
+<div class="row g-6 mb-6">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-5">Warehouse</dt>
+          <dd class="col-sm-7">{{ reconciliation.location.name }}</dd>
+          <dt class="col-sm-5">Count Date</dt>
+          <dd class="col-sm-7">{{ reconciliation.date.strftime('%d %b %Y') }}</dd>
+          <dt class="col-sm-5">Status</dt>
+          <dd class="col-sm-7">
+            <span class="badge
+              {% if reconciliation.status == 'Counted' %}bg-info text-dark
+              {% elif reconciliation.status == 'Approved' %}bg-primary
+              {% elif reconciliation.status == 'Posted' %}bg-success
+              {% elif reconciliation.status == 'Cancelled' %}bg-danger
+              {% else %}bg-secondary{% endif %}">
+              {{ reconciliation.status }}
+            </span>
+          </dd>
+          <dt class="col-sm-5">Created</dt>
+          <dd class="col-sm-7">{{ reconciliation.created_at.strftime('%d %b %Y %H:%M') }}
+            {% if reconciliation.created_by %}by {{ reconciliation.created_by.name }}{% endif %}</dd>
+          {% if reconciliation.counted_at %}
+          <dt class="col-sm-5">Counted</dt>
+          <dd class="col-sm-7">{{ reconciliation.counted_at.strftime('%d %b %Y %H:%M') }}
+            {% if reconciliation.counted_by %}by {{ reconciliation.counted_by.name }}{% endif %}</dd>
+          {% endif %}
+          {% if reconciliation.approved_at %}
+          <dt class="col-sm-5">Approved</dt>
+          <dd class="col-sm-7">{{ reconciliation.approved_at.strftime('%d %b %Y %H:%M') }}
+            {% if reconciliation.approved_by %}by {{ reconciliation.approved_by.name }}{% endif %}</dd>
+          {% endif %}
+          {% if reconciliation.posted_at %}
+          <dt class="col-sm-5">Posted</dt>
+          <dd class="col-sm-7">{{ reconciliation.posted_at.strftime('%d %b %Y %H:%M') }}
+            {% if reconciliation.posted_by %}by {{ reconciliation.posted_by.name }}{% endif %}</dd>
+          {% endif %}
+          {% if reconciliation.notes %}
+          <dt class="col-sm-5">Notes</dt>
+          <dd class="col-sm-7">{{ reconciliation.notes }}</dd>
+          {% endif %}
+        </dl>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-light fw-semibold">Actions</div>
+      <div class="card-body d-flex flex-column gap-2">
+        {% if reconciliation.status == 'Draft' %}
+        <form method="POST" action="{{ url_for('reconciliation_finalize', id=reconciliation.id) }}">
+          <button type="submit" class="btn btn-info btn-sm w-100"
+                  onclick="return confirm('Finalize this count? System quantities will be snapshotted and counts locked.')">
+            <i class="bi bi-lock"></i> Finalize Count
+          </button>
+        </form>
+        <form method="POST" action="{{ url_for('reconciliation_cancel', id=reconciliation.id) }}">
+          <button type="submit" class="btn btn-outline-danger btn-sm w-100"
+                  onclick="return confirm('Cancel this reconciliation? No stock has moved.')">
+            <i class="bi bi-x-circle"></i> Cancel
+          </button>
+        </form>
+
+        {% elif reconciliation.status == 'Counted' %}
+        <form method="POST" action="{{ url_for('reconciliation_reopen', id=reconciliation.id) }}">
+          <button type="submit" class="btn btn-outline-secondary btn-sm w-100"
+                  onclick="return confirm('Reopen for recount? The current snapshot will be discarded.')">
+            <i class="bi bi-arrow-counterclockwise"></i> Reopen for Recount
+          </button>
+        </form>
+        {% if current_user.is_admin and reconciliation.counted_by_id != current_user.id %}
+        <form method="POST" action="{{ url_for('reconciliation_approve', id=reconciliation.id) }}">
+          <button type="submit" class="btn btn-primary btn-sm w-100"
+                  onclick="return confirm('Approve this reconciliation?')">
+            <i class="bi bi-check2-circle"></i> Approve
+          </button>
+        </form>
+        {% elif current_user.is_admin %}
+        <p class="text-muted small mb-0">You counted this reconciliation — another admin must approve it.</p>
+        {% else %}
+        <p class="text-muted small mb-0">Only an admin can approve a counted reconciliation.</p>
+        {% endif %}
+        <form method="POST" action="{{ url_for('reconciliation_cancel', id=reconciliation.id) }}">
+          <button type="submit" class="btn btn-outline-danger btn-sm w-100"
+                  onclick="return confirm('Cancel this reconciliation? No stock has moved.')">
+            <i class="bi bi-x-circle"></i> Cancel
+          </button>
+        </form>
+
+        {% elif reconciliation.status == 'Approved' and current_user.is_admin %}
+        <form method="POST" action="{{ url_for('reconciliation_post', id=reconciliation.id) }}">
+          <button type="submit" class="btn btn-success btn-sm w-100"
+                  onclick="return confirm('Post this reconciliation? Stock will be adjusted immediately.')">
+            <i class="bi bi-check-circle"></i> Post — Apply Variances
+          </button>
+        </form>
+        {% elif reconciliation.status == 'Approved' %}
+        <p class="text-muted small mb-0">Only an admin can post an approved reconciliation.</p>
+
+        {% else %}
+        <p class="text-muted small mb-0">No further action available.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-light fw-semibold">Items</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+    {% if reconciliation.status == 'Draft' %}
+    <form method="POST" action="{{ url_for('reconciliation_detail', id=reconciliation.id) }}">
+      <table class="table table-bordered mb-0 align-middle">
+        <thead class="table-dark">
+          <tr><th>#</th><th>Item</th><th style="width:160px">Physical Count</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          {% for line in reconciliation.lines %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td>{{ line.item.name }}</td>
+            <td>
+              <input type="text" class="form-control form-control-sm"
+                     name="physical_quantity_{{ line.item_id }}"
+                     value="{{ line.physical_quantity if line.physical_quantity is not none else '' }}"
+                     placeholder="Count">
+            </td>
+            <td>
+              <input type="text" class="form-control form-control-sm"
+                     name="notes_{{ line.item_id }}" value="{{ line.notes or '' }}" placeholder="Optional">
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="p-3">
+        <button type="submit" class="btn btn-outline-primary btn-sm">
+          <i class="bi bi-save"></i> Save Counts
+        </button>
+      </div>
+    </form>
+    {% else %}
+    <table class="table table-bordered mb-0 align-middle">
+      <thead class="table-dark">
+        <tr>
+          <th>#</th><th>Item</th>
+          <th class="text-end">System Qty</th><th class="text-end">Physical Qty</th>
+          <th class="text-end">Variance</th><th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in reconciliation.lines %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ line.item.name }}</td>
+          <td class="text-end">{{ line.system_quantity | fmt_num }}</td>
+          <td class="text-end">{{ line.physical_quantity | fmt_num }}</td>
+          <td class="text-end">
+            <span class="{% if line.variance > 0 %}text-success{% elif line.variance < 0 %}text-danger{% endif %}">
+              {{ '%+d' | format(line.variance) if line.variance else 0 }}
+            </span>
+          </td>
+          <td>{{ line.notes or '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

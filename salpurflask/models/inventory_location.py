@@ -195,6 +195,89 @@ class TransferItem(db.Model):
         return f"<TransferItem item={self.item_id} qty={self.quantity}>"
 
 
+RECONCILIATION_STATUSES = ("Draft", "Counted", "Approved", "Posted", "Cancelled")
+
+
+class InventoryReconciliation(db.Model):
+    """Physical count vs. system stock, at one location — Phase 6.
+
+    Modeled on Transfer's own shape, not StockAdjustment's: a document whose
+    lifecycle IS its idempotency guard (post_reconciliation() refuses unless
+    status == "Approved", the same single check confirm_transfer() uses), and
+    which moves quantity without touching the GL — see
+    salpurflask/services/inventory_reconciliation.py's own docstring for why
+    that split follows Transfer here, not StockAdjustment.
+
+    reference is assigned only on Post, the same "not real until it moves
+    stock" rule Transfer.transfer_no already follows — a Draft/Counted/
+    Cancelled reconciliation never consumes a number.
+
+    counted_by_id/approved_by_id together carry Phase 6's one segregation-of-
+    duties rule: approve_reconciliation() refuses when they'd be the same
+    person. See the service module for where that's actually enforced."""
+    __tablename__ = "inventory_reconciliation"
+    __table_args__ = (
+        db.Index("ix_inventory_reconciliation_location", "location_id"),
+    )
+
+    id              = db.Column(db.Integer, primary_key=True)
+    reference       = db.Column(db.String(30), nullable=True, unique=True, index=True)
+    location_id     = db.Column(db.Integer, db.ForeignKey("location.id"), nullable=False)
+    status          = db.Column(db.String(20), nullable=False, default="Draft")
+    date            = db.Column(db.DateTime, nullable=False)
+    notes           = db.Column(db.String(300), nullable=True)
+
+    created_by_id   = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    created_at      = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    counted_at      = db.Column(db.DateTime, nullable=True)
+    counted_by_id   = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    approved_at     = db.Column(db.DateTime, nullable=True)
+    approved_by_id  = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    posted_at       = db.Column(db.DateTime, nullable=True)
+    posted_by_id    = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    cancelled_at    = db.Column(db.DateTime, nullable=True)
+    cancelled_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+
+    location        = db.relationship("Location")
+    created_by      = db.relationship("User", foreign_keys=[created_by_id])
+    counted_by      = db.relationship("User", foreign_keys=[counted_by_id])
+    approved_by     = db.relationship("User", foreign_keys=[approved_by_id])
+    posted_by       = db.relationship("User", foreign_keys=[posted_by_id])
+    cancelled_by    = db.relationship("User", foreign_keys=[cancelled_by_id])
+    lines           = db.relationship("InventoryReconciliationLine", backref="reconciliation",
+                                      lazy=True, cascade="all,delete-orphan")
+
+    def __repr__(self):
+        return f"<InventoryReconciliation {self.reference or self.id} {self.status}>"
+
+
+class InventoryReconciliationLine(db.Model):
+    """One item's count on one reconciliation. system_quantity and variance
+    are NULL until the count is finalized (see finalize_count() in the
+    service module) — a line with no count yet is "not counted," not "counted
+    at zero," the same distinction stock_at_location() already draws between
+    a genuine zero-quantity ItemStock row and no row at all."""
+    __tablename__ = "inventory_reconciliation_line"
+    __table_args__ = (
+        db.UniqueConstraint("reconciliation_id", "item_id", name="uq_reconciliation_line_item"),
+        db.Index("ix_reconciliation_line_reconciliation", "reconciliation_id"),
+    )
+
+    id                 = db.Column(db.Integer, primary_key=True)
+    reconciliation_id  = db.Column(db.Integer, db.ForeignKey("inventory_reconciliation.id"),
+                                   nullable=False)
+    item_id            = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
+    system_quantity    = db.Column(db.Integer, nullable=True)
+    physical_quantity  = db.Column(db.Integer, nullable=True)
+    variance           = db.Column(db.Integer, nullable=True)
+    notes              = db.Column(db.String(200), nullable=True)
+
+    item               = db.relationship("Item")
+
+    def __repr__(self):
+        return f"<InventoryReconciliationLine item={self.item_id} variance={self.variance}>"
+
+
 MOVEMENT_TYPES = ("purchase", "sale", "purchase_return", "sale_return",
                   "adjustment", "transfer_out", "transfer_in", "opening")
 MOVEMENT_DIRECTIONS = ("in", "out")

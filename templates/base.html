@@ -267,6 +267,7 @@
                             {{ perm_item('transfer_list', 'bi-truck', 'Warehouse Transfers', current_user.is_manager) }}
                             {% endif %}
                             {{ perm_item('stock_movements', 'bi-clock-history', 'Stock Movements', current_user.is_manager) }}
+                            {{ perm_item('reconciliation_list', 'bi-clipboard-check', 'Inventory Reconciliation', current_user.is_manager) }}
                             <li><hr class="dropdown-divider"></li>
                             {{ perm_item('bulk_import', 'bi-cloud-upload', 'Bulk Import', current_user.is_manager) }}
                         </ul>
