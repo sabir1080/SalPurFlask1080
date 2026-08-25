@@ -110,7 +110,7 @@ def test_stock_can_never_be_taken_below_zero(appctx):
     item_add_stock(item, 10, Decimal("1000"))
     db.session.flush()
 
-    with pytest.raises(PostingError, match="cannot be taken out"):
+    with pytest.raises(PostingError, match="Insufficient stock at this location"):
         item_remove_stock(item, 11)
 
     assert item.stock == 10                               # nothing moved

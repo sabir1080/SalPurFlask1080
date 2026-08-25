@@ -1795,19 +1795,23 @@ def item_remove_stock(item, qty, cost_total=None, location_id=None, *,
     """Goods out. Costed at the current average unless a cost is given (a sale
     return puts goods back at what they left at, not at today's average).
 
-    Refuses to take out more than is there. Every route that sells or issues stock
-    checks first, but the *reversal* paths did not: reversing a purchase whose goods
-    have since been sold took the goods back anyway, and the warehouse ended up holding
-    minus eighty widgets while the Inventory account went negative and parted company
-    with the item it was meant to mirror. The check belongs here, at the one place all
-    of them pass through, rather than in each caller — a new caller gets it for free,
-    which is exactly what the reversal paths never did.
+    Refuses to take out more than is there — at THIS location, not the
+    company-wide total. Every route that sells or issues stock already checks
+    stock_at_location() first, but the *reversal* paths did not: reversing a
+    purchase whose goods have since moved on (sold, or transferred to another
+    warehouse) took the goods back anyway. Checking item.stock let that
+    through as long as some other warehouse still carried enough, which
+    silently drove this warehouse's own ItemStock.quantity negative — Phase 7
+    closed that gap by checking the locked row itself, the same number
+    stock_at_location() reads, so the two can never disagree. The check
+    belongs here, at the one place all callers pass through, rather than in
+    each caller — a new caller gets it for free.
 
     location_id=None resolves to the default location, so every existing
     caller keeps working against the one warehouse it always implicitly used.
-    The insufficient-stock check reads the company-wide total (unchanged
-    Phase-1 behaviour); once callers start passing a real location_id in a
-    later phase, that check narrows to the location's own ItemStock row.
+    The *value* guard just below stays company-wide on purpose — Item.inventory_value
+    has no per-location split to check against; narrowing it would mean
+    per-location costing, a separate, larger change this fix does not make.
 
     Returns the cost removed, which is what the caller posts as COGS."""
     row = _item_stock_row(item, location_id)
@@ -1815,11 +1819,13 @@ def item_remove_stock(item, qty, cost_total=None, location_id=None, *,
     cost = Decimal(str(cost_total)) if cost_total is not None else (item.avg_cost * Decimal(str(qty)))
     cost = cost.quantize(MONEY)
 
-    if qty > (item.stock or 0):
+    if qty > (row.quantity or 0):
         raise PostingError(
-            f"Only {item.stock or 0} × {item.name} in stock, so {qty} cannot be taken out. "
-            f"If you are reversing a document, the goods it brought in have already been "
-            f"sold or issued — reverse those first.")
+            f"Insufficient stock at this location: only {row.quantity or 0} × {item.name} "
+            f"available, but {qty} requested. If you are reversing a document, the goods it "
+            f"brought in may have moved to or been sold from another warehouse since — "
+            f"reverse those movements first, or reverse this one at the warehouse that "
+            f"still holds enough.")
     if cost > value and qty < (item.stock or 0):
         # Taking the whole stock out is allowed to take the whole value with it (that is
         # what a final sale does). Taking out *part* of it must not cost more than the
