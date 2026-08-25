@@ -112,6 +112,8 @@ def purchase():
     """Display purchases and allow creation of new purchases."""
     from app import validate_line_rows, purchase_total as app_purchase_total
     from app import record_audit
+    from salpurflask.models import (Location, resolve_location_id,
+                                    get_or_create_default_location)
 
     search = request.args.get("search", "").strip()
     query = Purchase.query
@@ -122,9 +124,15 @@ def purchase():
     )
     suppliers = Supplier.query.order_by(Supplier.name).all()
     items = Item.query.order_by(Item.name).all()
+    locations = Location.query.filter_by(active=True).order_by(Location.name).all()
     if request.method == "POST":
         if current_user.role not in ("admin", "manager"):
             flash("Access denied. Only managers and admins can add purchases.", "danger")
+            return redirect(url_for("purchase"))
+        try:
+            location_id = resolve_location_id(request.form.get("location_id"))
+        except ValueError as e:
+            flash(str(e), "danger")
             return redirect(url_for("purchase"))
         supplier_id  = request.form.get("supplier_id", "").strip()
         date_str     = request.form.get("date", "").strip()
@@ -169,6 +177,7 @@ def purchase():
                     discount_type=first_d_type or "percent", discount_value=float(first_d_val or 0), discount_amount=disc_amt,
                     tax_percent=float(first_tax or 0), tax_amount=tax_amt,
                     date=purchase_date, notes=notes or None,
+                    location_id=location_id,
                 )
                 db.session.add(pur)
                 db.session.flush()
@@ -190,7 +199,8 @@ def purchase():
                         unit_name=unit_name, unit_factor=unit_factor,
                     )
                     db.session.add(pi)
-                    item_add_stock(item_obj, qty_i * unit_factor, net - tax_amt)
+                    item_add_stock(item_obj, qty_i * unit_factor, net - tax_amt, location_id=location_id,
+                                   movement_type="purchase", source_type="purchase", source_id=pur.id)
                 db.session.flush()
                 db.session.refresh(pur)
                 pur.invoice_no = allocate_document_number("purchase", pur.date)
@@ -211,6 +221,8 @@ def purchase():
         pagination=pagination,
         search=search,
         today=now_local().strftime("%Y-%m-%d"),
+        locations=locations,
+        default_location=get_or_create_default_location(),
     )
 
 
@@ -220,10 +232,15 @@ def edit_purchase(id):
     from app import validate_line_rows, purchase_total as app_purchase_total
     from app import record_audit, remove_supplier_ledger_entry, recalculate_supplier_ledger
 
+    from salpurflask.models import resolve_location_id
+
     pur = db.session.get(Purchase, id) or abort(404)
     assert_not_posted("purchase", pur.id, f"Purchase #{pur.id}")
     suppliers = Supplier.query.order_by(Supplier.name).all()
     items_all = Item.query.order_by(Item.name).all()
+    # Editing never moves a purchase's stock effect to a different warehouse —
+    # see edit_sale()'s identical rule and reasoning.
+    location_id = pur.location_id if pur.location_id is not None else resolve_location_id(None)
     if request.method == "POST":
         supplier_id = request.form.get("supplier_id", "").strip()
         date_str    = request.form.get("date", "").strip()
@@ -262,7 +279,9 @@ def edit_purchase(id):
                     old_item = get_item_locked(pi.item_id)
                     if old_item:
                         cost_removed = pi.amount - pi.tax_amount
-                        item_remove_stock(old_item, line_base_qty(pi), cost_total=cost_removed)
+                        item_remove_stock(old_item, line_base_qty(pi), cost_total=cost_removed,
+                                         location_id=location_id,
+                                         movement_type="purchase", source_type="purchase", source_id=pur.id)
                         touched_items[old_item.id] = old_item
                 PurchaseItem.query.filter_by(purchase_id=pur.id).delete()
                 pur.supplier_id    = int(supplier_id)
@@ -279,6 +298,7 @@ def edit_purchase(id):
                 pur.tax_amount = tax_amt
                 pur.date           = datetime.strptime(date_str, "%Y-%m-%d")
                 pur.notes          = notes or None
+                pur.location_id    = location_id
                 for iid, qty, price, d_type, d_val, tax, unit_key in rows:
                     item_obj = touched_items.get(int(iid)) or get_item_locked(int(iid)) or abort(404)
                     qty_i = int(qty)
@@ -297,7 +317,8 @@ def edit_purchase(id):
                         unit_name=unit_name, unit_factor=unit_factor,
                     )
                     db.session.add(pi)
-                    item_add_stock(item_obj, qty_i * unit_factor, net - tax_amt)
+                    item_add_stock(item_obj, qty_i * unit_factor, net - tax_amt, location_id=location_id,
+                                   movement_type="purchase", source_type="purchase", source_id=pur.id)
                     touched_items[item_obj.id] = item_obj
 
                 negative_items = [it for it in touched_items.values() if it.stock < 0]
@@ -345,7 +366,9 @@ def delete_purchase(id):
         item_obj = db.session.get(Item, pi.item_id)
         if item_obj:
             cost_removed = pi.amount - pi.tax_amount
-            item_remove_stock(item_obj, line_base_qty(pi), cost_total=cost_removed)
+            item_remove_stock(item_obj, line_base_qty(pi), cost_total=cost_removed,
+                             location_id=pur.location_id,
+                             movement_type="purchase", source_type="purchase", source_id=pur.id)
     audit_summary = f"Purchase #{pur.id} ({pur.supplier.name if pur.supplier else 'supplier'}) deleted"
     supplier_id = remove_supplier_ledger_entry("purchase", pur.id)
     db.session.delete(pur)
@@ -365,6 +388,7 @@ def delete_purchase(id):
 def purchase_return():
     """Display purchase returns and allow creation of new returns."""
     from app import remove_supplier_ledger_entry, recalculate_supplier_ledger
+    from salpurflask.models import stock_at_location, resolve_location_id
 
     search = request.args.get("search", "").strip()
     query = PurchaseReturn.query.order_by(PurchaseReturn.date.desc())
@@ -421,9 +445,15 @@ def purchase_return():
                     if int(qty_s) > remaining:
                         errors.append(f"Row {idx} ({pi.item.name}): cannot return {qty_s}, only {remaining} remaining.")
                         continue
-                    if pi.item and pi.item.stock < int(qty_s) * (pi.unit_factor or 1):
-                        errors.append(f"Row {idx} ({pi.item.name}): only {pi.item.stock} in current stock, cannot return {qty_s}.")
-                        continue
+                    if pi.item:
+                        # Goods return from the warehouse the purchase actually
+                        # received them into, not wherever the company total sits.
+                        parent_location = pi.purchase_header.location_id if pi.purchase_header else None
+                        available = stock_at_location(pi.item.id, parent_location or resolve_location_id(None))
+                        if available < int(qty_s) * (pi.unit_factor or 1):
+                            errors.append(f"Row {idx} ({pi.item.name}): only {available} in "
+                                         f"current stock at that warehouse, cannot return {qty_s}.")
+                            continue
                     rows.append((pi, int(qty_s), price_f, reason_s.strip() or None))
                 if errors:
                     for e in errors:
@@ -443,10 +473,14 @@ def purchase_return():
                             unit_name=pi.unit_name, unit_factor=pi.unit_factor or 1,
                             purchase_item_id=pi.id,
                         )
-                        if item:
-                            pr.cost_removed = item_remove_stock(item, qty * (pi.unit_factor or 1))
                         db.session.add(pr)
                         db.session.flush()
+                        if item:
+                            pr.cost_removed = item_remove_stock(
+                                item, qty * (pi.unit_factor or 1),
+                                location_id=purchase.location_id,
+                                movement_type="purchase_return", source_type="purchase_return",
+                                source_id=pr.id)
                         sync_supplier_purchase_return(pr)
                         post_document("purchase_return", pr)
                     db.session.commit()
@@ -473,7 +507,10 @@ def delete_purchase_return(id):
     assert_not_posted("purchase_return", pr.id, f"Purchase return #{pr.id}")
     item = get_item_locked(pr.item_id)
     if item:
-        item_add_stock(item, line_base_qty(pr), cost_total=pr.cost_removed or 0)
+        parent_location = pr.purchase.location_id if pr.purchase else None
+        item_add_stock(item, line_base_qty(pr), cost_total=pr.cost_removed or 0,
+                       location_id=parent_location,
+                       movement_type="purchase_return", source_type="purchase_return", source_id=pr.id)
     supplier_id = remove_supplier_ledger_entry("purchase_return", pr.id)
     db.session.delete(pr)
     db.session.commit()
@@ -641,12 +678,19 @@ def update_po_status(id):
 @manager_required
 def convert_po_to_purchase(id):
     """Convert purchase order to purchase document."""
+    from salpurflask.models import resolve_location_id
+
     po = db.session.get(PurchaseOrder, id) or abort(404)
     if po.status == "Cancelled":
         flash("Cancelled orders cannot be converted.", "danger")
         return redirect(url_for("purchase_order_detail", id=id))
     if po.converted_purchase_id:
         flash(f"Already converted to Purchase #{po.converted_purchase_id}.", "warning")
+        return redirect(url_for("purchase_order_detail", id=id))
+    try:
+        location_id = resolve_location_id(request.form.get("location_id"))
+    except ValueError as e:
+        flash(str(e), "danger")
         return redirect(url_for("purchase_order_detail", id=id))
     date_str = request.form.get("purchase_date", "").strip()
     notes    = request.form.get("notes", "").strip()
@@ -664,6 +708,7 @@ def convert_po_to_purchase(id):
         discount_type="percent", discount_value=0, discount_amount=0,
         tax_percent=0, tax_amount=0,
         date=pur_date, notes=notes or po.notes,
+        location_id=location_id,
     )
     db.session.add(pur)
     db.session.flush()
@@ -680,7 +725,9 @@ def convert_po_to_purchase(id):
         ))
         item_obj = db.session.get(Item, poi.item_id)
         if item_obj:
-            item_add_stock(item_obj, poi.quantity * (poi.unit_factor or 1), amount)
+            item_add_stock(item_obj, poi.quantity * (poi.unit_factor or 1), amount,
+                           location_id=location_id,
+                           movement_type="purchase", source_type="purchase", source_id=pur.id)
     db.session.flush()
     db.session.refresh(pur)
     pur.invoice_no = allocate_document_number("purchase", pur.date)

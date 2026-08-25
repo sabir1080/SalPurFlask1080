@@ -73,3 +73,24 @@ from salpurflask.models.notification import (  # noqa: F401
     Notification,
     SEVERITIES,
 )
+
+# Multi-branch / multi-warehouse foundation (Phase 1 — Item.stock stays the
+# company-wide total; ItemStock is per-location, kept in sync)
+from salpurflask.models.inventory_location import (  # noqa: F401
+    Branch,
+    Location,
+    ItemStock,
+    Transfer,
+    TransferItem,
+    TRANSFER_STATUSES,
+    StockMovement,
+    MOVEMENT_TYPES,
+    MOVEMENT_DIRECTIONS,
+    record_stock_movement,
+    get_or_create_default_location,
+    get_item_stock_locked,
+    get_or_create_item_stock,
+    backfill_item_stock_locations,
+    stock_at_location,
+    resolve_location_id,
+)

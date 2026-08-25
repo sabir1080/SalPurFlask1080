@@ -48,6 +48,8 @@ def sale():
     """Display sales and allow creation of new sales."""
     from app import validate_line_rows, sale_total as app_sale_total
     from app import record_audit, sync_customer_sale, item_add_stock, item_remove_stock
+    from salpurflask.models import (Location, resolve_location_id, stock_at_location,
+                                    get_or_create_default_location)
 
     search = request.args.get("search", "").strip()
     query = Sale.query
@@ -56,9 +58,15 @@ def sale():
     sales, pagination = get_paginated_results(query.order_by(Sale.date.desc(), Sale.id.desc()))
     customers = Customer.query.order_by(Customer.name).all()
     items = Item.query.order_by(Item.name).all()
+    locations = Location.query.filter_by(active=True).order_by(Location.name).all()
     if request.method == "POST":
         if current_user.role not in ("admin", "manager"):
             flash("Access denied. Only managers and admins can add sales.", "danger")
+            return redirect(url_for("sale"))
+        try:
+            location_id = resolve_location_id(request.form.get("location_id"))
+        except ValueError as e:
+            flash(str(e), "danger")
             return redirect(url_for("sale"))
         customer_id = request.form.get("customer_id", "").strip()
         date_str    = request.form.get("date", "").strip()
@@ -97,8 +105,11 @@ def sale():
                     item_obj = db.session.get(Item, int(iid))
                     if item_obj and item_obj.item_type == "STOCK":
                         _, factor = resolve_item_unit(item_obj, unit_key)
-                        if item_obj.stock < int(qty) * factor:
-                            stock_errors.append(f"{item_obj.name}: only {item_obj.stock} {item_obj.unit} available")
+                        available = stock_at_location(item_obj.id, location_id)
+                        if available < int(qty) * factor:
+                            stock_errors.append(
+                                f"{item_obj.name}: only {available} {item_obj.unit} "
+                                f"available at this warehouse")
                 if stock_errors:
                     flash("Insufficient stock — " + "; ".join(stock_errors), "danger")
                 else:
@@ -116,6 +127,7 @@ def sale():
                         discount_type=first_d_type or "percent", discount_value=first_d_val_f, discount_amount=first_disc_amt,
                         tax_percent=first_tax_f, tax_amount=first_tax_amt,
                         date=sale_date, notes=notes or None,
+                        location_id=location_id,
                     )
                     db.session.add(sal)
                     db.session.flush()
@@ -126,10 +138,12 @@ def sale():
                         base_qty = qty_i * unit_factor
                         # Stock validation and reduction only for STOCK items, not SERVICE
                         if item_obj.item_type == "STOCK":
-                            if item_obj.stock < base_qty:
+                            available = stock_at_location(item_obj.id, location_id)
+                            if available < base_qty:
                                 db.session.rollback()
-                                flash(f"Insufficient stock for {item_obj.name}: only {item_obj.stock} "
-                                      "available now (it changed while saving). Please try again.", "danger")
+                                flash(f"Insufficient stock for {item_obj.name}: only {available} "
+                                      "available at this warehouse now (it changed while saving). "
+                                      "Please try again.", "danger")
                                 return redirect(url_for("sale"))
                         d_val_f = float(d_val or 0); tax_f = float(tax or 0)
                         gross = qty_i * price_f
@@ -147,7 +161,9 @@ def sale():
                         db.session.add(si)
                         # Only reduce stock for STOCK items, not SERVICE items
                         if item_obj.item_type == "STOCK":
-                            item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)))
+                            item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)),
+                                              location_id=location_id,
+                                              movement_type="sale", source_type="sale", source_id=sal.id)
                     db.session.flush()
                     db.session.refresh(sal)
                     sal.invoice_no = allocate_document_number("sale", sal.date)
@@ -171,6 +187,8 @@ def sale():
         search=search,
         today=now_local().strftime("%Y-%m-%d"),
         default_tax_rate=default_tax,
+        locations=locations,
+        default_location=get_or_create_default_location(),
     )
 
 
@@ -182,10 +200,19 @@ def edit_sale(id):
     from app import sync_customer_sale, item_add_stock, item_remove_stock
     from app import remove_customer_ledger_entry, recalculate_customer_ledger
 
+    from salpurflask.models import resolve_location_id, stock_at_location
+
     sal = db.session.get(Sale, id) or abort(404)
     assert_not_posted("sale", sal.id, f"Sale #{sal.id}")
     customers = Customer.query.order_by(Customer.name).all()
     items_all = Item.query.order_by(Item.name).all()
+    # Editing never moves a sale's stock effect to a different warehouse — the
+    # sale keeps the location it was created with. Stock returned below always
+    # goes back to this same location, and the new lines are deducted from it
+    # too, so the two never disagree about which warehouse this sale touches.
+    # (Moving a completed sale's stock between warehouses is a transfer, not
+    # an edit — out of scope here.)
+    location_id = sal.location_id if sal.location_id is not None else resolve_location_id(None)
     if request.method == "POST":
         customer_id = request.form.get("customer_id", "").strip()
         date_str    = request.form.get("date", "").strip()
@@ -223,20 +250,27 @@ def edit_sale(id):
                     old_item = get_item_locked(si.item_id)
                     if old_item and old_item.item_type == "STOCK":
                         cost_returned = si.cost_price * line_base_qty(si)
-                        item_add_stock(old_item, line_base_qty(si), cost_total=cost_returned)
+                        item_add_stock(old_item, line_base_qty(si), cost_total=cost_returned,
+                                      location_id=location_id,
+                                      movement_type="sale", source_type="sale", source_id=sal.id)
                 stock_errors = []
                 for iid, qty, price, d_type, d_val, tax, unit_key in rows:
                     item_obj = get_item_locked(int(iid))
                     if item_obj and item_obj.item_type == "STOCK":
                         _, factor = resolve_item_unit(item_obj, unit_key)
-                        if item_obj.stock < int(qty) * factor:
-                            stock_errors.append(f"{item_obj.name}: only {item_obj.stock} {item_obj.unit} available")
+                        available = stock_at_location(item_obj.id, location_id)
+                        if available < int(qty) * factor:
+                            stock_errors.append(
+                                f"{item_obj.name}: only {available} {item_obj.unit} "
+                                f"available at this warehouse")
                 if stock_errors:
                     for si in sal.line_items:
                         old_item = get_item_locked(si.item_id)
                         if old_item and old_item.item_type == "STOCK":
                             cost_removed = si.cost_price * line_base_qty(si)
-                            item_remove_stock(old_item, line_base_qty(si), cost_total=cost_removed)
+                            item_remove_stock(old_item, line_base_qty(si), cost_total=cost_removed,
+                                             location_id=location_id,
+                                             movement_type="sale", source_type="sale", source_id=sal.id)
                     flash("Insufficient stock — " + "; ".join(stock_errors), "danger")
                 else:
                     SaleItem.query.filter_by(sale_id=sal.id).delete()
@@ -252,6 +286,7 @@ def edit_sale(id):
                     sal.discount_amount = first_disc_amt; sal.tax_percent = first_tax_f; sal.tax_amount = first_tax_amt
                     sal.date = datetime.strptime(date_str, "%Y-%m-%d")
                     sal.notes = notes or None
+                    sal.location_id = location_id
                     for iid, qty, price, d_type, d_val, tax, unit_key in rows:
                         item_obj = get_item_locked(int(iid)) or abort(404)
                         qty_i = int(qty); price_f = float(price)
@@ -273,7 +308,9 @@ def edit_sale(id):
                         db.session.add(si)
                         # Only reduce stock for STOCK items, not SERVICE items
                         if item_obj.item_type == "STOCK":
-                            item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)))
+                            item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)),
+                                              location_id=location_id,
+                                              movement_type="sale", source_type="sale", source_id=sal.id)
                     db.session.flush()
                     db.session.refresh(sal)
                     if old_customer_id != int(customer_id):
@@ -313,7 +350,9 @@ def delete_sale(id):
         item_obj = db.session.get(Item, si.item_id)
         if item_obj and item_obj.item_type == "STOCK":
             cost_returned = si.cost_price * line_base_qty(si)
-            item_add_stock(item_obj, line_base_qty(si), cost_total=cost_returned)
+            item_add_stock(item_obj, line_base_qty(si), cost_total=cost_returned,
+                           location_id=sal.location_id,
+                           movement_type="sale", source_type="sale", source_id=sal.id)
     audit_summary = f"Sale #{sal.id} ({sal.customer.name if sal.customer else 'customer'}) deleted"
     customer_id = remove_customer_ledger_entry("sale", sal.id)
     db.session.delete(sal)
@@ -428,13 +467,16 @@ def sale_return():
                             unit_name=si.unit_name, unit_factor=si.unit_factor or 1,
                             sale_item_id=si.id,
                         )
+                        db.session.add(sr)
+                        db.session.flush()
                         if item:
                             base_qty = qty * (si.unit_factor or 1)
                             cost = (Decimal(str(si.cost_price or 0)) * Decimal(str(base_qty))).quantize(MONEY)
                             sr.cost_restored = cost
-                            item_add_stock(item, base_qty, cost)
-                        db.session.add(sr)
-                        db.session.flush()
+                            # Goods come back to the warehouse the sale actually left
+                            # from, never wherever happens to be default.
+                            item_add_stock(item, base_qty, cost, location_id=sale.location_id,
+                                          movement_type="sale_return", source_type="sale_return", source_id=sr.id)
                         sync_customer_sale_return(sr)
                         post_document("sale_return", sr)
                     db.session.commit()
@@ -462,7 +504,10 @@ def delete_sale_return(id):
     assert_not_posted("sale_return", sr.id, f"Sale return #{sr.id}")
     item = get_item_locked(sr.item_id)
     if item:
-        item_remove_stock(item, line_base_qty(sr), cost_total=sr.cost_restored or 0)
+        parent_location = sr.sale.location_id if sr.sale else None
+        item_remove_stock(item, line_base_qty(sr), cost_total=sr.cost_restored or 0,
+                          location_id=parent_location,
+                          movement_type="sale_return", source_type="sale_return", source_id=sr.id)
     customer_id = remove_customer_ledger_entry("sale_return", sr.id)
     db.session.delete(sr)
     db.session.commit()
@@ -568,11 +613,17 @@ def pos_checkout():
     from app import item_remove_stock, sync_customer_sale
     from app import sync_customer_receipt, post_document, record_audit
     from app import parse_account_id, PAYMENT_METHODS, PostingError
+    from salpurflask.models import resolve_location_id, stock_at_location
 
     data = request.get_json(silent=True) or {}
     lines = data.get("items") or []
     if not lines:
         return {"ok": False, "error": "The cart is empty."}, 400
+
+    try:
+        location_id = resolve_location_id(data.get("location_id"))
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}, 400
 
     customer_id = data.get("customer_id") or get_walkin_customer().id
     try:
@@ -602,10 +653,12 @@ def pos_checkout():
                 return {"ok": False, "error": f"Bad quantity or price for {item_obj.name}."}, 400
             unit_name, unit_factor = resolve_item_unit(item_obj, str(ln.get("unit_id") or ""))
             base_qty = qty_i * unit_factor
-            if item_obj.stock < base_qty:
+            available = stock_at_location(item_obj.id, location_id)
+            if available < base_qty:
                 db.session.rollback()
                 return {"ok": False,
-                        "error": f"Only {item_obj.stock} {item_obj.unit} × {item_obj.name} in stock."}, 400
+                        "error": f"Only {available} {item_obj.unit} × {item_obj.name} "
+                                 f"in stock at this warehouse."}, 400
 
             # Calculate discount and tax
             gross = qty_i * price_f
@@ -636,9 +689,16 @@ def pos_checkout():
             if ln == first:
                 first_item_data = line_data
 
-            # Remove stock
+            # Remove stock. The Sale row this belongs to does not exist yet
+            # (POS validates and moves stock line-by-line, then creates the
+            # Sale once every line has passed) — movement_type is passed so
+            # the row exists and is correctly typed immediately, but
+            # source_id is filled in right after sal.id exists, a few lines
+            # below, rather than restructuring this loop's order.
             unit_cost = item_obj.avg_cost
-            item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)))
+            item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)),
+                              location_id=location_id,
+                              movement_type="sale", source_type="sale")
 
         # Create Sale record with first item data
         first = first_item_data
@@ -652,9 +712,23 @@ def pos_checkout():
             discount_amount=first["disc_amt"],
             tax_percent=float(first["tax_pct"]), tax_amount=first["tax_amt"],
             date=now_local(), notes="POS sale",
+            location_id=location_id,
         )
         db.session.add(sal)
         db.session.flush()
+
+        # Fill in the source_id on the movement rows written during the
+        # validation loop above, now that sal.id exists. Scoped to this
+        # checkout's own still-uncommitted rows: source_id IS NULL only
+        # while a "sale" movement is mid-transaction (every path either
+        # fills it in here or rolls the whole transaction back), and no
+        # other session can see rows this transaction hasn't committed yet.
+        from salpurflask.models.inventory_location import StockMovement
+        (StockMovement.query
+         .filter_by(source_type="sale", source_id=None, movement_type="sale",
+                   location_id=location_id)
+         .filter(StockMovement.item_id.in_([ld["item_obj"].id for ld in processed_lines]))
+         .update({"source_id": sal.id}, synchronize_session=False))
 
         # Add all SaleItems
         for line_data in processed_lines:

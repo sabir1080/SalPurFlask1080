@@ -56,6 +56,8 @@ def dashboard():
         'total_receivable_balance': 0.0,
         'monthly_sales': [],
         'monthly_purchases': [],
+        'recent_stock_movements': [],
+        'location_count': 1,
     }
 
     # Load items (simple query)
@@ -170,5 +172,23 @@ def dashboard():
         ]
     except Exception:
         context['monthly_sales'] = []
+
+    # Recent warehouse activity — additive panel, Phase 4. Wrapped the same
+    # way as every other query above: a failure here must never break the
+    # rest of the dashboard.
+    try:
+        from salpurflask.models import StockMovement, Location
+        context['recent_stock_movements'] = (
+            StockMovement.query
+            .order_by(StockMovement.created_at.desc(), StockMovement.id.desc())
+            .limit(8).all())
+    except Exception:
+        pass
+
+    try:
+        from salpurflask.models import Location
+        context['location_count'] = Location.query.count()
+    except Exception:
+        pass
 
     return render_template('dashboard.html', **context)

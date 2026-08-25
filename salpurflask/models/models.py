@@ -257,6 +257,11 @@ class Purchase(db.Model):
     reversed_at         = db.Column(db.DateTime, nullable=True)
     # Gapless, issued once and never reused. See allocate_document_number().
     invoice_no          = db.Column(db.String(30), nullable=True, unique=True, index=True)
+    # Which warehouse received the goods. NULL on every purchase written before
+    # this column existed (and on any created without a location chosen) — that
+    # is read as "the default location", never guessed or backfilled onto the
+    # row itself. See salpurflask/models/inventory_location.py.
+    location_id         = db.Column(db.Integer, db.ForeignKey("location.id"), nullable=True)
 
 class Sale(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
@@ -278,6 +283,9 @@ class Sale(db.Model):
     reversed_at         = db.Column(db.DateTime, nullable=True)
     # Gapless, issued once and never reused. See allocate_document_number().
     invoice_no          = db.Column(db.String(30), nullable=True, unique=True, index=True)
+    # Which warehouse the goods left from. Same NULL-means-default convention
+    # as Purchase.location_id.
+    location_id         = db.Column(db.Integer, db.ForeignKey("location.id"), nullable=True)
 
 class PurchaseItem(db.Model):
     __tablename__   = "purchase_item"
@@ -493,6 +501,9 @@ class StockAdjustment(db.Model):
     is_reversed     = db.Column(db.Boolean, nullable=False, default=False)
     reversed_at     = db.Column(db.DateTime, nullable=True)
     item            = db.relationship("Item", backref="adjustments", lazy=True)
+    # Which warehouse this adjustment counted. Same NULL-means-default
+    # convention as Purchase.location_id.
+    location_id     = db.Column(db.Integer, db.ForeignKey("location.id"), nullable=True)
 
 # ── Expense Tracking ──────────────────────────────────────────────────────────
 class ExpenseCategory(db.Model):
@@ -668,7 +679,7 @@ class AccountingPeriod(db.Model):
     is_closed      = db.Column(db.Boolean, nullable=False, default=False)
 
 # ── Gapless document numbering ────────────────────────────────────────────────
-DOCUMENT_PREFIXES = {"purchase": "PUR", "sale": "INV"}
+DOCUMENT_PREFIXES = {"purchase": "PUR", "sale": "INV", "transfer": "TRF"}
 
 class DocumentSequence(db.Model):
     """The next invoice number for a document type in a fiscal year.
@@ -1613,8 +1624,12 @@ def _unwind_stock_and_subledger(kind, doc):
                 # Remove exactly the cost this line added — its taxable amount —
                 # not today's average, which later purchases may have moved.
                 # Stock moves in the item's base unit, however the line was priced.
+                # Same warehouse the goods were received into — never guessed,
+                # always the document's own location_id.
                 item_remove_stock(item, line_base_qty(pi),
-                                  cost_total=Decimal(str(pi.amount)) - Decimal(str(pi.tax_amount or 0)))
+                                  cost_total=Decimal(str(pi.amount)) - Decimal(str(pi.tax_amount or 0)),
+                                  location_id=doc.location_id,
+                                  movement_type="purchase", source_type="purchase", source_id=doc.id)
         sup_id = remove_supplier_ledger_entry("purchase", doc.id)
         return ("supplier", sup_id)
 
@@ -1624,9 +1639,12 @@ def _unwind_stock_and_subledger(kind, doc):
             if item:
                 # Goods come back in at the cost they left at. cost_price is per base
                 # unit (it is a snapshot of avg_cost), so the total needs the base qty.
+                # Same warehouse they were sold from — never the wrong one.
                 base_qty = line_base_qty(si)
                 item_add_stock(item, base_qty,
-                               Decimal(str(si.cost_price or 0)) * Decimal(str(base_qty)))
+                               Decimal(str(si.cost_price or 0)) * Decimal(str(base_qty)),
+                               location_id=doc.location_id,
+                               movement_type="sale", source_type="sale", source_id=doc.id)
         cust_id = remove_customer_ledger_entry("sale", doc.id)
         return ("customer", cust_id)
 
@@ -1642,13 +1660,21 @@ def _unwind_stock_and_subledger(kind, doc):
     if kind == "purchase_return":
         item = db.session.get(Item, doc.item_id)
         if item:                                   # goods had left; bring them back
-            item_add_stock(item, line_base_qty(doc), Decimal(str(doc.cost_removed or 0)))
+            # A return has no location of its own — it always moves against the
+            # parent purchase's warehouse (see purchase_return()/sale_return()).
+            parent_location = doc.purchase.location_id if doc.purchase else None
+            item_add_stock(item, line_base_qty(doc), Decimal(str(doc.cost_removed or 0)),
+                           location_id=parent_location,
+                           movement_type="purchase_return", source_type="purchase_return", source_id=doc.id)
         return ("supplier", remove_supplier_ledger_entry("purchase_return", doc.id))
 
     if kind == "sale_return":
         item = db.session.get(Item, doc.item_id)
         if item:                                   # goods had come back; send them out
-            item_remove_stock(item, line_base_qty(doc), cost_total=Decimal(str(doc.cost_restored or 0)))
+            parent_location = doc.sale.location_id if doc.sale else None
+            item_remove_stock(item, line_base_qty(doc), cost_total=Decimal(str(doc.cost_restored or 0)),
+                              location_id=parent_location,
+                              movement_type="sale_return", source_type="sale_return", source_id=doc.id)
         return ("customer", remove_customer_ledger_entry("sale_return", doc.id))
 
     if kind == "stock_adjustment":
@@ -1656,9 +1682,11 @@ def _unwind_stock_and_subledger(kind, doc):
         if item:
             value = Decimal(str(doc.cost_value or 0))
             if doc.direction == "out":
-                item_add_stock(item, doc.quantity, value)
+                item_add_stock(item, doc.quantity, value, location_id=doc.location_id,
+                               movement_type="adjustment", source_type="stock_adjustment", source_id=doc.id)
             else:
-                item_remove_stock(item, doc.quantity, cost_total=value)
+                item_remove_stock(item, doc.quantity, cost_total=value, location_id=doc.location_id,
+                                  movement_type="adjustment", source_type="stock_adjustment", source_id=doc.id)
         return (None, None)
 
     raise PostingError(f"Don't know how to reverse a {kind}.")
@@ -1709,12 +1737,60 @@ def reverse_document(kind, doc):
 # Every amount here is also what the Inventory control account is posted, which
 # is why the reconciliation report can compare the two.
 
-def item_add_stock(item, qty, cost_total):
-    """Goods in, at a known total cost."""
+def _item_stock_row(item, location_id):
+    """The ItemStock row this mutation writes to. location_id=None resolves
+    to the one default location every existing single-location item already
+    lives at — so no existing caller needs to change to keep working.
+
+    An item with no ItemStock row anywhere yet (created before this phase's
+    migration ran, or in a test that builds an Item directly) is not a
+    zero-stock item — Item.stock already holds its real count. The very
+    first row created for such an item is seeded from Item.stock, the same
+    number backfill_item_stock_locations() would have written; a brand-new
+    item that has genuinely never held stock starts at 0 either way, since
+    Item.stock is 0 at that point too."""
+    from salpurflask.models.inventory_location import (
+        get_or_create_default_location, get_item_stock_locked, ItemStock)
+    if location_id is None:
+        location_id = get_or_create_default_location().id
+
+    row = get_item_stock_locked(item.id, location_id)
+    if row is None:
+        has_any_row = (db.session.query(ItemStock.id)
+                       .filter_by(item_id=item.id).first() is not None)
+        seed_qty = 0 if has_any_row else (item.stock or 0)
+        row = ItemStock(item_id=item.id, location_id=location_id, quantity=seed_qty)
+        db.session.add(row)
+        db.session.flush()
+        row = get_item_stock_locked(item.id, location_id)
+    return row
+
+def item_add_stock(item, qty, cost_total, location_id=None, *,
+                   movement_type=None, source_type=None, source_id=None):
+    """Goods in, at a known total cost. Writes Item.stock (the company-wide
+    total) and the location's ItemStock.quantity together, in the caller's
+    existing transaction — one commit or rollback covers both, so the two
+    numbers can never fall out of step from a partial write.
+
+    movement_type/source_type/source_id are optional and additive: passing
+    them writes a StockMovement audit row in the same transaction (see
+    inventory_location.py's record_stock_movement); omitting them changes
+    nothing about the stock mutation itself, so no existing caller that
+    predates the movement ledger needs to change to keep working. New and
+    updated callers pass them so the ledger stays complete."""
+    row = _item_stock_row(item, location_id)
     item.stock += qty
+    row.quantity += qty
     item.inventory_value = Decimal(str(item.inventory_value or 0)) + Decimal(str(cost_total)).quantize(MONEY)
 
-def item_remove_stock(item, qty, cost_total=None):
+    if movement_type is not None:
+        from salpurflask.models.inventory_location import record_stock_movement
+        record_stock_movement(item.id, row.location_id, "in", qty, movement_type,
+                              source_type=source_type, source_id=source_id,
+                              created_by_id=current_user_id())
+
+def item_remove_stock(item, qty, cost_total=None, location_id=None, *,
+                      movement_type=None, source_type=None, source_id=None):
     """Goods out. Costed at the current average unless a cost is given (a sale
     return puts goods back at what they left at, not at today's average).
 
@@ -1726,7 +1802,14 @@ def item_remove_stock(item, qty, cost_total=None):
     of them pass through, rather than in each caller — a new caller gets it for free,
     which is exactly what the reversal paths never did.
 
+    location_id=None resolves to the default location, so every existing
+    caller keeps working against the one warehouse it always implicitly used.
+    The insufficient-stock check reads the company-wide total (unchanged
+    Phase-1 behaviour); once callers start passing a real location_id in a
+    later phase, that check narrows to the location's own ItemStock row.
+
     Returns the cost removed, which is what the caller posts as COGS."""
+    row = _item_stock_row(item, location_id)
     value = Decimal(str(item.inventory_value or 0))
     cost = Decimal(str(cost_total)) if cost_total is not None else (item.avg_cost * Decimal(str(qty)))
     cost = cost.quantize(MONEY)
@@ -1745,28 +1828,46 @@ def item_remove_stock(item, qty, cost_total=None):
             f"The cost of these goods has already been absorbed into stock that was sold. "
             f"Raise a return instead of reversing.")
 
-    was_above_reorder = (item.stock or 0) > (item.reorder_level or 0)
+    was_above_reorder = (row.quantity or 0) > (item.reorder_level or 0)
     item.stock -= qty
+    row.quantity -= qty
     item.inventory_value = value - cost
     if item.stock <= 0:
         # Last unit gone: any rounding residue would otherwise linger as value
         # against zero stock, which the reconciliation would (rightly) flag.
         item.inventory_value = Decimal("0")
 
-    if was_above_reorder and item.stock <= (item.reorder_level or 0):
+    if was_above_reorder and row.quantity <= (item.reorder_level or 0):
         # Only fires on the crossing, not on every sale of an already-low item —
         # otherwise every further sale of a low-stock item would re-alert. The
         # dedupe in notify() also collapses repeats while one alert is unread.
+        #
+        # Location-aware as of Phase 4: compares this specific location's
+        # ItemStock.quantity (row, already mutated above) against
+        # item.reorder_level, so a warehouse that just ran out alerts even
+        # while other warehouses are well stocked — the scenario the old
+        # company-wide comparison could never express. reorder_level itself
+        # stays a single company-wide column; splitting it per location is a
+        # separate, larger decision this phase deliberately does not make
+        # (see the Phase 4 proposal). Recipients stay all admin/manager,
+        # unchanged — narrowing by who has access to which location needs a
+        # location-permission system that does not exist yet.
         try:
             from salpurflask.services.notifications import notify_roles
             notify_roles(
                 ("admin", "manager"), "low_stock",
-                f"{item.name} is low on stock",
-                f"{item.name} is at {item.stock} units, at or below its reorder "
-                f"level of {item.reorder_level}.",
+                f"{item.name} is low on stock at {row.location.name}",
+                f"{item.name} is at {row.quantity} units at {row.location.name}, "
+                f"at or below its reorder level of {item.reorder_level}.",
                 source_type="item", source_id=item.id, severity="warning")
         except Exception:
             logging.getLogger(__name__).exception("low-stock notification failed for item=%s", item.id)
+
+    if movement_type is not None:
+        from salpurflask.models.inventory_location import record_stock_movement
+        record_stock_movement(item.id, row.location_id, "out", qty, movement_type,
+                              source_type=source_type, source_id=source_id,
+                              created_by_id=current_user_id())
 
     return cost
 

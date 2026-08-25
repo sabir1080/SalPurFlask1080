@@ -171,16 +171,88 @@ def report_stock():
     weighted-average cost, which is the amount the Inventory account was
     debited when the goods came in, so it is the Inventory line on the balance
     sheet and can be read straight across.
+
+    With no location chosen this is the existing consolidated view, reading
+    Item.stock exactly as it always has — a single-warehouse business sees no
+    change at all. Choosing a location switches the Stock column to that
+    location's ItemStock.quantity instead; valuation stays company-wide
+    (Item.inventory_value is not tracked per location in this phase, see the
+    architecture plan), so it is shown once, unaffected by the filter.
     """
+    from salpurflask.models import Location, ItemStock
+
     items = (Item.query.outerjoin(Category, Item.category_id == Category.id)
              .order_by(Category.name, Item.name).all())
+    locations = Location.query.filter_by(active=True).order_by(Location.name).all()
+
+    location_id = request.args.get("location_id", "").strip()
+    selected_location = None
+    if location_id.isdigit():
+        selected_location = db.session.get(Location, int(location_id))
+
+    if selected_location:
+        # One query for every item's row at this location, grouped in memory —
+        # the same N+1-avoidance shape report_aging() already uses in app.py,
+        # not a per-item query in the loop below.
+        rows = {r.item_id: r.quantity for r in
+               ItemStock.query.filter_by(location_id=selected_location.id).all()}
+        stock_lookup = {it.id: rows.get(it.id, 0) for it in items}
+    else:
+        stock_lookup = {it.id: (it.stock or 0) for it in items}
+
     return render_template(
         "report_stock.html",
         stock_report=items,
+        stock_lookup=stock_lookup,
+        locations=locations,
+        selected_location=selected_location,
         stock_value_total=sum(Decimal(str(i.inventory_value or 0)) for i in items),
-        items_in_stock=sum(1 for i in items if i.stock and i.stock > 0),
-        reorder_report=[i for i in items if i.stock <= i.reorder_level],
+        items_in_stock=sum(1 for i in items if stock_lookup.get(i.id, 0) > 0),
+        reorder_report=[i for i in items if stock_lookup.get(i.id, 0) <= i.reorder_level],
         as_of=now_local().strftime("%d %B %Y"),
+    )
+
+
+@manager_required
+def stock_movements():
+    """Read-only stock movement ledger — what happened to an item, at which
+    warehouse, and why. Filterable by item, location and movement type; the
+    unfiltered view is every movement, most recent first, the same shape as
+    the audit log page.
+
+    Every row here was written by item_add_stock()/item_remove_stock()
+    themselves (or, for opening balances, the three call sites that
+    intentionally seed ItemStock outside those choke points — see the
+    Phase 4 implementation note) — nothing here is computed or re-derived,
+    it only ever shows what a mutation actually did."""
+    from salpurflask.models import StockMovement, Location, MOVEMENT_TYPES
+
+    item_id = request.args.get("item_id", "").strip()
+    location_id = request.args.get("location_id", "").strip()
+    movement_type = request.args.get("movement_type", "").strip()
+
+    query = StockMovement.query
+    if item_id.isdigit():
+        query = query.filter(StockMovement.item_id == int(item_id))
+    if location_id.isdigit():
+        query = query.filter(StockMovement.location_id == int(location_id))
+    if movement_type in MOVEMENT_TYPES:
+        query = query.filter(StockMovement.movement_type == movement_type)
+
+    query = query.order_by(StockMovement.created_at.desc(), StockMovement.id.desc())
+    movements, pagination = get_paginated_results(query, per_page=50)
+
+    items = Item.query.order_by(Item.name).all()
+    locations = Location.query.filter_by(active=True).order_by(Location.name).all()
+
+    return render_template(
+        "stock_movements.html",
+        movements=movements,
+        pagination=pagination,
+        items=items,
+        locations=locations,
+        movement_types=MOVEMENT_TYPES,
+        filters={"item_id": item_id, "location_id": location_id, "movement_type": movement_type},
     )
 
 
@@ -259,6 +331,21 @@ def item():
             item_obj.inventory_value = (Decimal(str(item_obj.opening_stock or 0))
                                         * Decimal(str(item_obj.purchase_price or 0))).quantize(MONEY)
             db.session.flush()
+
+            if item_obj.item_type == "STOCK":
+                from salpurflask.models.inventory_location import (
+                    get_or_create_default_location, ItemStock, record_stock_movement)
+                default_location = get_or_create_default_location()
+                db.session.add(ItemStock(item_id=item_obj.id, location_id=default_location.id,
+                                         quantity=os_val))
+                if os_val > 0:
+                    # Bypasses item_add_stock() on purpose: this is the item's
+                    # first-ever ItemStock row, not a trading transaction — see
+                    # the Phase 4 implementation note. Still recorded, so the
+                    # ledger's opening balance is never silently missing.
+                    record_stock_movement(item_obj.id, default_location.id, "in", os_val,
+                                          "opening", source_type="item", source_id=item_obj.id,
+                                          created_by_id=getattr(current_user, "id", None))
 
             # Save category-specific field data
             if business_category_id and business_category_id.isdigit():
@@ -372,9 +459,11 @@ def edit_item(id):
             value_adjustment = new_opening_value - old_opening_value
             # Update stock and inventory_value atomically
             if stock_adjustment > 0:
-                item_add_stock(item, stock_adjustment, cost_total=value_adjustment)
+                item_add_stock(item, stock_adjustment, cost_total=value_adjustment,
+                               movement_type="opening", source_type="item", source_id=item.id)
             elif stock_adjustment < 0:
-                item_remove_stock(item, -stock_adjustment, cost_total=-value_adjustment)
+                item_remove_stock(item, -stock_adjustment, cost_total=-value_adjustment,
+                                  movement_type="opening", source_type="item", source_id=item.id)
             unit_error = save_item_units(item)
             if unit_error:
                 db.session.rollback()
@@ -652,6 +741,17 @@ def import_items(data):
                                     * Decimal(str(item.purchase_price or 0))).quantize(MONEY)
             db.session.flush()
 
+            if item.item_type == "STOCK":
+                from salpurflask.models.inventory_location import (
+                    get_or_create_default_location, ItemStock, record_stock_movement)
+                default_location = get_or_create_default_location()
+                db.session.add(ItemStock(item_id=item.id, location_id=default_location.id,
+                                         quantity=qty))
+                if qty > 0:
+                    record_stock_movement(item.id, default_location.id, "in", qty,
+                                          "opening", source_type="item", source_id=item.id,
+                                          created_by_id=getattr(current_user, "id", None))
+
             # Post opening balance to GL if opening stock > 0
             if item.opening_stock > 0:
                 post_item_opening(item)
@@ -819,6 +919,9 @@ def process_import():
 @manager_required
 def stock_adjustment():
     """List and create stock adjustments."""
+    from salpurflask.models import (Location, resolve_location_id, stock_at_location,
+                                    get_or_create_default_location)
+
     search = request.args.get("search", "").strip()
     query = StockAdjustment.query.join(Item)
     if search:
@@ -827,12 +930,18 @@ def stock_adjustment():
         query.order_by(StockAdjustment.date.desc(), StockAdjustment.id.desc())
     )
     items = Item.query.order_by(Item.name).all()
+    locations = Location.query.filter_by(active=True).order_by(Location.name).all()
     if request.method == "POST":
         item_id  = request.form.get("item_id", "").strip()
         adj_type = request.form.get("adj_type", "").strip()
         qty_str  = request.form.get("quantity", "").strip()
         reason   = request.form.get("reason", "").strip()
         date_str = request.form.get("date", "").strip()
+        try:
+            location_id = resolve_location_id(request.form.get("location_id"))
+        except ValueError as e:
+            flash(str(e), "danger")
+            return redirect(url_for("stock_adjustment"))
         if not item_id or not adj_type or not qty_str or not date_str:
             flash("Item, type, quantity and date are required.", "danger")
         elif not qty_str.isdigit() or int(qty_str) <= 0:
@@ -846,24 +955,31 @@ def stock_adjustment():
         else:
             qty = int(qty_str)
             direction = ADJUSTMENT_DIRECTIONS[adj_type]
-            if direction == "out" and item_obj.stock < qty:
-                flash(f"Insufficient stock. Available: {item_obj.stock}", "danger")
+            available = stock_at_location(item_obj.id, location_id)
+            if direction == "out" and available < qty:
+                flash(f"Insufficient stock at this warehouse. Available: {available}", "danger")
             else:
                 adj = StockAdjustment(
                     item_id=int(item_id), adj_type=adj_type, quantity=qty,
                     direction=direction,
                     date=datetime.strptime(date_str, "%Y-%m-%d"),
                     reason=reason or None,
+                    location_id=location_id,
                 )
                 db.session.add(adj)
+                db.session.flush()
                 # Both directions are valued at the average: stock found is worth
                 # what the rest of the stock is worth, stock lost costs the same.
                 unit = item_obj.avg_cost
                 if direction == "out":
-                    adj.cost_value = item_remove_stock(item_obj, qty)
+                    adj.cost_value = item_remove_stock(item_obj, qty, location_id=location_id,
+                                                       movement_type="adjustment",
+                                                       source_type="stock_adjustment", source_id=adj.id)
                 else:
                     adj.cost_value = (unit * Decimal(str(qty))).quantize(MONEY)
-                    item_add_stock(item_obj, qty, adj.cost_value)
+                    item_add_stock(item_obj, qty, adj.cost_value, location_id=location_id,
+                                   movement_type="adjustment",
+                                   source_type="stock_adjustment", source_id=adj.id)
                 db.session.flush()
                 post_document("stock_adjustment", adj)
                 db.session.commit()
@@ -872,7 +988,8 @@ def stock_adjustment():
     return render_template("stock_adjustment.html",
         adjustments=adjustments, items=items, pagination=pagination,
         search=search, adj_types=ADJUSTMENT_TYPES,
-        today=now_local().strftime("%Y-%m-%d"))
+        today=now_local().strftime("%Y-%m-%d"),
+        locations=locations, default_location=get_or_create_default_location())
 
 
 @admin_required
@@ -883,9 +1000,13 @@ def delete_stock_adjustment(id):
     item_obj = get_item_locked(adj.item_id)
     if item_obj:
         if adj.direction == "out":
-            item_add_stock(item_obj, adj.quantity, cost_total=adj.cost_value or 0)
+            item_add_stock(item_obj, adj.quantity, cost_total=adj.cost_value or 0,
+                           location_id=adj.location_id,
+                           movement_type="adjustment", source_type="stock_adjustment", source_id=adj.id)
         else:
-            item_remove_stock(item_obj, adj.quantity, cost_total=adj.cost_value or 0)
+            item_remove_stock(item_obj, adj.quantity, cost_total=adj.cost_value or 0,
+                              location_id=adj.location_id,
+                              movement_type="adjustment", source_type="stock_adjustment", source_id=adj.id)
     db.session.delete(adj)
     db.session.commit()
     flash("Adjustment deleted and stock reversed.", "success")

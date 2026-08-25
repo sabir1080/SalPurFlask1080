@@ -19,6 +19,22 @@
   </div>
 </div>
 
+{% if locations|length > 1 %}
+<form method="get" class="mb-4 d-print-none">
+  <div class="row g-2 align-items-end">
+    <div class="col-auto">
+      <label class="form-label small mb-1">Warehouse</label>
+      <select class="form-select form-select-sm" name="location_id" onchange="this.form.submit()">
+        <option value="">All warehouses (consolidated)</option>
+        {% for loc in locations %}
+        <option value="{{ loc.id }}" {% if selected_location and loc.id == selected_location.id %}selected{% endif %}>{{ loc.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+</form>
+{% endif %}
+
 <!-- Stock Metrics -->
 <div class="row g-6 mb-6">
   <div class="col-md-4">
@@ -65,16 +81,19 @@
       </thead>
       <tbody>
         {% for item in stock_report %}
+        {% set qty = stock_lookup.get(item.id, 0) %}
         <tr>
-          <td class="font-medium">{{ item.name }}</td>
+          <td class="font-medium">
+            <a href="{{ url_for('stock_movements', item_id=item.id) }}" title="View stock movements">{{ item.name }}</a>
+          </td>
           <td class="text-tertiary">{{ item.business_category.name if item.business_category else (item.id_category.name if item.id_category else 'N/A') }}</td>
-          <td class="text-end {{ 'text-danger fw-semibold' if item.stock <= item.reorder_level else '' }}">{{ item.stock | fmt_num }}</td>
+          <td class="text-end {{ 'text-danger fw-semibold' if qty <= item.reorder_level else '' }}">{{ qty | fmt_num }}</td>
           <td class="text-end">{{ item.reorder_level | fmt_num }}</td>
           <td class="text-end">{{ item.avg_cost | fmt_num if item.stock else '—' }}</td>
           <td class="text-end">{{ item.sale_price | fmt_num if item.sale_price else '—' }}</td>
           <td class="text-end fw-semibold">{{ item.inventory_value | fmt_num }}</td>
           <td>
-            {% if item.stock <= item.reorder_level %}
+            {% if qty <= item.reorder_level %}
             <span class="badge bg-warning"><i class="bi bi-exclamation-triangle-fill"></i> Low</span>
             {% else %}
             <span class="badge bg-success">OK</span>
@@ -124,7 +143,7 @@
         <tr>
           <td class="font-medium">{{ item.name }}</td>
           <td class="text-tertiary">{{ item.business_category.name if item.business_category else (item.id_category.name if item.id_category else 'N/A') }}</td>
-          <td class="text-end text-danger fw-semibold">{{ item.stock | fmt_num }}</td>
+          <td class="text-end text-danger fw-semibold">{{ stock_lookup.get(item.id, 0) | fmt_num }}</td>
           <td class="text-end">{{ item.reorder_level | fmt_num }}</td>
         </tr>
         {% endfor %}

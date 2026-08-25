@@ -295,7 +295,11 @@ from salpurflask.inventory.routes import (
     bulk_import, process_import,
     stock_adjustment, delete_stock_adjustment,
     labels, labels_assign, send_low_stock_alert,
-    get_product_category_data
+    get_product_category_data, stock_movements
+)
+from salpurflask.inventory.transfer_routes import (
+    transfer_list, transfer_new, transfer_detail,
+    transfer_confirm, transfer_cancel, transfer_reverse,
 )
 
 # Register purchase routes directly (not via blueprint, to preserve endpoint names)
@@ -339,6 +343,7 @@ from salpurflask.accounting.routes import (
 app.add_url_rule("/item/<int:id>/ledger", "item_ledger", item_ledger)
 app.add_url_rule("/api/item/<int:id>", "get_item", get_item)
 app.add_url_rule("/reports/stock", "report_stock", report_stock)
+app.add_url_rule("/reports/stock-movements", "stock_movements", stock_movements)
 app.add_url_rule("/item", "item", item, methods=["GET", "POST"])
 app.add_url_rule("/item/edit/<int:id>", "edit_item", edit_item, methods=["GET", "POST"])
 app.add_url_rule("/item/delete/<int:id>", "delete_item", delete_item, methods=["POST"])
@@ -355,6 +360,12 @@ app.add_url_rule("/stock_adjustment/delete/<int:id>", "delete_stock_adjustment",
 app.add_url_rule("/labels", "labels", labels, methods=["GET"])
 app.add_url_rule("/labels/assign", "labels_assign", labels_assign, methods=["POST"])
 app.add_url_rule("/low_stock_alert", "send_low_stock_alert", send_low_stock_alert, methods=["POST"])
+app.add_url_rule("/transfers", "transfer_list", transfer_list, methods=["GET"])
+app.add_url_rule("/transfers/new", "transfer_new", transfer_new, methods=["GET", "POST"])
+app.add_url_rule("/transfers/<int:id>", "transfer_detail", transfer_detail, methods=["GET"])
+app.add_url_rule("/transfers/<int:id>/confirm", "transfer_confirm", transfer_confirm, methods=["POST"])
+app.add_url_rule("/transfers/<int:id>/cancel", "transfer_cancel", transfer_cancel, methods=["POST"])
+app.add_url_rule("/transfers/<int:id>/reverse", "transfer_reverse", transfer_reverse, methods=["POST"])
 app.add_url_rule("/purchase", "purchase", purchase, methods=["GET", "POST"])
 app.add_url_rule("/purchase/edit/<int:id>", "edit_purchase", edit_purchase, methods=["GET", "POST"])
 app.add_url_rule("/purchase/delete/<int:id>", "delete_purchase", delete_purchase, methods=["POST"])
@@ -1365,6 +1376,20 @@ def migrate_database():
                 with db.engine.begin() as conn:
                     conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN notes VARCHAR(300)"))
 
+    # Multi-warehouse: which location a purchase/sale/adjustment touched.
+    # Nullable, no backfill — an existing row with NULL here is read as "the
+    # default location" everywhere it's used (Phase 2), never guessed onto
+    # the row itself. Safe on both engines: a nullable ADD COLUMN with no
+    # UNIQUE index and no NOT NULL constraint is not the blocking-DDL class
+    # of statement (see CLAUDE.md).
+    for tbl in ("purchase", "sale", "stock_adjustment"):
+        if tbl in inspector.get_table_names():
+            cols = {col["name"] for col in inspector.get_columns(tbl)}
+            if "location_id" not in cols:
+                with db.engine.begin() as conn:
+                    conn.execute(text(
+                        f'ALTER TABLE {tbl} ADD COLUMN location_id INTEGER REFERENCES location(id)'))
+
     # Create purchase_item table and migrate existing single-item purchases
     with db.engine.begin() as conn:
         conn.execute(text(f"""
@@ -1740,6 +1765,11 @@ def migrate_database():
     # Reversals written before reverse_entry refused to backdate.
     realign_backdated_reversals()
 
+    # Multi-warehouse foundation: every existing item's stock lives at one
+    # seeded default location. Idempotent — only fills ItemStock rows that
+    # don't exist yet, so it is safe to run on every boot.
+    backfill_item_stock_locations()
+
 # Create Database
 with app.app_context():
     try:
@@ -1934,6 +1964,10 @@ def inject_form_defaults():
         "unread_notification_count": (
             _unread_notification_count(current_user.id)
             if current_user.is_authenticated else 0),
+        # How many warehouses exist — templates use this to decide whether a
+        # location selector or the Transfers menu should show at all (Phase 2's
+        # rule: a single-warehouse business sees none of this).
+        "location_count": Location.query.count(),
         "item_units_for_js": item_units_for_js,
         "purchase_item_options_for_js": purchase_item_options_for_js,
         "sale_item_options_for_js": sale_item_options_for_js,
@@ -3561,6 +3595,28 @@ def _wipe_except(keep):
             db.session.execute(table.delete())
     db.session.commit()
 
+def _reseed_item_stock_at_default_location():
+    """Both resets wipe item_stock along with the rest of the transaction
+    history (it holds no master data of its own), then set Item.stock to
+    whatever the reset decided. This puts back exactly one ItemStock row per
+    STOCK item, at the default location, matching Item.stock — the same
+    shape backfill_item_stock_locations() produces for a brand-new database,
+    called here because a reset needs the same repair, not a fresh import."""
+    from salpurflask.models.inventory_location import (
+        get_or_create_default_location, ItemStock, record_stock_movement)
+    location = get_or_create_default_location()
+    for it in Item.query.filter_by(item_type="STOCK").all():
+        db.session.add(ItemStock(item_id=it.id, location_id=location.id,
+                                 quantity=it.stock or 0))
+        if it.stock and it.stock > 0:
+            # stock_movement was wiped along with everything else this reset
+            # touched — this re-establishes the ledger's opening baseline for
+            # what the reset just decided each item's stock should be, the
+            # same "opening" treatment item creation and bulk import get.
+            record_stock_movement(it.id, location.id, "in", it.stock,
+                                  "opening", source_type="item", source_id=it.id)
+    db.session.commit()
+
 def _seed_fresh_ledger():
     """The chart, the tax codes, this year's periods, the four cash/bank accounts —
     everything a first boot puts there so the system is usable the moment it is empty."""
@@ -3627,6 +3683,13 @@ def reset_transactions():
     for p in AccountingPeriod.query.all():
         p.is_closed = False
     db.session.commit()
+
+    # item_stock is not in _KEEP_ON_TRANSACTION_RESET, so _wipe_except() just
+    # deleted every row of it — the same wipe that zeroed the tables Item.stock
+    # depended on. Re-seed one ItemStock row per item at the default location so
+    # Item.stock == SUM(ItemStock.quantity) holds again immediately, not just
+    # after the next stock-changing transaction happens to create it.
+    _reseed_item_stock_at_default_location()
 
     # Idempotent, and it puts back anything a half-set-up system was missing.
     _seed_fresh_ledger()
@@ -3867,6 +3930,11 @@ def clear_transactions_cmd(yes):
         it.inventory_value = (Decimal(str(it.opening_stock or 0))
                               * Decimal(str(it.purchase_price or 0))).quantize(MONEY)
     db.session.commit()
+
+    # Same gap as the web-route reset: item_stock was wiped along with every
+    # other non-kept table, so it needs re-seeding to match the Item.stock
+    # this loop just wrote, or the two immediately disagree.
+    _reseed_item_stock_at_default_location()
 
     # Re-lay the opening balances into both the subledgers and the GL.
     for sup in Supplier.query.all():

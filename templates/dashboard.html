@@ -306,6 +306,40 @@
 </div>
 {% endif %}
 
+{% if location_count and location_count > 1 %}
+<!-- Recent Warehouse Activity -->
+<div class="card card-elevated mb-8">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h4 class="card-title mb-0"><i class="bi bi-clock-history"></i> Recent Warehouse Activity</h4>
+        <a href="{{ url_for('stock_movements') }}" class="btn btn-sm btn-outline-secondary">View all</a>
+    </div>
+    <div class="table-wrapper">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>When</th><th>Item</th><th>Warehouse</th><th>Type</th><th class="table-cell-right">Qty</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in recent_stock_movements %}
+                <tr>
+                    <td class="text-xs">{{ m.created_at | localdt('%Y-%m-%d %H:%M') }}</td>
+                    <td>{{ m.item.name if m.item else '—' }}</td>
+                    <td>{{ m.location.name if m.location else '—' }}</td>
+                    <td>{{ m.movement_type|replace('_', ' ')|title }}</td>
+                    <td class="table-cell-right {{ 'text-success' if m.direction == 'in' else 'text-danger' }}">
+                        {{ '+' if m.direction == 'in' else '' }}{{ m.quantity }}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="text-center text-muted">No movements yet</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 <!-- Chart.js Configuration -->
 <script>
 document.addEventListener('DOMContentLoaded', function () {

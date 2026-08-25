@@ -263,6 +263,10 @@
                             {{ perm_item('item', 'bi-box-seam', 'Items', true) }}
                             {{ perm_item('labels', 'bi-upc-scan', 'Print Labels', current_user.is_manager) }}
                             {{ perm_item('stock_adjustment', 'bi-arrow-left-right', 'Stock Adjustments', current_user.is_manager) }}
+                            {% if location_count and location_count > 1 %}
+                            {{ perm_item('transfer_list', 'bi-truck', 'Warehouse Transfers', current_user.is_manager) }}
+                            {% endif %}
+                            {{ perm_item('stock_movements', 'bi-clock-history', 'Stock Movements', current_user.is_manager) }}
                             <li><hr class="dropdown-divider"></li>
                             {{ perm_item('bulk_import', 'bi-cloud-upload', 'Bulk Import', current_user.is_manager) }}
                         </ul>
