@@ -175,11 +175,19 @@ def dashboard():
 
     # Recent warehouse activity — additive panel, Phase 4. Wrapped the same
     # way as every other query above: a failure here must never break the
-    # rest of the dashboard.
+    # rest of the dashboard. Location-scoped as of Phase 5: a restricted
+    # user's panel shows only their own locations' activity, never every
+    # warehouse's — this was the one confirmed leak point from the Phase 5
+    # audit (this query previously carried no location filter at all).
     try:
         from salpurflask.models import StockMovement, Location
+        from salpurflask.services.location_permissions import accessible_location_ids
+        movement_query = StockMovement.query
+        accessible_ids = accessible_location_ids()
+        if accessible_ids is not None:
+            movement_query = movement_query.filter(StockMovement.location_id.in_(accessible_ids))
         context['recent_stock_movements'] = (
-            StockMovement.query
+            movement_query
             .order_by(StockMovement.created_at.desc(), StockMovement.id.desc())
             .limit(8).all())
     except Exception:

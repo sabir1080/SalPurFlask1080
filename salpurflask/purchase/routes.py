@@ -114,6 +114,10 @@ def purchase():
     from app import record_audit
     from salpurflask.models import (Location, resolve_location_id,
                                     get_or_create_default_location)
+    from salpurflask.services.location_permissions import (
+        accessible_location_ids, require_location_access)
+
+    accessible_ids = accessible_location_ids()
 
     search = request.args.get("search", "").strip()
     query = Purchase.query
@@ -124,7 +128,14 @@ def purchase():
     )
     suppliers = Supplier.query.order_by(Supplier.name).all()
     items = Item.query.order_by(Item.name).all()
-    locations = Location.query.filter_by(active=True).order_by(Location.name).all()
+    locations_query = Location.query.filter_by(active=True)
+    if accessible_ids is not None:
+        locations_query = locations_query.filter(Location.id.in_(accessible_ids))
+    locations = locations_query.order_by(Location.name).all()
+    # See sales/routes.py's identical fix: the form's hidden single-warehouse
+    # fallback must resolve to a location this user can actually submit.
+    template_default_location = locations[0] if (accessible_ids is not None and locations) \
+        else get_or_create_default_location()
     if request.method == "POST":
         if current_user.role not in ("admin", "manager"):
             flash("Access denied. Only managers and admins can add purchases.", "danger")
@@ -134,6 +145,7 @@ def purchase():
         except ValueError as e:
             flash(str(e), "danger")
             return redirect(url_for("purchase"))
+        require_location_access(location_id)
         supplier_id  = request.form.get("supplier_id", "").strip()
         date_str     = request.form.get("date", "").strip()
         notes        = request.form.get("notes", "").strip()
@@ -222,7 +234,7 @@ def purchase():
         search=search,
         today=now_local().strftime("%Y-%m-%d"),
         locations=locations,
-        default_location=get_or_create_default_location(),
+        default_location=template_default_location,
     )
 
 
@@ -679,6 +691,7 @@ def update_po_status(id):
 def convert_po_to_purchase(id):
     """Convert purchase order to purchase document."""
     from salpurflask.models import resolve_location_id
+    from salpurflask.services.location_permissions import require_location_access
 
     po = db.session.get(PurchaseOrder, id) or abort(404)
     if po.status == "Cancelled":
@@ -692,6 +705,7 @@ def convert_po_to_purchase(id):
     except ValueError as e:
         flash(str(e), "danger")
         return redirect(url_for("purchase_order_detail", id=id))
+    require_location_access(location_id)
     date_str = request.form.get("purchase_date", "").strip()
     notes    = request.form.get("notes", "").strip()
     try:

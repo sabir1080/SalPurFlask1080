@@ -89,6 +89,39 @@ class ItemStock(db.Model):
         return f"<ItemStock item={self.item_id} location={self.location_id} qty={self.quantity}>"
 
 
+class UserLocationAccess(db.Model):
+    """One row = this user may act on this location — Phase 5.
+
+    Absence is not denial: a non-admin user with zero rows here is
+    unrestricted, not locked out. Every existing manager and staff user was
+    created before locations existed at all, so "no rows yet" has to mean
+    "keeps the access they already have," not "loses it the moment this
+    table appears" — see salpurflask/services/location_permissions.py for
+    where that rule is actually enforced. This table only ever narrows
+    access for a user someone has deliberately assigned at least one row to.
+
+    admin bypasses this table entirely (User.is_admin), by construction —
+    no row is ever needed or created for an admin."""
+    __tablename__ = "user_location_access"
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "location_id", name="uq_user_location"),
+        db.Index("ix_user_location_access_user", "user_id"),
+    )
+
+    id            = db.Column(db.Integer, primary_key=True)
+    user_id       = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    location_id   = db.Column(db.Integer, db.ForeignKey("location.id"), nullable=False)
+    created_at    = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    granted_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+
+    user          = db.relationship("User", foreign_keys=[user_id])
+    location      = db.relationship("Location")
+    granted_by    = db.relationship("User", foreign_keys=[granted_by_id])
+
+    def __repr__(self):
+        return f"<UserLocationAccess user={self.user_id} location={self.location_id}>"
+
+
 TRANSFER_STATUSES = ("Draft", "Confirmed", "Cancelled", "Reversed")
 
 

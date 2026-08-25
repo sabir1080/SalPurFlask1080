@@ -178,16 +178,31 @@ def report_stock():
     location's ItemStock.quantity instead; valuation stays company-wide
     (Item.inventory_value is not tracked per location in this phase, see the
     architecture plan), so it is shown once, unaffected by the filter.
+
+    Location-scoped as of Phase 5: a restricted user's location dropdown
+    lists only what they may see, a location_id they aren't authorized for
+    is refused (never a silently-empty page, which would still confirm the
+    location exists), and the unfiltered "consolidated" total sums only
+    their own accessible locations, not the whole company's — see
+    location_permissions.py for the one place this decision is made.
     """
     from salpurflask.models import Location, ItemStock
+    from salpurflask.services.location_permissions import (
+        accessible_location_ids, require_location_access)
+
+    accessible_ids = accessible_location_ids()
 
     items = (Item.query.outerjoin(Category, Item.category_id == Category.id)
              .order_by(Category.name, Item.name).all())
-    locations = Location.query.filter_by(active=True).order_by(Location.name).all()
+    locations_query = Location.query.filter_by(active=True)
+    if accessible_ids is not None:
+        locations_query = locations_query.filter(Location.id.in_(accessible_ids))
+    locations = locations_query.order_by(Location.name).all()
 
     location_id = request.args.get("location_id", "").strip()
     selected_location = None
     if location_id.isdigit():
+        require_location_access(int(location_id))
         selected_location = db.session.get(Location, int(location_id))
 
     if selected_location:
@@ -196,6 +211,13 @@ def report_stock():
         # not a per-item query in the loop below.
         rows = {r.item_id: r.quantity for r in
                ItemStock.query.filter_by(location_id=selected_location.id).all()}
+        stock_lookup = {it.id: rows.get(it.id, 0) for it in items}
+    elif accessible_ids is not None:
+        # Restricted, no specific location chosen: the "consolidated" total
+        # sums only the locations this user may see, never every warehouse.
+        rows = {}
+        for r in ItemStock.query.filter(ItemStock.location_id.in_(accessible_ids)).all():
+            rows[r.item_id] = rows.get(r.item_id, 0) + r.quantity
         stock_lookup = {it.id: rows.get(it.id, 0) for it in items}
     else:
         stock_lookup = {it.id: (it.stock or 0) for it in items}
@@ -224,8 +246,16 @@ def stock_movements():
     themselves (or, for opening balances, the three call sites that
     intentionally seed ItemStock outside those choke points — see the
     Phase 4 implementation note) — nothing here is computed or re-derived,
-    it only ever shows what a mutation actually did."""
+    it only ever shows what a mutation actually did.
+
+    Location-scoped as of Phase 5: an explicit location_id the user isn't
+    authorized for is refused; the unfiltered view is scoped to only the
+    locations they may see, never every warehouse's history."""
     from salpurflask.models import StockMovement, Location, MOVEMENT_TYPES
+    from salpurflask.services.location_permissions import (
+        accessible_location_ids, require_location_access)
+
+    accessible_ids = accessible_location_ids()
 
     item_id = request.args.get("item_id", "").strip()
     location_id = request.args.get("location_id", "").strip()
@@ -235,7 +265,10 @@ def stock_movements():
     if item_id.isdigit():
         query = query.filter(StockMovement.item_id == int(item_id))
     if location_id.isdigit():
+        require_location_access(int(location_id))
         query = query.filter(StockMovement.location_id == int(location_id))
+    elif accessible_ids is not None:
+        query = query.filter(StockMovement.location_id.in_(accessible_ids))
     if movement_type in MOVEMENT_TYPES:
         query = query.filter(StockMovement.movement_type == movement_type)
 
@@ -243,7 +276,10 @@ def stock_movements():
     movements, pagination = get_paginated_results(query, per_page=50)
 
     items = Item.query.order_by(Item.name).all()
-    locations = Location.query.filter_by(active=True).order_by(Location.name).all()
+    locations_query = Location.query.filter_by(active=True)
+    if accessible_ids is not None:
+        locations_query = locations_query.filter(Location.id.in_(accessible_ids))
+    locations = locations_query.order_by(Location.name).all()
 
     return render_template(
         "stock_movements.html",
@@ -918,19 +954,33 @@ def process_import():
 
 @manager_required
 def stock_adjustment():
-    """List and create stock adjustments."""
+    """List and create stock adjustments.
+
+    Location-scoped as of Phase 5: the warehouse dropdown lists only
+    accessible locations, the list itself shows only accessible locations'
+    adjustments, and a submitted location_id the user isn't authorized for
+    is refused before anything is validated or moved."""
     from salpurflask.models import (Location, resolve_location_id, stock_at_location,
                                     get_or_create_default_location)
+    from salpurflask.services.location_permissions import (
+        accessible_location_ids, require_location_access)
+
+    accessible_ids = accessible_location_ids()
 
     search = request.args.get("search", "").strip()
     query = StockAdjustment.query.join(Item)
     if search:
         query = query.filter(Item.name.ilike(f"%{search}%"))
+    if accessible_ids is not None:
+        query = query.filter(StockAdjustment.location_id.in_(accessible_ids))
     adjustments, pagination = get_paginated_results(
         query.order_by(StockAdjustment.date.desc(), StockAdjustment.id.desc())
     )
     items = Item.query.order_by(Item.name).all()
-    locations = Location.query.filter_by(active=True).order_by(Location.name).all()
+    locations_query = Location.query.filter_by(active=True)
+    if accessible_ids is not None:
+        locations_query = locations_query.filter(Location.id.in_(accessible_ids))
+    locations = locations_query.order_by(Location.name).all()
     if request.method == "POST":
         item_id  = request.form.get("item_id", "").strip()
         adj_type = request.form.get("adj_type", "").strip()
@@ -942,6 +992,7 @@ def stock_adjustment():
         except ValueError as e:
             flash(str(e), "danger")
             return redirect(url_for("stock_adjustment"))
+        require_location_access(location_id)
         if not item_id or not adj_type or not qty_str or not date_str:
             flash("Item, type, quantity and date are required.", "danger")
         elif not qty_str.isdigit() or int(qty_str) <= 0:
@@ -985,11 +1036,15 @@ def stock_adjustment():
                 db.session.commit()
                 flash(f"Stock {'reduced' if direction=='out' else 'increased'} by {qty} for {item_obj.name}.", "success")
                 return redirect(url_for("stock_adjustment"))
+    # See sales/routes.py's identical fix: the form's hidden single-warehouse
+    # fallback must resolve to a location this user can actually submit.
+    template_default_location = locations[0] if (accessible_ids is not None and locations) \
+        else get_or_create_default_location()
     return render_template("stock_adjustment.html",
         adjustments=adjustments, items=items, pagination=pagination,
         search=search, adj_types=ADJUSTMENT_TYPES,
         today=now_local().strftime("%Y-%m-%d"),
-        locations=locations, default_location=get_or_create_default_location())
+        locations=locations, default_location=template_default_location)
 
 
 @admin_required

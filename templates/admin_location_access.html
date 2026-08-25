@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+{% block title %}Location Access{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-shield-lock"></i> Location Access</h1>
+    <p>Restrict a manager or staff account to specific warehouses</p>
+  </div>
+</div>
+
+<div class="card mb-6">
+  <div class="card-body">
+    <p class="small text-muted mb-0">
+      <i class="bi bi-info-circle"></i>
+      A user with <strong>no</strong> warehouses listed below can access every warehouse —
+      this is the default for every existing account. Granting one or more locations
+      switches that user to seeing only what's granted. Admin accounts are always
+      unrestricted and don't appear here.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-wrapper">
+    <table class="table table-striped table-hover align-middle">
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Role</th>
+          <th>Access</th>
+          <th style="min-width: 220px">Grant a warehouse</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        {% set held = grants_by_user.get(u.id, []) %}
+        <tr>
+          <td class="font-medium">{{ u.name }}<br><small class="text-tertiary">{{ u.email }}</small></td>
+          <td><span class="badge bg-secondary">{{ u.role | capitalize }}</span></td>
+          <td>
+            {% if held %}
+              {% for loc in locations if loc.id in held %}
+              <span class="badge bg-primary d-inline-flex align-items-center gap-1 mb-1">
+                {{ loc.name }}
+                <form method="POST" action="{{ url_for('admin_revoke_location_access', user_id=u.id, location_id=loc.id) }}"
+                      class="d-inline" data-confirm="Revoke {{ u.name }}'s access to {{ loc.name }}?">
+                  <button type="submit" class="btn btn-sm p-0 border-0 text-white" style="line-height:1;" title="Revoke">
+                    <i class="bi bi-x-circle"></i>
+                  </button>
+                </form>
+              </span>
+              {% endfor %}
+            {% else %}
+              <span class="badge bg-success">All warehouses (unrestricted)</span>
+            {% endif %}
+          </td>
+          <td>
+            <form method="POST" action="{{ url_for('admin_grant_location_access', user_id=u.id) }}" class="d-flex gap-2">
+              <select name="location_id" class="form-select form-select-sm" required>
+                <option value="">— Select warehouse —</option>
+                {% for loc in locations if loc.id not in held %}
+                <option value="{{ loc.id }}">{{ loc.name }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="btn btn-sm btn-outline-primary text-nowrap">
+                <i class="bi bi-plus-lg"></i> Grant
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="4" class="text-center text-tertiary py-8">No non-admin users found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

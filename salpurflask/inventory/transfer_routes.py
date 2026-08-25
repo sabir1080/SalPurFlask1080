@@ -25,6 +25,8 @@ from salpurflask.models import (
 from salpurflask.auth import manager_required, admin_required
 from salpurflask.utils import get_paginated_results
 from salpurflask.services import transfers as svc
+from salpurflask.services.location_permissions import (
+    accessible_location_ids, require_location_access, require_transfer_access)
 
 
 def _audit(action, entity, entity_id=None, summary=""):
@@ -39,7 +41,15 @@ def _audit(action, entity, entity_id=None, summary=""):
 def transfer_list():
     """List transfers, most recent first. Filterable by status, source and
     destination warehouse — the minimal warehouse visibility this phase adds
-    to a page that previously took no filters at all."""
+    to a page that previously took no filters at all.
+
+    Location-scoped as of Phase 5: a restricted user sees only transfers
+    touching a location they hold, on EITHER side — viewing an incoming
+    transfer to a warehouse they hold is legitimate even if they don't also
+    hold the source, unlike creating or confirming one, which needs both
+    (see transfer_new())."""
+    accessible_ids = accessible_location_ids()
+
     status = request.args.get("status", "").strip()
     source_id = request.args.get("source_location_id", "").strip()
     destination_id = request.args.get("destination_location_id", "").strip()
@@ -48,13 +58,22 @@ def transfer_list():
     if status in TRANSFER_STATUSES:
         query = query.filter(Transfer.status == status)
     if source_id.isdigit():
+        require_location_access(int(source_id))
         query = query.filter(Transfer.source_location_id == int(source_id))
     if destination_id.isdigit():
+        require_location_access(int(destination_id))
         query = query.filter(Transfer.destination_location_id == int(destination_id))
+    if accessible_ids is not None:
+        query = query.filter(db.or_(
+            Transfer.source_location_id.in_(accessible_ids),
+            Transfer.destination_location_id.in_(accessible_ids)))
 
     query = query.order_by(Transfer.created_at.desc(), Transfer.id.desc())
     transfers, pagination = get_paginated_results(query)
-    locations = Location.query.filter_by(active=True).order_by(Location.name).all()
+    locations_query = Location.query.filter_by(active=True)
+    if accessible_ids is not None:
+        locations_query = locations_query.filter(Location.id.in_(accessible_ids))
+    locations = locations_query.order_by(Location.name).all()
     return render_template(
         "transfer_list.html", transfers=transfers, pagination=pagination,
         locations=locations, statuses=TRANSFER_STATUSES,
@@ -64,9 +83,20 @@ def transfer_list():
 
 @manager_required
 def transfer_new():
-    """Create a Draft transfer."""
+    """Create a Draft transfer.
+
+    Location-scoped as of Phase 5: the source and destination pickers list
+    only accessible locations, and a submitted pair is refused unless the
+    user is authorized for BOTH — never because they hold just one side, so
+    a transfer can never move stock into or out of a warehouse the user
+    couldn't otherwise see or touch."""
+    accessible_ids = accessible_location_ids()
+
     items = Item.query.filter_by(item_type="STOCK").order_by(Item.name).all()
-    locations = Location.query.filter_by(active=True).order_by(Location.name).all()
+    locations_query = Location.query.filter_by(active=True)
+    if accessible_ids is not None:
+        locations_query = locations_query.filter(Location.id.in_(accessible_ids))
+    locations = locations_query.order_by(Location.name).all()
 
     if request.method == "POST":
         try:
@@ -75,6 +105,7 @@ def transfer_new():
         except ValueError as e:
             flash(str(e), "danger")
             return redirect(url_for("transfer_new"))
+        require_transfer_access(source_id, destination_id)
 
         item_ids = request.form.getlist("item_id[]")
         quantities = request.form.getlist("quantity[]")
@@ -124,15 +155,27 @@ def transfer_new():
 
 @manager_required
 def transfer_detail(id):
+    """View one transfer. Location-scoped as of Phase 5: a restricted user
+    may view a transfer touching a location they hold on EITHER side — the
+    same "one side is enough to view" rule transfer_list() uses, not the
+    stricter "both sides" rule confirm/cancel/reverse need below."""
     transfer = db.session.get(Transfer, id) or abort(404)
+    accessible_ids = accessible_location_ids()
+    if accessible_ids is not None and not (
+        transfer.source_location_id in accessible_ids
+        or transfer.destination_location_id in accessible_ids):
+        abort(403)
     return render_template("transfer_detail.html", transfer=transfer)
 
 
 @manager_required
 def transfer_confirm(id):
+    """Confirm a Draft transfer — moves stock, so both endpoints are
+    required, the same rule transfer_new() enforces at creation."""
     from app import PostingError
 
     transfer = db.session.get(Transfer, id) or abort(404)
+    require_transfer_access(transfer.source_location_id, transfer.destination_location_id)
     try:
         svc.confirm_transfer(transfer, confirmed_by_id=getattr(current_user, "id", None))
         db.session.commit()
@@ -152,9 +195,12 @@ def transfer_confirm(id):
 
 @manager_required
 def transfer_cancel(id):
+    """Cancel a Draft transfer — no stock has moved yet, but both endpoints
+    are still required to act on the transfer at all, same as confirm."""
     from app import PostingError
 
     transfer = db.session.get(Transfer, id) or abort(404)
+    require_transfer_access(transfer.source_location_id, transfer.destination_location_id)
     try:
         svc.cancel_transfer(transfer)
         db.session.commit()
@@ -174,9 +220,14 @@ def transfer_cancel(id):
 
 @admin_required
 def transfer_reverse(id):
+    """Reverse a Confirmed transfer. Already admin-only, so this check is
+    always satisfied for whoever reaches it — kept for consistency with the
+    other three transfer actions and as a defence-in-depth backstop, not
+    because a non-admin can otherwise reach this route."""
     from app import PostingError
 
     transfer = db.session.get(Transfer, id) or abort(404)
+    require_transfer_access(transfer.source_location_id, transfer.destination_location_id)
     try:
         svc.reverse_transfer(transfer, reversed_by_id=getattr(current_user, "id", None))
         db.session.commit()

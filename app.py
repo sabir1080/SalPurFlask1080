@@ -301,6 +301,9 @@ from salpurflask.inventory.transfer_routes import (
     transfer_list, transfer_new, transfer_detail,
     transfer_confirm, transfer_cancel, transfer_reverse,
 )
+from salpurflask.inventory.location_access_routes import (
+    admin_location_access, admin_grant_location_access, admin_revoke_location_access,
+)
 
 # Register purchase routes directly (not via blueprint, to preserve endpoint names)
 from salpurflask.purchase.routes import (
@@ -366,6 +369,11 @@ app.add_url_rule("/transfers/<int:id>", "transfer_detail", transfer_detail, meth
 app.add_url_rule("/transfers/<int:id>/confirm", "transfer_confirm", transfer_confirm, methods=["POST"])
 app.add_url_rule("/transfers/<int:id>/cancel", "transfer_cancel", transfer_cancel, methods=["POST"])
 app.add_url_rule("/transfers/<int:id>/reverse", "transfer_reverse", transfer_reverse, methods=["POST"])
+app.add_url_rule("/admin/location-access", "admin_location_access", admin_location_access, methods=["GET"])
+app.add_url_rule("/admin/location-access/grant/<int:user_id>", "admin_grant_location_access",
+                 admin_grant_location_access, methods=["POST"])
+app.add_url_rule("/admin/location-access/revoke/<int:user_id>/<int:location_id>",
+                 "admin_revoke_location_access", admin_revoke_location_access, methods=["POST"])
 app.add_url_rule("/purchase", "purchase", purchase, methods=["GET", "POST"])
 app.add_url_rule("/purchase/edit/<int:id>", "edit_purchase", edit_purchase, methods=["GET", "POST"])
 app.add_url_rule("/purchase/delete/<int:id>", "delete_purchase", delete_purchase, methods=["POST"])

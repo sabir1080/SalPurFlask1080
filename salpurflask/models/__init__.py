@@ -80,6 +80,7 @@ from salpurflask.models.inventory_location import (  # noqa: F401
     Branch,
     Location,
     ItemStock,
+    UserLocationAccess,
     Transfer,
     TransferItem,
     TRANSFER_STATUSES,
