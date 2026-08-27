@@ -1,25 +1,42 @@
-"""Physical count vs. system stock reconciliation — Phase 6.
+"""Physical count vs. system stock reconciliation — Phase 6, GL posting
+added in Phase 8's H1 follow-up.
 
 Every quantity here is Integer, matching Item.stock/ItemStock.quantity/
 StockMovement.quantity — no Decimal invented for this phase.
 
-The two invariants under test everywhere: (1) variance is always
-physical - system, computed server-side, never accepted from a form; (2) a
+The invariants under test everywhere: (1) variance is always physical -
+system, computed server-side, never accepted from a form; (2) a
 reconciliation moves quantity exclusively through item_add_stock()/
-item_remove_stock(), and posting never creates a JournalEntry.
+item_remove_stock(); (3) posting a nonzero-variance reconciliation creates
+exactly ONE balanced JournalEntry for the whole reconciliation (never one
+per line), idempotent via posted_entry(), while a zero-variance
+reconciliation creates none.
 """
 from datetime import datetime
 from decimal import Decimal
 
 import pytest
 
-from app import app as flask_app, db, User, pwd_context, Category, Item, JournalEntry
+from app import (
+    app as flask_app, db, User, pwd_context, Category, Item, JournalEntry,
+    seed_chart_of_accounts, seed_fiscal_year,
+)
 from salpurflask.models.inventory_location import (
     Branch, Location, ItemStock, InventoryReconciliation, InventoryReconciliationLine,
     UserLocationAccess, get_or_create_default_location, stock_at_location,
 )
 from salpurflask.models.models import item_add_stock, PostingError
 from salpurflask.services import inventory_reconciliation as svc
+
+
+def _world():
+    """A chart of accounts and an open fiscal year — required to post the GL
+    entry a nonzero-variance reconciliation now creates (Phase 8's H1
+    follow-up). No funded cash account needed — reconciliation never moves
+    cash, only Inventory vs. the Stock Adjustment P&L account."""
+    seed_chart_of_accounts()
+    seed_fiscal_year(2026)
+    db.session.commit()
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -251,6 +268,7 @@ def test_submitted_variance_cannot_override_server_calculation(appctx):
 # ── 10-16. Posting ───────────────────────────────────────────────────────────
 
 def test_positive_variance_increases_stock(appctx):
+    _world()
     admin = _admin()
     loc = get_or_create_default_location()
     item = _item(stock=100, location=loc)
@@ -262,6 +280,7 @@ def test_positive_variance_increases_stock(appctx):
 
 
 def test_negative_variance_decreases_stock(appctx):
+    _world()
     admin = _admin()
     loc = get_or_create_default_location()
     item = _item(stock=100, location=loc)
@@ -274,6 +293,7 @@ def test_negative_variance_decreases_stock(appctx):
 
 def test_posting_creates_stock_movement_with_reconciliation_source(appctx):
     from salpurflask.models.inventory_location import StockMovement
+    _world()
     admin = _admin()
     loc = get_or_create_default_location()
     item = _item(stock=100, location=loc)
@@ -304,6 +324,7 @@ def test_zero_variance_line_creates_no_movement(appctx):
 
 
 def test_same_reconciliation_cannot_post_twice(appctx):
+    _world()
     admin = _admin()
     loc = get_or_create_default_location()
     item = _item(stock=100, location=loc)
@@ -345,6 +366,7 @@ def test_failed_posting_rolls_back_stock_and_status(appctx):
 
 
 def test_posted_reconciliation_cannot_be_edited(appctx):
+    _world()
     admin = _admin()
     loc = get_or_create_default_location()
     item = _item(stock=100, location=loc)
@@ -500,6 +522,7 @@ def test_cancel_counted_moves_no_stock(appctx):
 
 
 def test_cancel_posted_reconciliation_refused(appctx):
+    _world()
     admin = _admin()
     loc = get_or_create_default_location()
     item = _item(stock=100, location=loc)
@@ -542,24 +565,147 @@ def test_item_with_zero_system_stock_supported(appctx):
     assert line.variance == 4
 
 
-# ── GL confirmation ──────────────────────────────────────────────────────────
+# ── GL posting (Phase 8 H1) ──────────────────────────────────────────────────
 
-def test_posting_creates_zero_journal_entries(appctx):
+def test_zero_variance_reconciliation_creates_no_journal_entry(appctx):
+    _world()
     admin = _admin()
     loc = get_or_create_default_location()
     item = _item(stock=100, location=loc)
     before = JournalEntry.query.count()
-    r = _approved(loc, [item], {item.id: 97}, admin, _admin(email="approver12@recon.com"))
+    r = _approved(loc, [item], {item.id: 100}, admin, _admin(email="approver12@recon.com"))
     svc.post_reconciliation(r, posted_by_id=admin.id)
     db.session.commit()
-    after = JournalEntry.query.count()
-    assert after == before
+    assert JournalEntry.query.count() == before
     assert JournalEntry.query.filter_by(source_type="inventory_reconciliation").count() == 0
+
+
+def test_positive_variance_posts_balanced_journal_entry(appctx):
+    _world()
+    admin = _admin()
+    loc = get_or_create_default_location()
+    item = _item(stock=100, location=loc)
+    r = _approved(loc, [item], {item.id: 105}, admin, _admin(email="gl1@recon.com"))
+    svc.post_reconciliation(r, posted_by_id=admin.id)
+    db.session.commit()
+
+    entries = JournalEntry.query.filter_by(
+        source_type="inventory_reconciliation", source_id=r.id).all()
+    assert len(entries) == 1
+    entry = entries[0]
+    total_dr = sum(l.debit for l in entry.lines)
+    total_cr = sum(l.credit for l in entry.lines)
+    assert total_dr == total_cr
+    assert total_dr == Decimal("50.0000")  # 5 units * avg_cost 10
+
+
+def test_negative_variance_posts_balanced_journal_entry(appctx):
+    _world()
+    admin = _admin()
+    loc = get_or_create_default_location()
+    item = _item(stock=100, location=loc)
+    r = _approved(loc, [item], {item.id: 97}, admin, _admin(email="gl2@recon.com"))
+    svc.post_reconciliation(r, posted_by_id=admin.id)
+    db.session.commit()
+
+    entries = JournalEntry.query.filter_by(
+        source_type="inventory_reconciliation", source_id=r.id).all()
+    assert len(entries) == 1
+    entry = entries[0]
+    total_dr = sum(l.debit for l in entry.lines)
+    total_cr = sum(l.credit for l in entry.lines)
+    assert total_dr == total_cr
+    assert total_dr == Decimal("30.0000")  # 3 units * avg_cost 10
+
+
+def test_multiple_lines_that_net_to_exactly_zero_create_no_entry(appctx):
+    """Two items, mixed +/- variance whose value exactly cancels — the net
+    change to Inventory really is zero, so no entry is needed at all. This is
+    the strictest version of "no unnecessary GL entry": not just a per-line
+    zero variance, but a genuine cross-line cancellation."""
+    _world()
+    admin = _admin()
+    loc = get_or_create_default_location()
+    item_a = _item(stock=100, location=loc, name="Widget-A")
+    item_b = _item(stock=50, location=loc, name="Widget-B")
+    r = _approved(loc, [item_a, item_b],
+                 {item_a.id: 105, item_b.id: 45}, admin, _admin(email="gl3@recon.com"))
+    svc.post_reconciliation(r, posted_by_id=admin.id)
+    db.session.commit()
+
+    # net = +5*10 (found, item_a) - 5*10 (lost, item_b) = 0 -> no entry at all
+    assert JournalEntry.query.filter_by(
+        source_type="inventory_reconciliation", source_id=r.id).count() == 0
+
+
+def test_multiple_lines_net_nonzero_still_one_balanced_entry(appctx):
+    _world()
+    admin = _admin()
+    loc = get_or_create_default_location()
+    item_a = _item(stock=100, location=loc, name="Widget-C")
+    item_b = _item(stock=50, location=loc, name="Widget-D")
+    r = _approved(loc, [item_a, item_b],
+                 {item_a.id: 110, item_b.id: 45}, admin, _admin(email="gl4@recon.com"))
+    svc.post_reconciliation(r, posted_by_id=admin.id)
+    db.session.commit()
+
+    entries = JournalEntry.query.filter_by(
+        source_type="inventory_reconciliation", source_id=r.id).all()
+    assert len(entries) == 1
+    entry = entries[0]
+    total_dr = sum(l.debit for l in entry.lines)
+    total_cr = sum(l.credit for l in entry.lines)
+    assert total_dr == total_cr
+    # net = +10*10 (found) - 5*10 (lost) = +50
+    assert total_dr == Decimal("50.0000")
+
+
+def test_journal_entry_has_correct_source_type_and_id(appctx):
+    _world()
+    admin = _admin()
+    loc = get_or_create_default_location()
+    item = _item(stock=100, location=loc)
+    r = _approved(loc, [item], {item.id: 97}, admin, _admin(email="gl5@recon.com"))
+    svc.post_reconciliation(r, posted_by_id=admin.id)
+    db.session.commit()
+
+    entry = JournalEntry.query.filter_by(
+        source_type="inventory_reconciliation", source_id=r.id).first()
+    assert entry is not None
+    assert entry.source_type == "inventory_reconciliation"
+    assert entry.source_id == r.id
+
+
+def test_reposting_cannot_create_duplicate_journal_entry(appctx):
+    """post_reconciliation() already refuses a second POST via the status
+    guard (status != Approved) — but the GL side has its own independent
+    posted_entry() guard too, the same belt-and-braces every other poster
+    uses, so this proves both layers hold."""
+    _world()
+    admin = _admin()
+    loc = get_or_create_default_location()
+    item = _item(stock=100, location=loc)
+    r = _approved(loc, [item], {item.id: 97}, admin, _admin(email="gl6@recon.com"))
+    svc.post_reconciliation(r, posted_by_id=admin.id)
+    db.session.commit()
+
+    count_after_first = JournalEntry.query.filter_by(
+        source_type="inventory_reconciliation", source_id=r.id).count()
+    assert count_after_first == 1
+
+    with pytest.raises(PostingError):
+        svc.post_reconciliation(r, posted_by_id=admin.id)
+    db.session.rollback()
+
+    count_after_second_attempt = JournalEntry.query.filter_by(
+        source_type="inventory_reconciliation", source_id=r.id).count()
+    assert count_after_second_attempt == 1  # still exactly one, no duplicate
 
 
 # ── Regression: existing stock calculations unaffected ──────────────────────
 
 def test_existing_item_stock_invariant_holds_after_reconciliation_post(appctx):
+    _world()
     admin = _admin()
     loc = get_or_create_default_location()
     item = _item(stock=100, location=loc)

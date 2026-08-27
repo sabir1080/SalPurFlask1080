@@ -1,27 +1,37 @@
-"""Physical count vs. system stock reconciliation — Phase 6.
+"""Physical count vs. system stock reconciliation — Phase 6, GL posting added
+in Phase 8's H1 follow-up.
 
 Every rule lives here, not in the route — the same discipline
 services/transfers.py already holds itself to, for the same reason: a route
 that skips validation on a crafted POST reaches this module either way.
 
-A reconciliation moves quantity, not value, exactly like a Transfer — it
-never calls post_document()/post_entry()/post_stock_adjustment() and never
-imports PostingError's GL-flavoured siblings (posted_entry, assert_not_posted).
-This is a deliberate Phase 6 scope boundary, not an oversight: the resulting
-Item/ItemStock quantity and inventory_value changes are an intrinsic,
-unavoidable consequence of calling item_add_stock()/item_remove_stock() (see
-their own docstrings — cost tracking is not optional), but no matching
-JournalEntry is ever created for a reconciliation variance in this phase.
+A reconciliation moves quantity AND value: the resulting ItemStock.quantity
+and Item.inventory_value changes are an intrinsic, unavoidable consequence of
+calling item_add_stock()/item_remove_stock() (see their own docstrings — cost
+tracking is not optional), and as of this fix that value change is posted to
+the GL too — the same treatment post_stock_adjustment() already gives an
+identical economic event (stock found or lost). Phase 6 originally left
+reconciliation GL-silent by design, matching Transfer's "moves quantity, not
+value" boundary — but a reconciliation's variance IS a value event (unlike a
+transfer, which only moves stock between the company's own warehouses), and
+leaving it unposted meant report_reconciliation()'s GL-vs-subledger check
+would show a false Inventory mismatch after every reconciliation with a
+nonzero variance. One JournalEntry per POSTED reconciliation (not one per
+line) — Dr/Cr ACC_INVENTORY against ACC_STOCK_ADJ, netted across every
+line's variance — using the same post_entry()/posted_entry() idempotency
+infrastructure every other document type already uses.
 
 The only door into ItemStock is item_add_stock()/item_remove_stock() in
 models.py — this module never touches ItemStock.quantity directly, so the
 Item.stock == SUM(ItemStock.quantity) invariant is inherited for free, the
 same way Transfer already inherits it.
 
-status is the idempotency guard, not a separate flag or constraint — the
-same pattern confirm_transfer() already uses: post_reconciliation() raises
-PostingError unless status == "Approved", so a second POST to the same
-posting route is refused, not silently re-applied.
+status is the idempotency guard for the stock/status side, not a separate
+flag or constraint — the same pattern confirm_transfer() already uses:
+post_reconciliation() raises PostingError unless status == "Approved", so a
+second POST to the same posting route is refused, not silently re-applied.
+The GL side has its own, independent idempotency guard — posted_entry() —
+the same belt-and-braces pairing every other poster in this app already uses.
 """
 
 from datetime import datetime
@@ -207,9 +217,11 @@ def approve_reconciliation(reconciliation, *, approved_by_id=None):
 def post_reconciliation(reconciliation, *, posted_by_id=None):
     """Approved -> Posted. Applies every line's variance through
     item_add_stock()/item_remove_stock() — the only door into ItemStock —
-    and nothing else. No JournalEntry, no post_document() call: a
-    reconciliation moves quantity, never value in the GL sense, the same
-    boundary Transfer already draws (see this module's own docstring).
+    then posts ONE JournalEntry for the whole reconciliation (never one per
+    line), the same Dr/Cr ACC_INVENTORY vs ACC_STOCK_ADJ shape
+    post_stock_adjustment() already uses for the identical economic event
+    (stock found or lost), netted across every line so the entry always
+    balances regardless of how the variances' signs mix.
 
     Re-verifies every line's snapshot against current stock BEFORE moving
     anything: if a sale, adjustment or transfer touched this item at this
@@ -222,8 +234,14 @@ def post_reconciliation(reconciliation, *, posted_by_id=None):
     reconciliation that never gets posted never consumes a document number,
     the same rule Transfer.transfer_no already follows.
 
-    Does NOT commit. The caller commits once, so the status change and
-    every line's stock movement land in one transaction or none of them do."""
+    Idempotent on the GL side via posted_entry("inventory_reconciliation",
+    reconciliation.id) — the same guard every other poster in this app uses
+    — independent of, and in addition to, the status-based guard above.
+
+    Does NOT commit. The caller commits once, so the status change, every
+    line's stock movement, and the journal entry land in one transaction or
+    none of them do."""
+    from decimal import Decimal
     from app import PostingError
 
     if reconciliation.status != "Approved":
@@ -240,23 +258,33 @@ def post_reconciliation(reconciliation, *, posted_by_id=None):
     if stale:
         raise PostingError("Cannot post — " + "; ".join(stale))
 
-    from salpurflask.models.models import item_add_stock, item_remove_stock, allocate_document_number
+    from salpurflask.models.models import (
+        item_add_stock, item_remove_stock, allocate_document_number,
+        post_entry, posted_entry, ACC_INVENTORY, ACC_STOCK_ADJ, MONEY,
+    )
 
+    net_value = Decimal("0")   # net inventory value change across every line — the
+                               # single number that decides which side of the entry
+                               # ACC_INVENTORY lands on; individual lines' signs are
+                               # never separately posted, only their sum.
     for line in reconciliation.lines:
         if not line.variance:
             continue
         item = line.item
         if line.variance > 0:
-            cost_total = line.variance * item.avg_cost
+            cost_total = (Decimal(str(line.variance)) * item.avg_cost).quantize(MONEY)
             item_add_stock(item, line.variance, cost_total,
                            location_id=reconciliation.location_id,
                            movement_type="adjustment",
                            source_type="inventory_reconciliation", source_id=reconciliation.id)
+            net_value += cost_total
         else:
-            item_remove_stock(item, abs(line.variance),
-                              location_id=reconciliation.location_id,
-                              movement_type="adjustment",
-                              source_type="inventory_reconciliation", source_id=reconciliation.id)
+            cost_removed = item_remove_stock(item, abs(line.variance),
+                                             location_id=reconciliation.location_id,
+                                             movement_type="adjustment",
+                                             source_type="inventory_reconciliation",
+                                             source_id=reconciliation.id)
+            net_value -= Decimal(str(cost_removed or 0))
 
     if not reconciliation.reference:
         reconciliation.reference = allocate_document_number(
@@ -264,6 +292,24 @@ def post_reconciliation(reconciliation, *, posted_by_id=None):
     reconciliation.status = "Posted"
     reconciliation.posted_at = datetime.utcnow()
     reconciliation.posted_by_id = posted_by_id
+
+    net_value = net_value.quantize(MONEY)
+    if net_value and not posted_entry("inventory_reconciliation", reconciliation.id):
+        if net_value > 0:
+            lines = [{"code": ACC_INVENTORY, "debit": net_value, "credit": 0},
+                     {"code": ACC_STOCK_ADJ, "debit": 0, "credit": net_value,
+                      "memo": "Inventory reconciliation — net stock found"}]
+        else:
+            value = -net_value
+            lines = [{"code": ACC_STOCK_ADJ, "debit": value, "credit": 0,
+                      "memo": "Inventory reconciliation — net stock lost"},
+                     {"code": ACC_INVENTORY, "debit": 0, "credit": value}]
+        post_entry(entry_date=reconciliation.date,
+                  description=f"Inventory reconciliation {reconciliation.reference}",
+                  reference=reconciliation.reference,
+                  source_type="inventory_reconciliation", source_id=reconciliation.id,
+                  allow_control=True, created_by_id=posted_by_id, lines=lines)
+
     return reconciliation
 
 
