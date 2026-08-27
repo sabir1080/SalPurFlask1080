@@ -409,6 +409,7 @@
                         </a>
                         <ul class="dropdown-menu">
                             {{ perm_item('admin_users', 'bi-people', 'Users', current_user.is_admin) }}
+                            {{ perm_item('admin_locations', 'bi-building', 'Warehouses', current_user.is_admin) }}
                             {{ perm_item('admin_location_access', 'bi-shield-lock', 'Location Access', current_user.is_admin) }}
                             {{ perm_item('admin_financial_accounts', 'bi-bank', 'Financial Accounts', current_user.is_admin) }}
                             {{ perm_item('admin_config.index', 'bi-gear', 'Business Configuration', current_user.is_admin) }}

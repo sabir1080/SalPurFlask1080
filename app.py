@@ -304,6 +304,9 @@ from salpurflask.inventory.transfer_routes import (
 from salpurflask.inventory.location_access_routes import (
     admin_location_access, admin_grant_location_access, admin_revoke_location_access,
 )
+from salpurflask.inventory.location_manage_routes import (
+    admin_locations, admin_location_new, admin_location_toggle_active,
+)
 from salpurflask.inventory.reconciliation_routes import (
     reconciliation_list, reconciliation_new, reconciliation_detail,
     reconciliation_finalize, reconciliation_reopen, reconciliation_approve,
@@ -387,6 +390,10 @@ app.add_url_rule("/admin/location-access/grant/<int:user_id>", "admin_grant_loca
                  admin_grant_location_access, methods=["POST"])
 app.add_url_rule("/admin/location-access/revoke/<int:user_id>/<int:location_id>",
                  "admin_revoke_location_access", admin_revoke_location_access, methods=["POST"])
+app.add_url_rule("/admin/locations", "admin_locations", admin_locations, methods=["GET"])
+app.add_url_rule("/admin/locations/new", "admin_location_new", admin_location_new, methods=["POST"])
+app.add_url_rule("/admin/locations/<int:id>/toggle-active", "admin_location_toggle_active",
+                 admin_location_toggle_active, methods=["POST"])
 app.add_url_rule("/purchase", "purchase", purchase, methods=["GET", "POST"])
 app.add_url_rule("/purchase/edit/<int:id>", "edit_purchase", edit_purchase, methods=["GET", "POST"])
 app.add_url_rule("/purchase/delete/<int:id>", "delete_purchase", delete_purchase, methods=["POST"])
