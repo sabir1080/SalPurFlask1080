@@ -2702,12 +2702,23 @@ def convert_quotation_to_sale(id):
         flash("Insufficient stock — " + "; ".join(stock_errors), "danger")
         return redirect(url_for("quotation_detail", id=id))
 
+    # item_id/quantity/sale_price are legacy single-item columns from before
+    # SaleItem existed. The DB (at least on Render's Postgres) still has
+    # item_id NOT NULL, so — same as the /sale POST route — the header row
+    # copies the first line item into these columns rather than leaving them
+    # None, which SQLite accepts but Postgres rejects with a NotNullViolation.
+    first_qi = q.line_items[0]
+    first_gross = first_qi.quantity * first_qi.sale_price
+    first_disc_amt, first_tax_amt, _ = calc_discount_tax(
+        first_gross, first_qi.discount_type, first_qi.discount_value, first_qi.tax_percent)
+
     sal = Sale(
         customer_id=q.customer_id,
-        item_id=None, quantity=None, sale_price=None,
+        item_id=first_qi.item_id, quantity=first_qi.quantity, sale_price=first_qi.sale_price,
         cost_price=0.0,
-        discount_type="percent", discount_value=0, discount_amount=0,
-        tax_percent=0, tax_amount=0,
+        discount_type=first_qi.discount_type or "percent", discount_value=first_qi.discount_value,
+        discount_amount=first_disc_amt,
+        tax_percent=first_qi.tax_percent, tax_amount=first_tax_amt,
         date=sal_date, notes=q.notes,
     )
     db.session.add(sal)
