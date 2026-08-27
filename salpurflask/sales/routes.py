@@ -537,7 +537,7 @@ def delete_sale_return(id):
 def sale_invoice(id):
     """Display sale invoice with payment details."""
     from app import get_payment_status, get_sale_received, get_sale_returned_qty
-    from salpurflask.models import Customer
+    from salpurflask.models import Customer, Location
 
     sale      = db.session.query(Sale).filter_by(id=id).first() or abort(404)
     customer  = db.session.query(Customer).filter_by(id=sale.customer_id).first()
@@ -545,6 +545,7 @@ def sale_invoice(id):
     total     = sale_total(sale)
     status    = get_payment_status(total, received)
     returned_qty = get_sale_returned_qty(id)
+    location  = db.session.get(Location, sale.location_id) if sale.location_id else None
     return render_template(
         "invoice_sale.html",
         sale=sale,
@@ -554,6 +555,8 @@ def sale_invoice(id):
         balance=total - received,
         status=status,
         returned_qty=returned_qty,
+        location=location,
+        generated_at=now_local(),
     )
 
 
