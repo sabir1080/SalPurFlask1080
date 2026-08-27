@@ -8,6 +8,9 @@ instance/
 .env
 .env.local
 .env.*.local
+.env.render
+.env.render-salpurflask
+.env.render-tradeflow
 for_my_information.txt
 static/*.csv
 .claude/

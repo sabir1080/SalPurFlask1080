@@ -5,7 +5,10 @@ from datetime import datetime, date
 from flask import render_template, redirect, url_for, flash, request, abort
 from flask_login import current_user
 
+from salpurflask.auth import manager_required, admin_required
 
+
+@manager_required
 def accounts():
     from app import (
         db, FinancialAccount, get_active_control_accounts, get_account_balance
@@ -58,6 +61,7 @@ def accounts():
     return render_template("accounts.html", rows=rows, total=float(total))
 
 
+@admin_required
 def new_account():
     from app import (
         db, FinancialAccount, account_name_taken, new_account_method_token,
@@ -92,6 +96,7 @@ def new_account():
     return render_template("new_account.html")
 
 
+@admin_required
 def edit_account(id):
     from app import (
         db, FinancialAccount, account_name_taken, post_account_opening, record_audit
@@ -121,6 +126,7 @@ def edit_account(id):
     return render_template("edit_account.html", acct=acct)
 
 
+@manager_required
 def account_ledger(id):
     from app import (
         db, FinancialAccount, account_transactions, get_account_balance, now_local
@@ -140,12 +146,14 @@ def account_ledger(id):
 
 
 
+@manager_required
 def report_balance_sheet():
     from app import accounting_position, parse_as_of
 
     return render_template("report_balance_sheet.html", p=accounting_position(parse_as_of()))
 
 
+@manager_required
 def report_trial_balance():
     from app import db, Account, gl_balances, parse_as_of
 
@@ -165,6 +173,7 @@ def report_trial_balance():
                            total_dr=total_dr, total_cr=total_cr, as_of=as_of)
 
 
+@manager_required
 def journal():
     from app import db, JournalEntry, Account, JournalLine
     from sqlalchemy import func
@@ -180,6 +189,7 @@ def journal():
     return render_template("journal.html", entries=entries, summary=summary)
 
 
+@manager_required
 def journal_new():
     from app import (
         db, postable_accounts, post_entry, PostingError, record_audit
@@ -219,6 +229,7 @@ def journal_new():
     return render_template("journal_new.html", accounts=accounts)
 
 
+@manager_required
 def journal_view(id):
     from app import db, JournalEntry
 
@@ -229,6 +240,7 @@ def journal_view(id):
                            total_cr=float(entry.total_credit))
 
 
+@admin_required
 def journal_reverse(id):
     from app import (
         db, JournalEntry, reverse_entry, unwind_asset_entry, PostingError, record_audit
@@ -250,6 +262,7 @@ def journal_reverse(id):
     return redirect(url_for("journal_view", id=reversal.id))
 
 
+@admin_required
 def reverse_document_route(kind, id):
     from app import (
         db, Purchase, Sale, SupplierPayment, CustomerPayment, Expense,
@@ -284,6 +297,7 @@ def reverse_document_route(kind, id):
     return redirect(request.referrer or url_for(list_endpoint))
 
 
+@manager_required
 def fixed_assets():
     from app import db, FixedAsset, JournalEntry, now_local
 
@@ -301,6 +315,7 @@ def fixed_assets():
                            last_run=last_run, today=now_local())
 
 
+@manager_required
 def fixed_asset_new():
     from app import (
         db, FixedAsset, postable_accounts, post_asset_acquisition,
@@ -367,6 +382,7 @@ def fixed_asset_new():
                            methods=DEPRECIATION_METHODS, form_data={})
 
 
+@manager_required
 def fixed_asset_view(id):
     from app import db, FixedAsset, FinancialAccount, now_local
 
@@ -378,6 +394,7 @@ def fixed_asset_view(id):
                            fin_accounts=fin_accounts, today=now_local())
 
 
+@manager_required
 def fixed_assets_depreciation():
     from app import db, run_depreciation, month_end, record_audit
 
@@ -398,6 +415,7 @@ def fixed_assets_depreciation():
     return redirect(url_for("fixed_assets"))
 
 
+@admin_required
 def fixed_asset_dispose(id):
     from app import (
         db, FixedAsset, FinancialAccount, post_asset_disposal, _cash_gl, record_audit
@@ -433,6 +451,7 @@ def fixed_asset_dispose(id):
     return redirect(url_for("fixed_assets"))
 
 
+@manager_required
 def periods():
     from app import db, FiscalYear, now_local
 
@@ -440,6 +459,7 @@ def periods():
     return render_template("periods.html", years=years, today=now_local().date())
 
 
+@admin_required
 def toggle_period(id):
     from app import db, AccountingPeriod, PostingError, record_audit
 
@@ -455,6 +475,7 @@ def toggle_period(id):
     return redirect(url_for("periods"))
 
 
+@admin_required
 def close_year(id):
     from app import db, FiscalYear, close_fiscal_year, record_audit
 
@@ -469,6 +490,7 @@ def close_year(id):
     return redirect(url_for("periods"))
 
 
+@admin_required
 def new_fiscal_year():
     from app import db, seed_fiscal_year, record_audit
 
@@ -489,6 +511,7 @@ def new_fiscal_year():
     return redirect(url_for("periods"))
 
 
+@manager_required
 def report_reconciliation():
     from app import (
         db, Customer, Supplier, Item, gl_balances, get_account,
@@ -532,6 +555,7 @@ def report_reconciliation():
                            all_ok=all(r["ok"] for r in rows))
 
 
+@manager_required
 def chart_of_accounts():
     from app import db, Account, gl_balances, natural_balance, SYSTEM_ACCOUNT_CODES, parse_as_of
 
@@ -560,6 +584,7 @@ def chart_of_accounts():
                            system_codes=SYSTEM_ACCOUNT_CODES)
 
 
+@admin_required
 def new_gl_account():
     from app import (
         db, Account, ACCOUNT_TYPES, record_audit, _validate_account_form, parse_cf_section
@@ -597,6 +622,7 @@ def new_gl_account():
                            form_data={})
 
 
+@admin_required
 def edit_gl_account(id):
     from app import (
         db, Account, account_is_system, account_has_activity,
@@ -641,6 +667,7 @@ def edit_gl_account(id):
     return render_template("gl_account_edit.html", acct=acct, groups=groups, is_system=is_system)
 
 
+@admin_required
 def delete_gl_account(id):
     from app import (
         db, Account, account_is_system, account_has_activity,
@@ -670,6 +697,7 @@ def delete_gl_account(id):
     return redirect(url_for("chart_of_accounts"))
 
 
+@admin_required
 def tax_codes():
     from app import db, TaxCode, TaxComponent, PostingError, record_audit
     from decimal import InvalidOperation
@@ -695,6 +723,7 @@ def tax_codes():
     return render_template("tax_codes.html", codes=TaxCode.query.order_by(TaxCode.name).all())
 
 
+@manager_required
 def report_gst():
     from app import db, Purchase, Sale, now_local
 
