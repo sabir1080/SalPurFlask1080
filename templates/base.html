@@ -105,13 +105,19 @@
             50% { transform: translateY(-2px); }
         }
 
-        /* Content container - responsive without sidebar changes */
-        body > div[style*="margin-left: 250px"] {
-            margin-left: 250px !important;
-            max-width: calc(100% - 250px) !important;
-            width: calc(100% - 250px) !important;
-            box-sizing: border-box;
-            padding-right: 0.5rem !important;
+        /* Content container - responsive without sidebar changes.
+           Screen-only: this offsets page content past the fixed sidebar, which
+           doesn't exist on a printed page. Unscoped, it out-specifies (and thus
+           silently defeats) any per-document @media print rule that resets the
+           container to full width, e.g. invoice_sale.html's print layout. */
+        @media screen {
+            body > div[style*="margin-left: 250px"] {
+                margin-left: 250px !important;
+                max-width: calc(100% - 250px) !important;
+                width: calc(100% - 250px) !important;
+                box-sizing: border-box;
+                padding-right: 0.5rem !important;
+            }
         }
 
         /* Table overflow handling */

@@ -2,54 +2,115 @@
 {% block title %}Sale Invoice {{ sale.invoice_no or ('#SAL-' ~ sale.id) }}{% endblock %}
 {% block extra_head %}
 <style>
-@media print {
-    nav, .btn-print-bar, .flash-messages, footer, .navbar { display: none !important; }
-    body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .invoice-box { box-shadow: none !important; border: 1px solid #ccc !important; max-width: 100% !important; }
-    .container, .container-fluid { max-width: 100% !important; padding: 0 !important; }
-    /* Shrink the items table a touch so all 8 columns fit the page width */
-    .items-table { font-size: 0.78rem; }
-    .items-table th, .items-table td { padding: 5px 6px !important; }
-    @page { margin: 1.2cm; }
-}
-/* A number must never be folded onto a second line. "1,234,567.89" broken after the comma
-   reads as two different figures, and this is an invoice a customer is handed.
+/* ============================================================
+   MASTER PDF / PRINT DESIGN — Sale Invoice
+   This is the prototype every other TradeFlow document print view
+   will be modeled on. Two rules hold everywhere below:
+   (1) never communicate anything by color alone — every colored
+       figure/badge also carries a symbol or label that survives
+       grayscale printing;
+   (2) never let a number wrap — a split "1,234,567.89" reads as
+       two different figures on a document a customer keeps.
+   ============================================================ */
 
-   The table used to be `table-layout: fixed` with break-word on every cell, so a long
-   figure in a narrow column was simply cut in half and continued underneath. Now the
-   columns size themselves: the money columns cannot be squeezed below the width of what
-   is in them, and the column that gives way is the item name, which is prose and may
-   wrap. The colgroup below is a preference, not a cage. */
-.items-table { table-layout: auto; }
-.items-table th, .items-table td { white-space: nowrap; vertical-align: middle; }
-.items-table td.wrap, .items-table th.wrap {
-    white-space: normal;
-    /* break-word, NOT anywhere. They look interchangeable and are not: `anywhere` also
-       shrinks the column's min-content width, so an auto-laid-out table is free to squeeze
-       the column down to a single character and then split the word to fit — which is how
-       "Electronics" ended up as "Electronic" with a lone "s" underneath. `break-word`
-       leaves min-content at the longest word, so the column can never be narrower than the
-       word it holds, and a word is only ever broken when it cannot fit a line by itself. */
-    overflow-wrap: break-word;
+/* Palette (inlined, not custom properties — this app's own CSS-variable
+   convention is scoped to static/css/style.css, not per-template):
+     ink #1a2233 · muted #667085 · hairline #d8dde3 · accent #1e3a5f/#0f6e4f */
+
+/* ---------- On-screen chrome (hidden entirely when printing) ---------- */
+.btn-print-bar { margin-bottom: 1rem; }
+
+/* ---------- The document itself (shown both on screen and in print) --- */
+.invoice-box {
+    position: relative;
+    max-width: 860px;
+    background: #fff;
+    color: #1a2233;
+    font-size: 0.92rem;
 }
-/* Unit, discount % and tax % sit under their figure rather than beside it, so the money
-   columns stay as narrow as the money in them. */
-.items-table small { display: block; font-size: 0.72em; }
-.inv-header { background: linear-gradient(135deg, #1e3a5f 0%, #0f6e4f 100%); color: white; border-radius: 8px 8px 0 0; padding: 22px 28px; }
-.inv-company { font-size: 1.4rem; font-weight: 800; letter-spacing: 0.3px; }
-.inv-company-sub { font-size: 0.78rem; opacity: 0.75; }
-.inv-type { font-size: 0.85rem; font-weight: 700; letter-spacing: 2px; color: #a7f3d0; text-transform: uppercase; }
-.inv-num { font-size: 1.5rem; font-weight: 800; }
-.inv-date { font-size: 0.8rem; opacity: 0.8; }
-.inv-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 1.2px; color: #6c757d; font-weight: 700; margin-bottom: 2px; }
-.inv-totals td { padding: 5px 12px; border: none; font-size: 0.92rem; white-space: nowrap; }
-.inv-totals tr.total-final td { font-size: 1.05rem; font-weight: 700; border-top: 2px solid #dee2e6; padding-top: 8px; }
-/* A reversed invoice is cancelled — it must never be mistaken for a live one,
-   on screen or on paper. print-color-adjust keeps the mark in the PDF. */
-.invoice-box { position: relative; }
+.inv-header {
+    background: linear-gradient(135deg, #1e3a5f 0%, #0f6e4f 100%);
+    color: #fff;
+    border-radius: 8px 8px 0 0;
+    padding: 18px 26px;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.inv-company { font-size: 1.3rem; font-weight: 800; letter-spacing: 0.3px; }
+.inv-company-sub { font-size: 0.76rem; opacity: 0.85; }
+.inv-type { font-size: 0.8rem; font-weight: 700; letter-spacing: 2px; color: #d6f5e6; text-transform: uppercase; }
+.inv-num { font-size: 1.35rem; font-weight: 800; }
+.inv-date { font-size: 0.78rem; opacity: 0.9; }
+.inv-label {
+    font-size: 0.66rem; text-transform: uppercase; letter-spacing: 1.1px;
+    color: #667085; font-weight: 700; margin-bottom: 2px;
+}
+
+/* Bill-to / status strip. Border-bottom (not just background) is the
+   thing that survives grayscale — a light-grey fill can flatten to
+   "barely there" on some printers, a rule never does. */
+.inv-meta-row {
+    border-bottom: 1px solid #d8dde3;
+    background: #f7f8fa;
+    padding: 12px 26px;
+}
+
+/* Payment-status pill: color is a bonus, never the only signal.
+   Every state also carries an icon and its own text label, so a
+   black-and-white printout still reads "PAID" vs "UNPAID" at a
+   glance, not just "a pill". */
+.status-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 0.8rem; font-weight: 700; letter-spacing: 0.2px;
+    padding: 4px 12px; border-radius: 999px;
+    border: 1.5px solid currentColor;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.status-pill.is-paid    { color: #0f6e4f; background: #eafaf3; }
+.status-pill.is-partial { color: #92650a; background: #fff6e0; }
+.status-pill.is-unpaid  { color: #b3261e; background: #fdeceb; }
+
+/* ---------- Items table ---------- */
+.items-table { table-layout: auto; margin: 0; }
+.items-table th, .items-table td {
+    white-space: nowrap; vertical-align: middle; padding: 6px 8px;
+    border-color: #d8dde3;
+}
+.items-table thead th {
+    background: #1e3a5f; color: #fff; font-size: 0.72rem;
+    text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700;
+    border-color: #1e3a5f;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+/* Item/category names are prose and may wrap — a long name is not a
+   number, so folding it is normal reading behaviour, not data loss. */
+.items-table td.wrap, .items-table th.wrap { white-space: normal; overflow-wrap: break-word; }
+.items-table td.num, .items-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.items-table small { display: block; font-size: 0.7em; color: #667085; }
+.items-table tbody tr:nth-child(even) { background: #fafbfc; }
+
+/* A discount/tax delta must read correctly in black and white too — the
+   sign (−/+) carries the meaning, the color is decoration on top. */
+.delta-neg::before { content: "\2212\a0"; }   /* − (minus sign) + nbsp */
+.delta-pos::before { content: "+\a0"; }
+.delta-neg { color: #b3261e; }
+.delta-pos { color: #0f6e4f; }
+
+/* ---------- Totals block ---------- */
+.inv-totals { width: 100%; max-width: 340px; margin-left: auto; border-collapse: collapse; }
+.inv-totals td { padding: 4px 4px; font-size: 0.88rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.inv-totals td:first-child { color: #667085; }
+.inv-totals td:last-child { text-align: right; font-weight: 600; }
+.inv-totals tr.rule td { border-top: 1px solid #d8dde3; padding-top: 7px; }
+.inv-totals tr.total-final td {
+    font-size: 1.05rem; font-weight: 800; border-top: 2px solid #1a2233;
+    padding-top: 8px; color: #1a2233 !important;
+}
+.inv-totals tr.balance-due td { font-size: 0.98rem; font-weight: 800; }
+
+/* ---------- Reversed / void watermark ---------- */
 .inv-void-banner {
-    background: #dc3545; color: #fff; font-weight: 700;
-    padding: 10px 28px; border-radius: 8px 8px 0 0;
+    background: #b3261e; color: #fff; font-weight: 700;
+    padding: 8px 26px; border-radius: 8px 8px 0 0;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
 .inv-watermark {
@@ -59,30 +120,116 @@
 }
 .inv-watermark span {
     transform: rotate(-24deg);
-    font-size: clamp(3rem, 11vw, 6.5rem); font-weight: 900;
+    font-size: clamp(2.6rem, 9vw, 5.5rem); font-weight: 900;
     letter-spacing: 0.08em; white-space: nowrap;
-    color: rgba(220, 53, 69, 0.16);
-    border: 10px solid rgba(220, 53, 69, 0.16);
-    border-radius: 16px; padding: 0.05em 0.25em;
+    color: rgba(179, 38, 30, 0.18);
+    border: 8px solid rgba(179, 38, 30, 0.18);
+    border-radius: 14px; padding: 0.05em 0.25em;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
-.signature-line { border-top: 1px solid #999; width: 200px; display: inline-block; margin-top: 40px; }
+
+/* ---------- Signature / closing block ---------- */
+.inv-close {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    padding: 14px 26px 18px; border-top: 1px solid #d8dde3;
+}
+.signature-line { border-top: 1px solid #888; width: 170px; display: inline-block; margin-top: 28px; }
+
+/* ---------- Screen-only footer note (the real print footer is injected
+   by JS at print time — see the script block below) ---------- */
+.inv-screen-footnote {
+    font-size: 0.72rem; color: #667085; text-align: center;
+    margin-top: 10px;
+}
+
+/* ================================================================
+   PRINT MEDIUM
+   ================================================================ */
+@media print {
+    nav, .btn-print-bar, .flash-messages, footer, .navbar,
+    .inv-screen-footnote { display: none !important; }
+
+    html, body { background: #fff !important; }
+    .container, .container-fluid { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
+
+    .invoice-box {
+        box-shadow: none !important; border: none !important;
+        max-width: 100% !important; margin: 0 !important;
+        font-size: 10.3pt;
+    }
+    .inv-header { padding: 14px 4px; }
+    .inv-meta-row { padding: 10px 4px; }
+    .items-table th, .items-table td { padding: 4px 5px !important; font-size: 9.6pt; }
+    .inv-close { padding: 10px 4px 4px; }
+
+    /* Repeat the table's own header row on every printed page — the one
+       piece of "multi-page pagination" plain CSS *does* give us reliably
+       in Chrome/Firefox, unlike a live page-number footer. */
+    .items-table thead { display: table-header-group; }
+    .items-table tfoot { display: table-footer-group; }
+    .items-table tr { break-inside: avoid; page-break-inside: avoid; }
+
+    /* Keep the totals block from being split across a page boundary, and
+       keep it visually anchored near the table rather than orphaned alone
+       at the top of a fresh page. */
+    .inv-totals-wrap { break-inside: avoid; page-break-inside: avoid; }
+    .inv-close { break-inside: avoid; page-break-inside: avoid; }
+
+    @page {
+        size: A4;
+        /* Extra bottom margin reserves room for the injected running
+           footer (Page X/Y + generated-by line) so it never collides
+           with the document's own last line of content. */
+        margin: 14mm 12mm 16mm 12mm;
+    }
+
+    /* Per-page footer slots, injected at print time (see script). Each
+       slot is absolutely positioned at an estimated page-boundary offset
+       inside #print-footer-layer, which spans the full printed height —
+       so slot i physically falls within physical page i when the browser
+       paginates. This is how a real "Page X/Y" per sheet is achieved
+       without a PDF library: not a single repeating fixed element (that
+       only ever shows one static line, never a per-page counter), but one
+       positioned element per estimated page. */
+    #print-footer-layer {
+        display: block !important;
+        position: absolute; left: 0; right: 0; top: 0; z-index: 20;
+        pointer-events: none;
+    }
+    .print-footer-slot {
+        position: absolute; left: 0; right: 0;
+        font-size: 7.5pt; color: #555;
+        display: flex; justify-content: space-between; align-items: baseline;
+        border-top: 0.75pt solid #bbb; padding: 3px 12mm 0;
+    }
+    /* The last page's footer only: normal document flow, not an estimated
+       absolute position — see the HTML comment where it's placed. Needs
+       !important: the screen-only `display: none` below is the same
+       specificity (one class) and comes later in the file, so without it
+       that rule would keep winning even under print. */
+    .print-footer-slot-last {
+        display: flex !important;
+        position: static !important;
+        margin-top: 14px;
+    }
+}
+#print-footer-layer, .print-footer-slot-last { display: none; }
 </style>
 {% endblock %}
 {% block content %}
 
 <!-- Print Action Bar -->
-<div class="d-flex justify-content-between align-items-center mb-3 btn-print-bar">
+<div class="d-flex justify-content-between align-items-center btn-print-bar">
     <a href="{{ url_for('sale') }}" class="btn btn-outline-secondary btn-sm">
         <i class="bi bi-arrow-left"></i> Back to Sales
     </a>
-    <button class="btn btn-success" onclick="window.print()">
+    <button type="button" class="btn btn-success" id="btn-print-invoice">
         <i class="bi bi-printer-fill"></i> Print / Save as PDF
     </button>
 </div>
 
 <!-- Invoice Box -->
-<div class="invoice-box card border-0 shadow mb-5 mx-auto" style="max-width:860px;">
+<div class="invoice-box card border-0 shadow mb-3 mx-auto">
 
     {% if sale.is_reversed %}
     <div class="inv-void-banner d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -105,62 +252,68 @@
         </div>
     </div>
 
-    <!-- Bill To + Status -->
-    <div class="row mx-0 px-4 py-3 border-bottom bg-light">
-        <div class="col-7">
+    <!-- Bill To + Location + Status -->
+    <div class="inv-meta-row d-flex flex-wrap gap-3">
+        <div style="flex: 1 1 45%; min-width: 220px;">
             <div class="inv-label">Bill To (Customer)</div>
             {% if customer %}
-                <div class="fw-bold fs-6 mt-1" style="color: #333;">{{ customer.name }}</div>
+                <div class="fw-bold" style="color: #1a2233;">{{ customer.name }}</div>
                 {% if customer.contact %}<div class="text-muted small">{{ customer.contact }}</div>{% endif %}
                 {% if customer.address %}<div class="text-muted small">{{ customer.address }}</div>{% endif %}
             {% else %}
-                <div class="fw-bold fs-6 mt-1 text-muted">Customer not found</div>
+                <div class="fw-bold text-muted">Customer not found</div>
             {% endif %}
         </div>
-        <div class="col-5 text-end">
+        {% if location %}
+        <div style="flex: 1 1 20%; min-width: 140px;">
+            <div class="inv-label">Warehouse</div>
+            <div class="fw-semibold" style="color: #1a2233;"><i class="bi bi-building"></i> {{ location.name }}</div>
+        </div>
+        {% endif %}
+        <div style="flex: 1 1 25%; min-width: 150px;" class="text-end">
             <div class="inv-label">Payment Status</div>
             <div class="mt-1">
                 {% if status == 'Paid' %}
-                    <span class="badge bg-success fs-6 px-3 py-2 rounded-pill"><i class="bi bi-check-circle-fill"></i> Paid</span>
+                    <span class="status-pill is-paid"><i class="bi bi-check-circle-fill"></i> PAID</span>
                 {% elif status == 'Partial' %}
-                    <span class="badge bg-warning text-dark fs-6 px-3 py-2 rounded-pill"><i class="bi bi-clock-fill"></i> Partial</span>
+                    <span class="status-pill is-partial"><i class="bi bi-clock-fill"></i> PARTIAL</span>
                 {% else %}
-                    <span class="badge bg-danger fs-6 px-3 py-2 rounded-pill"><i class="bi bi-x-circle-fill"></i> Unpaid</span>
+                    <span class="status-pill is-unpaid"><i class="bi bi-x-circle-fill"></i> UNPAID</span>
                 {% endif %}
             </div>
         </div>
     </div>
 
     {% if sale.notes %}
-    <div class="px-4 pt-2 pb-1">
+    <div class="px-3 pt-2 pb-1">
         <span class="inv-label">Notes:</span> <span class="small text-muted">{{ sale.notes }}</span>
     </div>
     {% endif %}
 
     <!-- Items Table -->
-    <div class="px-4 pt-3">
+    <div class="px-3 pt-3">
         {% set ns = namespace(gross=0, total_disc=0, total_tax=0) %}
-        <table class="table table-bordered mb-0 items-table">
+        <table class="table table-bordered items-table">
             <colgroup>
                 <col style="width:4%">
-                <col style="width:19%">
-                <col style="width:12%">
-                <col style="width:12%">
+                <col style="width:20%">
+                <col style="width:11%">
+                <col style="width:11%">
                 <col style="width:13%">
                 <col style="width:13%">
-                <col style="width:12%">
-                <col style="width:15%">
+                <col style="width:11%">
+                <col style="width:17%">
             </colgroup>
-            <thead class="table-dark">
+            <thead>
                 <tr>
                     <th>#</th>
                     <th class="wrap">Item</th>
                     <th class="wrap">Category</th>
-                    <th class="text-end">Qty</th>
-                    <th class="text-end">Unit Price</th>
-                    <th class="text-end">Discount</th>
-                    <th class="text-end">Tax</th>
-                    <th class="text-end">Net Amount</th>
+                    <th class="num">Qty</th>
+                    <th class="num">Unit Price</th>
+                    <th class="num">Discount</th>
+                    <th class="num">Tax</th>
+                    <th class="num">Net Amount</th>
                 </tr>
             </thead>
             <tbody>
@@ -176,18 +329,18 @@
                     <td>{{ loop.index }}</td>
                     <td class="fw-semibold wrap">{{ si.item.name }}</td>
                     <td class="text-muted wrap">{{ si.item.business_category.name if si.item.business_category else (si.item.id_category.name if si.item.id_category else '—') }}</td>
-                    <td class="text-end text-nowrap">{{ "{:,}".format(si.quantity) }}<small class="text-muted d-block">{{ si.display_unit }}</small></td>
-                    <td class="text-end">{{ si.sale_price | fmt_num }}</td>
-                    <td class="text-end text-danger">
+                    <td class="num">{{ "{:,}".format(si.quantity) }}<small>{{ si.display_unit }}</small></td>
+                    <td class="num">{{ si.sale_price | fmt_num }}</td>
+                    <td class="num">
                         {% if row_disc > 0 %}
-                            − {{ row_disc | fmt_num }}
-                            {% if si.discount_type == 'percent' %}<small class="text-muted">({{ si.discount_value | pct }}%)</small>{% endif %}
+                            <span class="delta-neg">{{ row_disc | fmt_num }}</span>
+                            {% if si.discount_type == 'percent' %}<small>({{ si.discount_value | pct }}%)</small>{% endif %}
                         {% else %}—{% endif %}
                     </td>
-                    <td class="text-end text-info">
-                        {% if row_tax > 0 %}+ {{ row_tax | fmt_num }}<small class="text-muted">({{ si.tax_percent | pct }}%)</small>{% else %}—{% endif %}
+                    <td class="num">
+                        {% if row_tax > 0 %}<span class="delta-pos">{{ row_tax | fmt_num }}</span><small>({{ si.tax_percent | pct }}%)</small>{% else %}—{% endif %}
                     </td>
-                    <td class="text-end fw-bold">{{ row_net | fmt_num }}</td>
+                    <td class="num fw-bold">{{ row_net | fmt_num }}</td>
                 </tr>
                 {% else %}
                 <tr><td colspan="8" class="text-center text-muted">No items</td></tr>
@@ -197,62 +350,62 @@
     </div>
 
     <!-- Totals Summary -->
-    <div class="d-flex justify-content-end px-4 pb-3 pt-2">
+    <div class="inv-totals-wrap px-3 pb-3 pt-2">
         <table class="inv-totals">
-            <tr style="border-bottom: 2px solid #dee2e6; font-weight: 600;">
+            <tr class="rule">
                 <td>Subtotal</td>
-                <td class="text-end">{{ ns.gross | fmt_num }}</td>
+                <td>{{ ns.gross | fmt_num }}</td>
             </tr>
             {% if ns.total_disc > 0 %}
-            <tr class="text-danger">
+            <tr>
                 <td>Discount</td>
-                <td class="text-end">− {{ ns.total_disc | fmt_num }}</td>
+                <td class="delta-neg">{{ ns.total_disc | fmt_num }}</td>
             </tr>
             {% endif %}
             {% if ns.total_tax > 0 %}
-            <tr class="text-info">
+            <tr>
                 <td>Tax</td>
-                <td class="text-end">+ {{ ns.total_tax | fmt_num }}</td>
+                <td class="delta-pos">{{ ns.total_tax | fmt_num }}</td>
             </tr>
             {% endif %}
             {% if sale.returns %}
             {% set ns2 = namespace(returned_amt=0) %}
             {% for r in sale.returns %}{% set ns2.returned_amt = ns2.returned_amt + sale_return_total(r) %}{% endfor %}
-            <tr class="text-warning">
+            <tr>
                 <td>Sale Return ({{ sale.returns | length }} return{{ 's' if sale.returns | length != 1 else '' }})</td>
-                <td class="text-end">− {{ ns2.returned_amt | fmt_num }}</td>
+                <td class="delta-neg">{{ ns2.returned_amt | fmt_num }}</td>
             </tr>
             {% endif %}
-            <tr class="total-final" style="border-top: 2px solid #dee2e6; font-weight: 700; font-size: 1.1rem;">
+            <tr class="total-final">
                 <td>GRAND TOTAL</td>
-                <td class="text-end">{{ total | money }}</td>
+                <td>{{ total | money }}</td>
             </tr>
-            <tr class="text-success">
+            <tr>
                 <td>Amount Received</td>
-                <td class="text-end">{{ received | fmt_num }}</td>
+                <td>{{ received | fmt_num }}</td>
             </tr>
-            <tr class="total-final {% if balance > 0 %}text-danger{% else %}text-success{% endif %}">
+            <tr class="balance-due">
                 <td>Balance Due</td>
-                <td class="text-end">{{ balance | money }}</td>
+                <td>{{ balance | money }}{% if balance > 0 %} <small>(DUE)</small>{% else %} <small>(SETTLED)</small>{% endif %}</td>
             </tr>
         </table>
     </div>
 
     <!-- Return Details -->
     {% if sale.returns %}
-    <div class="px-4 pb-3">
-        <div class="fw-semibold text-warning small mb-2"><i class="bi bi-arrow-return-right"></i> Return Details</div>
+    <div class="px-3 pb-3">
+        <div class="fw-semibold small mb-2" style="color: #92650a;"><i class="bi bi-arrow-return-right"></i> Return Details</div>
         <table class="table table-sm table-bordered mb-0">
-            <thead class="table-warning">
-                <tr><th>Date</th><th class="text-end">Qty</th><th class="text-end">Price</th><th class="text-end">Total</th><th>Reason</th></tr>
+            <thead>
+                <tr><th>Date</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Total</th><th>Reason</th></tr>
             </thead>
             <tbody>
                 {% for r in sale.returns %}
                 <tr>
                     <td>{{ r.date.strftime('%d %b %Y') }}</td>
-                    <td class="text-end">{{ r.quantity }} {{ r.unit_name or (r.item.unit if r.item else '') }}</td>
-                    <td class="text-end">{{ r.return_price | fmt_num }}</td>
-                    <td class="text-end">{{ (r.quantity * r.return_price) | fmt_num }}</td>
+                    <td class="num">{{ r.quantity }} {{ r.unit_name or (r.item.unit if r.item else '') }}</td>
+                    <td class="num">{{ r.return_price | fmt_num }}</td>
+                    <td class="num">{{ (r.quantity * r.return_price) | fmt_num }}</td>
                     <td>{{ r.reason or '—' }}</td>
                 </tr>
                 {% endfor %}
@@ -261,12 +414,11 @@
     </div>
     {% endif %}
 
-    <!-- Footer -->
-    <div class="px-4 pb-4 pt-3 border-top d-flex justify-content-between align-items-end">
+    <!-- Signature / closing block -->
+    <div class="inv-close">
         <div>
-            <div class="inv-label">Generated By</div>
+            <div class="inv-label">Issued By</div>
             <div class="small text-muted mt-1"><strong>{{ company_name }}</strong> — {{ company_tagline }}</div>
-            <div class="small text-muted">Print Date: {{ sale.date.strftime('%d %B %Y') }}</div>
         </div>
         <div class="text-center">
             <div class="signature-line"></div>
@@ -274,5 +426,189 @@
         </div>
     </div>
 
+    <!-- Per-page footer slots for every page BEFORE the last, built at print
+         time by the script below (see there for why: those pages are always
+         full, so their footer position must be estimated and overlaid).
+         Hidden on screen; shown only inside @media print. A child of
+         .invoice-box (not a page-level sibling) so its `position: absolute;
+         top: 0` anchors to the box's own top — the box is `position:
+         relative` — regardless of whatever precedes the box on screen (e.g.
+         the app's nav bar, which print hides but which still affects the
+         box's on-screen position). -->
+    <div id="print-footer-layer"></div>
+
+    <!-- The LAST page's footer needs no estimate at all: placed in normal
+         document flow right after the signature block, it simply prints on
+         whatever physical page that block lands on — the browser's own
+         pagination handles it, with no JS position math to get wrong. This
+         is what the estimated/cloned/timed approach above was for, and
+         reliably failed at, before this fix. Page number is filled in by the
+         script (it alone knows the total page count), not left blank if JS
+         is unavailable — falls back to "Page —" in that case. -->
+    <div class="print-footer-slot print-footer-slot-last">
+        <span>{{ (current_user.name ~ ' | ' ~ generated_at.strftime('%d %B %Y %H:%M')) }}</span>
+        <span id="print-footer-last-page-num">Page —</span>
+    </div>
 </div>
+
+<div class="inv-screen-footnote">
+    Generated by {{ current_user.name }} on {{ generated_at.strftime('%d %B %Y, %I:%M %p') }} — a "Page X/Y" footer is added to every printed sheet when you print or save as PDF.
+</div>
+
+<script>
+/* Builds one footer strip per estimated printed page, each reading
+ * "User Name | Date Time" (left) and "Page i/N" (right) — i.e. the
+ * required footer content, repeated per physical page.
+ *
+ * Known limit, stated plainly rather than hidden: no browser exposes the
+ * true page-break positions to script, so page count/boundaries are
+ * ESTIMATED from the invoice's rendered pixel height against a fixed A4
+ * usable-page-height constant. This is exact for the common case (the
+ * table's own content determines the height, and rows are kept from
+ * splitting via `break-inside: avoid`) but can be off by one page in
+ * unusual cases — a very long single item description that wraps to many
+ * lines, an extreme browser print-scale override, or a non-A4 paper size
+ * chosen in the print dialog. When in doubt the estimate rounds up, so a
+ * reader sees one extra near-blank footer rather than a missing one.
+ */
+(function () {
+    var MM_TO_PX_AT_96DPI = 96 / 25.4;
+    var PAGE_MARGIN_TOP_MM = 14, PAGE_MARGIN_BOTTOM_MM = 16;
+    var PAGE_MARGIN_LEFT_MM = 12, PAGE_MARGIN_RIGHT_MM = 12;
+    var USABLE_PAGE_HEIGHT_MM = 297 - PAGE_MARGIN_TOP_MM - PAGE_MARGIN_BOTTOM_MM;
+    var USABLE_PAGE_WIDTH_MM = 210 - PAGE_MARGIN_LEFT_MM - PAGE_MARGIN_RIGHT_MM;
+    var FOOTER_TEXT = {{ (current_user.name ~ ' | ' ~ generated_at.strftime('%d %B %Y %H:%M')) | tojson }};
+
+    function buildFooters() {
+        var layer = document.getElementById("print-footer-layer");
+        var box = document.querySelector(".invoice-box");
+        if (!layer || !box) return;
+        layer.innerHTML = "";
+
+        // Positioning is set inline, not left to the @media print stylesheet
+        // rules of the same name (still present, for the visual styling) —
+        // in at least one real browser (headless Chrome's --print-to-pdf
+        // path, confirmed by direct inspection), the print stylesheet is NOT
+        // yet active at the moment `beforeprint` fires and this function
+        // runs, so a CSS-only `position: absolute` here was silently not
+        // applying: the slots rendered `position: static`, in normal
+        // document flow, and vanished into whatever arbitrary layout that
+        // produced instead of landing on their intended page. Inline styles
+        // do not have this timing dependency.
+        layer.style.display = "block";
+        layer.style.position = "absolute";
+        layer.style.left = "0";
+        layer.style.right = "0";
+        layer.style.top = "0";
+        layer.style.zIndex = "20";
+        layer.style.pointerEvents = "none";
+
+        // scrollHeight on the live box reflects whatever width it currently
+        // has on screen, which is the browser's window — not the printed A4
+        // page. The print stylesheet's `.invoice-box { max-width: 100%
+        // !important }` also means an inline style can never override it to
+        // pin a real width for measurement (author !important always beats
+        // inline). So measure on an off-screen CLONE, sized to the actual
+        // printed column width via a wrapper the print stylesheet doesn't
+        // target, and read its height instead of the live box's.
+        var usablePxWidth = USABLE_PAGE_WIDTH_MM * MM_TO_PX_AT_96DPI;
+        var wrapper = document.createElement("div");
+        wrapper.style.cssText =
+            "position: absolute; visibility: hidden; left: -99999px; top: 0; " +
+            "width: " + usablePxWidth + "px;";
+        var clone = box.cloneNode(true);
+        clone.removeAttribute("id");
+        // Strip the (empty, at this point) footer layer from the clone —
+        // otherwise measuring would include this element's own past output.
+        var clonedLayer = clone.querySelector("#print-footer-layer");
+        if (clonedLayer) clonedLayer.remove();
+        // The print stylesheet's `.invoice-box { max-width: 100% !important }`
+        // would still apply here (class selector, matches regardless of
+        // nesting) and make the clone fill the wrapper either way — which is
+        // exactly what's wanted, since the wrapper itself is pinned to the
+        // real printed column width instead of the screen's window width.
+        wrapper.appendChild(clone);
+        document.body.appendChild(wrapper);
+        var measuredHeight = clone.scrollHeight;
+        document.body.removeChild(wrapper);
+
+        var usablePx = USABLE_PAGE_HEIGHT_MM * MM_TO_PX_AT_96DPI;
+        var pageCount = Math.max(1, Math.ceil(measuredHeight / usablePx));
+
+        var marginOffsetPx = PAGE_MARGIN_BOTTOM_MM * MM_TO_PX_AT_96DPI * 0.4;
+
+        // Only pages BEFORE the last get an estimated, absolutely-positioned
+        // overlay slot — those pages are always full, so "near the bottom of
+        // page i" is a safe estimate. The LAST page's footer is a separate,
+        // static element already sitting in normal flow right after the
+        // signature block (see the HTML) — it needs no position estimate at
+        // all, which is what fixes it reliably appearing: the previous
+        // approach estimated/cloned a position for every page including the
+        // last, and that estimate could land outside where the browser
+        // actually paginated, especially for the last (partially-filled)
+        // page — this simply doesn't ask the estimate to do that job anymore.
+        for (var i = 1; i < pageCount; i++) {
+            var slot = document.createElement("div");
+            slot.className = "print-footer-slot";
+            // Position each slot near the bottom of its own physical page.
+            // The layer is a child of .invoice-box (position: relative), so
+            // `top` here is relative to the box's own top — no need to
+            // account for whatever precedes the box on screen (e.g. the
+            // app's nav bar, which print hides but which still affects the
+            // box's on-screen position).
+            var pageBottomFromBoxTop = (i * usablePx) - marginOffsetPx;
+            slot.style.position = "absolute";
+            slot.style.left = "0";
+            slot.style.right = "0";
+            slot.style.display = "flex";
+            slot.style.top = Math.round(pageBottomFromBoxTop) + "px";
+            slot.innerHTML =
+                '<span>' + FOOTER_TEXT.replace(/</g, "&lt;") + '</span>' +
+                '<span>Page ' + i + '/' + pageCount + '</span>';
+            layer.appendChild(slot);
+        }
+
+        var lastPageNum = document.getElementById("print-footer-last-page-num");
+        if (lastPageNum) lastPageNum.textContent = "Page " + pageCount + "/" + pageCount;
+    }
+
+    // `beforeprint` fires BEFORE the print stylesheet is actually applied
+    // (confirmed by direct inspection: window.matchMedia("print").matches
+    // is still false inside a beforeprint handler in at least one real
+    // browser). Measuring box height/positions at that moment reads
+    // pre-print layout, which can differ from the real paginated result —
+    // this is what caused a footer to sometimes land off the actual page.
+    // `matchMedia("print").addEventListener("change", ...)` fires once print
+    // media has genuinely taken effect, so it measures the layout that will
+    // actually be paginated. Kept alongside `beforeprint` (not instead of
+    // it) since older engines may not fire the media-query change event.
+    window.addEventListener("beforeprint", buildFooters);
+    if (window.matchMedia) {
+        window.matchMedia("print").addEventListener("change", function (e) {
+            if (e.matches) buildFooters();
+        });
+    }
+})();
+
+/* The print button — bound here rather than via an inline onclick, so it
+   still works even in a context where inline event-handler attributes are
+   blocked (e.g. a strict Content-Security-Policy with no 'unsafe-inline'
+   for script-src, or a sandboxed preview). window.print() itself has no
+   fallback — it's the one API this whole design deliberately depends on —
+   but a host that blocks it entirely (some sandboxed iframes do, as a
+   deliberate security restriction) gets a clear console message instead of
+   a silently dead button. */
+(function () {
+    var btn = document.getElementById("btn-print-invoice");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+        if (typeof window.print !== "function") {
+            console.warn("window.print() is not available in this browsing context.");
+            return;
+        }
+        window.print();
+    });
+})();
+</script>
+
 {% endblock %}
