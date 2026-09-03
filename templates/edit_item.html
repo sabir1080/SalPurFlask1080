@@ -79,11 +79,16 @@
       </div>
     </div>
 
-    <div class="mb-4">
-      <div class="form-group">
+    <div class="mb-4 row">
+      <div class="col-md-6 form-group">
         <label class="form-label">Barcode / QR Code</label>
         <input type="text" class="form-control" id="barcode" name="barcode" autocomplete="off" placeholder="Scan or type code" value="{{ item.barcode or '' }}">
         <small class="form-text">For POS counter scanning (optional)</small>
+      </div>
+      <div class="col-md-6 form-group">
+        <label class="form-label">SKU</label>
+        <input type="text" class="form-control" id="sku" name="sku" autocomplete="off" placeholder="Your own product code" value="{{ item.sku or '' }}">
+        <small class="form-text">Your business's own item code (optional)</small>
       </div>
     </div>
 
@@ -294,7 +299,7 @@ document.querySelector('form[method="POST"]').addEventListener('submit', functio
 });
 
 // Add event listeners to all form inputs
-['name', 'business_category_id', 'unit', 'opening_stock', 'reorder_level', 'purchase_price', 'sale_price', 'barcode'].forEach(id => {
+['name', 'business_category_id', 'unit', 'opening_stock', 'reorder_level', 'purchase_price', 'sale_price', 'barcode', 'sku'].forEach(id => {
   const el = document.getElementById(id);
   if (el) {
     el.addEventListener('input', saveEditItemFormData);
@@ -332,6 +337,7 @@ function clearForm() {
     document.getElementById('purchase_price').value = '';
     document.getElementById('sale_price').value = '';
     document.getElementById('barcode').value = '';
+    document.getElementById('sku').value = '';
 
     // Clear alternate units table rows
     const tbody = document.getElementById('unitsBody');

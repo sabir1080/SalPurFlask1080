@@ -29,14 +29,14 @@
     <form method="GET" class="row g-3 align-items-end">
       <div class="col-md-4">
         <label class="form-label">Supplier</label>
-        <select class="form-select" name="supplier_id" required>
-          <option value="">Choose Supplier</option>
-          {% for s in suppliers %}
-          <option value="{{ s.id }}" {% if selected_supplier and s.id == selected_supplier.id %}selected{% endif %}>
-            {{ s.name }}
-          </option>
-          {% endfor %}
-        </select>
+        <input type="hidden" id="supplier_id" name="supplier_id" required
+               value="{{ selected_supplier.id if selected_supplier else '' }}">
+        <button type="button" class="btn btn-outline-secondary w-100 text-start" onclick="openSupplierLookup()">
+          <i class="bi bi-search"></i>
+          <span id="supplier_id_label" class="{{ '' if selected_supplier else 'text-muted' }}">
+            {{ selected_supplier.name if selected_supplier else 'Choose Supplier' }}
+          </span>
+        </button>
       </div>
       <div class="col-md-4">
         <label class="form-label">Total Payment Amount</label>
@@ -207,6 +207,18 @@
 {% endif %}
 
 <script>
+function openSupplierLookup() {
+    PartyLookup.open({
+        type: "supplier",
+        onSelect: function (party) {
+            document.getElementById('supplier_id').value = party.id;
+            const label = document.getElementById('supplier_id_label');
+            label.textContent = party.name;
+            label.classList.remove('text-muted');
+        }
+    });
+}
+
 function updateTotal() {
     let total = 0;
     document.querySelectorAll('.pay-now-input').forEach(inp => {

@@ -295,7 +295,8 @@ from salpurflask.inventory.routes import (
     bulk_import, process_import,
     stock_adjustment, delete_stock_adjustment,
     labels, labels_assign, send_low_stock_alert,
-    get_product_category_data, stock_movements
+    get_product_category_data, stock_movements,
+    api_item_lookup, api_item_filter_fields, api_item_units,
 )
 from salpurflask.inventory.transfer_routes import (
     transfer_list, transfer_new, transfer_detail,
@@ -333,13 +334,13 @@ from salpurflask.supplier.routes import (
     supplier, edit_supplier, delete_supplier, export_suppliers, export_suppliers_excel,
     supplier_payment, edit_supplier_payment, delete_supplier_payment, supplier_bulk_payment,
     supplier_ledger, delete_supplier_ledger_adjustment, export_supplier_ledger, export_supplier_ledger_excel,
-    api_supplier_balance
+    api_supplier_balance, api_supplier_lookup
 )
 from salpurflask.customer.routes import (
     customer, edit_customer, delete_customer, export_customers, export_customers_excel,
     customer_receipt, edit_customer_receipt, delete_customer_receipt, customer_bulk_receipt,
     customer_ledger, delete_customer_ledger_adjustment, export_customer_ledger, export_customer_ledger_excel,
-    api_customer_balance
+    api_customer_balance, api_customer_lookup
 )
 from salpurflask.accounting.routes import (
     accounts, new_account, edit_account, account_ledger,
@@ -364,6 +365,9 @@ app.add_url_rule("/category/delete/<int:id>", "delete_category", delete_category
 app.add_url_rule("/item/<int:id>/ledger/export", "export_item_ledger", export_item_ledger)
 app.add_url_rule("/item/<int:id>/ledger/export/excel", "export_item_ledger_excel", export_item_ledger_excel)
 app.add_url_rule("/api/product-category-data/<int:product_id>/<int:category_id>", "get_product_category_data", get_product_category_data, methods=["GET"])
+app.add_url_rule("/api/items/lookup", "api_item_lookup", api_item_lookup, methods=["GET"])
+app.add_url_rule("/api/items/filter-fields/<int:category_id>", "api_item_filter_fields", api_item_filter_fields, methods=["GET"])
+app.add_url_rule("/api/items/<int:id>/units", "api_item_units", api_item_units, methods=["GET"])
 app.add_url_rule("/import", "bulk_import", bulk_import, methods=["GET"])
 app.add_url_rule("/import/process", "process_import", process_import, methods=["POST"])
 app.add_url_rule("/stock_adjustment", "stock_adjustment", stock_adjustment, methods=["GET", "POST"])
@@ -454,11 +458,13 @@ app.add_url_rule("/supplier/<int:id>/ledger/adjustment/delete/<int:entry_id>", "
 app.add_url_rule("/supplier/<int:id>/ledger/export", "export_supplier_ledger", export_supplier_ledger, methods=["GET"])
 app.add_url_rule("/supplier/<int:id>/ledger/export/excel", "export_supplier_ledger_excel", export_supplier_ledger_excel, methods=["GET"])
 app.add_url_rule("/api/supplier/<int:id>/balance", "api_supplier_balance", api_supplier_balance, methods=["GET"])
+app.add_url_rule("/api/suppliers/lookup", "api_supplier_lookup", api_supplier_lookup, methods=["GET"])
 app.add_url_rule("/customer/<int:id>/ledger", "customer_ledger", customer_ledger, methods=["GET", "POST"])
 app.add_url_rule("/customer/<int:id>/ledger/adjustment/delete/<int:entry_id>", "delete_customer_ledger_adjustment", delete_customer_ledger_adjustment, methods=["POST"])
 app.add_url_rule("/customer/<int:id>/ledger/export", "export_customer_ledger", export_customer_ledger, methods=["GET"])
 app.add_url_rule("/customer/<int:id>/ledger/export/excel", "export_customer_ledger_excel", export_customer_ledger_excel, methods=["GET"])
 app.add_url_rule("/api/customer/<int:id>/balance", "api_customer_balance", api_customer_balance, methods=["GET"])
+app.add_url_rule("/api/customers/lookup", "api_customer_lookup", api_customer_lookup, methods=["GET"])
 app.add_url_rule("/accounts", "accounts", accounts, methods=["GET"])
 app.add_url_rule("/accounts/new", "new_account", new_account, methods=["GET", "POST"])
 app.add_url_rule("/accounts/<int:id>/edit", "edit_account", edit_account, methods=["GET", "POST"])
@@ -1336,6 +1342,24 @@ def migrate_database():
         if "item_type" not in item_columns:
             with db.engine.begin() as conn:
                 conn.execute(text("ALTER TABLE item ADD COLUMN item_type VARCHAR(20) DEFAULT 'STOCK'"))
+        if "sku" not in item_columns:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE item ADD COLUMN sku VARCHAR(64)"))
+        # Non-unique, CONCURRENTLY-free indexes on existing tables — cheap on
+        # both engines (no lock upgrade like a UNIQUE index would need), safe
+        # to run on every boot since CREATE INDEX IF NOT EXISTS is a no-op
+        # once the index exists.
+        with db.engine.begin() as conn:
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_item_sku ON item (sku)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_item_name ON item (name)"))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_item_business_category_id ON item (business_category_id)"))
+    if "supplier" in inspector.get_table_names():
+        with db.engine.begin() as conn:
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_supplier_contact ON supplier (contact)"))
+    if "customer" in inspector.get_table_names():
+        with db.engine.begin() as conn:
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_customer_contact ON customer (contact)"))
     # Multi-unit: the unit a line was transacted in, and its factor into the item's
     # base unit. Nullable/default-1, so every existing row reads back as "the base
     # unit, factor 1" — exactly what it always implicitly was.
@@ -2603,8 +2627,6 @@ def quotations():
     quotes, pagination = get_paginated_results(
         query.order_by(Quotation.quote_date.desc(), Quotation.id.desc())
     )
-    customers = Customer.query.order_by(Customer.name).all()
-    items     = Item.query.order_by(Item.name).all()
     if request.method == "POST":
         customer_id  = request.form.get("customer_id", "").strip()
         quote_date   = request.form.get("quote_date", "").strip()
@@ -2656,7 +2678,7 @@ def quotations():
             flash(f"Quotation #{q.id} created.", "success")
             return redirect(url_for("quotations"))
     return render_template("quotations.html",
-        quotes=quotes, customers=customers, items=items,
+        quotes=quotes,
         pagination=pagination, search=search,
         quote_statuses=QUOTATION_STATUSES,
         today=now_local().strftime("%Y-%m-%d"))
@@ -2778,8 +2800,6 @@ def edit_quotation(id):
     if q.status == "Converted":
         flash("Converted quotations cannot be edited.", "danger")
         return redirect(url_for("quotation_detail", id=id))
-    customers = Customer.query.order_by(Customer.name).all()
-    items = Item.query.order_by(Item.name).all()
     if request.method == "POST":
         customer_id = request.form.get("customer_id", "").strip()
         quote_date = request.form.get("quote_date", "").strip()
@@ -2829,7 +2849,7 @@ def edit_quotation(id):
             return redirect(url_for("quotation_detail", id=id))
     total = quotation_total(q)
     return render_template("quotation_edit.html",
-        q=q, customers=customers, items=items, total=total,
+        q=q, total=total,
         q_item_net=quotation_item_net, quote_statuses=QUOTATION_STATUSES,
         today=now_local().strftime("%Y-%m-%d"))
 
@@ -4564,60 +4584,15 @@ def seed_data_cmd(yes, demo_user):
 
 @app.cli.command("seed-categories")
 def seed_categories_cmd():
-    """Seed 21 business categories into the database."""
-    from salpurflask.models.business_config import BusinessCategory
-
-    categories_data = [
-        ("Medical Store", "medical-store", "Pharmaceuticals and medical products", "bi-pill", 0),
-        ("Grocery", "grocery", "Food and grocery items", "bi-bag-check", 1),
-        ("Garments", "garments", "Clothing and apparel", "bi-bag", 2),
-        ("Footwear", "footwear", "Shoes and footwear", "bi-shoe", 3),
-        ("Electronics", "electronics", "Electronic devices and gadgets", "bi-lightning-charge", 4),
-        ("Cosmetics", "cosmetics", "Beauty and cosmetic products", "bi-heart-fill", 5),
-        ("Hardware", "hardware", "Hardware and tools", "bi-hammer", 6),
-        ("Kitchen & Home", "kitchen-home", "Kitchen appliances and home items", "bi-cup-hot", 7),
-        ("Stationery", "stationery", "Office and school supplies", "bi-pencil-square", 8),
-        ("Bakery", "bakery", "Bakery and bread products", "bi-cake2", 9),
-        ("Dairy", "dairy", "Dairy and milk products", "bi-cup", 10),
-        ("Frozen Foods", "frozen-foods", "Frozen and refrigerated items", "bi-snow", 11),
-        ("Fruits & Vegetables", "fruits-vegetables", "Fresh fruits and vegetables", "bi-apple", 12),
-        ("Meat & Poultry", "meat-poultry", "Meat and poultry products", "bi-dice-5", 13),
-        ("Toys", "toys", "Toys and games", "bi-puzzle", 14),
-        ("Gift Shop", "gift-shop", "Gifts and gift items", "bi-gift", 15),
-        ("Mobile Shop", "mobile-shop", "Mobile phones and accessories", "bi-phone", 16),
-        ("Departmental Store", "departmental-store", "Multi-category departmental store", "bi-shop", 17),
-        ("Premium Products", "premium", "Premium and luxury products", "bi-gem", 18),
-        ("Budget Range", "budget", "Budget-friendly products", "bi-cash-coin", 19),
-        ("Seasonal Items", "seasonal", "Seasonal and special items", "bi-calendar-event", 20),
-    ]
+    """Seed the built-in business categories (and their default fields)."""
+    from salpurflask.services.category_catalog import ensure_builtin_categories
 
     with app.app_context():
-        imported = 0
-        skipped = 0
-
-        for name, slug, description, icon, priority in categories_data:
-            existing = BusinessCategory.query.filter_by(slug=slug).first()
-            if existing:
-                click.echo(f"⊘ {name} (already exists)")
-                skipped += 1
-                continue
-
-            cat = BusinessCategory(
-                name=name,
-                slug=slug,
-                description=description,
-                icon=icon,
-                color="primary",
-                priority=priority,
-                is_enabled=True
-            )
-            db.session.add(cat)
-            imported += 1
-            click.echo(f"✓ {name}")
-
-        db.session.commit()
-        click.echo(f"\n✓ Imported: {imported} categories")
-        click.echo(f"⊘ Skipped: {skipped} categories")
+        categories_created, fields_created = ensure_builtin_categories()
+        click.echo(f"Categories created: {categories_created}")
+        click.echo(f"Fields created: {fields_created}")
+        click.echo("Seed complete." if categories_created or fields_created
+                   else "Already up to date — nothing to add.")
 
 
 @app.cli.command("fix-sequences")
@@ -4705,23 +4680,12 @@ def setup_production_cmd(demo_user):
             else:
                 click.echo("   [SKIP] Financial accounts already exist\n")
 
-            # 5. Seed business categories FIRST (before items)
+            # 5. Seed business categories FIRST (before items) — shared with
+            # `flask seed-categories`, so both commands always agree on slugs.
             click.echo("[5/8] Seeding Business Categories...")
             if not BusinessCategory.query.first():
-                # Categories don't exist, seed them
-                categories_to_seed = [
-                    ("Medical Store", "medical-store", "Pharmaceuticals and medical products", "bi-pill", 0, True),
-                    ("Grocery", "grocery", "Food and grocery items", "bi-bag-check", 1, True),
-                    ("Garments", "garments", "Clothing and apparel", "bi-bag", 2, True),
-                    ("Footwear", "footwear", "Shoes and footwear", "bi-shoe", 3, True),
-                ]
-                for name, slug, desc, icon, priority, enabled in categories_to_seed:
-                    if not BusinessCategory.query.filter_by(slug=slug).first():
-                        db.session.add(BusinessCategory(
-                            name=name, slug=slug, description=desc, icon=icon,
-                            color="primary", priority=priority, is_enabled=enabled
-                        ))
-                db.session.commit()
+                from salpurflask.services.category_catalog import ensure_builtin_categories
+                ensure_builtin_categories()
                 click.echo("   [OK] Categories seeded\n")
             else:
                 click.echo("   [SKIP] Categories already exist\n")
@@ -4729,12 +4693,12 @@ def setup_production_cmd(demo_user):
             # 6. Create master items (after categories exist)
             click.echo("[6/8] Creating Master Items...")
             items_data = [
-                ("Ibuprofen 200mg", "medical-store", "Pcs", 100, 150, 10),
-                ("Aspirin 500mg", "medical-store", "Pcs", 80, 120, 10),
-                ("Rice Premium (kg)", "grocery", "kg", 50, 80, 5),
-                ("Wheat Flour (kg)", "grocery", "kg", 40, 70, 5),
-                ("Cotton T-Shirt (M)", "garments", "Pcs", 200, 400, 20),
-                ("Denim Jeans", "garments", "Pcs", 800, 1500, 15),
+                ("Ibuprofen 200mg", "medical-pharmacy", "Pcs", 100, 150, 10),
+                ("Aspirin 500mg", "medical-pharmacy", "Pcs", 80, 120, 10),
+                ("Rice Premium (kg)", "grocery-fmcg", "kg", 50, 80, 5),
+                ("Wheat Flour (kg)", "grocery-fmcg", "kg", 40, 70, 5),
+                ("Cotton T-Shirt (M)", "garments-apparel", "Pcs", 200, 400, 20),
+                ("Denim Jeans", "garments-apparel", "Pcs", 800, 1500, 15),
                 ("Leather Shoes", "footwear", "Pcs", 1200, 2000, 10),
                 ("Running Shoes", "footwear", "Pcs", 2500, 4000, 10),
             ]

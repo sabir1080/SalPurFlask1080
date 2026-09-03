@@ -13,11 +13,10 @@
       <div class="row g-3 mb-4">
         <div class="col-md-6">
           <label for="customer_id" class="form-label required">Customer</label>
-          <select class="form-select" id="customer_id" name="customer_id" required>
-            {% for customer in customers %}
-            <option value="{{ customer.id }}" {% if receipt.customer_id == customer.id %}selected{% endif %}>{{ customer.name }}</option>
-            {% endfor %}
-          </select>
+          <input type="hidden" id="customer_id" name="customer_id" required value="{{ receipt.customer_id }}">
+          <button type="button" class="btn btn-outline-secondary w-100 text-start" onclick="openCustomerLookup()">
+            <i class="bi bi-search"></i> <span id="customer_id_label">{{ receipt.customer.name if receipt.customer else 'Select Customer' }}</span>
+          </button>
         </div>
         <div class="col-md-6">
           <label for="amount" class="form-label required">Amount</label>
@@ -82,16 +81,30 @@
   </div>
 </div>
 <script>
+const saleSelect = document.getElementById('sale_id');
+function filterSales() {
+    const cid = document.getElementById('customer_id').value;
+    saleSelect.querySelectorAll('.sale-option').forEach(function (opt) {
+        opt.hidden = cid && opt.dataset.customer !== cid;
+    });
+}
+
+// Customer selection now goes through the Universal Party Lookup
+// (static/js/party_lookup.js) instead of a <select> pre-populated with every
+// customer. filterSales() previously ran on the <select>'s native "change"
+// event; it now runs right after a lookup pick, the only way it can change.
+function openCustomerLookup() {
+    PartyLookup.open({
+        type: "customer",
+        onSelect: function (party) {
+            document.getElementById('customer_id').value = party.id;
+            document.getElementById('customer_id_label').textContent = party.name;
+            filterSales();
+        }
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function () {
-    const customerSelect = document.getElementById('customer_id');
-    const saleSelect = document.getElementById('sale_id');
-    function filterSales() {
-        const cid = customerSelect.value;
-        saleSelect.querySelectorAll('.sale-option').forEach(function (opt) {
-            opt.hidden = cid && opt.dataset.customer !== cid;
-        });
-    }
-    customerSelect.addEventListener('change', filterSales);
     filterSales();
 });
 </script>

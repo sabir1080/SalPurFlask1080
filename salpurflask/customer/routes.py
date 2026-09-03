@@ -11,6 +11,7 @@ from salpurflask.auth import verified_required, manager_required, admin_required
 from salpurflask.utils import (
     get_paginated_results, csv_response, excel_response, valid_phone, now_local
 )
+from salpurflask.services.lookup_service import search_customers
 
 
 # ─── CUSTOMER CRUD ROUTES ─────────────────────────────────────────────────
@@ -164,7 +165,6 @@ def customer_receipt():
             | (CustomerPayment.notes.ilike(f"%{search}%"))
         )
     receipts, pagination = get_paginated_results(query.order_by(CustomerPayment.payment_date.desc()))
-    customers = Customer.query.order_by(Customer.name).all()
     sales = Sale.query.order_by(Sale.date.desc()).all()
     if request.method == "POST":
         customer_id = request.form.get("customer_id", "").strip()
@@ -208,7 +208,6 @@ def customer_receipt():
     return render_template(
         "customer_receipt.html",
         receipts=receipts,
-        customers=customers,
         sales=sales,
         pagination=pagination,
         search=search,
@@ -226,7 +225,6 @@ def edit_customer_receipt(id):
 
     receipt = db.session.get(CustomerPayment, id) or abort(404)
     assert_not_posted("receipt", receipt.id, f"Receipt #{receipt.id}")
-    customers = Customer.query.order_by(Customer.name).all()
     sales = Sale.query.order_by(Sale.date.desc()).all()
     if request.method == "POST":
         customer_id = request.form.get("customer_id", "").strip()
@@ -270,7 +268,6 @@ def edit_customer_receipt(id):
     return render_template(
         "edit_customer_receipt.html",
         receipt=receipt,
-        customers=customers,
         sales=sales,
     )
 
@@ -304,7 +301,6 @@ def customer_bulk_receipt():
         sale_total, get_sale_received, parse_payment_amount, parse_account_id, PAYMENT_METHODS
     )
 
-    customers = Customer.query.order_by(Customer.name).all()
     customer_id = request.args.get("customer_id", "").strip()
     selected_customer = None
     outstanding = []
@@ -443,7 +439,6 @@ def customer_bulk_receipt():
 
     return render_template(
         "customer_bulk_receipt.html",
-        customers=customers,
         selected_customer=selected_customer,
         outstanding=outstanding,
         bulk_amount_val=bulk_amount_val,
@@ -578,4 +573,19 @@ def api_customer_balance(id):
         "receivable": get_customer_receivable(id),
         "received": get_customer_received(id),
         "balance": get_customer_balance(id),
+    }
+
+
+@verified_required
+def api_customer_lookup():
+    """Server-side customer lookup for the universal picker — never the
+    whole table, always paginated (see salpurflask/services/lookup_service)."""
+    q = request.args.get("q", "")
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 20, type=int)
+    rows, total, page, per_page = search_customers(q=q, page=page, per_page=per_page)
+    return {
+        "results": [{"id": c.id, "name": c.name, "contact": c.contact, "address": c.address}
+                    for c in rows],
+        "total": total, "page": page, "per_page": per_page,
     }

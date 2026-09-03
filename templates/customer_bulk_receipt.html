@@ -29,14 +29,14 @@
     <form method="GET" class="row g-3 align-items-end">
       <div class="col-md-4">
         <label class="form-label">Customer</label>
-        <select class="form-select" name="customer_id" required>
-          <option value="">Choose Customer</option>
-          {% for c in customers %}
-          <option value="{{ c.id }}" {% if selected_customer and c.id == selected_customer.id %}selected{% endif %}>
-            {{ c.name }}
-          </option>
-          {% endfor %}
-        </select>
+        <input type="hidden" id="customer_id" name="customer_id" required
+               value="{{ selected_customer.id if selected_customer else '' }}">
+        <button type="button" class="btn btn-outline-secondary w-100 text-start" onclick="openCustomerLookup()">
+          <i class="bi bi-search"></i>
+          <span id="customer_id_label" class="{{ '' if selected_customer else 'text-muted' }}">
+            {{ selected_customer.name if selected_customer else 'Choose Customer' }}
+          </span>
+        </button>
       </div>
       <div class="col-md-4">
         <label class="form-label">Total Receipt Amount</label>
@@ -207,6 +207,18 @@
 {% endif %}
 
 <script>
+function openCustomerLookup() {
+    PartyLookup.open({
+        type: "customer",
+        onSelect: function (party) {
+            document.getElementById('customer_id').value = party.id;
+            const label = document.getElementById('customer_id_label');
+            label.textContent = party.name;
+            label.classList.remove('text-muted');
+        }
+    });
+}
+
 function updateTotal() {
     let total = 0;
     document.querySelectorAll('.recv-now-input').forEach(inp => {

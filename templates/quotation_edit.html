@@ -19,12 +19,10 @@
       <div class="row g-3 mb-3">
         <div class="col-md-4">
           <label class="form-label fw-semibold">Customer <span class="text-danger">*</span></label>
-          <select class="form-select" name="customer_id" required>
-            <option value="">-- Select Customer --</option>
-            {% for c in customers %}
-            <option value="{{ c.id }}" {% if c.id == q.customer_id %}selected{% endif %}>{{ c.name }}</option>
-            {% endfor %}
-          </select>
+          <input type="hidden" id="customer_id" name="customer_id" required value="{{ q.customer_id }}">
+          <button type="button" class="btn btn-outline-secondary w-100 text-start" onclick="openCustomerLookup()">
+            <i class="bi bi-search"></i> <span id="customer_id_label">{{ q.customer.name if q.customer else 'Select Customer' }}</span>
+          </button>
         </div>
         <div class="col-md-2">
           <label class="form-label fw-semibold">Quote Date <span class="text-danger">*</span></label>
@@ -64,12 +62,10 @@
                 {% for qi in q.line_items %}
                 <tr>
                   <td>
-                    <select class="form-select form-select-sm" name="item_id[]" required>
-                      <option value="">-- Item --</option>
-                      {% for item in items %}
-                      <option value="{{ item.id }}" data-price="{{ item.sale_price or 0 }}" {% if item.id == qi.item_id %}selected{% endif %}>{{ item.name }}</option>
-                      {% endfor %}
-                    </select>
+                    <input type="hidden" class="item-select" name="item_id[]" required value="{{ qi.item_id }}">
+                    <button type="button" class="btn btn-outline-secondary btn-sm w-100 text-start item-picker-btn" onclick="openRowItemLookup(this)">
+                      <i class="bi bi-search"></i> <span class="item-picker-label">{{ qi.item.name if qi.item else 'Select Item' }}</span>
+                    </button>
                   </td>
                   <td><select class="form-select form-select-sm unit-select" name="unit_id[]"></select></td>
                   <td><input type="number" min="1" class="form-control form-control-sm" name="quantity[]" value="{{ qi.quantity }}" required></td>
@@ -100,18 +96,53 @@
 </div>
 
 <script>
-const ITEMS_DATA = [
-    {% for item in items %}{"id":{{ item.id }},"price":{{ item.sale_price or 0 }}},{% endfor %}
-];
 const DEFAULT_TAX_RATE = {{ '%.2f' | format(default_tax_rate) }};
-const ITEM_UNITS = {{ item_units_for_js(items) | tojson }};
 
-function populateUnits(row, itemId) {
+function openCustomerLookup() {
+    PartyLookup.open({
+        type: "customer",
+        onSelect: function (party) {
+            document.getElementById('customer_id').value = party.id;
+            document.getElementById('customer_id_label').textContent = party.name;
+        }
+    });
+}
+
+// Item selection goes through the Universal Item Lookup (static/js/item_lookup.js)
+// instead of a <select> pre-populated with every item — the browser never receives
+// the whole catalogue just because this page was opened. Only the chosen item's own
+// unit choices are fetched (one small request per pick, not one for every item up front).
+function openRowItemLookup(btn) {
+    const row = btn.closest('tr');
+    ItemLookup.open({
+        onSelect: function (item) { applyItemToRow(row, item); }
+    });
+}
+
+function applyItemToRow(row, item) {
+    row.querySelector('.item-select').value = item.id;
+    row.querySelector('.item-picker-label').textContent = item.name;
+    fetchUnitsAndPopulate(row, item.id);
+}
+
+function fetchUnitsAndPopulate(row, itemId) {
+    return fetch("/api/items/" + encodeURIComponent(itemId) + "/units")
+        .then(r => r.json())
+        .then(data => populateUnits(row, data.units || []))
+        .catch(() => populateUnits(row, [{ key: "", name: "Pcs", factor: 1, sale_price: null }]));
+}
+
+function populateUnits(row, units) {
     const unitSel = row.querySelector('.unit-select');
-    const units = ITEM_UNITS[itemId] || [];
-    unitSel.innerHTML = units.map(u =>
-        `<option value="${u.key}" data-factor="${u.factor}" data-price="${u.sale_price ?? ''}">${u.name}</option>`
-    ).join('');
+    unitSel.innerHTML = '';
+    units.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.key;
+        opt.dataset.factor = u.factor;
+        if (u.sale_price !== null && u.sale_price !== undefined) opt.dataset.price = u.sale_price;
+        opt.textContent = u.name;
+        unitSel.appendChild(opt);
+    });
     applyUnitPrice(unitSel);
 }
 
@@ -129,32 +160,34 @@ function addRow() {
     clone.querySelectorAll('input').forEach(i => {
         if (i.name == 'discount_value[]') i.value = '0';
         else if (i.name == 'tax_percent[]') i.value = DEFAULT_TAX_RATE;
+        else if (i.classList.contains('item-select')) i.value = '';
         else i.value = '';
     });
     if(clone.querySelector('input[name="quantity[]"]')) clone.querySelector('input[name="quantity[]"]').value='1';
     clone.querySelectorAll('select').forEach(s => s.selectedIndex = 0);
     clone.querySelector('.unit-select').innerHTML = '';
+    const label = clone.querySelector('.item-picker-label');
+    label.textContent = '-- Item --';
     const last = clone.querySelector('td:last-child');
     last.innerHTML = '<button type="button" class="btn btn-danger btn-sm" onclick="this.closest(\'tr\').remove()">x</button>';
     tbody.appendChild(clone);
 }
 
 document.getElementById('itemBody').addEventListener('change', function(e) {
-    if (e.target.name === 'item_id[]') {
-        const row = e.target.closest('tr');
-        populateUnits(row, e.target.value);
-    }
     if (e.target.name === 'unit_id[]') {
         applyUnitPrice(e.target);
     }
 });
 
-// Initialize units for existing rows on page load
+// Initialize units for existing rows on page load — same as before migration,
+// this intentionally still re-applies the item's current unit price over the
+// pre-filled sale_price[] value (a pre-existing quirk of this page, not
+// something this migration changes).
 document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('#itemBody tr').forEach(row => {
-        const itemSel = row.querySelector('select[name="item_id[]"]');
+        const itemSel = row.querySelector('.item-select');
         if (itemSel && itemSel.value) {
-            populateUnits(row, itemSel.value);
+            fetchUnitsAndPopulate(row, itemSel.value);
         }
     });
 });

@@ -126,8 +126,6 @@ def purchase():
     purchases, pagination = get_paginated_results(
         query.order_by(Purchase.date.desc(), Purchase.id.desc())
     )
-    suppliers = Supplier.query.order_by(Supplier.name).all()
-    items = Item.query.order_by(Item.name).all()
     locations_query = Location.query.filter_by(active=True)
     if accessible_ids is not None:
         locations_query = locations_query.filter(Location.id.in_(accessible_ids))
@@ -227,8 +225,6 @@ def purchase():
                 flash(f"Invalid data: {e}", "danger")
     return render_template(
         "purchase.html",
-        suppliers=suppliers,
-        items=items,
         purchases=purchases,
         pagination=pagination,
         search=search,
@@ -248,8 +244,6 @@ def edit_purchase(id):
 
     pur = db.session.get(Purchase, id) or abort(404)
     assert_not_posted("purchase", pur.id, f"Purchase #{pur.id}")
-    suppliers = Supplier.query.order_by(Supplier.name).all()
-    items_all = Item.query.order_by(Item.name).all()
     # Editing never moves a purchase's stock effect to a different warehouse —
     # see edit_sale()'s identical rule and reasoning.
     location_id = pur.location_id if pur.location_id is not None else resolve_location_id(None)
@@ -338,7 +332,7 @@ def edit_purchase(id):
                     names = ", ".join(f"{it.name} ({it.stock})" for it in negative_items)
                     db.session.rollback()
                     flash(f"Cannot save — this change would make stock negative for: {names}", "danger")
-                    return render_template("edit_purchase.html", purchase=pur, suppliers=suppliers, items=items_all)
+                    return render_template("edit_purchase.html", purchase=pur)
 
                 db.session.flush()
                 db.session.refresh(pur)
@@ -353,7 +347,7 @@ def edit_purchase(id):
                 return redirect(url_for("purchase"))
             except ValueError as e:
                 flash(f"Invalid data: {e}", "danger")
-    return render_template("edit_purchase.html", purchase=pur, suppliers=suppliers, items=items_all)
+    return render_template("edit_purchase.html", purchase=pur)
 
 
 @admin_required
@@ -596,8 +590,6 @@ def purchase_orders():
     orders, pagination = get_paginated_results(
         query.order_by(PurchaseOrder.order_date.desc(), PurchaseOrder.id.desc())
     )
-    suppliers = Supplier.query.order_by(Supplier.name).all()
-    items     = Item.query.order_by(Item.name).all()
     if request.method == "POST":
         supplier_id   = request.form.get("supplier_id", "").strip()
         order_date    = request.form.get("order_date", "").strip()
@@ -658,7 +650,7 @@ def purchase_orders():
             flash(f"Purchase Order #{po.id} created.", "success")
             return redirect(url_for("purchase_orders"))
     return render_template("purchase_orders.html",
-        orders=orders, suppliers=suppliers, items=items,
+        orders=orders,
         pagination=pagination, search=search,
         po_statuses=PO_STATUSES,
         today=now_local().strftime("%Y-%m-%d"))

@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block title %}Warehouse Transfers — {{ app_name }}{% endblock %}
+{% block extra_head %}
+<style>
+.transfer-badge-Draft{background:#6c757d}
+.transfer-badge-Confirmed{background:#0d6efd}
+.transfer-badge-Cancelled{background:#dc3545}
+.transfer-badge-Reversed{background:#a3791f}
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-arrow-left-right"></i> Warehouse Transfers</h1>
+    <p>Move stock between warehouses</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('transfer_new') }}" class="btn btn-primary">
+      <i class="bi bi-plus-circle"></i> New Transfer
+    </a>
+  </div>
+</div>
+
+<div class="card mb-6">
+  <div class="card-body">
+    <form method="GET" class="row g-3">
+      <div class="col-md-3">
+        <label class="form-label small mb-1">Status</label>
+        <select class="form-select form-select-sm" name="status">
+          <option value="">All statuses</option>
+          {% for s in statuses %}
+          <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1">From (Source)</label>
+        <select class="form-select form-select-sm" name="source_location_id">
+          <option value="">Any warehouse</option>
+          {% for loc in locations %}
+          <option value="{{ loc.id }}" {% if filters.source_location_id == loc.id|string %}selected{% endif %}>{{ loc.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1">To (Destination)</label>
+        <select class="form-select form-select-sm" name="destination_location_id">
+          <option value="">Any warehouse</option>
+          {% for loc in locations %}
+          <option value="{{ loc.id }}" {% if filters.destination_location_id == loc.id|string %}selected{% endif %}>{{ loc.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3 d-flex align-items-end">
+        <button type="submit" class="btn btn-secondary btn-sm w-100">Filter</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+    <table class="table table-bordered table-hover mb-0">
+      <thead class="table-dark">
+        <tr>
+          <th>Transfer #</th><th>Date</th><th>From</th><th>To</th>
+          <th class="text-center">Items</th><th class="text-center">Status</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in transfers %}
+        <tr>
+          <td><strong>{{ t.transfer_no or ('DRAFT-' ~ t.id) }}</strong></td>
+          <td class="text-nowrap">{{ t.date.strftime('%d %b %Y') }}</td>
+          <td>{{ t.source_location.name }}</td>
+          <td>{{ t.destination_location.name }}</td>
+          <td class="text-center">{{ t.lines | length }}</td>
+          <td class="text-center">
+            <span class="badge transfer-badge-{{ t.status }}">{{ t.status }}</span>
+          </td>
+          <td>
+            <a href="{{ url_for('transfer_detail', id=t.id) }}" class="btn btn-outline-primary btn-sm">View</a>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="text-center text-muted py-3">No transfers yet</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+{{ pagination.links }}
+{% endblock %}

@@ -60,8 +60,6 @@ def sale():
     if search:
         query = query.join(Customer).filter(Customer.name.ilike(f"%{search}%"))
     sales, pagination = get_paginated_results(query.order_by(Sale.date.desc(), Sale.id.desc()))
-    customers = Customer.query.order_by(Customer.name).all()
-    items = Item.query.order_by(Item.name).all()
     locations_query = Location.query.filter_by(active=True)
     if accessible_ids is not None:
         locations_query = locations_query.filter(Location.id.in_(accessible_ids))
@@ -194,8 +192,6 @@ def sale():
     default_tax = get_standard_tax_rate() or 0
     return render_template(
         "sale.html",
-        customers=customers,
-        items=items,
         sales=sales,
         pagination=pagination,
         search=search,
@@ -218,8 +214,6 @@ def edit_sale(id):
 
     sal = db.session.get(Sale, id) or abort(404)
     assert_not_posted("sale", sal.id, f"Sale #{sal.id}")
-    customers = Customer.query.order_by(Customer.name).all()
-    items_all = Item.query.order_by(Item.name).all()
     # Editing never moves a sale's stock effect to a different warehouse — the
     # sale keeps the location it was created with. Stock returned below always
     # goes back to this same location, and the new lines are deducted from it
@@ -340,7 +334,7 @@ def edit_sale(id):
                 flash(f"Invalid data: {e}", "danger")
     from app import get_standard_tax_rate
     default_tax = get_standard_tax_rate() or 0
-    return render_template("edit_sale.html", sale=sal, customers=customers, items=items_all, default_tax_rate=default_tax)
+    return render_template("edit_sale.html", sale=sal, default_tax_rate=default_tax)
 
 
 @sales_bp.route('/sale/<int:id>/delete', methods=['POST'])
@@ -582,8 +576,6 @@ def pos():
 
     return render_template(
         "pos.html",
-        items=Item.query.order_by(Item.name).all(),
-        customers=Customer.query.order_by(Customer.name).all(),
         accounts=active_accounts(),
         walkin=get_walkin_customer(),
         today=now_local().strftime("%Y-%m-%d"),
@@ -988,11 +980,17 @@ def get_pos_hold(id):
                 line["stock"] = item.stock
                 line["name"] = item.name
 
+        # customer_name: the POS customer field is now a lookup-picked hidden
+        # input, not a <select> with every customer's name already in an
+        # <option> — resuming a hold has to be told the name explicitly to
+        # show the right label instead of a stale/blank one.
+        customer = db.session.get(Customer, hold.customer_id) if hold.customer_id else None
         return {
             "ok": True,
             "hold_id": hold.id,
             "hold_no": f"HOLD-{hold.id:05d}",
             "customer_id": hold.customer_id,
+            "customer_name": customer.name if customer else "",
             "account_id": hold.account_id,
             "amount_paid": float(hold.amount_paid_memo or 0),
             "notes": hold.notes or "",

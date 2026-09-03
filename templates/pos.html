@@ -310,12 +310,10 @@
 
     <div class="mb-3">
       <label class="form-label small mb-2">Customer</label>
-      <select id="customer" class="form-select form-select-sm">
-        <option value="{{ walkin.id }}">Walk-in Customer</option>
-        {% for c in customers if c.name != 'Walk-in Customer' %}
-        <option value="{{ c.id }}">{{ c.name }}</option>
-        {% endfor %}
-      </select>
+      <input type="hidden" id="customer" value="{{ walkin.id }}">
+      <button type="button" class="btn btn-outline-secondary btn-sm w-100 text-start" onclick="openCustomerLookup()">
+        <i class="bi bi-search"></i> <span id="customer_label">Walk-in Customer</span>
+      </button>
     </div>
 
     <div class="mb-3">
@@ -406,7 +404,8 @@
             tax_percent: line.tax_percent || 0,
           }));
           holdVersion = data.version || 1;  // Store version for optimistic locking
-          document.getElementById('customer').value = data.customer_id || '';
+          document.getElementById('customer').value = data.customer_id || '{{ walkin.id }}';
+          document.getElementById('customer_label').textContent = data.customer_name || 'Walk-in Customer';
           document.getElementById('account').value = data.account_id || '';
           document.getElementById('paid').value = data.amount_paid || 0;
           userEditedPaid = false;  // Reset edit tracking for resumed bill
@@ -428,6 +427,21 @@
   }, 0);
 
   function refocus() { scan.focus(); }
+
+  // Customer selection now goes through the Universal Party Lookup
+  // (static/js/party_lookup.js) instead of a <select> pre-populated with
+  // every customer — the counter never receives the whole customer master
+  // just because POS was opened.
+  function openCustomerLookup() {
+    PartyLookup.open({
+      type: "customer",
+      onSelect: function (party) {
+        document.getElementById('customer').value = party.id;
+        document.getElementById('customer_label').textContent = party.name;
+        refocus();
+      }
+    });
+  }
 
   function updateTotalsDisplay() {
     let grandTotal = 0, totalDisc = 0, totalTax = 0;

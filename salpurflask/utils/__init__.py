@@ -31,6 +31,7 @@ from salpurflask.utils.config_utils import (
 # Inventory utilities
 from salpurflask.utils.inventory_utils import (
     barcode_taken,
+    sku_taken,
 )
 
 # Inventory helper calculations
@@ -62,6 +63,7 @@ __all__ = [
     'is_demo_mode',
     # From inventory
     'barcode_taken',
+    'sku_taken',
     # From import
     'parse_import_file',
 ]

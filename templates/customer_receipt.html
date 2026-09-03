@@ -39,12 +39,10 @@
       <div class="col-md-4">
         <div class="form-group">
           <label class="form-label required">Customer</label>
-          <select class="form-select" id="customer_id" name="customer_id" required>
-            <option value="">Select Customer</option>
-            {% for customer in customers %}
-            <option value="{{ customer.id }}" {% if form_data.get('customer_id', '')|string == customer.id|string %}selected{% endif %}>{{ customer.name }}</option>
-            {% endfor %}
-          </select>
+          <input type="hidden" id="customer_id" name="customer_id" required value="{{ form_data.get('customer_id', '') }}">
+          <button type="button" class="btn btn-outline-secondary w-100 text-start" onclick="openCustomerLookup()">
+            <i class="bi bi-search"></i> <span id="customer_id_label" class="text-muted">Select Customer</span>
+          </button>
           <small class="form-text">Advance receipt allowed</small>
         </div>
       </div>
@@ -172,36 +170,51 @@
 {% endif %}
 
 <script>
-document.addEventListener('DOMContentLoaded', function () {
-    const customerSelect = document.getElementById('customer_id');
-    const saleSelect = document.getElementById('sale_id');
-    const balanceHint = document.getElementById('customer_balance_hint');
+const saleSelect = document.getElementById('sale_id');
+const balanceHint = document.getElementById('customer_balance_hint');
 
-    function filterSales() {
-        const cid = customerSelect.value;
-        saleSelect.querySelectorAll('.sale-option').forEach(function (opt) {
-            opt.hidden = cid && opt.dataset.customer !== cid;
-        });
-        if (saleSelect.selectedOptions[0] && saleSelect.selectedOptions[0].hidden) {
-            saleSelect.value = '';
-        }
-    }
-
-    function updateBalance() {
-        const cid = customerSelect.value;
-        balanceHint.textContent = '';
-        if (!cid) return;
-        fetch('/api/customer/' + cid + '/balance')
-            .then(r => r.json())
-            .then(data => {
-                balanceHint.textContent = 'Balance due: ' + Number(data.balance).toLocaleString(undefined, {minimumFractionDigits: 2});
-            });
-    }
-
-    customerSelect.addEventListener('change', function () {
-        filterSales();
-        updateBalance();
+function filterSales() {
+    const cid = document.getElementById('customer_id').value;
+    saleSelect.querySelectorAll('.sale-option').forEach(function (opt) {
+        opt.hidden = cid && opt.dataset.customer !== cid;
     });
+    if (saleSelect.selectedOptions[0] && saleSelect.selectedOptions[0].hidden) {
+        saleSelect.value = '';
+    }
+}
+
+function updateBalance() {
+    const cid = document.getElementById('customer_id').value;
+    balanceHint.textContent = '';
+    if (!cid) return;
+    fetch('/api/customer/' + cid + '/balance')
+        .then(r => r.json())
+        .then(data => {
+            balanceHint.textContent = 'Balance due: ' + Number(data.balance).toLocaleString(undefined, {minimumFractionDigits: 2});
+        });
+}
+
+// Customer selection now goes through the Universal Party Lookup
+// (static/js/party_lookup.js) instead of a <select> pre-populated with every
+// customer — the browser never receives the whole customer master just
+// because this page was opened. filterSales()/updateBalance() previously
+// ran on the <select>'s native "change" event; they now run right after a
+// lookup pick, which is the only way the customer ever changes now.
+function openCustomerLookup() {
+    PartyLookup.open({
+        type: "customer",
+        onSelect: function (party) {
+            document.getElementById('customer_id').value = party.id;
+            const label = document.getElementById('customer_id_label');
+            label.textContent = party.name;
+            label.classList.remove('text-muted');
+            filterSales();
+            updateBalance();
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
     filterSales();
     updateBalance();
 });

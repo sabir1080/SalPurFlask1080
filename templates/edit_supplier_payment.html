@@ -13,11 +13,10 @@
       <div class="row g-3 mb-4">
         <div class="col-md-6">
           <label for="supplier_id" class="form-label required">Supplier</label>
-          <select class="form-select" id="supplier_id" name="supplier_id" required>
-            {% for supplier in suppliers %}
-            <option value="{{ supplier.id }}" {% if payment.supplier_id == supplier.id %}selected{% endif %}>{{ supplier.name }}</option>
-            {% endfor %}
-          </select>
+          <input type="hidden" id="supplier_id" name="supplier_id" required value="{{ payment.supplier_id }}">
+          <button type="button" class="btn btn-outline-secondary w-100 text-start" onclick="openSupplierLookup()">
+            <i class="bi bi-search"></i> <span id="supplier_id_label">{{ payment.supplier.name if payment.supplier else 'Select Supplier' }}</span>
+          </button>
         </div>
         <div class="col-md-6">
           <label for="amount" class="form-label required">Amount</label>
@@ -82,16 +81,31 @@
   </div>
 </div>
 <script>
+const purchaseSelect = document.getElementById('purchase_id');
+function filterPurchases() {
+    const sid = document.getElementById('supplier_id').value;
+    purchaseSelect.querySelectorAll('.purchase-option').forEach(function (opt) {
+        opt.hidden = sid && opt.dataset.supplier !== sid;
+    });
+}
+
+// Supplier selection now goes through the Universal Party Lookup
+// (static/js/party_lookup.js) instead of a <select> pre-populated with every
+// supplier. filterPurchases() previously ran on the <select>'s native
+// "change" event; it now runs right after a lookup pick, the only way it
+// can change.
+function openSupplierLookup() {
+    PartyLookup.open({
+        type: "supplier",
+        onSelect: function (party) {
+            document.getElementById('supplier_id').value = party.id;
+            document.getElementById('supplier_id_label').textContent = party.name;
+            filterPurchases();
+        }
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function () {
-    const supplierSelect = document.getElementById('supplier_id');
-    const purchaseSelect = document.getElementById('purchase_id');
-    function filterPurchases() {
-        const sid = supplierSelect.value;
-        purchaseSelect.querySelectorAll('.purchase-option').forEach(function (opt) {
-            opt.hidden = sid && opt.dataset.supplier !== sid;
-        });
-    }
-    supplierSelect.addEventListener('change', filterPurchases);
     filterPurchases();
 });
 </script>

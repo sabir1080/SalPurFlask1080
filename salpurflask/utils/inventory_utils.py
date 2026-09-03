@@ -28,4 +28,17 @@ def barcode_taken(barcode, exclude_id=None):
     return db.session.query(q.exists()).scalar()
 
 
-__all__ = ['barcode_taken']
+def sku_taken(sku, exclude_id=None):
+    """Check if a SKU is already used by another item. Same optional-uniqueness
+    rule as barcode_taken(): blank is never 'taken', a non-blank SKU must point
+    at one item only. Case-insensitive — 'ABC-1' and 'abc-1' are the same SKU
+    to a human re-typing it from a supplier invoice."""
+    if not sku:
+        return False
+    q = Item.query.filter(db.func.lower(Item.sku) == sku.strip().lower())
+    if exclude_id is not None:
+        q = q.filter(Item.id != exclude_id)
+    return db.session.query(q.exists()).scalar()
+
+
+__all__ = ['barcode_taken', 'sku_taken']

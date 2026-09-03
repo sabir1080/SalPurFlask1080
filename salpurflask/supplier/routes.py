@@ -11,6 +11,7 @@ from salpurflask.auth import verified_required, manager_required, admin_required
 from salpurflask.utils import (
     get_paginated_results, csv_response, excel_response, valid_phone, now_local
 )
+from salpurflask.services.lookup_service import search_suppliers
 
 
 # ─── SUPPLIER CRUD ROUTES ─────────────────────────────────────────────────
@@ -164,7 +165,6 @@ def supplier_payment():
             | (SupplierPayment.notes.ilike(f"%{search}%"))
         )
     payments, pagination = get_paginated_results(query.order_by(SupplierPayment.payment_date.desc()))
-    suppliers = Supplier.query.order_by(Supplier.name).all()
     purchases = Purchase.query.order_by(Purchase.date.desc()).all()
     if request.method == "POST":
         supplier_id = request.form.get("supplier_id", "").strip()
@@ -208,7 +208,6 @@ def supplier_payment():
     return render_template(
         "supplier_payment.html",
         payments=payments,
-        suppliers=suppliers,
         purchases=purchases,
         pagination=pagination,
         search=search,
@@ -226,7 +225,6 @@ def edit_supplier_payment(id):
 
     payment = db.session.get(SupplierPayment, id) or abort(404)
     assert_not_posted("payment", payment.id, f"Payment #{payment.id}")
-    suppliers = Supplier.query.order_by(Supplier.name).all()
     purchases = Purchase.query.order_by(Purchase.date.desc()).all()
     if request.method == "POST":
         supplier_id = request.form.get("supplier_id", "").strip()
@@ -270,7 +268,6 @@ def edit_supplier_payment(id):
     return render_template(
         "edit_supplier_payment.html",
         payment=payment,
-        suppliers=suppliers,
         purchases=purchases,
     )
 
@@ -304,7 +301,6 @@ def supplier_bulk_payment():
         purchase_total, get_purchase_paid, parse_payment_amount, parse_account_id, PAYMENT_METHODS
     )
 
-    suppliers = Supplier.query.order_by(Supplier.name).all()
     supplier_id = request.args.get("supplier_id", "").strip()
     selected_supplier = None
     outstanding = []
@@ -443,7 +439,6 @@ def supplier_bulk_payment():
 
     return render_template(
         "supplier_bulk_payment.html",
-        suppliers=suppliers,
         selected_supplier=selected_supplier,
         outstanding=outstanding,
         bulk_amount_val=bulk_amount_val,
@@ -578,4 +573,19 @@ def api_supplier_balance(id):
         "payable": get_supplier_payable(id),
         "paid": get_supplier_paid(id),
         "balance": get_supplier_balance(id),
+    }
+
+
+@verified_required
+def api_supplier_lookup():
+    """Server-side supplier lookup for the universal picker — never the
+    whole table, always paginated (see salpurflask/services/lookup_service)."""
+    q = request.args.get("q", "")
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 20, type=int)
+    rows, total, page, per_page = search_suppliers(q=q, page=page, per_page=per_page)
+    return {
+        "results": [{"id": s.id, "name": s.name, "contact": s.contact, "address": s.address}
+                    for s in rows],
+        "total": total, "page": page, "per_page": per_page,
     }

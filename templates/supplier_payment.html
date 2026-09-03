@@ -39,12 +39,10 @@
       <div class="col-md-4">
         <div class="form-group">
           <label class="form-label required">Supplier</label>
-          <select class="form-select" id="supplier_id" name="supplier_id" required>
-            <option value="">Select Supplier</option>
-            {% for supplier in suppliers %}
-            <option value="{{ supplier.id }}" {% if form_data.get('supplier_id', '')|string == supplier.id|string %}selected{% endif %}>{{ supplier.name }}</option>
-            {% endfor %}
-          </select>
+          <input type="hidden" id="supplier_id" name="supplier_id" required value="{{ form_data.get('supplier_id', '') }}">
+          <button type="button" class="btn btn-outline-secondary w-100 text-start" onclick="openSupplierLookup()">
+            <i class="bi bi-search"></i> <span id="supplier_id_label" class="text-muted">Select Supplier</span>
+          </button>
           <small class="form-text">Advance payment allowed</small>
         </div>
       </div>
@@ -172,36 +170,51 @@
 {% endif %}
 
 <script>
-document.addEventListener('DOMContentLoaded', function () {
-    const supplierSelect = document.getElementById('supplier_id');
-    const purchaseSelect = document.getElementById('purchase_id');
-    const balanceHint = document.getElementById('supplier_balance_hint');
+const purchaseSelect = document.getElementById('purchase_id');
+const balanceHint = document.getElementById('supplier_balance_hint');
 
-    function filterPurchases() {
-        const sid = supplierSelect.value;
-        purchaseSelect.querySelectorAll('.purchase-option').forEach(function (opt) {
-            opt.hidden = sid && opt.dataset.supplier !== sid;
-        });
-        if (purchaseSelect.selectedOptions[0] && purchaseSelect.selectedOptions[0].hidden) {
-            purchaseSelect.value = '';
-        }
-    }
-
-    function updateBalance() {
-        const sid = supplierSelect.value;
-        balanceHint.textContent = '';
-        if (!sid) return;
-        fetch('/api/supplier/' + sid + '/balance')
-            .then(r => r.json())
-            .then(data => {
-                balanceHint.textContent = 'Balance due: ' + Number(data.balance).toLocaleString(undefined, {minimumFractionDigits: 2});
-            });
-    }
-
-    supplierSelect.addEventListener('change', function () {
-        filterPurchases();
-        updateBalance();
+function filterPurchases() {
+    const sid = document.getElementById('supplier_id').value;
+    purchaseSelect.querySelectorAll('.purchase-option').forEach(function (opt) {
+        opt.hidden = sid && opt.dataset.supplier !== sid;
     });
+    if (purchaseSelect.selectedOptions[0] && purchaseSelect.selectedOptions[0].hidden) {
+        purchaseSelect.value = '';
+    }
+}
+
+function updateBalance() {
+    const sid = document.getElementById('supplier_id').value;
+    balanceHint.textContent = '';
+    if (!sid) return;
+    fetch('/api/supplier/' + sid + '/balance')
+        .then(r => r.json())
+        .then(data => {
+            balanceHint.textContent = 'Balance due: ' + Number(data.balance).toLocaleString(undefined, {minimumFractionDigits: 2});
+        });
+}
+
+// Supplier selection now goes through the Universal Party Lookup
+// (static/js/party_lookup.js) instead of a <select> pre-populated with every
+// supplier — the browser never receives the whole supplier master just
+// because this page was opened. filterPurchases()/updateBalance() previously
+// ran on the <select>'s native "change" event; they now run right after a
+// lookup pick, the only way it can change.
+function openSupplierLookup() {
+    PartyLookup.open({
+        type: "supplier",
+        onSelect: function (party) {
+            document.getElementById('supplier_id').value = party.id;
+            const label = document.getElementById('supplier_id_label');
+            label.textContent = party.name;
+            label.classList.remove('text-muted');
+            filterPurchases();
+            updateBalance();
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
     filterPurchases();
     updateBalance();
 });

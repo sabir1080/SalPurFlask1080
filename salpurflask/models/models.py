@@ -55,9 +55,9 @@ class Category(db.Model):
 
 class Item(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
-    name                = db.Column(db.String(100), nullable=False)
+    name                = db.Column(db.String(100), nullable=False, index=True)
     category_id         = db.Column(db.Integer, db.ForeignKey("category.id"), nullable=True)
-    business_category_id = db.Column(db.Integer, db.ForeignKey("business_category.id"), nullable=True)
+    business_category_id = db.Column(db.Integer, db.ForeignKey("business_category.id"), nullable=True, index=True)
     unit                = db.Column(db.String(20), nullable=False, default="Pcs")
     # Item type: STOCK (normal inventory item) or SERVICE (no inventory tracking)
     item_type           = db.Column(db.String(20), nullable=False, default="STOCK")
@@ -66,6 +66,13 @@ class Item(db.Model):
     # it does not care whether the label was a barcode or a QR. Nullable, because an item
     # can always be found by name; a code just makes it instant at the counter.
     barcode             = db.Column(db.String(64), nullable=True, index=True)
+    # The business/product identifier a merchant already uses on their own labels or
+    # supplier invoices — distinct from barcode (a physical scan target) and from id
+    # (an internal row number the user never sees). Nullable and NOT unique at the DB
+    # level: two items sharing a blank SKU is normal (most items never get one), but a
+    # duplicate non-blank SKU is refused by the route (sku_taken()), the same
+    # optional-uniqueness pattern barcode_taken() already established.
+    sku                 = db.Column(db.String(64), nullable=True, index=True)
     opening_stock       = db.Column(db.Integer, nullable=False, default=0)
     stock               = db.Column(db.Integer, nullable=False, default=0)
     reorder_level       = db.Column(db.Integer, nullable=False, default=50)

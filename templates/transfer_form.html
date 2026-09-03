@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+{% block title %}New Transfer — {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-arrow-left-right"></i> New Warehouse Transfer</h1>
+    <p>Move stock from one warehouse to another</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('transfer_list') }}" class="btn btn-secondary">
+      <i class="bi bi-arrow-left"></i> Back
+    </a>
+  </div>
+</div>
+
+{% if locations|length < 2 %}
+<div class="alert alert-warning">
+  <i class="bi bi-exclamation-triangle"></i> A transfer needs at least two warehouses.
+  Only <strong>{{ default_location.name }}</strong> exists right now — add a second
+  warehouse before creating a transfer.
+</div>
+{% else %}
+<div class="card">
+  <div class="card-body">
+    <form method="POST">
+      <div class="row g-3 mb-4">
+        <div class="col-md-3">
+          <label class="form-label required">From (Source)</label>
+          <select class="form-select" name="source_location_id" id="sourceSelect" required>
+            <option value="">— Select —</option>
+            {% for loc in locations %}
+            <option value="{{ loc.id }}">{{ loc.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label required">To (Destination)</label>
+          <select class="form-select" name="destination_location_id" id="destSelect" required>
+            <option value="">— Select —</option>
+            {% for loc in locations %}
+            <option value="{{ loc.id }}">{{ loc.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label required">Date</label>
+          <input type="date" class="form-control" name="date" value="{{ today }}" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Notes</label>
+          <input type="text" class="form-control" name="notes" placeholder="Optional">
+        </div>
+      </div>
+
+      <div class="card border mb-3">
+        <div class="card-header bg-light fw-semibold d-flex justify-content-between">
+          <span>Items</span>
+          <button type="button" class="btn btn-sm btn-outline-primary" onclick="addRow()">+ Add Row</button>
+        </div>
+        <div class="card-body p-2">
+          <table class="table table-sm mb-0" id="itemsTable">
+            <thead class="table-light">
+              <tr><th>Item</th><th style="width:160px">Quantity</th><th></th></tr>
+            </thead>
+            <tbody id="itemBody">
+              <tr>
+                <td>
+                  <select class="form-select form-select-sm" name="item_id[]" required>
+                    <option value="">— Item —</option>
+                    {% for it in items %}
+                    <option value="{{ it.id }}">{{ it.name }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td><input type="number" min="1" class="form-control form-control-sm" name="quantity[]" required placeholder="Qty"></td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Create Draft Transfer</button>
+    </form>
+  </div>
+</div>
+
+<script>
+function addRow() {
+    const tbody = document.getElementById('itemBody');
+    const first = tbody.querySelector('tr');
+    const clone = first.cloneNode(true);
+    clone.querySelectorAll('input').forEach(i => i.value = '');
+    clone.querySelectorAll('select').forEach(s => s.selectedIndex = 0);
+    const last = clone.querySelector('td:last-child');
+    last.innerHTML = '<button type="button" class="btn btn-danger btn-sm" onclick="this.closest(\'tr\').remove()">×</button>';
+    tbody.appendChild(clone);
+}
+
+document.querySelector('form').addEventListener('submit', function (e) {
+    const src = document.getElementById('sourceSelect').value;
+    const dst = document.getElementById('destSelect').value;
+    if (src && dst && src === dst) {
+        e.preventDefault();
+        alert('Source and destination warehouse must be different.');
+    }
+});
+</script>
+{% endif %}
+{% endblock %}

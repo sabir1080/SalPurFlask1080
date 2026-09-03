@@ -142,6 +142,13 @@ try {
             <small class="form-text">For POS counter</small>
           </div>
         </div>
+        <div class="col-md-4">
+          <div class="form-group">
+            <label class="form-label">SKU</label>
+            <input type="text" class="form-control" id="sku" name="sku" autocomplete="off" placeholder="Your own product code" value="{{ form_data.get('sku', '') }}">
+            <small class="form-text">Your business's own item code (optional)</small>
+          </div>
+        </div>
       </div>
 
       <!-- CATEGORY-SPECIFIC FIELDS -->
@@ -226,6 +233,7 @@ function saveFormData() {
     purchase_price: document.getElementById('purchase_price').value,
     sale_price: document.getElementById('sale_price').value,
     barcode: document.getElementById('barcode').value,
+    sku: document.getElementById('sku').value,
   };
   localStorage.setItem(FORM_STORAGE_KEY, JSON.stringify(formData));
 }
@@ -246,6 +254,7 @@ function restoreFormData() {
     if (formData.purchase_price) document.getElementById('purchase_price').value = formData.purchase_price;
     if (formData.sale_price) document.getElementById('sale_price').value = formData.sale_price;
     if (formData.barcode) document.getElementById('barcode').value = formData.barcode;
+    if (formData.sku) document.getElementById('sku').value = formData.sku;
     toggleStockFields();
   } catch (e) {
     console.error('Failed to restore form data:', e);
@@ -389,7 +398,7 @@ function renderField(field) {
 }
 
 // Add event listeners to all form inputs
-['name', 'business_category_id', 'unit', 'opening_stock', 'reorder_level', 'purchase_price', 'sale_price', 'barcode'].forEach(id => {
+['name', 'business_category_id', 'unit', 'opening_stock', 'reorder_level', 'purchase_price', 'sale_price', 'barcode', 'sku'].forEach(id => {
   const el = document.getElementById(id);
   if (el) {
     el.addEventListener('input', saveFormData);
@@ -429,6 +438,7 @@ function addUnitRow() {
           <th>Category</th>
           <th>Unit</th>
           <th>Barcode</th>
+          <th>SKU</th>
           <th class="text-end">Opening</th>
           <th class="text-end">Current Stock</th>
           <th class="text-end">Reorder Level</th>
@@ -453,6 +463,7 @@ function addUnitRow() {
           </td>
           <td><span class="badge">{{ item.unit or 'Pcs' }}</span></td>
           <td><code class="text-monospace">{{ item.barcode if item.barcode else '—' }}</code></td>
+          <td><code class="text-monospace">{{ item.sku if item.sku else '—' }}</code></td>
           <td class="text-end text-muted">{{ item.opening_stock | fmt_num }}</td>
           <td class="text-end fw-semibold {% if item.stock <= item.reorder_level %}text-danger{% else %}text-success{% endif %}">
             {{ item.stock | fmt_num }}

@@ -1,0 +1,110 @@
+{% extends 'base.html' %}
+{% block title %}Transfer {{ transfer.transfer_no or transfer.id }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-arrow-left-right"></i> Transfer {{ transfer.transfer_no or ('DRAFT-' ~ transfer.id) }}</h1>
+    <p>{{ transfer.source_location.name }} &rarr; {{ transfer.destination_location.name }}</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('transfer_list') }}" class="btn btn-secondary">
+      <i class="bi bi-arrow-left"></i> Back
+    </a>
+  </div>
+</div>
+
+<div class="row g-6 mb-6">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-5">Source Warehouse</dt>
+          <dd class="col-sm-7">{{ transfer.source_location.name }}</dd>
+          <dt class="col-sm-5">Destination Warehouse</dt>
+          <dd class="col-sm-7">{{ transfer.destination_location.name }}</dd>
+          <dt class="col-sm-5">Date</dt>
+          <dd class="col-sm-7">{{ transfer.date.strftime('%d %b %Y') }}</dd>
+          <dt class="col-sm-5">Status</dt>
+          <dd class="col-sm-7">
+            <span class="badge
+              {% if transfer.status == 'Confirmed' %}bg-primary
+              {% elif transfer.status == 'Cancelled' %}bg-danger
+              {% elif transfer.status == 'Reversed' %}bg-warning text-dark
+              {% else %}bg-secondary{% endif %}">
+              {{ transfer.status }}
+            </span>
+          </dd>
+          {% if transfer.confirmed_at %}
+          <dt class="col-sm-5">Confirmed</dt>
+          <dd class="col-sm-7">{{ transfer.confirmed_at.strftime('%d %b %Y %H:%M') }}
+            {% if transfer.confirmed_by %}by {{ transfer.confirmed_by.name }}{% endif %}</dd>
+          {% endif %}
+          {% if transfer.reversed_at %}
+          <dt class="col-sm-5">Reversed</dt>
+          <dd class="col-sm-7">{{ transfer.reversed_at.strftime('%d %b %Y %H:%M') }}
+            {% if transfer.reversed_by %}by {{ transfer.reversed_by.name }}{% endif %}</dd>
+          {% endif %}
+          {% if transfer.notes %}
+          <dt class="col-sm-5">Notes</dt>
+          <dd class="col-sm-7">{{ transfer.notes }}</dd>
+          {% endif %}
+        </dl>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-light fw-semibold">Actions</div>
+      <div class="card-body d-flex flex-column gap-2">
+        {% if transfer.status == 'Draft' %}
+        <form method="POST" action="{{ url_for('transfer_confirm', id=transfer.id) }}">
+          <button type="submit" class="btn btn-success btn-sm w-100"
+                  onclick="return confirm('Confirm this transfer? Stock will move immediately.')">
+            <i class="bi bi-check-circle"></i> Confirm Transfer
+          </button>
+        </form>
+        <form method="POST" action="{{ url_for('transfer_cancel', id=transfer.id) }}">
+          <button type="submit" class="btn btn-outline-danger btn-sm w-100"
+                  onclick="return confirm('Cancel this draft transfer?')">
+            <i class="bi bi-x-circle"></i> Cancel Draft
+          </button>
+        </form>
+        {% elif transfer.status == 'Confirmed' and current_user.is_admin %}
+        <form method="POST" action="{{ url_for('transfer_reverse', id=transfer.id) }}">
+          <button type="submit" class="btn btn-outline-warning btn-sm w-100"
+                  onclick="return confirm('Reverse this transfer? Stock will move back to the source warehouse.')">
+            <i class="bi bi-arrow-counterclockwise"></i> Reverse Transfer
+          </button>
+        </form>
+        {% elif transfer.status == 'Confirmed' %}
+        <p class="text-muted small mb-0">Only an admin can reverse a confirmed transfer.</p>
+        {% else %}
+        <p class="text-muted small mb-0">No further action available.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-light fw-semibold">Items</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+    <table class="table table-bordered mb-0 align-middle">
+      <thead class="table-dark">
+        <tr><th>#</th><th>Item</th><th class="text-end">Quantity</th></tr>
+      </thead>
+      <tbody>
+        {% for line in transfer.lines %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ line.item.name }}</td>
+          <td class="text-end">{{ line.quantity | fmt_num }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

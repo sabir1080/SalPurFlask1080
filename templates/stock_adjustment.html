@@ -57,6 +57,18 @@
                 <label class="form-label fw-semibold">Reason</label>
                 <input type="text" class="form-control" name="reason" placeholder="Optional reason">
             </div>
+            {% if locations|length > 1 %}
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Warehouse <span class="text-danger">*</span></label>
+                <select class="form-select" name="location_id" required>
+                    {% for loc in locations %}
+                    <option value="{{ loc.id }}" {% if loc.id == default_location.id %}selected{% endif %}>{{ loc.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% else %}
+            <input type="hidden" name="location_id" value="{{ default_location.id }}">
+            {% endif %}
             <div class="col-12">
                 <button type="submit" class="btn btn-warning"><i class="bi bi-check-circle"></i> Save Adjustment</button>
             </div>

@@ -62,16 +62,26 @@ class ConfigurationService:
         """Get fields by category ID"""
         return ProductField.query.filter_by(category_id=category_id).order_by(ProductField.position).all()
 
+    # Core Item columns a category field must never shadow — an admin-created
+    # field named "sku" would silently fight the real Item.sku column for the
+    # same form key, so it's refused at the one place fields get created.
+    RESERVED_FIELD_NAMES = {"id", "name", "sku", "barcode", "item_type", "unit",
+                            "business_category_id", "category_id"}
+
     @staticmethod
     def add_product_field(category_id, field_data):
         """Add dynamic field to category"""
+        field_name = (field_data.get('field_name') or '').strip()
+        if field_name.lower() in ConfigurationService.RESERVED_FIELD_NAMES:
+            raise ValueError(f'"{field_name}" is a reserved TradeFlow field name and cannot be used here.')
         field = ProductField(
             category_id=category_id,
-            field_name=field_data.get('field_name'),
+            field_name=field_name,
             field_label=field_data.get('field_label'),
             field_type=field_data.get('field_type', 'text'),
             is_required=field_data.get('is_required', False),
             is_searchable=field_data.get('is_searchable', False),
+            is_filterable=field_data.get('is_filterable', False),
             placeholder=field_data.get('placeholder', ''),
             help_text=field_data.get('help_text', ''),
             options=field_data.get('options'),

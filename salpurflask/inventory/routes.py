@@ -21,7 +21,15 @@ from salpurflask.models import (
 )
 from salpurflask.models.business_config import BusinessCategory
 from salpurflask.auth import verified_required, manager_required, admin_required
-from salpurflask.utils import now_local, barcode_taken, get_paginated_results, line_base_qty, csv_response, excel_response, parse_import_file, get_item_locked
+from salpurflask.utils import now_local, barcode_taken, sku_taken, get_paginated_results, line_base_qty, csv_response, excel_response, parse_import_file, get_item_locked
+from salpurflask.services.lookup_service import search_items, get_item_filter_fields
+
+# Item identifiers that are real Item columns, never a per-category ProductField —
+# an admin-defined field with one of these names would silently collide with (or be
+# shadowed by) the core column of the same name, so it's rejected at the point a
+# category field's value is extracted from the form, for both create and edit.
+RESERVED_ITEM_FIELD_NAMES = {"id", "name", "sku", "barcode", "item_type", "unit",
+                            "business_category_id", "category_id"}
 
 
 def _purchase_line_value(pi):
@@ -326,8 +334,14 @@ def item():
         purchase_price = request.form.get("purchase_price", "").strip()
         sale_price = request.form.get("sale_price", "").strip()
         barcode = request.form.get("barcode", "").strip() or None
+        sku = request.form.get("sku", "").strip() or None
         if unit not in ITEM_UNITS:
             unit = "Pcs"
+        category_field_errors = (
+            ConfigurationService.validate_product_data(
+                db.session.get(BusinessCategory, int(business_category_id)).slug, request.form)
+            if business_category_id and business_category_id.isdigit()
+            and db.session.get(BusinessCategory, int(business_category_id)) else {})
         if not business_categories:
             flash("No business categories are enabled. Please enable categories in Admin Settings before adding items!", "danger")
         elif not name or not business_category_id:
@@ -347,6 +361,11 @@ def item():
         elif barcode_taken(barcode):
             flash(f"Barcode '{barcode}' is already used by another item. "
                   "A code must point at one item only.", "danger")
+        elif sku_taken(sku):
+            flash(f"SKU '{sku}' is already used by another item. "
+                  "A SKU must point at one item only.", "danger")
+        elif category_field_errors:
+            flash("; ".join(category_field_errors.values()), "danger")
         else:
             os_val = int(opening_stock)
             reorder_val = int(reorder_level) if reorder_level else 50
@@ -362,6 +381,7 @@ def item():
                 purchase_price=float(purchase_price) if purchase_price else None,
                 sale_price=float(sale_price) if sale_price else None,
                 barcode=barcode,
+                sku=sku,
             )
             db.session.add(item_obj)
             item_obj.inventory_value = (Decimal(str(item_obj.opening_stock or 0))
@@ -393,9 +413,13 @@ def item():
                 category_fields = ProductField.query.filter_by(category_id=int(business_category_id)).all()
                 field_names = {f.field_name for f in category_fields}
 
-                # Extract category-specific fields from form
+                # Extract category-specific fields from form. RESERVED_ITEM_FIELD_NAMES
+                # guards against a same-named core column (sku, barcode, ...) ever being
+                # written as EAV data even if a stale/legacy ProductField row exists with
+                # that name — belt-and-braces alongside the create-time guard in
+                # ConfigurationService.add_product_field.
                 for key, value in request.form.items():
-                    if key in field_names and value:
+                    if key in field_names and key not in RESERVED_ITEM_FIELD_NAMES and value:
                         category_field_data[key] = value
 
                 if category_field_data:
@@ -447,8 +471,14 @@ def edit_item(id):
         purchase_price = request.form.get("purchase_price", "").strip()
         sale_price = request.form.get("sale_price", "").strip()
         barcode = request.form.get("barcode", "").strip() or None
+        sku = request.form.get("sku", "").strip() or None
         if unit not in ITEM_UNITS:
             unit = "Pcs"
+        category_field_errors = (
+            ConfigurationService.validate_product_data(
+                db.session.get(BusinessCategory, int(business_category_id)).slug, request.form)
+            if business_category_id and business_category_id.isdigit()
+            and db.session.get(BusinessCategory, int(business_category_id)) else {})
         if not business_categories:
             flash("No business categories are enabled. Please enable categories in Admin Settings!", "danger")
         elif not name or not business_category_id:
@@ -468,6 +498,11 @@ def edit_item(id):
         elif barcode_taken(barcode, exclude_id=item.id):
             flash(f"Barcode '{barcode}' is already used by another item. "
                   "A code must point at one item only.", "danger")
+        elif sku_taken(sku, exclude_id=item.id):
+            flash(f"SKU '{sku}' is already used by another item. "
+                  "A SKU must point at one item only.", "danger")
+        elif category_field_errors:
+            flash("; ".join(category_field_errors.values()), "danger")
         else:
             new_os = int(opening_stock)
             stock_adjustment = new_os - item.opening_stock
@@ -491,6 +526,7 @@ def edit_item(id):
             item.purchase_price = float(purchase_price) if purchase_price else None
             item.sale_price = float(sale_price) if sale_price else None
             item.barcode = barcode
+            item.sku = sku
             new_opening_value = (Decimal(str(new_os)) * Decimal(str(item.purchase_price or 0))).quantize(MONEY)
             value_adjustment = new_opening_value - old_opening_value
             # Update stock and inventory_value atomically
@@ -517,9 +553,9 @@ def edit_item(id):
                 category_fields = ProductField.query.filter_by(category_id=int(business_category_id)).all()
                 field_names = {f.field_name for f in category_fields}
 
-                # Extract category-specific fields from form
+                # Extract category-specific fields from form (see RESERVED_ITEM_FIELD_NAMES)
                 for key, value in request.form.items():
-                    if key in field_names and value:
+                    if key in field_names and key not in RESERVED_ITEM_FIELD_NAMES and value:
                         category_field_data[key] = value
 
                 if category_field_data:
@@ -1163,3 +1199,54 @@ def get_product_category_data(product_id, category_id):
         result[entry.field_name] = entry.field_value
 
     return jsonify(result)
+
+
+@verified_required
+def api_item_lookup():
+    """Server-side item lookup for the universal picker (Sale/Purchase/Quotation
+    item selection, and any future screen) — never the whole table, always
+    paginated (see salpurflask/services/lookup_service). Category-specific
+    filter values come in as filter_<field_name> query params, matched against
+    that category's is_filterable ProductFields."""
+    q = request.args.get("q", "")
+    category_id = request.args.get("category_id", type=int)
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 20, type=int)
+    filters = {k[len("filter_"):]: v for k, v in request.args.items() if k.startswith("filter_")}
+
+    rows, total, page, per_page = search_items(
+        q=q, category_id=category_id, filters=filters, page=page, per_page=per_page)
+
+    return {
+        "results": [{
+            "id": it.id, "name": it.name, "sku": it.sku or "", "barcode": it.barcode or "",
+            "category": it.business_category.name if it.business_category else None,
+            "unit": it.unit or "Pcs", "stock": it.stock,
+            "sale_price": float(it.sale_price or 0),
+        } for it in rows],
+        "total": total, "page": page, "per_page": per_page,
+    }
+
+
+@verified_required
+def api_item_filter_fields(category_id):
+    """The filterable fields for one category, for the lookup UI to render as
+    extra filter controls — data-driven off ProductField.is_filterable, so an
+    admin-added field shows up here with no extra code."""
+    fields = get_item_filter_fields(category_id)
+    return {"fields": [f.to_dict() for f in fields]}
+
+
+@verified_required
+def api_item_units(id):
+    """This one item's unit choices (base unit + alternates) — fetched only
+    once an item is actually picked in the Universal Item Lookup, not
+    precomputed for every item in the catalogue up front (that was the same
+    scalability problem as embedding the whole item list: item_units_for_js()
+    built this same shape for every item on the page, unconditionally)."""
+    from salpurflask.models.models import item_unit_choices
+    item = db.session.get(Item, id) or abort(404)
+    return {"units": [{"key": c["key"], "name": c["name"], "factor": c["factor"],
+                       "purchase_price": float(c["purchase_price"]) if c["purchase_price"] is not None else None,
+                       "sale_price": float(c["sale_price"]) if c["sale_price"] is not None else None}
+                      for c in item_unit_choices(item)]}
