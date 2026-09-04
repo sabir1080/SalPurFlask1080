@@ -120,6 +120,88 @@
             }
         }
 
+        /* ── Mobile sidebar: off-canvas, hidden by default below 768px ──────
+           Desktop/tablet (>768px) is completely untouched — every rule here
+           is scoped inside this one media query, and the rule above still
+           applies unconditionally on larger screens exactly as before.
+
+           The sidebar <nav> keeps its existing 250px width and every link,
+           dropdown and permission check inside it unchanged; on mobile it
+           just starts translated fully off-screen to the left and slides in
+           on top of the content (not push-content, so nothing reflows) when
+           .nav-open is toggled on <body>. */
+        @media screen and (max-width: 768px) {
+            nav.navbar[style*="width: 250px"] {
+                transform: translateX(-100%);
+                transition: transform 0.25s ease;
+                box-shadow: 2px 0 12px rgba(0, 0, 0, 0.25);
+            }
+            body.nav-open nav.navbar[style*="width: 250px"] {
+                transform: translateX(0);
+            }
+
+            /* The content column no longer needs to leave room for a sidebar
+               that isn't visible — full width, no reserved margin. */
+            body > div[style*="margin-left: 250px"] {
+                margin-left: 0 !important;
+                max-width: 100% !important;
+                width: 100% !important;
+                padding-left: 0.75rem !important;
+                padding-right: 0.75rem !important;
+            }
+
+            /* The hamburger button already exists in the markup (it opens
+               Bootstrap's own #navbarNav collapse on md screens) but ships
+               hardcoded `style="display: none"` since #navbarNav is forced
+               open with the `show` class year-round on desktop. Below the
+               breakpoint it becomes the sidebar's open/close toggle instead
+               — same element, new job, so no second button is added and no
+               existing desktop behavior changes. `!important` is required
+               only here, to win over that inline display:none. */
+            .navbar-toggler {
+                display: inline-flex !important;
+                align-items: center;
+                justify-content: center;
+                position: fixed;
+                top: 0.75rem;
+                left: 0.75rem;
+                z-index: 1051;
+                width: 2.5rem;
+                height: 2.5rem;
+                background: #fff;
+                border: 1px solid rgba(0, 0, 0, 0.15);
+                border-radius: 0.5rem;
+                box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+            }
+            /* Moves out of the way once the sidebar (which has its own brand
+               link + close affordance via tapping the backdrop) is open, so
+               it doesn't sit on top of the now-visible sidebar content. */
+            body.nav-open .navbar-toggler {
+                left: calc(250px + 0.75rem);
+            }
+
+            /* Tap-outside-to-close backdrop. Only exists in the DOM/visible
+               while open; inserted by the toggle script below, not server-
+               rendered, so pages that never toggle the menu never pay for it. */
+            .nav-backdrop {
+                display: none;
+                position: fixed;
+                inset: 0;
+                background: rgba(0, 0, 0, 0.35);
+                z-index: 1049;
+            }
+            body.nav-open .nav-backdrop {
+                display: block;
+            }
+
+            /* Fixed sidebar width (250px) is unchanged from desktop by
+               design (requirement: don't redesign it) — on a 320px screen
+               that is most of the width while open, which is expected for
+               an off-canvas menu that's closed by default; it no longer
+               competes with page content since it overlays instead of
+               pushing, and is one tap away from being dismissed. */
+        }
+
         /* Table overflow handling */
         .table-responsive {
             overflow-x: auto;
@@ -544,6 +626,61 @@
                     document.querySelectorAll('.theme-btn').forEach(function(b) { b.classList.remove('active'); });
                     this.classList.add('active');
                 });
+            });
+        })();
+
+        /* ── Mobile sidebar toggle ──────────────────────────────────────────
+           Only matters below the 768px breakpoint (see the CSS above) — on
+           desktop/tablet .nav-open is never read by any rule, so this never
+           changes anything there. The hamburger button is the existing
+           .navbar-toggler already in the markup; this just gives it a second
+           job on small screens instead of adding a new element. */
+        (function() {
+            var toggleBtn = document.querySelector('.navbar-toggler');
+            if (!toggleBtn) return;
+
+            var backdrop = document.createElement('div');
+            backdrop.className = 'nav-backdrop';
+            document.body.appendChild(backdrop);
+
+            function closeNav() { document.body.classList.remove('nav-open'); }
+            function openNav() { document.body.classList.add('nav-open'); }
+
+            // This button already carries data-bs-toggle="collapse" targeting
+            // #navbarNav (Bootstrap's own delegated document-level listener,
+            // bound by bootstrap.bundle.min.js, which loads before this inline
+            // script runs). #navbarNav is permanently `show`n by design on
+            // every screen size, so letting Bootstrap's handler also fire here
+            // would toggle that OFF the moment this button is repurposed as
+            // the mobile sidebar opener — capturing the click first and
+            // stopping propagation keeps the two toggles from fighting, while
+            // leaving the attributes themselves in the markup untouched (they
+            // are simply inert now that this listener always wins the race).
+            toggleBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                document.body.classList.toggle('nav-open');
+            }, true);
+            backdrop.addEventListener('click', closeNav);
+
+            // A nav link tapped while the menu is open should navigate AND
+            // close the overlay, not leave it hanging over the next page's
+            // first paint. Only relevant at the mobile breakpoint, where the
+            // sidebar overlays rather than sitting in normal flow.
+            document.querySelectorAll('.navbar-nav .nav-link, .navbar-nav .dropdown-item').forEach(function(link) {
+                link.addEventListener('click', function() {
+                    if (window.innerWidth <= 768 && link.getAttribute('href')) {
+                        closeNav();
+                    }
+                });
+            });
+
+            // Resizing past the breakpoint (e.g. rotating a tablet to
+            // landscape, or a desktop dev-tools resize) should not leave the
+            // sidebar stuck mid-slide-in from a stale mobile state.
+            window.addEventListener('resize', function() {
+                if (window.innerWidth > 768) closeNav();
             });
         })();
 
