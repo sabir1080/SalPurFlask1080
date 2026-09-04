@@ -195,12 +195,19 @@ body {
     color: var(--primary);
 }
 
-/* Disabled nav items - visually distinct, non-clickable */
+/* Disabled nav items - visually distinct, non-clickable.
+   No pointer-events: none here on purpose: that would also block the hover
+   needed to show the item's title tooltip ("Restricted — only Admin can
+   access this"). The item has no href at all (see base.html), so it isn't
+   an actual link target and can't navigate on click regardless. */
 .navbar .nav-link.disabled {
     color: #999 !important;
     opacity: 0.6;
     cursor: not-allowed;
-    pointer-events: none;
+    /* Bootstrap's own .nav-link.disabled sets pointer-events: none; re-declaring
+       it here (not just omitting it) is required to override that in the cascade
+       so hover still fires the title tooltip. */
+    pointer-events: auto;
 }
 
 .navbar .nav-link.disabled:hover {
@@ -217,7 +224,10 @@ body {
     color: #999 !important;
     opacity: 0.6;
     cursor: not-allowed;
-    pointer-events: none;
+    /* Bootstrap's own .dropdown-item.disabled sets pointer-events: none; re-declaring
+       it here (not just omitting it) is required to override that in the cascade
+       so hover still fires the title tooltip. */
+    pointer-events: auto;
 }
 
 .navbar .dropdown-item.disabled:hover {

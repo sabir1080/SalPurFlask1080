@@ -230,18 +230,28 @@
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation" style="display: none;">
                 <span class="navbar-toggler-icon"></span>
             </button>
-            {% macro perm_link(endpoint, icon, label, allowed) %}
+            {# required_role is only shown in the tooltip when the item is actually
+               disabled for this user — it names exactly who CAN access it, so a
+               staff user hovering a greyed-out item learns "Admin only" or
+               "Admin or Manager" instead of a vague "no permission" message. #}
+            {% macro perm_link(endpoint, icon, label, allowed, required_role='Admin or Manager') %}
             <li class="nav-item">
+                {# No href at all on a disabled item — not href="#": with pointer-events
+                   removed below (needed so the title tooltip can fire on hover — that
+                   property blocks all mouse interaction, tooltips included), a real
+                   href would navigate to the top of the page on click. An <a> with no
+                   href is not a link target at all, so it never navigates, while still
+                   receiving hover for its title tooltip. #}
                 <a class="nav-link{% if not allowed %} disabled{% endif %}"
-                   {% if allowed %}href="{{ url_for(endpoint) }}"{% else %}href="#" tabindex="-1" aria-disabled="true" title="You do not have permission for this"{% endif %}>
+                   {% if allowed %}href="{{ url_for(endpoint) }}"{% else %}tabindex="-1" aria-disabled="true" title="Restricted — only {{ required_role }} can access this"{% endif %}>
                     <i class="bi {{ icon }}"></i> {{ label }}
                 </a>
             </li>
             {% endmacro %}
-            {% macro perm_item(endpoint, icon, label, allowed) %}
+            {% macro perm_item(endpoint, icon, label, allowed, required_role='Admin or Manager') %}
             <li>
                 <a class="dropdown-item{% if not allowed %} disabled{% endif %}"
-                   {% if allowed %}href="{{ url_for(endpoint) }}"{% else %}href="#" tabindex="-1" aria-disabled="true" title="You do not have permission for this"{% endif %}>
+                   {% if allowed %}href="{{ url_for(endpoint) }}"{% else %}tabindex="-1" aria-disabled="true" title="Restricted — only {{ required_role }} can access this"{% endif %}>
                     <i class="bi {{ icon }}"></i> {{ label }}
                 </a>
             </li>
@@ -338,7 +348,7 @@
                             {{ perm_item('fixed_assets', 'bi-building-gear', 'Fixed Assets', current_user.is_manager) }}
                             {{ perm_item('periods', 'bi-calendar-range', 'Fiscal Years & Periods', current_user.is_manager) }}
                             <li><hr class="dropdown-divider"></li>
-                            {{ perm_item('tax_codes', 'bi-percent', 'Tax Codes', current_user.is_admin) }}
+                            {{ perm_item('tax_codes', 'bi-percent', 'Tax Codes', current_user.is_admin, 'Admin') }}
                         </ul>
                     </li>
 
@@ -408,13 +418,13 @@
                             <i class="bi bi-shield-person"></i> Admin
                         </a>
                         <ul class="dropdown-menu">
-                            {{ perm_item('admin_users', 'bi-people', 'Users', current_user.is_admin) }}
-                            {{ perm_item('admin_locations', 'bi-building', 'Warehouses', current_user.is_admin) }}
-                            {{ perm_item('admin_location_access', 'bi-shield-lock', 'Location Access', current_user.is_admin) }}
-                            {{ perm_item('admin_financial_accounts', 'bi-bank', 'Financial Accounts', current_user.is_admin) }}
-                            {{ perm_item('admin_config.index', 'bi-gear', 'Business Configuration', current_user.is_admin) }}
-                            {{ perm_item('admin_audit', 'bi-clock-history', 'Audit Log', current_user.is_admin) }}
-                            {{ perm_item('admin_system', 'bi-hdd', 'Backup & Restore', current_user.is_admin) }}
+                            {{ perm_item('admin_users', 'bi-people', 'Users', current_user.is_admin, 'Admin') }}
+                            {{ perm_item('admin_locations', 'bi-building', 'Warehouses', current_user.is_admin, 'Admin') }}
+                            {{ perm_item('admin_location_access', 'bi-shield-lock', 'Location Access', current_user.is_admin, 'Admin') }}
+                            {{ perm_item('admin_financial_accounts', 'bi-bank', 'Financial Accounts', current_user.is_admin, 'Admin') }}
+                            {{ perm_item('admin_config.index', 'bi-gear', 'Business Configuration', current_user.is_admin, 'Admin') }}
+                            {{ perm_item('admin_audit', 'bi-clock-history', 'Audit Log', current_user.is_admin, 'Admin') }}
+                            {{ perm_item('admin_system', 'bi-hdd', 'Backup & Restore', current_user.is_admin, 'Admin') }}
                         </ul>
                     </li>
                     {% endif %}
@@ -572,8 +582,17 @@
                 }, { once: true });
             });
 
-            /* ── Bootstrap Tooltips: auto-init on any .btn or a.btn with a title ── */
-            document.querySelectorAll('.btn[title], a[title]').forEach(function (el) {
+            /* ── Bootstrap Tooltips: auto-init on any .btn or a.btn with a title ──
+               Excludes disabled nav-links/dropdown-items on purpose: Bootstrap's
+               Tooltip moves the title text into data-bs-original-title and shows
+               its own JS-rendered popup instead of the plain browser tooltip —
+               inside a Bootstrap dropdown-menu (position:absolute, its own stacking
+               context) that popup can end up hidden or mispositioned. The plain
+               native title attribute (left untouched, still hover-able since these
+               links carry no href and no pointer-events:none) works reliably
+               everywhere a <select> menu can appear, so restricted items are
+               deliberately left out of this JS-tooltip upgrade. */
+            document.querySelectorAll('.btn[title], a[title]:not(.nav-link.disabled):not(.dropdown-item.disabled)').forEach(function (el) {
                 new bootstrap.Tooltip(el, { trigger: 'hover', placement: 'top' });
             });
 

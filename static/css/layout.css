@@ -113,12 +113,17 @@
   border-radius: var(--radius-full);
 }
 
-/* Disabled nav link */
+/* Disabled nav link. No pointer-events: none — that would also block the
+   hover needed to show the item's title tooltip. The item has no href at
+   all when disabled (see base.html), so it can't navigate on click anyway. */
 .navbar-nav .nav-link.disabled {
   color: var(--text-tertiary);
   opacity: var(--opacity-disabled);
   cursor: not-allowed;
-  pointer-events: none;
+  /* Bootstrap's own .nav-link.disabled sets pointer-events: none; re-declaring
+     it here (not just omitting it) is required to override that in the cascade
+     so hover still fires the title tooltip. */
+  pointer-events: auto;
 }
 
 /* Navbar right section (search, theme toggle, user menu) */
