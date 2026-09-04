@@ -668,9 +668,19 @@
             // close the overlay, not leave it hanging over the next page's
             // first paint. Only relevant at the mobile breakpoint, where the
             // sidebar overlays rather than sitting in normal flow.
+            //
+            // Dropdown-toggle links ("Parties", "Inventory", etc.) are
+            // excluded: they carry href="#" and data-bs-toggle="dropdown"
+            // to expand their submenu in place, not to navigate anywhere.
+            // Closing the sidebar on that click (href="#" is still a truthy
+            // attribute) fired before the user ever reached the real link
+            // inside — e.g. tapping "Parties" closed the whole sidebar
+            // instead of revealing "Suppliers"/"Customers" underneath.
             document.querySelectorAll('.navbar-nav .nav-link, .navbar-nav .dropdown-item').forEach(function(link) {
+                if (link.getAttribute('data-bs-toggle') === 'dropdown') return;
                 link.addEventListener('click', function() {
-                    if (window.innerWidth <= 768 && link.getAttribute('href')) {
+                    var href = link.getAttribute('href');
+                    if (window.innerWidth <= 768 && href && href !== '#') {
                         closeNav();
                     }
                 });
