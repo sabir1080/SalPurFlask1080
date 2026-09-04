@@ -7,7 +7,7 @@
 
 ## 🎯 Overview
 
-TradeFlow ERP is a full business-management platform for small and medium businesses: inventory and multi-warehouse stock, purchasing and sales (including POS), supplier/customer ledgers, production-grade double-entry accounting, and an HR suite covering employees, attendance, leave, and payroll.
+TradeFlow ERP is a full business-management platform for small and medium businesses: inventory and multi-warehouse stock, purchasing and sales (including POS), supplier/customer ledgers, double-entry accounting with GL posting and reconciliation, and an HR suite covering employees, attendance, leave, and payroll.
 
 ### Why TradeFlow ERP?
 
@@ -24,7 +24,7 @@ TradeFlow ERP is a full business-management platform for small and medium busine
 - A dedicated Developer panel for diagnostics, schema inspection, and module control — separately access-gated from the business app
 
 **For Developers**
-- 721 automated tests across 38 test files, run in CI on every push
+- An automated pytest test suite covering the core modules, run in CI on every push
 - Feature-flagged modules so new functionality ships dark and is switched on deliberately
 - Ranked search/lookup service shared across every item/supplier/customer picker in the app
 
@@ -177,11 +177,13 @@ TradeFlow ERP/
 │   ├── js/                         # JavaScript utilities
 │   └── exports/                    # Generated CSV/Excel files
 │
-├── tests/                          # 721 tests across 38 files (pytest)
+├── tests/                          # Automated pytest test suite
 │   └── conftest.py                 # Shared fixtures
 │
-├── migrations/                     # Alembic scaffold (present, not wired to runtime boot)
-└── instance/                       # Local database file (development)
+├── migrations/                     # Alembic scaffold (present, not wired to runtime boot —
+│                                    # schema changes are applied by migrate_database() in
+│                                    # app.py at startup instead, see below)
+└── instance/                       # Local runtime/config artifacts
 ```
 
 ---
@@ -307,22 +309,20 @@ pytest tests/test_accounting.py::test_balance_sheet_totals
 pytest -v
 ```
 
-**721 tests** across **38 files**, covering accounting/ledger integrity, inventory & multi-warehouse transfers/reconciliation, POS, HR/Attendance/Leave/Payroll/Self-Service, authorization, audit logging, backup/restore, internationalization, and page-level regressions. Tests run in CI (GitHub Actions) on every push and pull request to `main`.
+The project has an automated test suite covering accounting/ledger integrity, inventory & multi-warehouse transfers/reconciliation, POS, HR/Attendance/Leave/Payroll/Self-Service, authorization, audit logging, backup/restore, internationalization, and page-level regressions. Tests run in CI (GitHub Actions) on every push and pull request to `main`.
 
 ---
 
 ## 🚀 Deployment
-
-TradeFlow currently deploys to two targets:
 
 ### Render (demo environment)
 - `render.yaml` defines the service (`gunicorn app:app`) and environment variables
 - Deploys automatically on push to `main`
 - Backed by managed PostgreSQL
 
-### Azure Web App (production)
-- `.github/workflows/main_tradeflow.yml` deploys to Azure on every push to `main`
-- See `AZURE_DEPLOYMENT.md` / `AZURE_FIX.md` for environment-specific notes
+### Microsoft Azure (previously deployed / future option)
+- TradeFlow has previously been successfully deployed and tested on Microsoft Azure — see `AZURE_DEPLOYMENT.md` / `AZURE_FIX.md` for the environment-specific notes from that deployment
+- A GitHub Actions workflow (`.github/workflows/main_tradeflow.yml`) for deploying to Azure exists in the repo, but the Azure subscription used for it is currently expired/inactive — Azure is not the current running production target
 
 ### Production Checklist
 - [ ] PostgreSQL provisioned and `DATABASE_URL` set
