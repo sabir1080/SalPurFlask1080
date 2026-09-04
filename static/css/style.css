@@ -203,7 +203,9 @@ body {
 .navbar .nav-link.disabled {
     color: #999 !important;
     opacity: 0.6;
-    cursor: not-allowed;
+    /* default, not not-allowed: the red "blocked" cursor read as an error icon
+       rather than a hint — the title tooltip alone communicates the restriction. */
+    cursor: default;
     /* Bootstrap's own .nav-link.disabled sets pointer-events: none; re-declaring
        it here (not just omitting it) is required to override that in the cascade
        so hover still fires the title tooltip. */
@@ -223,7 +225,9 @@ body {
 .navbar .dropdown-item.disabled {
     color: #999 !important;
     opacity: 0.6;
-    cursor: not-allowed;
+    /* default, not not-allowed: the red "blocked" cursor read as an error icon
+       rather than a hint — the title tooltip alone communicates the restriction. */
+    cursor: default;
     /* Bootstrap's own .dropdown-item.disabled sets pointer-events: none; re-declaring
        it here (not just omitting it) is required to override that in the cascade
        so hover still fires the title tooltip. */
