@@ -62,6 +62,19 @@ class ProductField(db.Model):
     default_value = db.Column(db.String(200))
     position = db.Column(db.Integer, default=0)
     tab_name = db.Column(db.String(50), default='General')
+    # Disables the field without deleting it — deleting would cascade and
+    # destroy any ProductCategoryData history already recorded against it
+    # (see the model's cascade='all, delete-orphan' on BusinessCategory.fields
+    # and this table's own relationship). A disabled field is simply omitted
+    # from the item form/API going forward; existing Items and their stored
+    # values are never touched by toggling this.
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    # True only for a field seeded by ensure_default_product_fields() (system
+    # master data, the same tier as the 26 default BusinessCategories). Never
+    # inferred from the parent category — a user-added custom field on a
+    # default category is explicitly False, so "is this field mine or the
+    # system's" is always a direct, stored fact rather than a derived guess.
+    is_system_default = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     __table_args__ = (db.UniqueConstraint('category_id', 'field_name'),)
@@ -79,6 +92,8 @@ class ProductField(db.Model):
             'placeholder': self.placeholder,
             'options': self.options,
             'help_text': self.help_text,
+            'is_active': self.is_active,
+            'is_system_default': self.is_system_default,
         }
 
 

@@ -86,12 +86,14 @@ def search_items(q="", category_id=None, filters=None, page=1, per_page=20,
 
 
 def get_item_filter_fields(category_id):
-    """The is_filterable ProductFields for one category — what the lookup UI
-    should render as extra filter controls when that category is selected."""
+    """The active, is_filterable ProductFields for one category — what the
+    lookup UI should render as extra filter controls when that category is
+    selected. A disabled field (is_active=False) is excluded, matching
+    ConfigurationService.get_category_fields()'s same rule for the item form."""
     if not category_id:
         return []
     return (ProductField.query
-            .filter_by(category_id=category_id, is_filterable=True)
+            .filter_by(category_id=category_id, is_filterable=True, is_active=True)
             .order_by(ProductField.position).all())
 
 

@@ -337,19 +337,21 @@ def item():
         sku = request.form.get("sku", "").strip() or None
         if unit not in ITEM_UNITS:
             unit = "Pcs"
+        resolved_category = ConfigurationService.resolve_enabled_category(business_category_id)
         category_field_errors = (
-            ConfigurationService.validate_product_data(
-                db.session.get(BusinessCategory, int(business_category_id)).slug, request.form)
-            if business_category_id and business_category_id.isdigit()
-            and db.session.get(BusinessCategory, int(business_category_id)) else {})
+            ConfigurationService.validate_product_data(resolved_category.slug, request.form)
+            if resolved_category else {})
         if not business_categories:
             flash("No business categories are enabled. Please enable categories in Admin Settings before adding items!", "danger")
         elif not name or not business_category_id:
             flash("Name and Category are required!", "danger")
         elif item_type == "STOCK" and not reorder_level:
             flash("Reorder Level is required for Stock items!", "danger")
-        elif not business_category_id.isdigit() or not db.session.get(BusinessCategory, int(business_category_id)):
-            flash("Please select a valid category!", "danger")
+        elif not resolved_category:
+            # Covers a missing id, a nonexistent id, and a disabled category —
+            # an enabled, valid BusinessCategory is mandatory for every Item,
+            # never optional and never satisfied by the legacy Category table.
+            flash("An enabled Business Category is required to create an item. Please select a valid category!", "danger")
         elif not opening_stock.lstrip("-").isdigit() or (reorder_level and not reorder_level.isdigit()):
             flash("Opening Stock and Reorder Level must be numbers!", "danger")
         elif purchase_price and (not purchase_price.replace(".", "", 1).isdigit() or float(purchase_price) < 0):
@@ -474,19 +476,20 @@ def edit_item(id):
         sku = request.form.get("sku", "").strip() or None
         if unit not in ITEM_UNITS:
             unit = "Pcs"
+        resolved_category = ConfigurationService.resolve_enabled_category(business_category_id)
         category_field_errors = (
-            ConfigurationService.validate_product_data(
-                db.session.get(BusinessCategory, int(business_category_id)).slug, request.form)
-            if business_category_id and business_category_id.isdigit()
-            and db.session.get(BusinessCategory, int(business_category_id)) else {})
+            ConfigurationService.validate_product_data(resolved_category.slug, request.form)
+            if resolved_category else {})
         if not business_categories:
             flash("No business categories are enabled. Please enable categories in Admin Settings!", "danger")
         elif not name or not business_category_id:
             flash("Name and Category are required!", "danger")
         elif item_type == "STOCK" and not reorder_level:
             flash("Reorder Level is required for Stock items!", "danger")
-        elif not business_category_id.isdigit() or not db.session.get(BusinessCategory, int(business_category_id)):
-            flash("Please select a valid category!", "danger")
+        elif not resolved_category:
+            # Same rule as item(): an enabled, valid BusinessCategory is
+            # mandatory, whether the id is missing, nonexistent, or disabled.
+            flash("An enabled Business Category is required to save an item. Please select a valid category!", "danger")
         elif not opening_stock.lstrip("-").isdigit() or (reorder_level and not reorder_level.isdigit()):
             flash("Opening Stock and Reorder Level must be numbers!", "danger")
         elif purchase_price and (not purchase_price.replace(".", "", 1).isdigit() or float(purchase_price) < 0):

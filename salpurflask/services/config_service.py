@@ -50,17 +50,47 @@ class ConfigurationService:
         return BusinessCategory.query.filter_by(slug=slug).first()
 
     @staticmethod
+    def resolve_enabled_category(business_category_id):
+        """The BusinessCategory `business_category_id` refers to, or None if it is
+        missing, not a valid id, doesn't exist, or is disabled.
+
+        This is the one place every Item write path (create, edit, CSV import)
+        checks the "valid, enabled BusinessCategory" rule, so the rule can never
+        drift between call sites: an id that fails here is not a category an
+        Item may be saved against, full stop — no caller decides that on its
+        own. Accepts an int, a digit string, or None/blank, all resolving to
+        None on anything that isn't a real enabled category's id.
+        """
+        if business_category_id is None:
+            return None
+        if isinstance(business_category_id, str):
+            business_category_id = business_category_id.strip()
+            if not business_category_id.isdigit():
+                return None
+            business_category_id = int(business_category_id)
+        cat = db.session.get(BusinessCategory, business_category_id)
+        if cat is None or not cat.is_enabled:
+            return None
+        return cat
+
+    @staticmethod
     def get_category_fields(category_slug):
-        """Get all fields for a category, sorted by position"""
+        """Active fields for a category, sorted by position. Feeds both the
+        item form's field renderer and validate_product_data() below — a
+        disabled field (is_active=False) is excluded from both, so it stops
+        being shown AND stops being enforced as required, without its
+        ProductField row or any ProductCategoryData history being touched."""
         cat = BusinessCategory.query.filter_by(slug=category_slug).first()
         if cat:
-            return sorted(cat.fields, key=lambda x: x.position)
+            return sorted((f for f in cat.fields if f.is_active), key=lambda x: x.position)
         return []
 
     @staticmethod
     def get_category_fields_by_id(category_id):
-        """Get fields by category ID"""
-        return ProductField.query.filter_by(category_id=category_id).order_by(ProductField.position).all()
+        """Active fields by category ID — see get_category_fields()'s note
+        on why is_active is filtered here."""
+        return (ProductField.query.filter_by(category_id=category_id, is_active=True)
+               .order_by(ProductField.position).all())
 
     # Core Item columns a category field must never shadow — an admin-created
     # field named "sku" would silently fight the real Item.sku column for the

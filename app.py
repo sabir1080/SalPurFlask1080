@@ -60,6 +60,12 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # Production-safe connection pool settings for Neon PostgreSQL
 if DATABASE_URL and "postgresql" in DATABASE_URL:
+    # Local Postgres installs (e.g. a developer's own PostgreSQL 18.6 on
+    # localhost) typically don't have SSL enabled, so "require" hard-fails the
+    # connection. "prefer" still uses SSL when the server offers it, so remote
+    # hosts like Neon/Render keep connecting over SSL exactly as before.
+    _db_host = urlsplit(DATABASE_URL).hostname or ""
+    _is_local_db = _db_host in ("localhost", "127.0.0.1", "::1")
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
         "pool_pre_ping": True,
         "pool_recycle": 300,
@@ -67,7 +73,7 @@ if DATABASE_URL and "postgresql" in DATABASE_URL:
         "max_overflow": 5,
         "pool_timeout": 30,
         "connect_args": {
-            "sslmode": "require",
+            "sslmode": "prefer" if _is_local_db else "require",
             "connect_timeout": 10,
             "keepalives": 1,
             "keepalives_idle": 30,
@@ -1387,6 +1393,22 @@ def migrate_database():
             with db.engine.begin() as conn:
                 conn.execute(text("ALTER TABLE sale_return ADD COLUMN sale_item_id INTEGER REFERENCES sale_item(id)"))
 
+    # is_active lets a default field be turned off without deleting it (which
+    # would cascade-destroy ProductCategoryData history); is_system_default
+    # distinguishes a seeded default field from a user's own custom field on
+    # the same category. Both default True/False respectively, so every
+    # existing ProductField row reads back as "active, user-created" — the
+    # correct interpretation for rows that predate these columns.
+    if "product_field" in inspector.get_table_names():
+        cols = {col["name"] for col in inspector.get_columns("product_field")}
+        with db.engine.begin() as conn:
+            if "is_active" not in cols:
+                conn.execute(text(
+                    "ALTER TABLE product_field ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE"))
+            if "is_system_default" not in cols:
+                conn.execute(text(
+                    "ALTER TABLE product_field ADD COLUMN is_system_default BOOLEAN NOT NULL DEFAULT FALSE"))
+
     for table, column in (("supplier", "opening_balance"), ("customer", "opening_balance")):
         if table in inspector.get_table_names():
             cols = {col["name"] for col in inspector.get_columns(table)}
@@ -1784,6 +1806,14 @@ def migrate_database():
     seed_chart_of_accounts()
     seed_fixed_asset_accounts()
     seed_tax_codes()
+
+    # Same tier as the chart of accounts: the 25 default Business Categories
+    # are system master data, not test data, so a fresh database always has
+    # a usable Item-category list without running any CLI seed command or
+    # the Phase 3 test-data generator. Idempotent by slug/name — see
+    # ensure_default_business_categories()'s docstring.
+    from salpurflask.services.category_catalog import ensure_default_business_categories
+    ensure_default_business_categories()
 
     # Say so before seeding a year that will overlap the ones already there.
     mismatched = fiscal_years_that_disagree_with_the_setting()
