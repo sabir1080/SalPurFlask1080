@@ -186,7 +186,7 @@
                 justify-content: center;
                 position: fixed;
                 top: 0.75rem;
-                left: 0.75rem;
+                right: 0.75rem;
                 z-index: 1051;
                 width: 2.5rem;
                 height: 2.5rem;
@@ -195,12 +195,10 @@
                 border-radius: 0.5rem;
                 box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
             }
-            /* Moves out of the way once the sidebar (which has its own brand
-               link + close affordance via tapping the backdrop) is open, so
-               it doesn't sit on top of the now-visible sidebar content. */
-            body.nav-open .navbar-toggler {
-                left: calc(250px + 0.75rem);
-            }
+            /* No longer needs a body.nav-open override to move out of the
+               sidebar's way: the button sits on the right edge, and the
+               sidebar only ever covers the left 250px, so they never
+               overlap on any real phone width. */
 
             /* Tap-outside-to-close backdrop. Only exists in the DOM/visible
                while open; inserted by the toggle script below, not server-
