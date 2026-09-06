@@ -200,6 +200,88 @@
                an off-canvas menu that's closed by default; it no longer
                competes with page content since it overlays instead of
                pushing, and is one tap away from being dismissed. */
+
+            /* ── Mobile-only self-contained menu appearance ──────────────────
+               Everything below stays inside this same mobile media query —
+               nothing above 768px changes, and neither does Bootstrap's own
+               icon font/theme coloring there. This section exists so the
+               mobile menu's own visibility never depends on Bootstrap's CDN
+               icon font/SVG loading or on which light/dark theme is active:
+               it draws its own hamburger bars in plain CSS and gives its own
+               text/icons fixed, guaranteed-contrasting colors instead of
+               inheriting Bootstrap/theme variables. No markup, JS, or
+               desktop/Chrome rule is touched by any of this. */
+
+            /* Plain CSS hamburger: one element (the existing
+               .navbar-toggler-icon span) drawn as the middle bar, plus two
+               pseudo-elements for the other two — no background-image, SVG,
+               data-URI or icon font involved. The button keeps its existing
+               white background (set above), so a dark bar color is always
+               readable regardless of app theme. */
+            .navbar-toggler-icon {
+                display: block !important;
+                position: relative;
+                width: 1.25rem;
+                height: 2px;
+                background-color: #212529 !important;
+                background-image: none !important;
+                border-radius: 1px;
+            }
+            .navbar-toggler-icon::before,
+            .navbar-toggler-icon::after {
+                content: "";
+                position: absolute;
+                left: 0;
+                width: 100%;
+                height: 2px;
+                background-color: #212529;
+                border-radius: 1px;
+            }
+            .navbar-toggler-icon::before {
+                top: -6px;
+            }
+            .navbar-toggler-icon::after {
+                top: 6px;
+            }
+
+            /* Fixed, self-contained sidebar surface + text/icon colors —
+               deliberately not theme-conditional here, so the mobile menu
+               stays legible even if a theme variable or Bootstrap's own
+               navbar coloring ever fails to apply. ".bg-light" is repeated
+               alongside ".navbar" (both classes the element already carries)
+               purely to outrank the dark-theme gradient rule in style.css —
+               no new elements, ids or classes were added to the markup.
+               ".disabled" items are excluded so the existing greyed-out
+               "restricted" styling for role-locked menu items is untouched. */
+            nav.navbar.bg-light[style*="width: 250px"] {
+                background: #1e293b !important;
+                background-image: none !important;
+            }
+            #navbarNav .navbar-nav > .nav-item > .nav-link:not(.disabled),
+            #navbarNav .navbar-nav > .nav-item > .nav-link:not(.disabled) i,
+            #navbarNav .dropdown-menu .dropdown-item:not(.disabled),
+            #navbarNav .dropdown-menu .dropdown-item:not(.disabled) i {
+                color: #f1f5f9 !important;
+                transition: none !important;
+            }
+            #navbarNav .navbar-nav > .nav-item > .nav-link:not(.disabled):hover,
+            #navbarNav .navbar-nav > .nav-item > .nav-link:not(.disabled):focus,
+            #navbarNav .navbar-nav > .nav-item > .nav-link:not(.disabled):active {
+                color: #ffffff !important;
+                background-color: rgba(255, 255, 255, 0.08) !important;
+            }
+            #navbarNav .dropdown-menu {
+                background-color: #16202f !important;
+            }
+            #navbarNav .dropdown-menu .dropdown-item:not(.disabled):hover,
+            #navbarNav .dropdown-menu .dropdown-item:not(.disabled):focus,
+            #navbarNav .dropdown-menu .dropdown-item:not(.disabled).active {
+                color: #ffffff !important;
+                background-color: rgba(255, 255, 255, 0.12) !important;
+            }
+            nav.navbar.bg-light[style*="width: 250px"] .navbar-brand {
+                color: #f1f5f9 !important;
+            }
         }
 
         /* Table overflow handling */
