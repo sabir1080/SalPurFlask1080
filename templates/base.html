@@ -282,6 +282,41 @@
             nav.navbar.bg-light[style*="width: 250px"] .navbar-brand {
                 color: #f1f5f9 !important;
             }
+
+            /* Explicit structural pinning: display / visibility / opacity /
+               pointer-events must never be left to inherit from Bootstrap
+               defaults, a theme rule, or a partially-applied stylesheet.
+               Disabled/restricted items are excluded from the opacity/
+               display pins so their existing dimmed "restricted" treatment
+               (set elsewhere, unchanged) still applies — they already get
+               visibility/pointer-events below, matching their existing
+               tooltip-on-hover behavior. */
+            #navbarNav,
+            #navbarNav .navbar-nav,
+            #navbarNav .navbar-nav > .nav-item,
+            #navbarNav .navbar-nav > .nav-item > .nav-link,
+            #navbarNav .dropdown-menu .dropdown-item {
+                visibility: visible !important;
+                pointer-events: auto !important;
+            }
+            #navbarNav .navbar-nav > .nav-item > .nav-link:not(.disabled) {
+                display: flex !important;
+                opacity: 1 !important;
+            }
+            #navbarNav .dropdown-menu .dropdown-item:not(.disabled) {
+                display: block !important;
+                opacity: 1 !important;
+            }
+            /* Dropdown submenus stay in normal document flow inside the
+               sidebar (indented, pushing content below them down) rather
+               than floating — Bootstrap's own CSS already does this for a
+               .navbar-nav-nested dropdown-menu; restated explicitly here so
+               the submenu's position can never depend on that stylesheet
+               applying. Bootstrap's own JS still toggles the ".show" class
+               to open/close it — untouched. */
+            #navbarNav .dropdown-menu {
+                position: static !important;
+            }
         }
 
         /* Table overflow handling */
