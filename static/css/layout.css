@@ -513,27 +513,15 @@
     display: none;
   }
 
-  .navbar-nav {
-    display: none;
-  }
-
-  .navbar-nav.mobile-menu {
-    display: flex;
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    background: var(--surface-primary);
-    border-bottom: 1px solid var(--border-primary));
-    flex-direction: column;
-    padding: var(--space-3);
-    gap: 0;
-  }
-
-  .navbar-nav.mobile-menu .nav-link {
-    width: 100%;
-    padding: var(--space-3);
-  }
+  /* This design-system .navbar-nav/.mobile-menu pair belonged to a top-navbar
+     layout that was never wired into any template (no template renders
+     .navbar-content, .mobile-menu or .sidebar-nav — verified repo-wide).
+     Left in place, its bare ".navbar-nav { display: none; }" collided with
+     the real off-canvas sidebar in base.html, which reuses Bootstrap's
+     .navbar-nav class for the actual link list (Dashboard, Parties,
+     Inventory, ...) — hiding it here hid the entire mobile menu. Removed
+     rather than rescoped: .mobile-menu is applied nowhere, so this block
+     was already fully dead weight before it started causing harm. */
 
   .sidebar {
     transform: translateX(-100%);
