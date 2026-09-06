@@ -305,6 +305,28 @@
                 color: #f1f5f9 !important;
             }
 
+            /* Defense in depth against Bootstrap's Collapse component ever
+               hiding #navbarNav again: real-device debugging (?navdebug=1
+               on Firefox Android) proved Bootstrap's collapse JS was still
+               firing on tap (class cycling "show" -> "show collapsing" ->
+               "collapse", with an inline height animating to 0) despite the
+               toggler's own click handler and despite the data-bs-toggle/
+               data-bs-target attributes now being removed from that button
+               (see the button's own comment). This makes it irrelevant
+               which class Bootstrap adds/removes or what inline height/
+               overflow it sets — #navbarNav stays visually expanded no
+               matter what, on mobile. The sidebar's actual open/close slide
+               is driven entirely by body.nav-open + nav's own transform,
+               unaffected by any of this. */
+            #navbarNav,
+            #navbarNav.collapsing,
+            #navbarNav.collapse:not(.show) {
+                display: block !important;
+                height: auto !important;
+                visibility: visible !important;
+                overflow: visible !important;
+            }
+
             /* Explicit structural pinning: display / visibility / opacity /
                pointer-events must never be left to inherit from Bootstrap
                defaults, a theme rule, or a partially-applied stylesheet.
@@ -727,7 +749,21 @@
          viewport. Moving it here keeps it genuinely viewport-fixed while
          leaving its classes, icon markup, JS handling (document.querySelector
          still finds it), and positioning rules completely unchanged. -->
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation" style="display: none;">
+    <!-- data-bs-toggle="collapse"/data-bs-target="#navbarNav" were removed
+         (2026-09-06): on-device debug (?navdebug=1) on real Firefox Android
+         proved Bootstrap's own document-delegated collapse listener was
+         still firing on tap despite this button's capture-phase
+         stopImmediatePropagation() — the observed class sequence
+         "show" -> "show collapsing" -> "collapse" is Bootstrap's Collapse
+         component hiding #navbarNav right after it opens, exactly matching
+         the reported "visible for a moment, then empty and unclickable"
+         bug. Removing these two attributes stops Bootstrap's data-api click
+         handler from ever recognizing this button as a collapse trigger in
+         the first place, instead of relying on a race against it. Safe on
+         desktop too: this button is display:none there and never
+         interacted with. aria-controls/aria-expanded/aria-label are kept —
+         plain accessibility metadata, unrelated to Bootstrap's JS. -->
+    <button class="navbar-toggler" type="button" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation" style="display: none;">
         <span class="navbar-toggler-icon"></span>
     </button>
     <div class="{% block container_class %}container{% endblock %}" style="margin-left: 250px; padding-top: 1rem;">
