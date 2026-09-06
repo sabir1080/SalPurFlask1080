@@ -188,7 +188,7 @@
                 position: fixed;
                 inset: 0;
                 background: rgba(0, 0, 0, 0.35);
-                z-index: 1049;
+                z-index: 999;
             }
             body.nav-open .nav-backdrop {
                 display: block;
@@ -309,9 +309,6 @@
             <a class="navbar-brand" href="{{ url_for('dashboard.index') }}">
                 <i class="bi bi-box-seam-fill brand-icon"></i> {{ company_name }}
             </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation" style="display: none;">
-                <span class="navbar-toggler-icon"></span>
-            </button>
             {# required_role is only shown in the tooltip when the item is actually
                disabled for this user — it names exactly who CAN access it, so a
                staff user hovering a greyed-out item learns "Admin only" or
@@ -582,6 +579,18 @@
             </div>
         </div>
     </nav>
+    <!-- Sibling of nav.navbar on purpose: nav.navbar carries the mobile
+         translateX() slide transform (see the @media block above), and an
+         ancestor's transform establishes a new containing block for any
+         position:fixed descendant. Left nested inside <nav>, this button's
+         fixed top/left would be resolved against — and slide off-screen
+         with — the transformed sidebar instead of staying pinned to the
+         viewport. Moving it here keeps it genuinely viewport-fixed while
+         leaving its classes, icon markup, JS handling (document.querySelector
+         still finds it), and positioning rules completely unchanged. -->
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation" style="display: none;">
+        <span class="navbar-toggler-icon"></span>
+    </button>
     <div class="{% block container_class %}container{% endblock %}" style="margin-left: 250px; padding-top: 1rem;">
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
