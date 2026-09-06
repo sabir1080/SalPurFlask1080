@@ -842,6 +842,124 @@
             });
         })();
 
+        /* ── TEMPORARY on-device nav debug instrumentation ───────────────────
+           Only for diagnosing the mobile menu disappearing/unclickable bug —
+           inert unless the page is opened with ?navdebug=1 in the URL, so it
+           never runs for a normal visitor and never touches desktop. Writes
+           everything to an on-screen panel (not just console.log) so it can
+           be read directly on the phone without a devtools connection.
+           Delete this whole block once the bug is found and fixed. */
+        (function() {
+            if (!/[?&]navdebug=1(&|$)/.test(location.search)) return;
+
+            var panel = document.createElement('div');
+            panel.id = 'nav-debug-panel';
+            panel.style.cssText = 'position:fixed;left:0;right:0;bottom:0;height:40vh;' +
+                'background:rgba(0,0,0,0.92);color:#0f0;font:11px/1.4 monospace;' +
+                'z-index:2147483647;overflow-y:auto;padding:6px;box-sizing:border-box;' +
+                'white-space:pre-wrap;pointer-events:auto;';
+            document.body.appendChild(panel);
+
+            var t0 = performance.now();
+            function log(msg) {
+                var line = document.createElement('div');
+                line.textContent = '[' + Math.round(performance.now() - t0) + 'ms] ' + msg;
+                panel.appendChild(line);
+                panel.scrollTop = panel.scrollHeight;
+                if (window.console) console.log('[navdebug]', msg);
+            }
+
+            // Force a visible marker on every nav link: outline (doesn't
+            // affect layout/hit-area, unlike border) + a bright background.
+            // If this outline/background survives while the text/icon don't,
+            // that proves the element and its box are still painted — only
+            // specific properties (text color, maybe icon glyph) are being
+            // dropped, not the whole layer. If the outline ALSO disappears,
+            // the whole element/layer is being discarded.
+            var styleTag = document.createElement('style');
+            styleTag.textContent = '.navbar-nav .nav-link, .dropdown-menu .dropdown-item {' +
+                'outline: 3px solid red !important; background-color: yellow !important; }';
+            document.head.appendChild(styleTag);
+
+            function describeLink(link) {
+                if (!link) return null;
+                var cs = getComputedStyle(link);
+                var r = link.getBoundingClientRect();
+                var cx = r.x + Math.min(r.width / 2, 50), cy = r.y + r.height / 2;
+                var top = document.elementFromPoint(cx, cy);
+                return {
+                    color: cs.color, opacity: cs.opacity, visibility: cs.visibility,
+                    display: cs.display, pointerEvents: cs.pointerEvents,
+                    transform: cs.transform, bg: cs.backgroundColor,
+                    outline: cs.outlineColor + ' ' + cs.outlineWidth,
+                    rect: Math.round(r.x) + ',' + Math.round(r.y) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height),
+                    inDom: document.body.contains(link),
+                    topElement: top ? (top.tagName + '.' + (top.className || '')) : 'none',
+                    isTopmost: top === link
+                };
+            }
+
+            var watched = null;
+            var lastDesc = null;
+            function poll() {
+                if (!watched) return;
+                var d = describeLink(watched);
+                if (!lastDesc || JSON.stringify(d) !== JSON.stringify(lastDesc)) {
+                    log('LINK STATE CHANGED: ' + JSON.stringify(d));
+                    lastDesc = d;
+                }
+            }
+            var pollId = setInterval(poll, 150);
+
+            log('navdebug active. innerWidth=' + window.innerWidth + ' innerHeight=' + window.innerHeight + ' UA=' + navigator.userAgent);
+
+            document.addEventListener('click', function(e) {
+                if (e.target.closest('.navbar-toggler')) {
+                    log('hamburger clicked, body.nav-open will toggle');
+                    setTimeout(function() {
+                        watched = document.querySelector('.navbar-nav > .nav-item > .nav-link');
+                        lastDesc = describeLink(watched);
+                        log('watching link "' + (watched ? watched.textContent.trim() : 'NONE') + '" — initial: ' + JSON.stringify(lastDesc));
+                    }, 50);
+                }
+            }, true);
+
+            window.addEventListener('resize', function() {
+                log('WINDOW RESIZE event fired: innerWidth=' + window.innerWidth + ' innerHeight=' + window.innerHeight);
+            });
+            window.addEventListener('orientationchange', function() {
+                log('ORIENTATIONCHANGE event fired');
+            });
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', function() {
+                    log('visualViewport RESIZE: width=' + window.visualViewport.width + ' height=' + window.visualViewport.height + ' scale=' + window.visualViewport.scale);
+                });
+            }
+            document.addEventListener('transitionend', function(e) {
+                log('transitionend on ' + e.target.tagName + '.' + e.target.className + ' property=' + e.propertyName);
+            }, true);
+            document.addEventListener('animationend', function(e) {
+                log('animationend on ' + e.target.tagName + '.' + e.target.className);
+            }, true);
+
+            var mo = new MutationObserver(function(mutList) {
+                mutList.forEach(function(m) {
+                    log('MUTATION: ' + m.type + ' on ' + m.target.tagName + '.' + (m.target.className || '') +
+                        (m.attributeName ? (' attr=' + m.attributeName + ' old="' + m.oldValue + '"') : '') +
+                        (m.addedNodes.length ? (' +' + m.addedNodes.length + ' nodes') : '') +
+                        (m.removedNodes.length ? (' -' + m.removedNodes.length + ' nodes') : ''));
+                });
+            });
+            var navEl = document.querySelector('nav.navbar');
+            [document.documentElement, document.body, navEl, document.getElementById('navbarNav'), document.querySelector('.navbar-nav')].forEach(function(el) {
+                if (el) mo.observe(el, { attributes: true, attributeOldValue: true, childList: true, subtree: false });
+            });
+
+            window.addEventListener('error', function(e) {
+                log('JS ERROR: ' + e.message + ' at ' + e.filename + ':' + e.lineno);
+            });
+        })();
+
         document.addEventListener('DOMContentLoaded', function () {
             var csrfMeta = document.querySelector('meta[name="csrf-token"]');
             var csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
