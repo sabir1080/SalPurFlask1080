@@ -135,6 +135,28 @@
                 transform: translateX(-100%);
                 transition: transform 0.25s ease;
                 box-shadow: 2px 0 12px rgba(0, 0, 0, 0.25);
+                /* Forces this fixed+transformed element onto its own stable
+                   GPU compositing layer. Without this hint, some mobile
+                   browser engines fail to correctly repaint a fixed-position
+                   element after a CSS transform transition completes — the
+                   layer is composited once during the animation but the
+                   final frame's content never gets painted back in, leaving
+                   the box empty/unclickable even though every element and
+                   style inside it is still perfectly intact in the DOM (this
+                   class of bug is invisible to devtools/emulated testing,
+                   which doesn't reproduce real mobile GPU compositing).
+                   backface-visibility is the standard companion hint used to
+                   prevent the same class of flicker/blank-repaint bug. */
+                will-change: transform;
+                backface-visibility: hidden;
+                -webkit-backface-visibility: hidden;
+                /* Content taller than the viewport previously just overflowed
+                   the fixed box uncontained (overflow: visible, set above for
+                   desktop/tablet) — unreachable below the fold and, on some
+                   engines, a contributing factor to the same repaint issue.
+                   Contained, native-scrollable bounds only on mobile. */
+                overflow-y: auto !important;
+                -webkit-overflow-scrolling: touch;
             }
             body.nav-open nav.navbar[style*="width: 250px"] {
                 transform: translateX(0);
