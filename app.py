@@ -1972,6 +1972,242 @@ def health():
         app.logger.error("Health check failed: %s", e)
         return {"status": "error", "detail": "database unreachable"}, 503
 
+@app.route("/firefox-nav-test")
+def firefox_nav_test():
+    """TEMPORARY diagnostic-only route — isolated control experiment for the
+    Firefox mobile nav investigation. Deliberately shares NOTHING with the
+    real app: no base.html, no Bootstrap, no static/css/*.css, no existing
+    navbar JS. Plain inline HTML/CSS/JS only, so a result here tells us
+    whether the failure is inside TradeFlow's own navbar implementation or
+    something in the Firefox/mobile/delivery environment. Remove once the
+    live test is done."""
+    return """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Firefox Nav Diagnostic</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, system-ui, sans-serif;
+    background: #f2f2f2;
+    color: #111;
+  }
+
+  /* Hamburger button */
+  #hamburger {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    width: 44px;
+    height: 44px;
+    z-index: 3000;
+    background: #ffffff;
+    border: 1px solid #999999;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    cursor: pointer;
+    padding: 0;
+    transition: none;
+  }
+  #hamburger span {
+    display: block;
+    width: 24px;
+    height: 3px;
+    background-color: #000000;
+    transition: none;
+  }
+
+  /* Backdrop */
+  #backdrop {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.4);
+    z-index: 1000;
+    transition: none;
+  }
+  #backdrop.visible {
+    display: block;
+  }
+
+  /* Sidebar */
+  #sidebar {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 250px;
+    height: 100%;
+    background-color: #202020;
+    color: #ffffff;
+    z-index: 2000;
+    padding: 70px 0 20px 0;
+    overflow-y: auto;
+    transition: none;
+  }
+  #sidebar.visible {
+    display: block;
+  }
+  #sidebar a {
+    display: block;
+    color: #ffffff;
+    background-color: #202020;
+    text-decoration: none;
+    padding: 14px 20px;
+    font-size: 18px;
+    border-bottom: 1px solid #3a3a3a;
+    transition: none;
+  }
+  #sidebar a:hover,
+  #sidebar a:active {
+    background-color: #3a3a3a;
+    color: #ffffff;
+  }
+
+  #page-content {
+    padding: 80px 16px 16px 16px;
+  }
+
+  #diagnostics {
+    margin-top: 24px;
+    padding: 12px;
+    background: #ffffff;
+    border: 1px solid #ccc;
+    font-size: 13px;
+    line-height: 1.5;
+    word-break: break-all;
+  }
+  #status-log {
+    margin-top: 12px;
+    padding: 12px;
+    background: #fff8dc;
+    border: 1px solid #d4c48a;
+    font-size: 13px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  #status-log div { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+  <button id="hamburger" aria-label="Toggle navigation" aria-expanded="false">
+    <span></span>
+    <span></span>
+    <span></span>
+  </button>
+
+  <div id="backdrop"></div>
+
+  <nav id="sidebar">
+    <a href="/">Dashboard</a>
+    <a href="/sale">Sales</a>
+    <a href="/purchase">Purchases</a>
+    <a href="/customer">Customers</a>
+    <a href="/supplier">Suppliers</a>
+  </nav>
+
+  <div id="page-content">
+    <h1>Firefox Nav Diagnostic</h1>
+    <p>Isolated test page. No Bootstrap, no external CSS/JS, no TradeFlow theme code.
+       Tap the hamburger (top-left) to open the menu.</p>
+
+    <div id="diagnostics">
+      <strong>Diagnostics</strong><br>
+      Viewport: <span id="vp-size">-</span><br>
+      User-Agent: <span id="ua">-</span><br>
+      Menu state: <span id="menu-state">CLOSED</span>
+    </div>
+
+    <div id="status-log">
+      <strong>Status log</strong>
+      <div id="log-entries"></div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+
+  var hamburger = document.getElementById('hamburger');
+  var sidebar = document.getElementById('sidebar');
+  var backdrop = document.getElementById('backdrop');
+  var menuStateEl = document.getElementById('menu-state');
+  var logEntries = document.getElementById('log-entries');
+  var vpSizeEl = document.getElementById('vp-size');
+  var uaEl = document.getElementById('ua');
+
+  function log(msg) {
+    var line = document.createElement('div');
+    var t = new Date();
+    var ts = t.toLocaleTimeString() + '.' + String(t.getMilliseconds()).padStart(3, '0');
+    line.textContent = '[' + ts + '] ' + msg;
+    logEntries.appendChild(line);
+    logEntries.scrollTop = logEntries.scrollHeight;
+  }
+
+  function updateViewport() {
+    vpSizeEl.textContent = window.innerWidth + ' x ' + window.innerHeight;
+  }
+
+  function openMenu() {
+    sidebar.classList.add('visible');
+    backdrop.classList.add('visible');
+    hamburger.setAttribute('aria-expanded', 'true');
+    menuStateEl.textContent = 'OPEN';
+    log('menu opened');
+  }
+
+  function closeMenu() {
+    sidebar.classList.remove('visible');
+    backdrop.classList.remove('visible');
+    hamburger.setAttribute('aria-expanded', 'false');
+    menuStateEl.textContent = 'CLOSED';
+    log('menu closed');
+  }
+
+  hamburger.addEventListener('click', function () {
+    log('hamburger clicked');
+    if (sidebar.classList.contains('visible')) {
+      closeMenu();
+    } else {
+      openMenu();
+    }
+  });
+
+  backdrop.addEventListener('click', function () {
+    log('backdrop clicked');
+    closeMenu();
+  });
+
+  Array.prototype.forEach.call(sidebar.querySelectorAll('a'), function (link) {
+    link.addEventListener('click', function () {
+      log('link clicked: ' + link.textContent + ' -> ' + link.getAttribute('href'));
+      // No preventDefault(): normal browser navigation proceeds.
+    });
+  });
+
+  window.addEventListener('resize', updateViewport);
+  updateViewport();
+  uaEl.textContent = navigator.userAgent;
+  log('page loaded');
+})();
+</script>
+</body>
+</html>
+"""
+
 # Custom Jinja2 filter: number ko 999,999,999,999.99 format mein dikhaye
 @app.template_filter('fmt_num')
 def fmt_num(value):
