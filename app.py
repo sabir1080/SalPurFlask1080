@@ -289,7 +289,10 @@ formatter = logging.Formatter(
 )
 file_handler.setFormatter(formatter)
 
-app.logger.addHandler(file_handler)
+# Guarded the same way as the stderr handler above: never stack a second file
+# handler on the same logger, which would write every line to app.log twice.
+if not any(isinstance(h, logging.FileHandler) for h in app.logger.handlers):
+    app.logger.addHandler(file_handler)
 app.logger.setLevel(logging.INFO)
 app.logger.info("Flask application started")
 
@@ -1853,15 +1856,20 @@ def migrate_database():
     backfill_item_stock_locations()
 
 # Create Database
+# Migrations still run on every real boot; the flag only stops the same process
+# from doing this work twice if anything re-enters this module.
+_MIGRATION_DONE = False
 with app.app_context():
-    try:
-        migrate_database()
-        # Initialize application configuration
-        from salpurflask.models import AppConfiguration
-        AppConfiguration.init_defaults()
-    except Exception as e:
-        print(f"FATAL: database migration failed: {e}")
-        raise
+    if not _MIGRATION_DONE:
+        try:
+            migrate_database()
+            # Initialize application configuration
+            from salpurflask.models import AppConfiguration
+            AppConfiguration.init_defaults()
+            _MIGRATION_DONE = True
+        except Exception as e:
+            print(f"FATAL: database migration failed: {e}")
+            raise
 
 # Load user for Flask-Login
 @login_manager.user_loader

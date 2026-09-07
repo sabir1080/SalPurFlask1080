@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, date, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
+import sys
 import uuid
 from flask_login import UserMixin
 from flask import current_app, request
@@ -2488,12 +2489,18 @@ def _get_app_tz():
 
 def _get_fiscal_year_start_month():
     """Get FISCAL_YEAR_START_MONTH from app module (for tests), then app.config, then default to 1."""
-    # First try app module (for test compatibility - tests monkeypatch this)
-    try:
-        import app as app_module
-        return getattr(app_module, "FISCAL_YEAR_START_MONTH", None) or 1
-    except (ImportError, AttributeError):
-        pass
+    # First try app module (for test compatibility - tests monkeypatch this).
+    #
+    # Read it out of sys.modules instead of importing it. `python app.py` registers
+    # that file as "__main__"; a plain `import app` loads the SAME file a second time
+    # under a second name, and Python re-runs its whole body -- migrations, logging
+    # setup, the startup app_context block -- roughly doubling cold start. Looking the
+    # module up here is equivalent (it is already loaded by the time this runs) and
+    # still sees monkeypatched attributes, since tests patch the module object itself.
+    for _name in ("app", "__main__"):
+        app_module = sys.modules.get(_name)
+        if app_module is not None and hasattr(app_module, "FISCAL_YEAR_START_MONTH"):
+            return getattr(app_module, "FISCAL_YEAR_START_MONTH", None) or 1
 
     # Then try app.config (when inside app context, e.g., during requests)
     try:
