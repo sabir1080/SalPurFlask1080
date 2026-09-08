@@ -1,0 +1,146 @@
+{% extends 'base.html' %}
+{% block title %}Receipt {{ sale.invoice_no or sale.id }}{% endblock %}
+{% block content %}
+<style>
+  .slip-thermal {
+    width: 80mm; max-width: 80mm; margin: 1rem auto;
+    background: #fff; color: #000;
+    font-family: "Consolas", "Courier New", monospace; font-size: 10.5px; line-height: 1.35;
+    padding: 6mm 3mm; border: 1px solid #ddd;
+  }
+  .slip-thermal h1 { font-size: 13px; text-align: center; margin: 0 0 2px; font-weight: 800; }
+  .slip-thermal .sub { text-align: center; font-size: 10px; margin-bottom: 4px; }
+  .slip-thermal .title { text-align: center; font-size: 11px; font-weight: 800; margin-top: 2px; }
+  .slip-thermal .rule { border-top: 1px dashed #000; margin: 4px 0; }
+  .slip-thermal .rule-double { border-top: 2px double #000; margin: 4px 0; }
+  .slip-thermal table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .slip-thermal .meta td { padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .slip-thermal .r { text-align: right; white-space: nowrap; }
+  .slip-thermal .l { text-align: left; }
+
+  /* Item table: barcode+numerics on row 1, item name on row 2 directly under
+     the barcode. Fixed column widths sized for the worst-case values in the
+     spec (Price 99999999.99 / Qty 999999.99 / Discount 99999.99 /
+     Tax% 999.99 / Tot-Amount 99,999,999.99) so columns never reflow at 80mm. */
+  .item-table { font-size: 9px; }
+  .item-table th { font-weight: 700; text-align: right; padding: 0 0 2px; border-bottom: 1px solid #000; }
+  .item-table th.l { text-align: left; }
+  .item-table td { padding: 0; }
+  .item-table .col-barcode { text-align: left; }
+  .item-table .col-price { width: 18%; }
+  .item-table .col-qty { width: 15%; }
+  .item-table .col-disc { width: 15%; }
+  .item-table .col-tax { width: 12%; }
+  .item-table .col-amt { width: 20%; }
+  .item-table .item-name-row td {
+    padding-bottom: 3px; font-weight: 600; font-size: 10px;
+    word-break: break-word;
+  }
+
+  .slip-thermal .tot td { font-weight: 800; font-size: 11px; padding-top: 2px; }
+  .slip-thermal .summary-row td { padding-top: 1px; }
+  .slip-thermal .center { text-align: center; }
+  .slip-thermal .muted { color: #333; font-size: 9.5px; }
+
+  .noprint { text-align: center; margin: 1rem; }
+
+  @media print {
+    body { background: #fff !important; }
+    .navbar, footer, .flash-messages { display: none !important; }
+    .slip-thermal { border: 0; margin: 0; width: 80mm; color: #000 !important; background: #fff !important; }
+    @page { margin: 0; size: 80mm auto; }
+  }
+</style>
+
+<div class="noprint">
+  <button class="btn btn-primary" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
+  <a class="btn btn-outline-secondary" href="{{ url_for('pos_receipt', id=sale.id, format='legacy') }}"><i class="bi bi-receipt"></i> Legacy Format</a>
+  <a class="btn btn-outline-secondary" href="{{ url_for('pos') }}"><i class="bi bi-arrow-left"></i> Back to POS</a>
+</div>
+
+<div class="slip-thermal">
+  <h1>{{ company_name }}</h1>
+  <div class="sub">
+    {{ app_name }}{% if company_tagline %} {{ company_tagline }}{% endif %}
+  </div>
+  <div class="title">SALES RECEIPT</div>
+
+  <div class="rule"></div>
+  <table class="meta">
+    <tr><td>Receipt</td><td class="r">{{ sale.invoice_no or sale.id }}</td></tr>
+    <tr><td>Date</td><td class="r">{{ sale.date | bizdate('%d %b %Y %H:%M') }}</td></tr>
+    <tr><td>Cashier</td><td class="r">{{ current_user.name }} &nbsp; Method {{ payment_method }}</td></tr>
+    {% if sale.customer and sale.customer.name != 'Walk-in Customer' %}
+    <tr><td>Customer</td><td class="r">{{ sale.customer.name }}</td></tr>
+    {% endif %}
+  </table>
+
+  <div class="rule"></div>
+
+  <!-- Item lines: line 1 = barcode + item-level price/qty/discount/tax/total,
+       line 2 = item name directly underneath the barcode. -->
+  <table class="item-table">
+    <tr>
+      <th class="l">BarCode/Item</th>
+      <th class="col-price">Price</th>
+      <th class="col-qty">Qty</th>
+      <th class="col-disc">Discount</th>
+      <th class="col-tax">Tax%</th>
+      <th class="col-amt">Tot-Amount</th>
+    </tr>
+    {% for si in sale.line_items %}
+      <tr>
+        <td class="col-barcode">{% if si.item %}{{ si.item.barcode or 'N/A' }}{% else %}N/A{% endif %}</td>
+        <td class="r col-price">{{ si.sale_price | fmt_num }}</td>
+        <td class="r col-qty">{{ si.quantity | fmt_num }}</td>
+        <td class="r col-disc">{{ (si.discount_amount or 0) | fmt_num }}</td>
+        <td class="r col-tax">{{ (si.tax_percent or 0) | fmt_num }}</td>
+        <td class="r col-amt">{{ si.amount | fmt_num }}</td>
+      </tr>
+      <tr class="item-name-row">
+        <td colspan="6">{% if si.item %}{{ si.item.name }}{% else %}[Unknown Item]{% endif %}</td>
+      </tr>
+    {% endfor %}
+  </table>
+
+  <div class="rule-double"></div>
+
+  <!-- Summary section: totals of the existing item-level discount/tax values,
+       not recomputed here. -->
+  <table>
+    {% set ns = namespace(qty=0, gross=0, disc=0, tax=0) %}
+    {% for si in sale.line_items %}
+      {% set ns.qty = ns.qty + si.quantity %}
+      {% set ns.gross = ns.gross + (si.quantity * si.sale_price) %}
+      {% set ns.disc = ns.disc + (si.discount_amount or 0) %}
+      {% set ns.tax = ns.tax + (si.tax_amount or 0) %}
+    {% endfor %}
+
+    <tr class="summary-row"><td>Total Qty</td><td class="r">{{ ns.qty }}</td></tr>
+    <tr class="summary-row"><td>Gross Amt</td><td class="r">{{ currency }} {{ ns.gross | fmt_num }}</td></tr>
+    <tr class="summary-row"><td>Discount</td><td class="r">{{ currency }} {{ ns.disc | fmt_num }}</td></tr>
+    <tr class="summary-row"><td>Tax Amt</td><td class="r">{{ currency }} {{ ns.tax | fmt_num }}</td></tr>
+  </table>
+
+  <div class="rule"></div>
+
+  <table>
+    <tr class="tot"><td>NET TOTAL</td><td class="r">{{ currency }} {{ total | fmt_num }}</td></tr>
+    <tr><td>Received</td><td class="r">{{ currency }} {{ received | fmt_num }}</td></tr>
+    {% set change = received - total %}
+    {% if change > 0 %}
+    <tr class="tot"><td>Change</td><td class="r">{{ currency }} {{ change | fmt_num }}</td></tr>
+    {% endif %}
+  </table>
+
+  <div class="rule"></div>
+  <div class="center muted">
+    Thank you for your purchase!
+    {% if sale.is_reversed %}<br>** REVERSED — NOT VALID **{% endif %}
+  </div>
+</div>
+
+<script>
+  window.addEventListener('load', function () { setTimeout(function () { window.print(); }, 250); });
+</script>
+{% endblock %}

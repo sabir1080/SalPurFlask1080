@@ -171,3 +171,55 @@ def test_staff_cannot_use_the_pos(appctx):
     c.post("/signin", data={"email": "s@t.com", "password": "secret123"})
     r = c.get("/pos", follow_redirects=False)
     assert r.status_code in (301, 302)            # redirected away, not shown
+
+
+def test_receipt_defaults_to_the_new_thermal_format(appctx):
+    item = _world()
+    c = _manager()
+    r = _checkout(c, {"items": [{"item_id": item.id, "qty": 2, "price": 100}],
+                      "account_id": _cash_account_id(), "amount_paid": 200})
+    sale_id = r.get_json()["sale_id"]
+
+    r = c.get(f"/pos/receipt/{sale_id}")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert "SALES RECEIPT" in body
+    assert "BarCode/Item" in body           # new thermal template's item header
+    assert "Tot-Amount" in body
+    assert "Legacy Format" in body          # link back to the old layout
+
+
+def test_receipt_legacy_format_still_works(appctx):
+    item = _world()
+    c = _manager()
+    r = _checkout(c, {"items": [{"item_id": item.id, "qty": 2, "price": 100}],
+                      "account_id": _cash_account_id(), "amount_paid": 200})
+    sale_id = r.get_json()["sale_id"]
+
+    r = c.get(f"/pos/receipt/{sale_id}?format=legacy")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert "SALES RECEIPT" in body
+    assert "Disc%" in body                  # legacy template's own item header
+    assert "BarCode/Item" not in body       # confirms it's not the new template
+
+
+def test_receipt_item_level_discount_and_tax_are_shown_not_recomputed(appctx):
+    item = _world()
+    c = _manager()
+    # qty 2 @ 100 = gross 200; fixed discount 10 -> taxable 190; 5% tax -> 9.50
+    r = _checkout(c, {"items": [{"item_id": item.id, "qty": 2, "price": 100,
+                                  "discount_type": "fixed", "discount_value": 10,
+                                  "tax_percent": 5}],
+                      "account_id": _cash_account_id(), "amount_paid": 199.5})
+    assert r.status_code == 200
+    sale_id = r.get_json()["sale_id"]
+
+    sal = db.session.get(Sale, sale_id)
+    si = sal.line_items[0]
+    assert float(si.discount_amount) == 10
+    assert float(si.tax_amount) == 9.5      # 5% of (200 - 10)
+
+    body = c.get(f"/pos/receipt/{sale_id}").get_data(as_text=True)
+    assert "10.00" in body                  # item-level discount amount, shown as-is
+    assert "9.50" in body                   # item-level tax amount, shown as-is

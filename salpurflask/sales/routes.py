@@ -797,13 +797,24 @@ def pos_checkout():
 @sales_bp.route('/pos/receipt/<int:id>', methods=['GET'])
 @manager_required
 def pos_receipt(id):
-    """POS receipt display."""
+    """POS receipt display.
+
+    Defaults to the compact 80mm thermal-printer format. The original
+    (wider) layout is still available at ?format=legacy for anyone who
+    wants to print or view it explicitly.
+    """
     from app import get_sale_received
 
     sal = db.session.get(Sale, id) or abort(404)
     received = get_sale_received(sal.id)
-    return render_template("pos_receipt.html", sale=sal,
-                           total=sale_total(sal), received=received)
+
+    payment_method = 'Cash'
+    if sal.customer_payments and len(sal.customer_payments) > 0:
+        payment_method = sal.customer_payments[0].payment_method
+
+    template = "pos_receipt.html" if request.args.get("format") == "legacy" else "pos_receipt_thermal.html"
+    return render_template(template, sale=sal, total=sale_total(sal), received=received,
+                           payment_method=payment_method)
 
 
 # ─── POS BILL HOLD ROUTES ──────────────────────────────────────────────────
