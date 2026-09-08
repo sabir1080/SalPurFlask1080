@@ -504,6 +504,49 @@ def purchase_return():
     )
 
 
+@verified_required
+def api_purchase_return_lookup():
+    """Server-side search for the Purchase Return line picker — see
+    salpurflask.sales.routes.api_sale_return_lookup, the purchase-side
+    mirror. Uses this module's own get_purchase_item_returned_qty (defined
+    above, the same one purchase_return() itself calls) for the final
+    remaining-qty check, not app.py's differently-scoped function of the
+    same name — the route and this endpoint must agree on "remaining"."""
+    from salpurflask.services.lookup_service import search_returnable_purchase_items
+
+    q = request.args.get("q", "")
+    supplier_id = request.args.get("supplier_id", type=int)
+    date_from = request.args.get("date_from", "").strip() or None
+    date_to = request.args.get("date_to", "").strip() or None
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 20, type=int)
+
+    candidates, total_candidates, _, _ = search_returnable_purchase_items(
+        q=q, supplier_id=supplier_id, date_from=date_from, date_to=date_to,
+        page=page, per_page=per_page)
+
+    results = []
+    for pi in candidates:
+        remaining = pi.quantity - get_purchase_item_returned_qty(pi)
+        if remaining <= 0:
+            continue
+        results.append({
+            "id": pi.id,
+            "purchase_id": pi.purchase_id,
+            "invoice_no": pi.purchase_header.invoice_no or f"PUR-{pi.purchase_id}",
+            "supplier": pi.purchase_header.supplier.name if pi.purchase_header.supplier else "",
+            "date": pi.purchase_header.date.strftime("%Y-%m-%d") if pi.purchase_header.date else "",
+            "item": pi.item.name if pi.item else "[Unknown Item]",
+            "unit": pi.display_unit,
+            "price": float(pi.purchase_price),
+            "remaining": remaining,
+        })
+        if len(results) >= per_page:
+            break
+
+    return {"results": results, "total": total_candidates, "page": page, "per_page": per_page}
+
+
 @admin_required
 def delete_purchase_return(id):
     """Delete a purchase return."""

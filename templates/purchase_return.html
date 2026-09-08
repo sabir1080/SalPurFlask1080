@@ -51,16 +51,10 @@
                 <tbody id="retBody">
                     <tr class="ret-row">
                         <td>
-                            <select class="form-select form-select-sm pi-select" name="purchase_item_id[]" required onchange="fillRow(this)">
-                                <option value="">— Select Purchase / Item —</option>
-                                {% for row in items_available %}
-                                <option value="{{ row.pi.id }}"
-                                    data-price="{{ row.pi.purchase_price }}"
-                                    data-remaining="{{ row.remaining }}">
-                                    #PUR-{{ row.pi.purchase_header.id }} — {{ row.pi.purchase_header.supplier.name }} — {{ row.pi.item.name }} (Rem: {{ row.remaining }} {{ row.pi.display_unit }})
-                                </option>
-                                {% endfor %}
-                            </select>
+                            <input type="hidden" class="pi-select" name="purchase_item_id[]" required>
+                            <button type="button" class="btn btn-outline-secondary btn-sm w-100 text-start pi-picker-btn" onclick="openPiLookup(this)">
+                                <i class="bi bi-search"></i> <span class="pi-picker-label text-muted">— Select Purchase / Item —</span>
+                            </button>
                         </td>
                         <td>
                             <input type="number" class="form-control form-control-sm qty-input" name="quantity[]" min="1" required>
@@ -120,43 +114,32 @@
 <div class="pagination">{{ pagination.links }}</div>
 
 <script>
-const PI_OPTIONS = {{ purchase_return_options_for_js(items_available) | tojson }};
-
-// Builds <option> elements from JSON data via textContent, never by interpolating
-// a supplier/item name into an HTML/JS string — a backtick or ${...} in the name
-// would otherwise break out of a JS template literal.
-function buildPiSelectOptions(select) {
-    select.innerHTML = '';
-    const blank = document.createElement('option');
-    blank.value = '';
-    blank.textContent = '— Select Purchase / Item —';
-    select.appendChild(blank);
-    PI_OPTIONS.forEach(row => {
-        const opt = document.createElement('option');
-        opt.value = row.id;
-        opt.dataset.price = row.price;
-        opt.dataset.remaining = row.remaining;
-        opt.textContent = row.label;
-        select.appendChild(opt);
+// Row selection now goes through the server-searched Document Return
+// Lookup (static/js/document_return_lookup.js) instead of a <select>
+// pre-populated with every returnable purchase item in the system — the
+// browser never receives the whole table just because this page was opened.
+function openPiLookup(btn) {
+    const row = btn.closest('tr');
+    DocumentReturnLookup.open({
+        type: 'purchase_return',
+        onSelect: function (picked) {
+            fillRow(row, picked);
+        }
     });
 }
 
-function fillRow(sel) {
-    const opt = sel.options[sel.selectedIndex];
-    const row = sel.closest('tr');
-    const remaining = opt.getAttribute('data-remaining');
-    const price = opt.getAttribute('data-price');
+function fillRow(row, picked) {
+    row.querySelector('.pi-select').value = picked.id;
+    const label = row.querySelector('.pi-picker-label');
+    label.textContent = picked.invoice_no + ' — ' + picked.supplier + ' — ' + picked.item +
+        ' (Rem: ' + picked.remaining + ' ' + picked.unit + ')';
+    label.classList.remove('text-muted');
+
     const qtyInput = row.querySelector('.qty-input');
     const hint = row.querySelector('.qty-hint');
-    if (price) {
-        row.querySelector('[name="return_price[]"]').value = price;
-        qtyInput.max = remaining;
-        hint.textContent = 'Max: ' + remaining;
-    } else {
-        row.querySelector('[name="return_price[]"]').value = '';
-        qtyInput.removeAttribute('max');
-        hint.textContent = '';
-    }
+    row.querySelector('[name="return_price[]"]').value = picked.price;
+    qtyInput.max = picked.remaining;
+    hint.textContent = 'Max: ' + picked.remaining;
 }
 
 function addRow() {
@@ -164,7 +147,12 @@ function addRow() {
     const tr = document.createElement('tr');
     tr.className = 'ret-row';
     tr.innerHTML = `
-        <td><select class="form-select form-select-sm pi-select" name="purchase_item_id[]" required onchange="fillRow(this)"></select></td>
+        <td>
+            <input type="hidden" class="pi-select" name="purchase_item_id[]" required>
+            <button type="button" class="btn btn-outline-secondary btn-sm w-100 text-start pi-picker-btn" onclick="openPiLookup(this)">
+                <i class="bi bi-search"></i> <span class="pi-picker-label text-muted">— Select Purchase / Item —</span>
+            </button>
+        </td>
         <td>
             <input type="number" class="form-control form-control-sm qty-input" name="quantity[]" min="1" required>
             <small class="text-muted qty-hint"></small>
@@ -172,7 +160,6 @@ function addRow() {
         <td><input type="number" step="0.01" class="form-control form-control-sm" name="return_price[]" min="0" required></td>
         <td><input type="text" class="form-control form-control-sm" name="reason[]" placeholder="Optional"></td>
         <td class="text-center"><button type="button" class="btn btn-danger btn-sm" onclick="removeRow(this)">×</button></td>`;
-    buildPiSelectOptions(tr.querySelector('.pi-select'));
     tbody.appendChild(tr);
 }
 

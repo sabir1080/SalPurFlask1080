@@ -13,9 +13,12 @@ correct enough for typeahead-sized result sets (see MAX_RESULTS).
 """
 
 from sqlalchemy import case, or_, and_, cast, Text
+from sqlalchemy.orm import joinedload
 
 from salpurflask.extensions import db
-from salpurflask.models import Item, Supplier, Customer
+from salpurflask.models import (
+    Item, Supplier, Customer, Sale, SaleItem, Purchase, PurchaseItem,
+)
 from salpurflask.models.business_config import BusinessCategory, ProductField, ProductCategoryData
 
 MAX_RESULTS = 50
@@ -121,3 +124,85 @@ def search_suppliers(q="", page=1, per_page=20):
 
 def search_customers(q="", page=1, per_page=20):
     return _party_search(Customer, q, page, per_page)
+
+
+# ── Sale Return / Purchase Return line pickers ──────────────────────────────
+#
+# "Remaining to return" is not a column — it's computed per line by
+# app.get_sale_item_returned_qty / get_purchase_item_returned_qty, which have
+# a same-item-twice-on-one-document tie-breaker that must stay in exactly one
+# place (see those functions' docstrings). So this module does NOT recompute
+# remaining qty in SQL. It only does the part a database is good at: text
+# search, party/date filtering, excluding reversed documents and (quantity==0
+# already-fully-tagged) obviously-empty lines, ordered newest first, and
+# paginated to a candidate page — a caller-supplied `over_fetch` multiplier
+# widens that candidate page since a handful of rows on it may still turn out
+# to be fully returned once the real remaining-qty check runs and get
+# filtered out client-side of this function, same as the pre-existing
+# behaviour when the whole table was loaded and filtered by remaining > 0.
+
+
+def search_returnable_sale_items(q="", customer_id=None, date_from=None, date_to=None,
+                                 page=1, per_page=20, over_fetch=3):
+    """Candidate SaleItem rows for the Sale Return picker: not on a reversed
+    sale, not already fully returned by quantity alone (the exact remaining
+    qty, which needs the tie-breaker logic, is checked by the caller).
+    Matches on invoice/sale number, customer name, or the sale's date."""
+    query = (SaleItem.query
+             .join(Sale, SaleItem.sale_id == Sale.id)
+             .join(Customer, Sale.customer_id == Customer.id)
+             .options(joinedload(SaleItem.item), joinedload(SaleItem.sale_header))
+             .filter(Sale.is_reversed.is_(False))
+             .filter(SaleItem.quantity > 0))
+    if customer_id:
+        query = query.filter(Sale.customer_id == customer_id)
+
+    q = (q or "").strip()
+    if q:
+        like = f"%{q}%"
+        query = query.join(Item, SaleItem.item_id == Item.id).filter(or_(
+            Sale.invoice_no.ilike(like),
+            Customer.name.ilike(like),
+            Item.name.ilike(like),
+        ))
+    if date_from:
+        query = query.filter(Sale.date >= date_from)
+    if date_to:
+        query = query.filter(Sale.date <= date_to)
+
+    query = query.order_by(Sale.date.desc(), SaleItem.id.desc())
+    candidate_per_page = max(1, min(per_page, MAX_RESULTS)) * max(1, over_fetch)
+    rows, total, page, _ = _paginate(query, page, candidate_per_page)
+    return rows, total, page, per_page
+
+
+def search_returnable_purchase_items(q="", supplier_id=None, date_from=None, date_to=None,
+                                     page=1, per_page=20, over_fetch=3):
+    """Candidate PurchaseItem rows for the Purchase Return picker — see
+    search_returnable_sale_items, the purchase-side mirror."""
+    query = (PurchaseItem.query
+             .join(Purchase, PurchaseItem.purchase_id == Purchase.id)
+             .join(Supplier, Purchase.supplier_id == Supplier.id)
+             .options(joinedload(PurchaseItem.item), joinedload(PurchaseItem.purchase_header))
+             .filter(Purchase.is_reversed.is_(False))
+             .filter(PurchaseItem.quantity > 0))
+    if supplier_id:
+        query = query.filter(Purchase.supplier_id == supplier_id)
+
+    q = (q or "").strip()
+    if q:
+        like = f"%{q}%"
+        query = query.join(Item, PurchaseItem.item_id == Item.id).filter(or_(
+            Purchase.invoice_no.ilike(like),
+            Supplier.name.ilike(like),
+            Item.name.ilike(like),
+        ))
+    if date_from:
+        query = query.filter(Purchase.date >= date_from)
+    if date_to:
+        query = query.filter(Purchase.date <= date_to)
+
+    query = query.order_by(Purchase.date.desc(), PurchaseItem.id.desc())
+    candidate_per_page = max(1, min(per_page, MAX_RESULTS)) * max(1, over_fetch)
+    rows, total, page, _ = _paginate(query, page, candidate_per_page)
+    return rows, total, page, per_page

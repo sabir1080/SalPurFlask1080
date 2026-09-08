@@ -502,6 +502,55 @@ def sale_return():
     )
 
 
+@sales_bp.route('/api/sale-returns/lookup', methods=['GET'])
+@verified_required
+def api_sale_return_lookup():
+    """Server-side search for the Sale Return line picker — never the whole
+    sale-item table, always paginated (see salpurflask/services/lookup_service).
+    Matches invoice/sale number, customer name, item name, and sale date.
+
+    The eligibility rule (line not on a reversed sale, still has quantity
+    left to return) is the exact same rule sale_return() already applies —
+    search_returnable_sale_items does the cheap SQL half of it, and this
+    module's own get_sale_item_returned_qty (defined above, the same one
+    sale_return() itself calls — not app.py's differently-scoped function of
+    the same name) does the rest here, so the route and this endpoint always
+    agree on "remaining"."""
+    q = request.args.get("q", "")
+    customer_id = request.args.get("customer_id", type=int)
+    date_from = request.args.get("date_from", "").strip() or None
+    date_to = request.args.get("date_to", "").strip() or None
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 20, type=int)
+
+    from salpurflask.services.lookup_service import search_returnable_sale_items
+
+    candidates, total_candidates, _, _ = search_returnable_sale_items(
+        q=q, customer_id=customer_id, date_from=date_from, date_to=date_to,
+        page=page, per_page=per_page)
+
+    results = []
+    for si in candidates:
+        remaining = si.quantity - get_sale_item_returned_qty(si.id)
+        if remaining <= 0:
+            continue
+        results.append({
+            "id": si.id,
+            "sale_id": si.sale_id,
+            "invoice_no": si.sale_header.invoice_no or f"SAL-{si.sale_id}",
+            "customer": si.sale_header.customer.name if si.sale_header.customer else "",
+            "date": si.sale_header.date.strftime("%Y-%m-%d") if si.sale_header.date else "",
+            "item": si.item.name if si.item else "[Unknown Item]",
+            "unit": si.display_unit,
+            "price": float(si.sale_price),
+            "remaining": remaining,
+        })
+        if len(results) >= per_page:
+            break
+
+    return {"results": results, "total": total_candidates, "page": page, "per_page": per_page}
+
+
 @admin_required
 def delete_sale_return(id):
     """Delete a sale return."""
