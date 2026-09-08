@@ -51,16 +51,6 @@
           <label class="form-label">Against Purchase</label>
           <select class="form-select" id="purchase_id" name="purchase_id">
             <option value="">General / On Account</option>
-            {% for p in purchases %}
-            {% set p_total = purchase_total(p) %}
-            {% set p_paid = get_purchase_paid(p.id) %}
-            {% set p_due = p_total - p_paid %}
-            {% if p_due > 0 %}
-            <option value="{{ p.id }}" data-supplier="{{ p.supplier_id }}" {% if form_data.get('purchase_id', '')|string == p.id|string %}selected{% endif %}>
-              #{{ p.id }} — Due: {{ p_due | fmt_num }}
-            </option>
-            {% endif %}
-            {% endfor %}
           </select>
         </div>
       </div>
@@ -173,14 +163,25 @@
 const purchaseSelect = document.getElementById('purchase_id');
 const balanceHint = document.getElementById('supplier_balance_hint');
 
-function filterPurchases() {
-    const sid = document.getElementById('supplier_id').value;
-    purchaseSelect.querySelectorAll('.purchase-option').forEach(function (opt) {
-        opt.hidden = sid && opt.dataset.supplier !== sid;
-    });
-    if (purchaseSelect.selectedOptions[0] && purchaseSelect.selectedOptions[0].hidden) {
-        purchaseSelect.value = '';
-    }
+// The dropdown is populated from the server, scoped to exactly the selected
+// supplier (GET /api/supplier/<id>/outstanding-purchases) — never a
+// client-side hide/show over a list that already contains every supplier's
+// bills. Every call first clears out whatever the previous supplier loaded,
+// so switching suppliers can't leave a stale bill selectable underneath.
+function loadPurchases(sid) {
+    purchaseSelect.querySelectorAll('option[value]:not([value=""])').forEach(function (opt) { opt.remove(); });
+    purchaseSelect.value = '';
+    if (!sid) return;
+    fetch('/api/supplier/' + sid + '/outstanding-purchases')
+        .then(r => r.json())
+        .then(data => {
+            (data.purchases || []).forEach(function (row) {
+                const opt = document.createElement('option');
+                opt.value = row.id;
+                opt.textContent = '#' + row.id + ' — Due: ' + Number(row.due).toLocaleString(undefined, {minimumFractionDigits: 2});
+                purchaseSelect.appendChild(opt);
+            });
+        });
 }
 
 function updateBalance() {
@@ -197,9 +198,7 @@ function updateBalance() {
 // Supplier selection now goes through the Universal Party Lookup
 // (static/js/party_lookup.js) instead of a <select> pre-populated with every
 // supplier — the browser never receives the whole supplier master just
-// because this page was opened. filterPurchases()/updateBalance() previously
-// ran on the <select>'s native "change" event; they now run right after a
-// lookup pick, the only way it can change.
+// because this page was opened.
 function openSupplierLookup() {
     PartyLookup.open({
         type: "supplier",
@@ -208,14 +207,14 @@ function openSupplierLookup() {
             const label = document.getElementById('supplier_id_label');
             label.textContent = party.name;
             label.classList.remove('text-muted');
-            filterPurchases();
+            loadPurchases(party.id);
             updateBalance();
         }
     });
 }
 
 document.addEventListener('DOMContentLoaded', function () {
-    filterPurchases();
+    loadPurchases(document.getElementById('supplier_id').value);
     updateBalance();
 });
 </script>

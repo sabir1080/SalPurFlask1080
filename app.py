@@ -343,13 +343,13 @@ from salpurflask.supplier.routes import (
     supplier, edit_supplier, delete_supplier, export_suppliers, export_suppliers_excel,
     supplier_payment, edit_supplier_payment, delete_supplier_payment, supplier_bulk_payment,
     supplier_ledger, delete_supplier_ledger_adjustment, export_supplier_ledger, export_supplier_ledger_excel,
-    api_supplier_balance, api_supplier_lookup
+    api_supplier_balance, api_supplier_lookup, api_supplier_outstanding_purchases
 )
 from salpurflask.customer.routes import (
     customer, edit_customer, delete_customer, export_customers, export_customers_excel,
     customer_receipt, edit_customer_receipt, delete_customer_receipt, customer_bulk_receipt,
     customer_ledger, delete_customer_ledger_adjustment, export_customer_ledger, export_customer_ledger_excel,
-    api_customer_balance, api_customer_lookup
+    api_customer_balance, api_customer_lookup, api_customer_outstanding_sales
 )
 from salpurflask.accounting.routes import (
     accounts, new_account, edit_account, account_ledger,
@@ -467,12 +467,14 @@ app.add_url_rule("/supplier/<int:id>/ledger/adjustment/delete/<int:entry_id>", "
 app.add_url_rule("/supplier/<int:id>/ledger/export", "export_supplier_ledger", export_supplier_ledger, methods=["GET"])
 app.add_url_rule("/supplier/<int:id>/ledger/export/excel", "export_supplier_ledger_excel", export_supplier_ledger_excel, methods=["GET"])
 app.add_url_rule("/api/supplier/<int:id>/balance", "api_supplier_balance", api_supplier_balance, methods=["GET"])
+app.add_url_rule("/api/supplier/<int:id>/outstanding-purchases", "api_supplier_outstanding_purchases", api_supplier_outstanding_purchases, methods=["GET"])
 app.add_url_rule("/api/suppliers/lookup", "api_supplier_lookup", api_supplier_lookup, methods=["GET"])
 app.add_url_rule("/customer/<int:id>/ledger", "customer_ledger", customer_ledger, methods=["GET", "POST"])
 app.add_url_rule("/customer/<int:id>/ledger/adjustment/delete/<int:entry_id>", "delete_customer_ledger_adjustment", delete_customer_ledger_adjustment, methods=["POST"])
 app.add_url_rule("/customer/<int:id>/ledger/export", "export_customer_ledger", export_customer_ledger, methods=["GET"])
 app.add_url_rule("/customer/<int:id>/ledger/export/excel", "export_customer_ledger_excel", export_customer_ledger_excel, methods=["GET"])
 app.add_url_rule("/api/customer/<int:id>/balance", "api_customer_balance", api_customer_balance, methods=["GET"])
+app.add_url_rule("/api/customer/<int:id>/outstanding-sales", "api_customer_outstanding_sales", api_customer_outstanding_sales, methods=["GET"])
 app.add_url_rule("/api/customers/lookup", "api_customer_lookup", api_customer_lookup, methods=["GET"])
 app.add_url_rule("/accounts", "accounts", accounts, methods=["GET"])
 app.add_url_rule("/accounts/new", "new_account", new_account, methods=["GET", "POST"])

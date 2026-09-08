@@ -165,7 +165,6 @@ def customer_receipt():
             | (CustomerPayment.notes.ilike(f"%{search}%"))
         )
     receipts, pagination = get_paginated_results(query.order_by(CustomerPayment.payment_date.desc()))
-    sales = Sale.query.order_by(Sale.date.desc()).all()
     if request.method == "POST":
         customer_id = request.form.get("customer_id", "").strip()
         sale_id = request.form.get("sale_id", "").strip() or None
@@ -208,7 +207,6 @@ def customer_receipt():
     return render_template(
         "customer_receipt.html",
         receipts=receipts,
-        sales=sales,
         pagination=pagination,
         search=search,
     )
@@ -225,7 +223,6 @@ def edit_customer_receipt(id):
 
     receipt = db.session.get(CustomerPayment, id) or abort(404)
     assert_not_posted("receipt", receipt.id, f"Receipt #{receipt.id}")
-    sales = Sale.query.order_by(Sale.date.desc()).all()
     if request.method == "POST":
         customer_id = request.form.get("customer_id", "").strip()
         sale_id = request.form.get("sale_id", "").strip() or None
@@ -268,7 +265,6 @@ def edit_customer_receipt(id):
     return render_template(
         "edit_customer_receipt.html",
         receipt=receipt,
-        sales=sales,
     )
 
 
@@ -574,6 +570,38 @@ def api_customer_balance(id):
         "received": get_customer_received(id),
         "balance": get_customer_balance(id),
     }
+
+
+@verified_required
+def api_customer_outstanding_sales(id):
+    """Outstanding (partially/unpaid) sales for one customer only — used by
+    the "Against Sale" dropdown on the receipt form so it can never show
+    another customer's invoices, no matter what the client sends.
+
+    ?exclude_receipt_id=N (the receipt being edited): that receipt's own
+    amount is backed out of the received total, same as
+    validate_customer_receipt does, so the sale it is currently adjusting
+    shows its balance as if this receipt did not exist yet -- and that sale
+    is always included even if that leaves it fully received, so the edit
+    form never silently drops the adjustment that's already saved on the
+    receipt."""
+    from app import sale_total, get_sale_received
+
+    db.session.get(Customer, id) or abort(404)
+    exclude_receipt_id = request.args.get("exclude_receipt_id", type=int)
+    current_sale_id = None
+    if exclude_receipt_id:
+        current = db.session.get(CustomerPayment, exclude_receipt_id)
+        if current and current.customer_id == id:
+            current_sale_id = current.sale_id
+
+    sales = Sale.query.filter_by(customer_id=id).order_by(Sale.date.desc()).all()
+    rows = []
+    for s in sales:
+        due = round(sale_total(s) - get_sale_received(s.id, exclude_receipt_id), 2)
+        if due > 0 or s.id == current_sale_id:
+            rows.append({"id": s.id, "due": due})
+    return {"sales": rows}
 
 
 @verified_required

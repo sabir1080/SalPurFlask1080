@@ -47,17 +47,6 @@
           <label for="purchase_id" class="form-label">Against Purchase</label>
           <select class="form-select" id="purchase_id" name="purchase_id">
             <option value="">General / On Account</option>
-            {% for p in purchases %}
-            {% set p_total = purchase_total(p) %}
-            {% set p_paid = get_purchase_paid(p.id) %}
-            {% if payment.purchase_id == p.id %}{% set p_paid = p_paid - payment.amount %}{% endif %}
-            {% set p_due = p_total - p_paid %}
-            {% if p_due > 0 or payment.purchase_id == p.id %}
-            <option value="{{ p.id }}" data-supplier="{{ p.supplier_id }}" class="purchase-option" {% if payment.purchase_id == p.id %}selected{% endif %}>
-              #{{ p.id }} — {{ p.id_item.name }} — Due: {{ p_due | fmt_num }}
-            </option>
-            {% endif %}
-            {% endfor %}
           </select>
         </div>
         <div class="col-md-6">
@@ -82,31 +71,49 @@
 </div>
 <script>
 const purchaseSelect = document.getElementById('purchase_id');
-function filterPurchases() {
-    const sid = document.getElementById('supplier_id').value;
-    purchaseSelect.querySelectorAll('.purchase-option').forEach(function (opt) {
-        opt.hidden = sid && opt.dataset.supplier !== sid;
-    });
+const currentPurchaseId = {{ (payment.purchase_id or '') | tojson }};
+const editingPaymentId = {{ payment.id }};
+
+// The dropdown is populated from the server, scoped to exactly the selected
+// supplier (GET /api/supplier/<id>/outstanding-purchases) — never a
+// client-side hide/show over a list that already contains every supplier's
+// bills. exclude_payment_id backs this payment's own amount out of each
+// purchase's paid total (matching validate_supplier_payment) and guarantees
+// the purchase already saved on this payment stays in the list even if
+// that leaves it fully paid, so switching away and back can't lose it.
+function loadPurchases(sid) {
+    purchaseSelect.querySelectorAll('option[value]:not([value=""])').forEach(function (opt) { opt.remove(); });
+    purchaseSelect.value = '';
+    if (!sid) return;
+    fetch('/api/supplier/' + sid + '/outstanding-purchases?exclude_payment_id=' + editingPaymentId)
+        .then(r => r.json())
+        .then(data => {
+            (data.purchases || []).forEach(function (row) {
+                const opt = document.createElement('option');
+                opt.value = row.id;
+                opt.textContent = '#' + row.id + ' — Due: ' + Number(row.due).toLocaleString(undefined, {minimumFractionDigits: 2});
+                if (String(row.id) === String(currentPurchaseId)) opt.selected = true;
+                purchaseSelect.appendChild(opt);
+            });
+        });
 }
 
 // Supplier selection now goes through the Universal Party Lookup
 // (static/js/party_lookup.js) instead of a <select> pre-populated with every
-// supplier. filterPurchases() previously ran on the <select>'s native
-// "change" event; it now runs right after a lookup pick, the only way it
-// can change.
+// supplier.
 function openSupplierLookup() {
     PartyLookup.open({
         type: "supplier",
         onSelect: function (party) {
             document.getElementById('supplier_id').value = party.id;
             document.getElementById('supplier_id_label').textContent = party.name;
-            filterPurchases();
+            loadPurchases(party.id);
         }
     });
 }
 
 document.addEventListener('DOMContentLoaded', function () {
-    filterPurchases();
+    loadPurchases(document.getElementById('supplier_id').value);
 });
 </script>
 {% endblock %}

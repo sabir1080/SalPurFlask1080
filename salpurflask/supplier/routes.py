@@ -165,7 +165,6 @@ def supplier_payment():
             | (SupplierPayment.notes.ilike(f"%{search}%"))
         )
     payments, pagination = get_paginated_results(query.order_by(SupplierPayment.payment_date.desc()))
-    purchases = Purchase.query.order_by(Purchase.date.desc()).all()
     if request.method == "POST":
         supplier_id = request.form.get("supplier_id", "").strip()
         purchase_id = request.form.get("purchase_id", "").strip() or None
@@ -208,7 +207,6 @@ def supplier_payment():
     return render_template(
         "supplier_payment.html",
         payments=payments,
-        purchases=purchases,
         pagination=pagination,
         search=search,
     )
@@ -225,7 +223,6 @@ def edit_supplier_payment(id):
 
     payment = db.session.get(SupplierPayment, id) or abort(404)
     assert_not_posted("payment", payment.id, f"Payment #{payment.id}")
-    purchases = Purchase.query.order_by(Purchase.date.desc()).all()
     if request.method == "POST":
         supplier_id = request.form.get("supplier_id", "").strip()
         purchase_id = request.form.get("purchase_id", "").strip() or None
@@ -268,7 +265,6 @@ def edit_supplier_payment(id):
     return render_template(
         "edit_supplier_payment.html",
         payment=payment,
-        purchases=purchases,
     )
 
 
@@ -574,6 +570,37 @@ def api_supplier_balance(id):
         "paid": get_supplier_paid(id),
         "balance": get_supplier_balance(id),
     }
+
+
+@verified_required
+def api_supplier_outstanding_purchases(id):
+    """Outstanding (partially/unpaid) purchases for one supplier only — used
+    by the "Against Purchase" dropdown on the payment form so it can never
+    show another supplier's bills, no matter what the client sends.
+
+    ?exclude_payment_id=N (the payment being edited): that payment's own
+    amount is backed out of the paid total, same as validate_supplier_payment
+    does, so the purchase it is currently adjusting shows its balance as if
+    this payment did not exist yet -- and that purchase is always included
+    even if that leaves it fully paid, so the edit form never silently drops
+    the adjustment that's already saved on the payment."""
+    from app import purchase_total, get_purchase_paid
+
+    db.session.get(Supplier, id) or abort(404)
+    exclude_payment_id = request.args.get("exclude_payment_id", type=int)
+    current_purchase_id = None
+    if exclude_payment_id:
+        current = db.session.get(SupplierPayment, exclude_payment_id)
+        if current and current.supplier_id == id:
+            current_purchase_id = current.purchase_id
+
+    purchases = Purchase.query.filter_by(supplier_id=id).order_by(Purchase.date.desc()).all()
+    rows = []
+    for p in purchases:
+        due = round(purchase_total(p) - get_purchase_paid(p.id, exclude_payment_id), 2)
+        if due > 0 or p.id == current_purchase_id:
+            rows.append({"id": p.id, "due": due})
+    return {"purchases": rows}
 
 
 @verified_required
