@@ -1552,6 +1552,20 @@ def migrate_database():
               AND s.id NOT IN (SELECT DISTINCT sale_id FROM sale_item)
         """))
 
+    # Draft -> Posted foundation (Phase 1 of that workflow). Every row today —
+    # existing and newly created alike — is "posted", since posting still
+    # happens unconditionally at creation; nothing yet reads this column.
+    # DEFAULT 'posted' backfills existing rows in the same statement, so no
+    # separate UPDATE is needed. Must run before backfill_ledgers() below,
+    # which ORM-queries Purchase/Sale (SELECT *, including this column).
+    for table in ("purchase", "sale"):
+        if table in inspector.get_table_names():
+            cols = {col["name"] for col in inspector.get_columns(table)}
+            if "status" not in cols:
+                with db.engine.begin() as conn:
+                    conn.execute(text(
+                        f"ALTER TABLE {table} ADD COLUMN status VARCHAR(10) NOT NULL DEFAULT 'posted'"))
+
     backfill_ledgers()
 
     # New tables for Tier-1/2 features

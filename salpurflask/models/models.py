@@ -246,6 +246,14 @@ def save_item_units(item):
                                 purchase_price=pp, sale_price=sp))
     return None
 
+# Phase 1 of the Draft -> Posted workflow: the column exists and every
+# existing/currently-created row is "posted" (today's only real lifecycle),
+# but nothing yet reads or branches on it -- see CLAUDE.md / the Draft
+# workflow audit for why posting still happens unconditionally at creation.
+SALE_PURCHASE_STATUSES = ("draft", "posted")
+STATUS_DRAFT = "draft"
+STATUS_POSTED = "posted"
+
 class Purchase(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
     supplier_id         = db.Column(db.Integer, db.ForeignKey("supplier.id"), nullable=False)
@@ -270,6 +278,9 @@ class Purchase(db.Model):
     # is read as "the default location", never guessed or backfilled onto the
     # row itself. See salpurflask/models/inventory_location.py.
     location_id         = db.Column(db.Integer, db.ForeignKey("location.id"), nullable=True)
+    # Draft -> Posted foundation (Phase 1). Every row today is "posted" since
+    # posting still happens unconditionally at creation; see SALE_PURCHASE_STATUSES.
+    status              = db.Column(db.String(10), nullable=False, default=STATUS_POSTED)
 
 class Sale(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
@@ -294,6 +305,9 @@ class Sale(db.Model):
     # Which warehouse the goods left from. Same NULL-means-default convention
     # as Purchase.location_id.
     location_id         = db.Column(db.Integer, db.ForeignKey("location.id"), nullable=True)
+    # Draft -> Posted foundation (Phase 1). Every row today is "posted" since
+    # posting still happens unconditionally at creation; see SALE_PURCHASE_STATUSES.
+    status              = db.Column(db.String(10), nullable=False, default=STATUS_POSTED)
 
 class PurchaseItem(db.Model):
     __tablename__   = "purchase_item"
@@ -2654,6 +2668,9 @@ __all__ = [
     'OPENING_LEDGER_DATE',
     'PO_STATUSES',
     'QUOTATION_STATUSES',
+    'SALE_PURCHASE_STATUSES',
+    'STATUS_DRAFT',
+    'STATUS_POSTED',
     'SYSTEM_ACCOUNT_CODES',
     
     'PAYMENT_METHODS',
