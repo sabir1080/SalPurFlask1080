@@ -286,6 +286,25 @@ def reverse_document_route(kind, id):
     model_fn, list_endpoint = DOCUMENT_MODELS[kind]
     doc = db.session.get(model_fn(), id) or abort(404)
 
+    # A Sale can carry CustomerPayments raised against it. Reversing the
+    # Sale removes only the Sale's own ledger/GL/stock effects (see
+    # reverse_document / _unwind_stock_and_subledger) -- it deliberately
+    # does not touch those payments, so the customer ledger is left with an
+    # active credit until someone reconciles or refunds it separately. That
+    # is allowed (this is Option A), but it must not happen silently: the
+    # user has to see the warning and explicitly continue. Checked here,
+    # not only in the template, so a hand-built POST can't skip past it.
+    if kind == "sale":
+        has_active_payments = any(not p.is_reversed for p in doc.customer_payments)
+        if has_active_payments and request.form.get("confirm_payment_warning") != "1":
+            flash(
+                "This Sale has received payment(s). Reversing the Sale will remove it "
+                "from active Sales Revenue and Receivables, but the existing payment(s) "
+                "will remain recorded. This may create a customer credit balance until "
+                "the payment is refunded or reconciled. Confirm to continue.",
+                "warning")
+            return redirect(request.referrer or url_for(list_endpoint))
+
     reversal = reverse_document(kind, doc)
     db.session.commit()
 

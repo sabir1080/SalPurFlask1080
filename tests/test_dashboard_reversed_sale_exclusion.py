@@ -136,7 +136,15 @@ def _checkout(client, item, qty, price, account_id, amount_paid=None):
 
 
 def _reverse_sale(client, sale_id):
-    resp = client.post(f"/document/sale/{sale_id}/reverse", follow_redirects=True)
+    """Always sends confirm_payment_warning=1: these tests exercise the
+    revenue/receivable exclusion, not the payment-warning gate added in
+    reverse_document_route (see test_sale_reversal_payment_warning.py for
+    that). A sale checked out with full payment now requires this flag to
+    reverse at all; sending it unconditionally keeps this helper working
+    for both the paid and unpaid sales these tests create, without
+    depending on which one a given test happens to use."""
+    resp = client.post(f"/document/sale/{sale_id}/reverse",
+                       data={"confirm_payment_warning": "1"}, follow_redirects=True)
     db.session.expire_all()
     return resp
 

@@ -1,16 +1,58 @@
 {# Reverse action for a posted document. Callers set `doc` and `kind`.
    Posted documents cannot be deleted — reversing posts a cancelling journal
-   entry and undoes the stock/ledger effects, leaving both on record. #}
+   entry and undoes the stock/ledger effects, leaving both on record.
+
+   Sale is a special case (Option A): a Sale can have CustomerPayments
+   raised against it, and reversing the Sale does not touch those payments
+   (see reverse_document_route's own check, which is the real enforcement —
+   this template only decides which confirmation to show). When active
+   payments exist, a plain confirm() isn't enough to convey the consequence,
+   so that case gets its own modal with an explicit warning and a hidden
+   confirm_payment_warning=1 field instead of the one-line browser confirm. #}
 {% if doc.is_reversed %}
 <span class="badge bg-warning text-dark" title="Reversed{% if doc.reversed_at %} on {{ doc.reversed_at | localdt('%Y-%m-%d') }}{% endif %}">
     <i class="bi bi-arrow-counterclockwise"></i> reversed
 </span>
 {% elif current_user.is_admin %}
 {% set label = kind | replace('_', ' ') %}
+{% set active_payments = doc.customer_payments | selectattr('is_reversed', 'equalto', False) | list if kind == "sale" else [] %}
+{% if kind == "sale" and active_payments %}
+{% set modal_id = "reverseSaleModal" ~ doc.id %}
+<button type="button" class="btn btn-sm btn-outline-warning" title="Reverse — this sale has payment(s) recorded"
+        data-bs-toggle="modal" data-bs-target="#{{ modal_id }}">
+    <i class="bi bi-arrow-counterclockwise"></i>
+</button>
+<div class="modal fade" id="{{ modal_id }}" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-exclamation-triangle text-warning"></i> Reverse Sale #{{ doc.id }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p><strong>Warning: This Sale has received payment(s).</strong> Reversing the Sale
+           will remove it from active Sales Revenue and Receivables, but the existing
+           payment(s) will remain recorded. This may create a customer credit balance
+           until the payment is refunded or reconciled. Do you want to continue?</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <form method="POST" action="{{ url_for('reverse_document_route', kind=kind, id=doc.id) }}" class="d-inline">
+          <input type="hidden" name="confirm_payment_warning" value="1">
+          <button type="submit" class="btn btn-warning">
+            <i class="bi bi-arrow-counterclockwise"></i> Continue — Reverse Sale
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% else %}
 <form method="POST" action="{{ url_for('reverse_document_route', kind=kind, id=doc.id) }}" class="d-inline"
       onsubmit="return confirm('Reverse this {{ label }}? A cancelling journal entry is posted and stock is corrected. Nothing is deleted.')">
     <button class="btn btn-sm btn-outline-warning" title="Reverse — posts a cancelling entry, deletes nothing">
         <i class="bi bi-arrow-counterclockwise"></i>
     </button>
 </form>
+{% endif %}
 {% endif %}
