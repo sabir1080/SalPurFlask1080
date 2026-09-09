@@ -79,15 +79,22 @@ def dashboard():
         pass
 
     # Simple aggregations - no complex expressions
+    #
+    # Reused from app.py rather than querying PurchaseItem/SaleItem directly:
+    # a reversed Purchase/Sale keeps its row (audit trail — see
+    # reverse_document()) but must stop counting as active cost/revenue.
+    # get_total_payable()/get_total_receivable() already join back to
+    # Purchase.is_reversed/Sale.is_reversed; a second, uncoupled copy of the
+    # same sum here previously did not, so it kept including reversed sales.
     try:
-        val = db.session.query(db.func.sum(PurchaseItem.amount)).scalar()
-        context['total_purchase_cost'] = float(val) if val else 0.0
+        from app import get_total_payable
+        context['total_purchase_cost'] = float(get_total_payable())
     except Exception:
         pass
 
     try:
-        val = db.session.query(db.func.sum(SaleItem.amount)).scalar()
-        context['total_sale_revenue'] = float(val) if val else 0.0
+        from app import get_total_receivable
+        context['total_sale_revenue'] = float(get_total_receivable())
     except Exception:
         pass
 
@@ -151,12 +158,16 @@ def dashboard():
         from datetime import datetime, timedelta
         from app import sql_date_fmt
 
-        # Get last 12 months of sales data
+        # Get last 12 months of sales data — reversed sales excluded, same
+        # reason as total_sale_revenue above: the row stays for audit but
+        # must stop counting as active revenue.
         monthly_data = db.session.query(
             sql_date_fmt(Sale.date).label('month'),
             func.sum(SaleItem.amount).label('sale_amt'),
             func.sum(SaleItem.amount - (SaleItem.quantity * SaleItem.cost_price)).label('profit_amt')
-        ).join(SaleItem, Sale.id == SaleItem.sale_id).group_by(
+        ).join(SaleItem, Sale.id == SaleItem.sale_id).filter(
+            Sale.is_reversed.is_(False)
+        ).group_by(
             sql_date_fmt(Sale.date)
         ).order_by(
             sql_date_fmt(Sale.date)
