@@ -11,7 +11,7 @@ from salpurflask.models import (
     Sale, SaleItem, SaleReturn, Customer, Item, CustomerPayment, FinancialAccount, PosHold,
     MONEY, resolve_item_unit, line_base_qty,
     calc_discount_tax, allocate_document_number, assert_not_posted, assert_not_numbered,
-    post_document, reverse_document, Quotation,
+    post_document, reverse_document, Quotation, STATUS_DRAFT, STATUS_POSTED,
 )
 from salpurflask.models.business_config import BusinessCategory
 from salpurflask.auth import verified_required, manager_required, admin_required
@@ -47,7 +47,7 @@ def sale_total(sale):
 def sale():
     """Display sales and allow creation of new sales."""
     from app import validate_line_rows, sale_total as app_sale_total
-    from app import record_audit, sync_customer_sale, item_add_stock, item_remove_stock
+    from app import record_audit, item_add_stock
     from salpurflask.models import (Location, resolve_location_id, stock_at_location,
                                     get_or_create_default_location)
     from salpurflask.services.location_permissions import (
@@ -130,6 +130,11 @@ def sale():
                     first_tax_f = float(first_tax or 0)
                     first_gross = int(first_qty) * float(first_price)
                     first_disc_amt, first_tax_amt, _ = calc_discount_tax(first_gross, first_d_type or "percent", first_d_val_f, first_tax_f)
+                    # Phase 2 (Draft -> Posted): a Sale created here starts as a Draft --
+                    # SaleItems are created with the same discount/tax math as before, but
+                    # stock, invoice numbering, the customer ledger and the GL are untouched
+                    # until an explicit Post action exists (a later phase). See
+                    # STATUS_DRAFT/STATUS_POSTED in salpurflask/models/models.py.
                     sal = Sale(
                         customer_id=int(customer_id),
                         item_id=int(first_iid),
@@ -140,6 +145,7 @@ def sale():
                         tax_percent=first_tax_f, tax_amount=first_tax_amt,
                         date=sale_date, notes=notes or None,
                         location_id=location_id,
+                        status=STATUS_DRAFT,
                     )
                     db.session.add(sal)
                     db.session.flush()
@@ -148,7 +154,8 @@ def sale():
                         qty_i = int(qty); price_f = float(price)
                         unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
                         base_qty = qty_i * unit_factor
-                        # Stock validation and reduction only for STOCK items, not SERVICE
+                        # Validation only -- a Draft does not reduce stock, so this just
+                        # warns early that the line may not be postable later.
                         if item_obj.item_type == "STOCK":
                             available = stock_at_location(item_obj.id, location_id)
                             if available < base_qty:
@@ -171,20 +178,16 @@ def sale():
                             unit_name=unit_name, unit_factor=unit_factor,
                         )
                         db.session.add(si)
-                        # Only reduce stock for STOCK items, not SERVICE items
-                        if item_obj.item_type == "STOCK":
-                            item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)),
-                                              location_id=location_id,
-                                              movement_type="sale", source_type="sale", source_id=sal.id)
+                        # No item_remove_stock() here -- a Draft has no stock effect.
+                        # The Post action (a later phase) is where this happens.
                     db.session.flush()
                     db.session.refresh(sal)
-                    sal.invoice_no = allocate_document_number("sale", sal.date)
-                    sync_customer_sale(sal)
-                    post_document("sale", sal)
+                    # No allocate_document_number() / sync_customer_sale() / post_document()
+                    # here -- a Draft consumes no invoice number and has no GL/ledger effect.
                     db.session.commit()
                     record_audit("create", "Sale", sal.id,
-                                 f"Sale {sal.invoice_no}, total {sale_total(sal):,.2f}")
-                    flash(f"Sale {sal.invoice_no} recorded successfully!", "success")
+                                 f"Draft Sale #{sal.id}, total {sale_total(sal):,.2f}")
+                    flash(f"Draft Sale #{sal.id} saved.", "success")
                     return redirect(url_for("sale"))
             except ValueError as e:
                 flash(f"Invalid data: {e}", "danger")
@@ -254,13 +257,19 @@ def edit_sale(id):
         else:
             try:
                 old_customer_id = sal.customer_id
-                for si in sal.line_items:
-                    old_item = get_item_locked(si.item_id)
-                    if old_item and old_item.item_type == "STOCK":
-                        cost_returned = si.cost_price * line_base_qty(si)
-                        item_add_stock(old_item, line_base_qty(si), cost_total=cost_returned,
-                                      location_id=location_id,
-                                      movement_type="sale", source_type="sale", source_id=sal.id)
+                # A Draft (Phase 2) never removed stock at creation, so there is
+                # nothing to restore here or re-deduct below -- doing so would
+                # move Item.stock for a document that never touched it. Only a
+                # Posted sale's existing lines get this restore/reapply dance.
+                is_posted = sal.status == STATUS_POSTED
+                if is_posted:
+                    for si in sal.line_items:
+                        old_item = get_item_locked(si.item_id)
+                        if old_item and old_item.item_type == "STOCK":
+                            cost_returned = si.cost_price * line_base_qty(si)
+                            item_add_stock(old_item, line_base_qty(si), cost_total=cost_returned,
+                                          location_id=location_id,
+                                          movement_type="sale", source_type="sale", source_id=sal.id)
                 stock_errors = []
                 for iid, qty, price, d_type, d_val, tax, unit_key in rows:
                     item_obj = get_item_locked(int(iid))
@@ -272,13 +281,14 @@ def edit_sale(id):
                                 f"{item_obj.name}: only {available} {item_obj.unit} "
                                 f"available at this warehouse")
                 if stock_errors:
-                    for si in sal.line_items:
-                        old_item = get_item_locked(si.item_id)
-                        if old_item and old_item.item_type == "STOCK":
-                            cost_removed = si.cost_price * line_base_qty(si)
-                            item_remove_stock(old_item, line_base_qty(si), cost_total=cost_removed,
-                                             location_id=location_id,
-                                             movement_type="sale", source_type="sale", source_id=sal.id)
+                    if is_posted:
+                        for si in sal.line_items:
+                            old_item = get_item_locked(si.item_id)
+                            if old_item and old_item.item_type == "STOCK":
+                                cost_removed = si.cost_price * line_base_qty(si)
+                                item_remove_stock(old_item, line_base_qty(si), cost_total=cost_removed,
+                                                 location_id=location_id,
+                                                 movement_type="sale", source_type="sale", source_id=sal.id)
                     flash("Insufficient stock — " + "; ".join(stock_errors), "danger")
                 else:
                     SaleItem.query.filter_by(sale_id=sal.id).delete()
@@ -314,18 +324,22 @@ def edit_sale(id):
                             unit_name=unit_name, unit_factor=unit_factor,
                         )
                         db.session.add(si)
-                        # Only reduce stock for STOCK items, not SERVICE items
-                        if item_obj.item_type == "STOCK":
+                        # Only reduce stock for STOCK items, not SERVICE items,
+                        # and only for a Posted sale -- see is_posted above.
+                        if item_obj.item_type == "STOCK" and is_posted:
                             item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)),
                                               location_id=location_id,
                                               movement_type="sale", source_type="sale", source_id=sal.id)
                     db.session.flush()
                     db.session.refresh(sal)
-                    if old_customer_id != int(customer_id):
-                        remove_customer_ledger_entry("sale", sal.id)
-                        recalculate_customer_ledger(old_customer_id)
-                    sync_customer_sale(sal)
-                    post_document("sale", sal)
+                    # A Draft has no customer-ledger/GL effect to update either --
+                    # sync_customer_sale()/post_document() only apply once Posted.
+                    if is_posted:
+                        if old_customer_id != int(customer_id):
+                            remove_customer_ledger_entry("sale", sal.id)
+                            recalculate_customer_ledger(old_customer_id)
+                        sync_customer_sale(sal)
+                        post_document("sale", sal)
                     db.session.commit()
                     record_audit("update", "Sale", sal.id, f"Sale #{sal.id} edited")
                     flash("Sale updated successfully!", "success")
@@ -354,13 +368,17 @@ def delete_sale(id):
     if linked_quotation:
         flash(f"Cannot delete sale — it was created from Quotation #{linked_quotation.id}.", "danger")
         return redirect(url_for("sale"))
-    for si in sal.line_items:
-        item_obj = db.session.get(Item, si.item_id)
-        if item_obj and item_obj.item_type == "STOCK":
-            cost_returned = si.cost_price * line_base_qty(si)
-            item_add_stock(item_obj, line_base_qty(si), cost_total=cost_returned,
-                           location_id=sal.location_id,
-                           movement_type="sale", source_type="sale", source_id=sal.id)
+    # A Draft (Phase 2) never removed stock at creation, so there is nothing
+    # to give back here -- doing so would add phantom stock that was never
+    # actually deducted. Only a Posted sale's line items get this restore.
+    if sal.status == STATUS_POSTED:
+        for si in sal.line_items:
+            item_obj = db.session.get(Item, si.item_id)
+            if item_obj and item_obj.item_type == "STOCK":
+                cost_returned = si.cost_price * line_base_qty(si)
+                item_add_stock(item_obj, line_base_qty(si), cost_total=cost_returned,
+                               location_id=sal.location_id,
+                               movement_type="sale", source_type="sale", source_id=sal.id)
     audit_summary = f"Sale #{sal.id} ({sal.customer.name if sal.customer else 'customer'}) deleted"
     customer_id = remove_customer_ledger_entry("sale", sal.id)
     db.session.delete(sal)

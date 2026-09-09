@@ -250,7 +250,12 @@ def test_item_stock_and_itemstock_still_match_after_movement_logging(appctx):
 
 # ── 10. existing inventory workflows continue to pass (route-level) ────────────
 
-def test_sale_route_creates_correctly_typed_movement(appctx):
+def test_sale_route_creates_no_movement_while_a_draft(appctx):
+    """/sale now creates a Draft (Phase 2 of the Draft -> Posted workflow,
+    see STATUS_DRAFT in salpurflask/models/models.py): no stock movement
+    until the sale is Posted, which doesn't exist yet. See
+    tests/test_draft_sale.py for the full Draft-isolation contract this
+    route now has to uphold."""
     sup, cus = _world()
     it = _item(stock=50)
     c = _admin()
@@ -261,9 +266,7 @@ def test_sale_route_creates_correctly_typed_movement(appctx):
     }, follow_redirects=True)
     assert r.status_code == 200
     rows = StockMovement.query.filter_by(movement_type="sale").all()
-    assert len(rows) == 1
-    assert rows[0].quantity == -10
-    assert rows[0].source_type == "sale"
+    assert len(rows) == 0
 
 
 def test_purchase_route_creates_correctly_typed_movement(appctx):

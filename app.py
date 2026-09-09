@@ -1209,13 +1209,16 @@ def get_total_paid_suppliers():
     return float(db.session.query(func.sum(SupplierPayment.amount)).scalar() or 0.0)
 
 def get_total_receivable():
-    """Gross value of every active (non-reversed) sale — see get_total_payable,
-    the sale-side mirror. This is also what the Dashboard's Total Sale Revenue
-    card shows; the two must stay in lock-step, so both read this function
-    rather than each running its own copy of the same query."""
+    """Gross value of every active (non-reversed, posted) sale — see
+    get_total_payable, the sale-side mirror. This is also what the Dashboard's
+    Total Sale Revenue card shows; the two must stay in lock-step, so both
+    read this function rather than each running its own copy of the same
+    query. A Draft Sale (Phase 2) has no receivable/revenue effect yet, same
+    reason a reversed one doesn't: excluded by status, not by disappearing
+    from the table."""
     return float(db.session.query(func.sum(SaleItem.amount))
                 .join(Sale, SaleItem.sale_id == Sale.id)
-                .filter(Sale.is_reversed.is_(False))
+                .filter(Sale.is_reversed.is_(False), Sale.status == STATUS_POSTED)
                 .scalar() or 0.0)
 
 def get_total_received_customers():

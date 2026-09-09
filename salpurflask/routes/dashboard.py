@@ -4,7 +4,7 @@ from flask import Blueprint, render_template, redirect, url_for, flash
 from flask_login import current_user
 
 from salpurflask.models import (
-    Item, Purchase, Sale, PurchaseItem, SaleItem, PurchaseReturn, SaleReturn
+    Item, Purchase, Sale, PurchaseItem, SaleItem, PurchaseReturn, SaleReturn, STATUS_POSTED
 )
 from salpurflask.extensions import db
 
@@ -160,13 +160,14 @@ def dashboard():
 
         # Get last 12 months of sales data — reversed sales excluded, same
         # reason as total_sale_revenue above: the row stays for audit but
-        # must stop counting as active revenue.
+        # must stop counting as active revenue. A Draft Sale (Phase 2) is
+        # excluded the same way: it has no revenue effect until it is Posted.
         monthly_data = db.session.query(
             sql_date_fmt(Sale.date).label('month'),
             func.sum(SaleItem.amount).label('sale_amt'),
             func.sum(SaleItem.amount - (SaleItem.quantity * SaleItem.cost_price)).label('profit_amt')
         ).join(SaleItem, Sale.id == SaleItem.sale_id).filter(
-            Sale.is_reversed.is_(False)
+            Sale.is_reversed.is_(False), Sale.status == STATUS_POSTED
         ).group_by(
             sql_date_fmt(Sale.date)
         ).order_by(

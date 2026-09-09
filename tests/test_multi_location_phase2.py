@@ -84,6 +84,31 @@ def _sale(c, cus, item, qty, price, location_id=None):
     return c.post("/sale", data=data, follow_redirects=True)
 
 
+def _post_draft_sale(sal):
+    """/sale now creates a Draft (Phase 2 of the Draft -> Posted workflow) --
+    there is no Post action yet to turn it into a reversible, stock-moving
+    document, which some reversal-mechanics tests below need. This performs
+    exactly the sequence the route itself used to run unconditionally,
+    reusing the same real functions a future Post action will call --
+    nothing here is new business logic."""
+    from app import (item_remove_stock, sync_customer_sale, post_document,
+                     allocate_document_number)
+    from salpurflask.models.models import STATUS_POSTED
+
+    for si in sal.line_items:
+        item_obj = db.session.get(Item, si.item_id)
+        base_qty = si.quantity * (si.unit_factor or 1)
+        item_remove_stock(item_obj, base_qty, cost_total=si.cost_price * Decimal(str(base_qty)),
+                          location_id=sal.location_id,
+                          movement_type="sale", source_type="sale", source_id=sal.id)
+    sal.status = STATUS_POSTED
+    sal.invoice_no = allocate_document_number("sale", sal.date)
+    sync_customer_sale(sal)
+    post_document("sale", sal)
+    db.session.commit()
+    return sal
+
+
 def _adjust(c, item, adj_type, qty, location_id=None):
     data = {"item_id": item.id, "adj_type": adj_type, "quantity": str(qty),
            "date": "2026-03-01", "reason": "test"}
@@ -95,6 +120,9 @@ def _adjust(c, item, adj_type, qty, location_id=None):
 # ── sales ─────────────────────────────────────────────────────────────────────
 
 def test_sale_from_default_warehouse(appctx):
+    """/sale now creates a Draft (Phase 2 of the Draft -> Posted workflow):
+    the location is still recorded on the Sale for when it is eventually
+    Posted, but stock does not move yet. See tests/test_draft_sale.py."""
     sup, cus, item = _world()
     c = _admin()
     _purchase(c, sup, item, 50, 100)
@@ -104,11 +132,13 @@ def test_sale_from_default_warehouse(appctx):
     db.session.expire_all()
     sal = Sale.query.first()
     assert sal.location_id == default.id
-    assert stock_at_location(item.id, default.id) == 40
-    assert db.session.get(Item, item.id).stock == 40
+    assert stock_at_location(item.id, default.id) == 50
+    assert db.session.get(Item, item.id).stock == 50
 
 
 def test_sale_from_non_default_warehouse(appctx):
+    """See test_sale_from_default_warehouse -- a Draft records its location
+    but does not move stock."""
     sup, cus, item = _world()
     c = _admin()
     loc2 = _second_location()
@@ -118,8 +148,8 @@ def test_sale_from_non_default_warehouse(appctx):
     db.session.expire_all()
     sal = Sale.query.first()
     assert sal.location_id == loc2.id
-    assert stock_at_location(item.id, loc2.id) == 25
-    assert db.session.get(Item, item.id).stock == 25
+    assert stock_at_location(item.id, loc2.id) == 30
+    assert db.session.get(Item, item.id).stock == 30
 
 
 def test_insufficient_stock_at_selected_warehouse(appctx):
@@ -154,11 +184,18 @@ def test_sufficient_company_stock_but_insufficient_selected_warehouse_stock(appc
 
 
 def test_sale_cancellation_restores_same_warehouse(appctx):
+    """/sale creates a Draft (Phase 2) that does not move stock, so this
+    test -- which is about reversal's warehouse-affinity, not creation --
+    posts it directly via _post_draft_sale() first. Reversal itself is
+    unchanged (see the Phase 2 report: reverse_document() was not touched)."""
     sup, cus, item = _world()
     c = _admin()
     loc2 = _second_location()
     _purchase(c, sup, item, 50, 100, location_id=loc2.id)
     _sale(c, cus, item, 10, 250, location_id=loc2.id)
+    db.session.expire_all()
+    sal = Sale.query.first()
+    _post_draft_sale(sal)
     db.session.expire_all()
     assert stock_at_location(item.id, loc2.id) == 40
     default = get_or_create_default_location()
@@ -173,6 +210,11 @@ def test_sale_cancellation_restores_same_warehouse(appctx):
 
 
 def test_sale_company_total_remains_correct_across_two_warehouses(appctx):
+    """Purchase still posts and moves stock immediately (unchanged); Sale is
+    now a Draft (Phase 2) and does not, so the two sales below leave the
+    purchased total (20 + 30 = 50) untouched. The invariant under test --
+    Item.stock always equals the sum of its per-location stock -- still
+    holds, just at a different number than before this phase."""
     sup, cus, item = _world()
     c = _admin()
     loc2 = _second_location()
@@ -185,7 +227,7 @@ def test_sale_company_total_remains_correct_across_two_warehouses(appctx):
     default = get_or_create_default_location()
     total_at_locations = (stock_at_location(item.id, default.id)
                           + stock_at_location(item.id, loc2.id))
-    assert item.stock == total_at_locations == 37
+    assert item.stock == total_at_locations == 50
 
 
 # ── purchases ────────────────────────────────────────────────────────────────
@@ -365,15 +407,19 @@ def test_single_warehouse_business_never_sees_a_selector(appctx):
 
 def test_single_warehouse_sale_and_purchase_work_without_a_location_field(appctx):
     """Omitting location_id entirely (an old client, or a single-warehouse
-    form that never renders the field) still resolves to the default."""
+    form that never renders the field) still resolves to the default. The
+    Sale is a Draft (Phase 2) so it does not move stock -- only Purchase's
+    20 units land."""
     sup, cus, item = _world()
     c = _admin()
     _purchase(c, sup, item, 20, 100, location_id=None)
     r = _sale(c, cus, item, 5, 250, location_id=None)
     assert r.status_code == 200
     default = get_or_create_default_location()
-    assert stock_at_location(item.id, default.id) == 15
-    assert db.session.get(Item, item.id).stock == 15
+    assert stock_at_location(item.id, default.id) == 20
+    assert db.session.get(Item, item.id).stock == 20
+    sal = Sale.query.first()
+    assert sal.location_id == default.id
 
 
 # ── the central invariant ────────────────────────────────────────────────────────
