@@ -2,9 +2,10 @@
    Posted documents cannot be deleted — reversing posts a cancelling journal
    entry and undoes the stock/ledger effects, leaving both on record.
 
-   Sale is a special case (Option A): a Sale can have CustomerPayments
-   raised against it, and reversing the Sale does not touch those payments
-   (see reverse_document_route's own check, which is the real enforcement —
+   Sale and Purchase are a special case (Option A): each can have
+   payments raised against it (CustomerPayment / SupplierPayment), and
+   reversing the document does not touch those payments (see
+   reverse_document_route's own check, which is the real enforcement —
    this template only decides which confirmation to show). When active
    payments exist, a plain confirm() isn't enough to convey the consequence,
    so that case gets its own modal with an explicit warning and a hidden
@@ -15,10 +16,24 @@
 </span>
 {% elif current_user.is_admin %}
 {% set label = kind | replace('_', ' ') %}
-{% set active_payments = doc.customer_payments | selectattr('is_reversed', 'equalto', False) | list if kind == "sale" else [] %}
-{% if kind == "sale" and active_payments %}
-{% set modal_id = "reverseSaleModal" ~ doc.id %}
-<button type="button" class="btn btn-sm btn-outline-warning" title="Reverse — this sale has payment(s) recorded"
+{% if kind == "sale" %}
+  {% set active_payments = doc.customer_payments | selectattr('is_reversed', 'equalto', False) | list %}
+  {% set payment_noun = "payment" %}
+  {% set revenue_noun = "Sales Revenue and Receivables" %}
+  {% set credit_noun = "customer credit" %}
+  {% set doc_noun = "Sale" %}
+{% elif kind == "purchase" %}
+  {% set active_payments = doc.supplier_payments | selectattr('is_reversed', 'equalto', False) | list %}
+  {% set payment_noun = "supplier payment" %}
+  {% set revenue_noun = "Purchase Cost and Payables" %}
+  {% set credit_noun = "supplier credit" %}
+  {% set doc_noun = "Purchase" %}
+{% else %}
+  {% set active_payments = [] %}
+{% endif %}
+{% if active_payments %}
+{% set modal_id = "reverse" ~ doc_noun ~ "Modal" ~ doc.id %}
+<button type="button" class="btn btn-sm btn-outline-warning" title="Reverse — this {{ doc_noun | lower }} has {{ payment_noun }}(s) recorded"
         data-bs-toggle="modal" data-bs-target="#{{ modal_id }}">
     <i class="bi bi-arrow-counterclockwise"></i>
 </button>
@@ -26,13 +41,13 @@
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-exclamation-triangle text-warning"></i> Reverse Sale #{{ doc.id }}</h5>
+        <h5 class="modal-title"><i class="bi bi-exclamation-triangle text-warning"></i> Reverse {{ doc_noun }} #{{ doc.id }}</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
-        <p><strong>Warning: This Sale has received payment(s).</strong> Reversing the Sale
-           will remove it from active Sales Revenue and Receivables, but the existing
-           payment(s) will remain recorded. This may create a customer credit balance
+        <p><strong>Warning: This {{ doc_noun }} has received {{ payment_noun }}(s).</strong> Reversing this
+           {{ doc_noun }} will remove it from active {{ revenue_noun }}, but the existing
+           {{ payment_noun }}(s) will remain recorded. This may create a {{ credit_noun }} balance
            until the payment is refunded or reconciled. Do you want to continue?</p>
       </div>
       <div class="modal-footer">
@@ -40,13 +55,32 @@
         <form method="POST" action="{{ url_for('reverse_document_route', kind=kind, id=doc.id) }}" class="d-inline">
           <input type="hidden" name="confirm_payment_warning" value="1">
           <button type="submit" class="btn btn-warning">
-            <i class="bi bi-arrow-counterclockwise"></i> Continue — Reverse Sale
+            <i class="bi bi-arrow-counterclockwise"></i> Continue — Reverse {{ doc_noun }}
           </button>
         </form>
       </div>
     </div>
   </div>
 </div>
+<script>
+// This modal is rendered inline inside the sale/purchase table row
+// (.card > table > tbody > tr > td), unlike every other modal in the app
+// (item/party/document lookups), which are built in JS and appendChild'd
+// straight to <body>. .card:hover applies a `transform: translateY(-2px)`
+// (see static/css/components.css); a `transform` on an ancestor becomes
+// the containing block for a `position: fixed` descendant per the CSS
+// spec, so this modal was being positioned relative to the table's
+// .card instead of the viewport, and hovering the modal itself counts
+// as hovering that ancestor -- toggling the transform on/off and
+// visibly shifting/flickering the modal. Moving the node to <body> once,
+// the same place the other modals already live, removes it from that
+// ancestry; nothing about its Bootstrap init, IDs, or the reversal form
+// changes.
+(function () {
+    var m = document.getElementById("{{ modal_id }}");
+    if (m && m.parentNode !== document.body) document.body.appendChild(m);
+})();
+</script>
 {% else %}
 <form method="POST" action="{{ url_for('reverse_document_route', kind=kind, id=doc.id) }}" class="d-inline"
       onsubmit="return confirm('Reverse this {{ label }}? A cancelling journal entry is posted and stock is corrected. Nothing is deleted.')">
