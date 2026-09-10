@@ -101,6 +101,20 @@ def _item(stock=0, name=None, location=None):
     return it
 
 
+def _sell_and_post(c, form_data):
+    """POST /sale creates a Draft only (Phase 1's Draft -> Posted workflow) --
+    no stock effect yet. Explicitly Post it, since these tests are checking
+    that the *resolved location* actually has stock moved against it, which
+    only happens once Posted. Returns (create_response, post_response)."""
+    from app import Sale
+
+    create_resp = c.post("/sale", data=form_data, follow_redirects=True)
+    sale = Sale.query.order_by(Sale.id.desc()).first()
+    post_resp = c.post(f"/sale/{sale.id}/post", follow_redirects=True)
+    db.session.expire_all()
+    return create_resp, post_resp
+
+
 # ── 1-3. helper-level default behavior ──────────────────────────────────────
 
 def test_admin_is_unrestricted(appctx):
@@ -348,6 +362,12 @@ def test_admin_grant_route_no_ops_on_duplicate(appctx):
 # ── 16-17. existing admin / inventory behavior intact ───────────────────────
 
 def test_admin_unaffected_can_still_sell_from_any_location(appctx):
+    """A Sale is only a Draft at creation (Phase 1's Draft -> Posted
+    workflow) -- it must be explicitly Posted before it actually reduces
+    stock at the location it resolved. The thing under test here (an admin
+    is unrestricted and can sell from any location) is exercised the same
+    way either side of that: the creation POST's location resolution, then
+    Post applying the effect against that same location."""
     _world()
     admin = _admin()
     cust = Customer(name="C", contact="03000000000", address="x", opening_balance=0)
@@ -357,12 +377,13 @@ def test_admin_unaffected_can_still_sell_from_any_location(appctx):
     loc_b = _second_location()
     item = _item(stock=10, location=loc_b)
     c = _login(admin)
-    resp = c.post("/sale", data={
+    create_resp, post_resp = _sell_and_post(c, {
         "customer_id": str(cust.id), "date": "2026-03-01",
         "item_id[]": str(item.id), "quantity[]": "1", "sale_price[]": "20",
         "location_id": str(loc_b.id),
-    }, follow_redirects=True)
-    assert resp.status_code == 200
+    })
+    assert create_resp.status_code == 200
+    assert post_resp.status_code == 200
     assert stock_at_location(item.id, loc_b.id) == 9
 
 
@@ -415,6 +436,11 @@ def test_single_restricted_location_stock_adjustment_form_uses_own_location(appc
 
 
 def test_single_restricted_location_sale_form_uses_own_location(appctx):
+    """See test_admin_unaffected_can_still_sell_from_any_location's note on
+    why this Posts the Sale rather than only creating the Draft: the thing
+    under test is that the hidden single-warehouse fallback resolves to the
+    manager's own restricted location, which is only observable once the
+    location's stock is actually moved."""
     _world()
     mgr = _manager()
     cust = Customer(name="C", contact="03000000000", address="x", opening_balance=0)
@@ -426,10 +452,11 @@ def test_single_restricted_location_sale_form_uses_own_location(appctx):
     item = _item(stock=10, location=other_loc)
     c = _login(mgr)
 
-    resp = c.post("/sale", data={
+    create_resp, post_resp = _sell_and_post(c, {
         "customer_id": str(cust.id), "date": "2026-03-01",
         "item_id[]": str(item.id), "quantity[]": "1", "sale_price[]": "20",
         "location_id": str(other_loc.id),
-    }, follow_redirects=True)
-    assert resp.status_code == 200
+    })
+    assert create_resp.status_code == 200
+    assert post_resp.status_code == 200
     assert stock_at_location(item.id, other_loc.id) == 9

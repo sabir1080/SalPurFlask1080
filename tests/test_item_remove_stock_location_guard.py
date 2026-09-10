@@ -189,6 +189,11 @@ def test_reversing_purchase_refused_when_its_warehouse_was_drained(appctx):
     from app import Purchase
     pur = Purchase.query.filter_by(item_id=item.id).first()
     assert pur is not None
+    # Created as a Draft (Phase 1's Draft -> Posted workflow) -- no stock
+    # effect yet, and nothing to reverse, until explicitly Posted.
+    post_resp = c.post(f"/purchase/{pur.id}/post", follow_redirects=True)
+    assert post_resp.status_code == 200
+    db.session.expire_all()
     assert stock_at_location(item.id, loc_b.id) == 30
 
     # Drain Warehouse B down to 5 by selling/adjusting the rest elsewhere —

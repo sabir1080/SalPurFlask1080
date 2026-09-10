@@ -51,6 +51,9 @@ def _world():
 
 
 def _line(c, url, party_field, party_id, item_id, qty, price):
+    """Create a Draft document via the ordinary /purchase or /sale form post.
+    Since Phase 1 (Draft -> Posted workflow, commit 3fcc94b) this alone has no
+    stock/ledger/GL effect -- see _line_posted below for that."""
     return c.post(url, data={
         party_field: party_id, "date": "2026-03-01", "notes": "",
         "item_id[]": item_id, "quantity[]": str(qty),
@@ -59,15 +62,36 @@ def _line(c, url, party_field, party_id, item_id, qty, price):
     }, follow_redirects=True)
 
 
+def _line_posted(c, url, party_field, party_id, item_id, qty, price):
+    """Create a Draft exactly like _line, then explicitly Post it -- the only
+    way, post-Phase-1, to get a document that actually moves stock, assigns
+    an invoice number, and posts to the ledger/GL. Returns (create_response,
+    the newly created Purchase/Sale row, post_response)."""
+    from app import Purchase, Sale
+
+    kind = "purchase" if "purchase" in url else "sale"
+    model = Purchase if kind == "purchase" else Sale
+    create_resp = _line(c, url, party_field, party_id, item_id, qty, price)
+    doc = model.query.order_by(model.id.desc()).first()
+    post_resp = c.post(f"/{kind}/{doc.id}/post", follow_redirects=True)
+    db.session.expire_all()
+    doc = db.session.get(model, doc.id)
+    return create_resp, doc, post_resp
+
+
 def test_reversing_a_purchase_whose_goods_were_sold_is_refused(appctx):
     """Buy 100, sell 80, then reverse the purchase. Eighty of those widgets are with the
     customer; they cannot be handed back to the supplier. Without a guard the reversal
     went through anyway — stock landed on minus eighty, the Inventory account went
-    negative, and it no longer matched the item it mirrors."""
+    negative, and it no longer matched the item it mirrors.
+
+    Both the Purchase and the Sale must actually be Posted for either to move
+    stock at all (Phase 1's Draft -> Posted workflow) -- a Draft has no stock
+    effect, so this scenario is only real once both are Posted."""
     sup, cus, item = _world()
     c = _admin()
-    _line(c, "/purchase", "supplier_id", sup.id, item.id, 100, 100)
-    _line(c, "/sale", "customer_id", cus.id, item.id, 80, 250)
+    _line_posted(c, "/purchase", "supplier_id", sup.id, item.id, 100, 100)
+    _line_posted(c, "/sale", "customer_id", cus.id, item.id, 80, 250)
 
     db.session.expire_all()
     item = db.session.get(Item, item.id)
@@ -91,9 +115,16 @@ def test_reversing_a_purchase_whose_goods_were_sold_is_refused(appctx):
 
 
 def test_a_sale_cannot_exceed_the_stock_on_hand(appctx):
+    """The Purchase must be Posted so its 10 units are actually on hand
+    (a Draft has no stock effect). The Sale attempt itself stays a plain
+    Draft creation -- /sale's own stock check runs at Draft-creation time
+    (see sales/routes.py's "Validation only -- a Draft does not reduce
+    stock, so this just warns early" comment), so this is still testing
+    exactly what it always tested: that check refusing an over-quantity
+    line before any Sale row is even committed."""
     sup, cus, item = _world()
     c = _admin()
-    _line(c, "/purchase", "supplier_id", sup.id, item.id, 10, 100)
+    _line_posted(c, "/purchase", "supplier_id", sup.id, item.id, 10, 100)
 
     r = _line(c, "/sale", "customer_id", cus.id, item.id, 11, 250)
     assert "alert-danger" in r.get_data(as_text=True)

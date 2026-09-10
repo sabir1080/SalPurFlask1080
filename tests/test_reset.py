@@ -55,11 +55,24 @@ def _traded_system():
         "item_id[]": item.id, "quantity[]": "100", "purchase_price[]": "100",
         "discount_type[]": "", "discount_value[]": "0", "tax_percent[]": "0",
     }, follow_redirects=True)
+    # Created as a Draft (Phase 1's Draft -> Posted workflow) -- no stock,
+    # invoice number, or ledger/GL effect yet. Every caller of this helper
+    # relies on a *trading history* (stock moved, invoice numbers issued,
+    # journal entries posted) already being in place, so both documents are
+    # explicitly Posted here, the same as a real user would before either
+    # actually counts as a completed transaction.
+    pur = Purchase.query.order_by(Purchase.id.desc()).first()
+    c.post(f"/purchase/{pur.id}/post", follow_redirects=True)
+
     c.post("/sale", data={
         "customer_id": cus.id, "date": today, "notes": "",
         "item_id[]": item.id, "quantity[]": "40", "sale_price[]": "250",
         "discount_type[]": "", "discount_value[]": "0", "tax_percent[]": "0",
     }, follow_redirects=True)
+    sale = Sale.query.order_by(Sale.id.desc()).first()
+    c.post(f"/sale/{sale.id}/post", follow_redirects=True)
+
+    db.session.expire_all()
     return c
 
 
@@ -192,7 +205,10 @@ def test_transaction_reset_leaves_a_system_that_can_still_trade(appctx):
     assert FinancialAccount.query.count() == 4
     assert allocate_document_number("sale", datetime.now()).endswith("000001")
 
-    # buy and sell again, on the suppliers and items that were kept
+    # buy and sell again, on the suppliers and items that were kept. A Purchase
+    # is created as a Draft (Phase 1's Draft -> Posted workflow) -- proving the
+    # system can genuinely trade again after a reset means proving a document
+    # can be carried all the way to Posted, not just created.
     sup, item, cus = Supplier.query.one(), Item.query.one(), Customer.query.one()
     today = datetime.now().strftime("%Y-%m-%d")
     c.post("/purchase", data={
@@ -200,6 +216,8 @@ def test_transaction_reset_leaves_a_system_that_can_still_trade(appctx):
         "item_id[]": item.id, "quantity[]": "10", "purchase_price[]": "100",
         "discount_type[]": "", "discount_value[]": "0", "tax_percent[]": "0",
     }, follow_redirects=True)
+    pur = Purchase.query.one()
+    c.post(f"/purchase/{pur.id}/post", follow_redirects=True)
 
     db.session.expire_all()
     assert Item.query.one().stock == 10
