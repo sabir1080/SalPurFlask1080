@@ -6,7 +6,7 @@ from flask import abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user
 
 from salpurflask.extensions import db
-from salpurflask.models import Supplier, SupplierLedgerEntry, SupplierPayment, Purchase
+from salpurflask.models import Supplier, SupplierLedgerEntry, SupplierPayment, Purchase, STATUS_POSTED
 from salpurflask.auth import verified_required, manager_required, admin_required
 from salpurflask.utils import (
     get_paginated_results, csv_response, excel_response, valid_phone, now_local
@@ -594,7 +594,11 @@ def api_supplier_outstanding_purchases(id):
         if current and current.supplier_id == id:
             current_purchase_id = current.purchase_id
 
-    purchases = Purchase.query.filter_by(supplier_id=id).order_by(Purchase.date.desc()).all()
+    # A Draft Purchase has no invoice number and no supplier-ledger/GL effect
+    # yet (see the Draft -> Posted workflow); it must never be offered here
+    # as something a payment can be recorded against.
+    purchases = (Purchase.query.filter_by(supplier_id=id, status=STATUS_POSTED)
+                .order_by(Purchase.date.desc()).all())
     rows = []
     for p in purchases:
         due = round(purchase_total(p) - get_purchase_paid(p.id, exclude_payment_id), 2)

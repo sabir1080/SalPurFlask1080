@@ -942,10 +942,16 @@ def realign_backdated_reversals():
 def backfill_document_numbers():
     """Number the purchases and sales that predate numbering, oldest first, so the
     order they were raised in is the order they are numbered in. Idempotent: only
-    documents with no number are touched, so a numbered invoice never changes."""
+    documents with no number are touched, so a numbered invoice never changes.
+
+    Draft documents (status == STATUS_DRAFT) are deliberately excluded: numbering
+    is one of the effects that only happens at Post (see the Draft -> Posted
+    workflow), so a Draft must stay invoice_no IS NULL until it is explicitly
+    posted, not silently numbered on the next app boot."""
     numbered = 0
     for doc_type, model in (("purchase", Purchase), ("sale", Sale)):
-        rows = (model.query.filter(model.invoice_no.is_(None))
+        rows = (model.query.filter(model.invoice_no.is_(None),
+                                   model.status == STATUS_POSTED)
                 .order_by(model.date.asc(), model.id.asc()).all())
         for doc in rows:
             doc.invoice_no = allocate_document_number(doc_type, doc.date)

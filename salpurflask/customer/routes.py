@@ -6,7 +6,7 @@ from flask import abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user
 
 from salpurflask.extensions import db
-from salpurflask.models import Customer, CustomerLedgerEntry, CustomerPayment, Sale
+from salpurflask.models import Customer, CustomerLedgerEntry, CustomerPayment, Sale, STATUS_POSTED
 from salpurflask.auth import verified_required, manager_required, admin_required
 from salpurflask.utils import (
     get_paginated_results, csv_response, excel_response, valid_phone, now_local
@@ -595,7 +595,11 @@ def api_customer_outstanding_sales(id):
         if current and current.customer_id == id:
             current_sale_id = current.sale_id
 
-    sales = Sale.query.filter_by(customer_id=id).order_by(Sale.date.desc()).all()
+    # A Draft Sale has no invoice number and no customer-ledger/GL effect yet
+    # (see the Draft -> Posted workflow); it must never be offered here as
+    # something a receipt can be recorded against.
+    sales = (Sale.query.filter_by(customer_id=id, status=STATUS_POSTED)
+            .order_by(Sale.date.desc()).all())
     rows = []
     for s in sales:
         due = round(sale_total(s) - get_sale_received(s.id, exclude_receipt_id), 2)

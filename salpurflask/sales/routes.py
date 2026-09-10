@@ -205,6 +205,59 @@ def sale():
     )
 
 
+@sales_bp.route('/sale/<int:id>/post', methods=['POST'])
+@manager_required
+def post_sale_route(id):
+    """Post a Draft Sale: the exact sequence /sale used to run inline before
+    Phase 2 (Draft -> Posted workflow) -- stock, invoice numbering, customer-
+    ledger sync and GL posting -- now happens here instead, on an explicit
+    action, reusing the same real functions unchanged. See
+    salpurflask/models/models.py's STATUS_DRAFT/STATUS_POSTED and
+    tests/test_draft_sale.py for the Draft contract this closes out."""
+    from app import record_audit, sync_customer_sale, item_remove_stock
+    from salpurflask.models import stock_at_location
+
+    # SELECT ... FOR UPDATE on the Sale row itself (a real lock on PostgreSQL,
+    # a no-op on SQLite, which already serializes writes) -- closes the
+    # window where two concurrent Posts of the same Draft could both pass
+    # the status check below before either commits.
+    sal = (Sale.query.filter_by(id=id).with_for_update().first()) or abort(404)
+    if sal.status != STATUS_DRAFT:
+        flash(f"Sale #{sal.id} is not a Draft — nothing to post.", "warning")
+        return redirect(url_for("sale"))
+
+    stock_errors = []
+    for si in sal.line_items:
+        item_obj = get_item_locked(si.item_id)
+        if item_obj and item_obj.item_type == "STOCK":
+            base_qty = si.quantity * (si.unit_factor or 1)
+            available = stock_at_location(item_obj.id, sal.location_id)
+            if available < base_qty:
+                stock_errors.append(
+                    f"{item_obj.name}: only {available} {item_obj.unit} "
+                    f"available at this warehouse")
+    if stock_errors:
+        flash("Cannot post — insufficient stock: " + "; ".join(stock_errors), "danger")
+        return redirect(url_for("sale"))
+
+    for si in sal.line_items:
+        item_obj = get_item_locked(si.item_id)
+        if item_obj and item_obj.item_type == "STOCK":
+            base_qty = si.quantity * (si.unit_factor or 1)
+            item_remove_stock(item_obj, base_qty,
+                              cost_total=Decimal(str(si.cost_price or 0)) * Decimal(str(base_qty)),
+                              location_id=sal.location_id,
+                              movement_type="sale", source_type="sale", source_id=sal.id)
+    sal.invoice_no = allocate_document_number("sale", sal.date)
+    sync_customer_sale(sal)
+    post_document("sale", sal)
+    sal.status = STATUS_POSTED
+    db.session.commit()
+    record_audit("post", "Sale", sal.id, f"Sale {sal.invoice_no} posted")
+    flash(f"Sale {sal.invoice_no} posted successfully!", "success")
+    return redirect(url_for("sale"))
+
+
 @sales_bp.route('/sale/<int:id>/edit', methods=['GET', 'POST'])
 @manager_required
 def edit_sale(id):

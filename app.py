@@ -325,13 +325,13 @@ from salpurflask.inventory.reconciliation_routes import (
 
 # Register purchase routes directly (not via blueprint, to preserve endpoint names)
 from salpurflask.purchase.routes import (
-    purchase, edit_purchase, delete_purchase,
+    purchase, edit_purchase, delete_purchase, post_purchase_route,
     purchase_return, delete_purchase_return, purchase_invoice, api_purchase_return_lookup,
     purchase_orders, purchase_order_detail, update_po_status, convert_po_to_purchase, delete_purchase_order,
     export_purchase_report, export_purchase_return_report, export_supplier_purchase_report
 )
 from salpurflask.sales.routes import (
-    sale, edit_sale, delete_sale,
+    sale, edit_sale, delete_sale, post_sale_route,
     sale_return, delete_sale_return, sale_invoice,
     pos, pos_lookup, pos_checkout, pos_receipt,
     pos_hold, list_pos_holds, get_pos_hold, delete_pos_hold,
@@ -410,6 +410,7 @@ app.add_url_rule("/admin/locations/<int:id>/toggle-active", "admin_location_togg
 app.add_url_rule("/purchase", "purchase", purchase, methods=["GET", "POST"])
 app.add_url_rule("/purchase/edit/<int:id>", "edit_purchase", edit_purchase, methods=["GET", "POST"])
 app.add_url_rule("/purchase/delete/<int:id>", "delete_purchase", delete_purchase, methods=["POST"])
+app.add_url_rule("/purchase/<int:id>/post", "post_purchase_route", post_purchase_route, methods=["POST"])
 app.add_url_rule("/purchase_return", "purchase_return", purchase_return, methods=["GET", "POST"])
 app.add_url_rule("/purchase_return/delete/<int:id>", "delete_purchase_return", delete_purchase_return, methods=["POST"])
 app.add_url_rule("/api/purchase-returns/lookup", "api_purchase_return_lookup", api_purchase_return_lookup, methods=["GET"])
@@ -424,6 +425,7 @@ app.add_url_rule("/export_purchase_return_report", "export_purchase_return_repor
 app.add_url_rule("/export_supplier_purchase_report", "export_supplier_purchase_report", export_supplier_purchase_report, methods=["POST"])
 app.add_url_rule("/sale", "sale", sale, methods=["GET", "POST"])
 app.add_url_rule("/sale/edit/<int:id>", "edit_sale", edit_sale, methods=["GET", "POST"])
+app.add_url_rule("/sale/<int:id>/post", "post_sale_route", post_sale_route, methods=["POST"])
 app.add_url_rule("/sale/delete/<int:id>", "delete_sale", delete_sale, methods=["POST"])
 app.add_url_rule("/sale_return", "sale_return", sale_return, methods=["GET", "POST"])
 app.add_url_rule("/sale_return/delete/<int:id>", "delete_sale_return", delete_sale_return, methods=["POST"])
@@ -1305,6 +1307,8 @@ def validate_supplier_payment(supplier_id, amount, purchase_id=None, exclude_pay
         purchase = db.session.get(Purchase, purchase_id)
         if not purchase or purchase.supplier_id != int(supplier_id):
             return "Selected purchase does not belong to this supplier!"
+        if purchase.status != STATUS_POSTED:
+            return "Selected purchase is still a Draft and has no payable balance yet — post it first."
         purchase_balance = purchase_total(purchase) - get_purchase_paid(purchase_id, exclude_payment_id)
         if amount > purchase_balance + 0.001:
             return f"Payment exceeds purchase balance due ({purchase_balance:,.2f})!"
@@ -1318,6 +1322,8 @@ def validate_customer_receipt(customer_id, amount, sale_id=None, exclude_payment
         sale = db.session.get(Sale, sale_id)
         if not sale or sale.customer_id != int(customer_id):
             return "Selected sale does not belong to this customer!"
+        if sale.status != STATUS_POSTED:
+            return "Selected sale is still a Draft and has no receivable balance yet — post it first."
         sale_balance = sale_total(sale) - get_sale_received(sale_id, exclude_payment_id)
         if amount > sale_balance + 0.001:
             return f"Receipt exceeds sale balance due ({sale_balance:,.2f})!"

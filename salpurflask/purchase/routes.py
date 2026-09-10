@@ -243,6 +243,43 @@ def purchase():
 
 
 @manager_required
+def post_purchase_route(id):
+    """Post a Draft Purchase: the exact sequence /purchase used to run inline
+    before Phase 3 (Draft -> Posted workflow) -- stock, invoice numbering,
+    supplier-ledger sync and GL posting -- now happens here instead, on an
+    explicit action, reusing the same real functions unchanged. See
+    salpurflask/models/models.py's STATUS_DRAFT/STATUS_POSTED and
+    tests/test_draft_purchase.py for the Draft contract this closes out."""
+    from app import record_audit, purchase_total as app_purchase_total
+    from salpurflask.models import stock_at_location
+
+    # SELECT ... FOR UPDATE on the Purchase row itself (a real lock on
+    # PostgreSQL, a no-op on SQLite, which already serializes writes) --
+    # closes the window where two concurrent Posts of the same Draft could
+    # both pass the status check below before either commits.
+    pur = (Purchase.query.filter_by(id=id).with_for_update().first()) or abort(404)
+    if pur.status != STATUS_DRAFT:
+        flash(f"Purchase #{pur.id} is not a Draft — nothing to post.", "warning")
+        return redirect(url_for("purchase"))
+
+    for pi in pur.line_items:
+        item_obj = get_item_locked(pi.item_id)
+        if item_obj:
+            base_qty = pi.quantity * (pi.unit_factor or 1)
+            item_add_stock(item_obj, base_qty, pi.amount - pi.tax_amount,
+                           location_id=pur.location_id,
+                           movement_type="purchase", source_type="purchase", source_id=pur.id)
+    pur.invoice_no = allocate_document_number("purchase", pur.date)
+    sync_supplier_purchase(pur)
+    post_document("purchase", pur)
+    pur.status = STATUS_POSTED
+    db.session.commit()
+    record_audit("post", "Purchase", pur.id, f"Purchase {pur.invoice_no} posted")
+    flash(f"Purchase {pur.invoice_no} posted successfully!", "success")
+    return redirect(url_for("purchase"))
+
+
+@manager_required
 def edit_purchase(id):
     """Edit an existing purchase."""
     from app import validate_line_rows, purchase_total as app_purchase_total

@@ -172,7 +172,8 @@
         <tr>
           <td class="text-nowrap">
             <span class="fw-semibold">{{ s.invoice_no or s.id }}</span>
-            {% if s.is_reversed %}<span class="badge bg-danger ms-1">reversed</span>{% endif %}
+            {% if s.is_reversed %}<span class="badge bg-danger ms-1">reversed</span>
+            {% elif s.status == 'draft' %}<span class="badge bg-secondary ms-1">draft</span>{% endif %}
           </td>
           <td class="font-medium">{{ s.customer.name }}</td>
           <td>
@@ -198,6 +199,14 @@
             <a href="{{ url_for('edit_sale', id=s.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit sale">
               <i class="bi bi-pencil"></i>
             </a>
+            {% if s.status == 'draft' %}
+            <form method="POST" action="{{ url_for('post_sale_route', id=s.id) }}" class="d-inline"
+                  data-confirm="Post this Sale? Stock will be reduced, an invoice number assigned, and the customer ledger and general ledger updated. This cannot be undone from here — only a reversal can undo it afterward.">
+              <button class="btn btn-sm btn-outline-success" title="Post — assigns an invoice number and applies stock/ledger/GL effects">
+                <i class="bi bi-check2-circle"></i>
+              </button>
+            </form>
+            {% endif %}
             {% endif %}
             {% with doc = s, kind = "sale" %}{% include "_reverse_button.html" %}{% endwith %}
           </td>
