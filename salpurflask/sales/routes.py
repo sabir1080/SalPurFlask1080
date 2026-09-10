@@ -481,8 +481,12 @@ def sale_return():
             .filter((Cust.name.ilike(f"%{search}%")) | (Item.name.ilike(f"%{search}%")))
         )
     returns, pagination = get_paginated_results(query)
+    # A Draft sale has no stock/ledger/GL effect yet (see the Draft ->
+    # Posted workflow), so there is nothing on it a return could correctly
+    # unwind -- excluded the same way a reversed sale already is.
     all_sis = (SaleItem.query.join(Sale)
                .filter(Sale.is_reversed.is_(False))
+               .filter(Sale.status == STATUS_POSTED)
                .order_by(Sale.date.desc(), SaleItem.id).all())
     items_available = [
         {"si": si, "remaining": si.quantity - get_sale_item_returned_qty(si.id)}

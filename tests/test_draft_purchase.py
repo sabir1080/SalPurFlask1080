@@ -378,3 +378,227 @@ def test_draft_purchase_can_be_edited_without_corrupting_stock(appctx):
     assert pur.status == STATUS_DRAFT
     pi = PurchaseItem.query.filter_by(purchase_id=pur.id).first()
     assert pi.quantity == 8
+
+
+# ── Phase 5: strengthened Draft edit/delete coverage ────────────────────────
+# The audit confirmed edit_purchase/delete_purchase are already safe for a
+# Draft (is_posted gates every stock/ledger/GL effect) -- these tests add
+# the assertions the audit found missing: header-field changes, add/remove
+# lines, discount/tax correctness, and explicit GL/ledger non-effect (only
+# stock was asserted above).
+
+
+def test_draft_purchase_edit_changes_header_fields(appctx):
+    _books()
+    sup = _supplier("Supplier A")
+    other_sup = _supplier("Supplier B")
+    item = _item(stock=50)
+    manager = _manager()
+
+    _purchase_via_form(manager, sup, item, 5, 10)
+    pur = _latest_purchase()
+
+    manager.post(f"/purchase/edit/{pur.id}", data={
+        "supplier_id": str(other_sup.id), "date": "2026-02-15", "notes": "changed supplier and date",
+        "item_id[]": str(item.id), "quantity[]": "5", "purchase_price[]": "10",
+        "discount_type[]": "percent", "discount_value[]": "0", "tax_percent[]": "0",
+    }, follow_redirects=True)
+
+    db.session.refresh(pur)
+    assert pur.supplier_id == other_sup.id
+    assert pur.date.strftime("%Y-%m-%d") == "2026-02-15"
+    assert pur.notes == "changed supplier and date"
+    assert pur.status == STATUS_DRAFT
+
+
+def test_draft_purchase_edit_can_add_and_remove_lines(appctx):
+    _books()
+    sup = _supplier()
+    item_a = _item("Widget-A", stock=50)
+    item_b = _item("Widget-B", stock=50)
+    manager = _manager()
+
+    _purchase_via_form(manager, sup, item_a, 5, 10)
+    pur = _latest_purchase()
+    assert PurchaseItem.query.filter_by(purchase_id=pur.id).count() == 1
+
+    # Replace the single line with two different lines (item_a dropped,
+    # item_b added twice) -- edit_purchase deletes and recreates all lines
+    # from whatever the form submits, so this is a real add+remove.
+    manager.post(f"/purchase/edit/{pur.id}", data={
+        "supplier_id": str(sup.id), "date": "2026-01-01", "notes": "",
+        "item_id[]": [str(item_b.id), str(item_b.id)],
+        "quantity[]": ["3", "2"],
+        "purchase_price[]": ["10", "10"],
+        "discount_type[]": ["percent", "percent"],
+        "discount_value[]": ["0", "0"],
+        "tax_percent[]": ["0", "0"],
+    }, follow_redirects=True)
+
+    lines = PurchaseItem.query.filter_by(purchase_id=pur.id).all()
+    assert len(lines) == 2
+    assert all(li.item_id == item_b.id for li in lines)
+    assert sorted(li.quantity for li in lines) == [2, 3]
+    db.session.refresh(item_a)
+    db.session.refresh(item_b)
+    assert item_a.stock == 50
+    assert item_b.stock == 50
+
+
+def test_draft_purchase_edit_discount_and_tax_are_correct(appctx):
+    _books()
+    sup = _supplier()
+    item = _item(stock=50)
+    manager = _manager()
+
+    _purchase_via_form(manager, sup, item, 5, 10)
+    pur = _latest_purchase()
+
+    # 10 units @ 10 = 100 gross, 10% discount -> 10 off, 5% tax on the net
+    # 90 -> 4.5 tax, 94.5 total.
+    manager.post(f"/purchase/edit/{pur.id}", data={
+        "supplier_id": str(sup.id), "date": "2026-01-01", "notes": "",
+        "item_id[]": str(item.id), "quantity[]": "10", "purchase_price[]": "10",
+        "discount_type[]": "percent", "discount_value[]": "10", "tax_percent[]": "5",
+    }, follow_redirects=True)
+
+    pi = PurchaseItem.query.filter_by(purchase_id=pur.id).first()
+    assert float(pi.discount_amount) == 10.0
+    assert float(pi.tax_amount) == 4.5
+    assert float(pi.amount) == 94.5
+
+
+def test_draft_purchase_edit_creates_no_journal_entry(appctx):
+    _books()
+    sup = _supplier()
+    item = _item(stock=50)
+    manager = _manager()
+
+    _purchase_via_form(manager, sup, item, 5, 10)
+    pur = _latest_purchase()
+    je_before = JournalEntry.query.count()
+
+    manager.post(f"/purchase/edit/{pur.id}", data={
+        "supplier_id": str(sup.id), "date": "2026-01-01", "notes": "",
+        "item_id[]": str(item.id), "quantity[]": "8", "purchase_price[]": "10",
+        "discount_type[]": "percent", "discount_value[]": "0", "tax_percent[]": "0",
+    }, follow_redirects=True)
+
+    assert JournalEntry.query.count() == je_before
+
+
+def test_draft_purchase_edit_creates_no_supplier_ledger_entry(appctx):
+    _books()
+    sup = _supplier()
+    item = _item(stock=50)
+    manager = _manager()
+
+    _purchase_via_form(manager, sup, item, 5, 10)
+    pur = _latest_purchase()
+    entries_before = SupplierLedgerEntry.query.filter_by(supplier_id=sup.id).count()
+
+    manager.post(f"/purchase/edit/{pur.id}", data={
+        "supplier_id": str(sup.id), "date": "2026-01-01", "notes": "",
+        "item_id[]": str(item.id), "quantity[]": "8", "purchase_price[]": "10",
+        "discount_type[]": "percent", "discount_value[]": "0", "tax_percent[]": "0",
+    }, follow_redirects=True)
+
+    assert SupplierLedgerEntry.query.filter_by(supplier_id=sup.id).count() == entries_before
+
+
+def test_draft_purchase_edit_creates_no_stock_movement(appctx):
+    _books()
+    sup = _supplier()
+    item = _item(stock=50)
+    manager = _manager()
+
+    _purchase_via_form(manager, sup, item, 5, 10)
+    pur = _latest_purchase()
+    movements_before = StockMovement.query.filter_by(item_id=item.id).count()
+
+    manager.post(f"/purchase/edit/{pur.id}", data={
+        "supplier_id": str(sup.id), "date": "2026-01-01", "notes": "",
+        "item_id[]": str(item.id), "quantity[]": "8", "purchase_price[]": "10",
+        "discount_type[]": "percent", "discount_value[]": "0", "tax_percent[]": "0",
+    }, follow_redirects=True)
+
+    assert StockMovement.query.filter_by(item_id=item.id).count() == movements_before
+
+
+def test_draft_purchase_delete_removes_purchase_items_via_cascade(appctx):
+    _books()
+    sup = _supplier()
+    item = _item(stock=50)
+    manager = _manager()
+    admin_client = _admin()
+
+    _purchase_via_form(manager, sup, item, 5, 10)
+    pur = _latest_purchase()
+    purchase_id = pur.id
+    assert PurchaseItem.query.filter_by(purchase_id=purchase_id).count() == 1
+
+    admin_client.post(f"/purchase/delete/{purchase_id}", follow_redirects=True)
+
+    assert PurchaseItem.query.filter_by(purchase_id=purchase_id).count() == 0
+
+
+def test_draft_purchase_delete_creates_no_journal_entry_or_ledger_effect(appctx):
+    _books()
+    sup = _supplier()
+    item = _item(stock=50)
+    manager = _manager()
+    admin_client = _admin()
+
+    _purchase_via_form(manager, sup, item, 5, 10)
+    pur = _latest_purchase()
+    je_before = JournalEntry.query.count()
+    entries_before = SupplierLedgerEntry.query.filter_by(supplier_id=sup.id).count()
+
+    admin_client.post(f"/purchase/delete/{pur.id}", follow_redirects=True)
+
+    assert JournalEntry.query.count() == je_before
+    assert SupplierLedgerEntry.query.filter_by(supplier_id=sup.id).count() == entries_before
+
+
+# ── Regression: Posted/Reversed edit-delete protection still intact ────────
+
+
+def test_posted_purchase_edit_is_still_refused(appctx):
+    _books()
+    sup = _supplier()
+    item = _item(stock=50)
+    manager = _manager()
+
+    _purchase_via_form(manager, sup, item, 5, 10)
+    pur = _latest_purchase()
+    manager.post(f"/purchase/{pur.id}/post", follow_redirects=True)
+    db.session.refresh(pur)
+    assert pur.status == STATUS_POSTED
+
+    r = manager.post(f"/purchase/edit/{pur.id}", data={
+        "supplier_id": str(sup.id), "date": "2026-01-01", "notes": "",
+        "item_id[]": str(item.id), "quantity[]": "8", "purchase_price[]": "10",
+        "discount_type[]": "percent", "discount_value[]": "0", "tax_percent[]": "0",
+    }, follow_redirects=True)
+    assert r.status_code == 200
+    db.session.refresh(pur)
+    pi = PurchaseItem.query.filter_by(purchase_id=pur.id).first()
+    assert pi.quantity == 5   # unchanged -- the edit was refused
+
+
+def test_posted_purchase_delete_is_still_refused(appctx):
+    _books()
+    sup = _supplier()
+    item = _item(stock=50)
+    manager = _manager()
+    admin_client = _admin()
+
+    _purchase_via_form(manager, sup, item, 5, 10)
+    pur = _latest_purchase()
+    manager.post(f"/purchase/{pur.id}/post", follow_redirects=True)
+    db.session.refresh(pur)
+    assert pur.status == STATUS_POSTED
+
+    admin_client.post(f"/purchase/delete/{pur.id}", follow_redirects=True)
+
+    assert db.session.get(Purchase, pur.id) is not None

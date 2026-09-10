@@ -17,7 +17,7 @@ from sqlalchemy.orm import joinedload
 
 from salpurflask.extensions import db
 from salpurflask.models import (
-    Item, Supplier, Customer, Sale, SaleItem, Purchase, PurchaseItem,
+    Item, Supplier, Customer, Sale, SaleItem, Purchase, PurchaseItem, STATUS_POSTED,
 )
 from salpurflask.models.business_config import BusinessCategory, ProductField, ProductCategoryData
 
@@ -145,14 +145,18 @@ def search_customers(q="", page=1, per_page=20):
 def search_returnable_sale_items(q="", customer_id=None, date_from=None, date_to=None,
                                  page=1, per_page=20, over_fetch=3):
     """Candidate SaleItem rows for the Sale Return picker: not on a reversed
-    sale, not already fully returned by quantity alone (the exact remaining
-    qty, which needs the tie-breaker logic, is checked by the caller).
-    Matches on invoice/sale number, customer name, or the sale's date."""
+    sale, not on a Draft sale (it has no stock/ledger/GL effect yet -- see
+    the Draft -> Posted workflow -- so there is nothing on it a return could
+    correctly unwind), not already fully returned by quantity alone (the
+    exact remaining qty, which needs the tie-breaker logic, is checked by
+    the caller). Matches on invoice/sale number, customer name, or the
+    sale's date."""
     query = (SaleItem.query
              .join(Sale, SaleItem.sale_id == Sale.id)
              .join(Customer, Sale.customer_id == Customer.id)
              .options(joinedload(SaleItem.item), joinedload(SaleItem.sale_header))
              .filter(Sale.is_reversed.is_(False))
+             .filter(Sale.status == STATUS_POSTED)
              .filter(SaleItem.quantity > 0))
     if customer_id:
         query = query.filter(Sale.customer_id == customer_id)
@@ -179,12 +183,15 @@ def search_returnable_sale_items(q="", customer_id=None, date_from=None, date_to
 def search_returnable_purchase_items(q="", supplier_id=None, date_from=None, date_to=None,
                                      page=1, per_page=20, over_fetch=3):
     """Candidate PurchaseItem rows for the Purchase Return picker — see
-    search_returnable_sale_items, the purchase-side mirror."""
+    search_returnable_sale_items, the purchase-side mirror (including the
+    Draft exclusion: a Draft purchase has no stock/ledger/GL effect yet for
+    a return to unwind)."""
     query = (PurchaseItem.query
              .join(Purchase, PurchaseItem.purchase_id == Purchase.id)
              .join(Supplier, Purchase.supplier_id == Supplier.id)
              .options(joinedload(PurchaseItem.item), joinedload(PurchaseItem.purchase_header))
              .filter(Purchase.is_reversed.is_(False))
+             .filter(Purchase.status == STATUS_POSTED)
              .filter(PurchaseItem.quantity > 0))
     if supplier_id:
         query = query.filter(Purchase.supplier_id == supplier_id)

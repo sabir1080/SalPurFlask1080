@@ -418,3 +418,227 @@ def test_draft_sale_can_be_edited_without_corrupting_stock(appctx):
     assert sal.status == STATUS_DRAFT
     si = SaleItem.query.filter_by(sale_id=sal.id).first()
     assert si.quantity == 8
+
+
+# ── Phase 5: strengthened Draft edit/delete coverage ────────────────────────
+# The audit confirmed edit_sale/delete_sale are already safe for a Draft
+# (is_posted gates every stock/ledger/GL effect) -- these tests add the
+# assertions the audit found missing: header-field changes, add/remove
+# lines, discount/tax correctness, and explicit GL/ledger non-effect (only
+# stock was asserted above).
+
+
+def test_draft_sale_edit_changes_header_fields(appctx):
+    _books()
+    cust = _customer("Customer A")
+    other_cust = _customer("Customer B")
+    item = _item(stock=50)
+    manager = _manager()
+
+    _sale_via_form(manager, cust, item, 5, 20)
+    sal = _latest_sale()
+
+    manager.post(f"/sale/{sal.id}/edit", data={
+        "customer_id": str(other_cust.id), "date": "2026-02-15", "notes": "changed customer and date",
+        "item_id[]": str(item.id), "quantity[]": "5", "sale_price[]": "20",
+        "discount_type[]": "percent", "discount_value[]": "0", "tax_percent[]": "0",
+    }, follow_redirects=True)
+
+    db.session.refresh(sal)
+    assert sal.customer_id == other_cust.id
+    assert sal.date.strftime("%Y-%m-%d") == "2026-02-15"
+    assert sal.notes == "changed customer and date"
+    assert sal.status == STATUS_DRAFT
+
+
+def test_draft_sale_edit_can_add_and_remove_lines(appctx):
+    _books()
+    cust = _customer()
+    item_a = _item("Widget-A", stock=50)
+    item_b = _item("Widget-B", stock=50)
+    manager = _manager()
+
+    _sale_via_form(manager, cust, item_a, 5, 20)
+    sal = _latest_sale()
+    assert SaleItem.query.filter_by(sale_id=sal.id).count() == 1
+
+    # Replace the single line with two different lines (item_a dropped,
+    # item_b added twice) -- edit_sale deletes and recreates all lines from
+    # whatever the form submits, so this is a real add+remove, not a tweak.
+    manager.post(f"/sale/{sal.id}/edit", data={
+        "customer_id": str(cust.id), "date": "2026-01-01", "notes": "",
+        "item_id[]": [str(item_b.id), str(item_b.id)],
+        "quantity[]": ["3", "2"],
+        "sale_price[]": ["20", "20"],
+        "discount_type[]": ["percent", "percent"],
+        "discount_value[]": ["0", "0"],
+        "tax_percent[]": ["0", "0"],
+    }, follow_redirects=True)
+
+    lines = SaleItem.query.filter_by(sale_id=sal.id).all()
+    assert len(lines) == 2
+    assert all(li.item_id == item_b.id for li in lines)
+    assert sorted(li.quantity for li in lines) == [2, 3]
+    db.session.refresh(item_a)
+    db.session.refresh(item_b)
+    assert item_a.stock == 50
+    assert item_b.stock == 50
+
+
+def test_draft_sale_edit_discount_and_tax_are_correct(appctx):
+    _books()
+    cust = _customer()
+    item = _item(stock=50)
+    manager = _manager()
+
+    _sale_via_form(manager, cust, item, 5, 20)
+    sal = _latest_sale()
+
+    # 10 units @ 20 = 200 gross, 10% discount -> 20 off, 5% tax on the net
+    # 180 -> 9 tax, 189 total.
+    manager.post(f"/sale/{sal.id}/edit", data={
+        "customer_id": str(cust.id), "date": "2026-01-01", "notes": "",
+        "item_id[]": str(item.id), "quantity[]": "10", "sale_price[]": "20",
+        "discount_type[]": "percent", "discount_value[]": "10", "tax_percent[]": "5",
+    }, follow_redirects=True)
+
+    si = SaleItem.query.filter_by(sale_id=sal.id).first()
+    assert float(si.discount_amount) == 20.0
+    assert float(si.tax_amount) == 9.0
+    assert float(si.amount) == 189.0
+
+
+def test_draft_sale_edit_creates_no_journal_entry(appctx):
+    _books()
+    cust = _customer()
+    item = _item(stock=50)
+    manager = _manager()
+
+    _sale_via_form(manager, cust, item, 5, 20)
+    sal = _latest_sale()
+    je_before = JournalEntry.query.count()
+
+    manager.post(f"/sale/{sal.id}/edit", data={
+        "customer_id": str(cust.id), "date": "2026-01-01", "notes": "",
+        "item_id[]": str(item.id), "quantity[]": "8", "sale_price[]": "20",
+        "discount_type[]": "percent", "discount_value[]": "0", "tax_percent[]": "0",
+    }, follow_redirects=True)
+
+    assert JournalEntry.query.count() == je_before
+
+
+def test_draft_sale_edit_creates_no_customer_ledger_entry(appctx):
+    _books()
+    cust = _customer()
+    item = _item(stock=50)
+    manager = _manager()
+
+    _sale_via_form(manager, cust, item, 5, 20)
+    sal = _latest_sale()
+    entries_before = CustomerLedgerEntry.query.filter_by(customer_id=cust.id).count()
+
+    manager.post(f"/sale/{sal.id}/edit", data={
+        "customer_id": str(cust.id), "date": "2026-01-01", "notes": "",
+        "item_id[]": str(item.id), "quantity[]": "8", "sale_price[]": "20",
+        "discount_type[]": "percent", "discount_value[]": "0", "tax_percent[]": "0",
+    }, follow_redirects=True)
+
+    assert CustomerLedgerEntry.query.filter_by(customer_id=cust.id).count() == entries_before
+
+
+def test_draft_sale_edit_creates_no_stock_movement(appctx):
+    _books()
+    cust = _customer()
+    item = _item(stock=50)
+    manager = _manager()
+
+    _sale_via_form(manager, cust, item, 5, 20)
+    sal = _latest_sale()
+    movements_before = StockMovement.query.filter_by(item_id=item.id).count()
+
+    manager.post(f"/sale/{sal.id}/edit", data={
+        "customer_id": str(cust.id), "date": "2026-01-01", "notes": "",
+        "item_id[]": str(item.id), "quantity[]": "8", "sale_price[]": "20",
+        "discount_type[]": "percent", "discount_value[]": "0", "tax_percent[]": "0",
+    }, follow_redirects=True)
+
+    assert StockMovement.query.filter_by(item_id=item.id).count() == movements_before
+
+
+def test_draft_sale_delete_removes_sale_items_via_cascade(appctx):
+    _books()
+    cust = _customer()
+    item = _item(stock=50)
+    manager = _manager()
+    admin_client = _admin()
+
+    _sale_via_form(manager, cust, item, 5, 20)
+    sal = _latest_sale()
+    sale_id = sal.id
+    assert SaleItem.query.filter_by(sale_id=sale_id).count() == 1
+
+    admin_client.post(f"/sale/{sale_id}/delete", follow_redirects=True)
+
+    assert SaleItem.query.filter_by(sale_id=sale_id).count() == 0
+
+
+def test_draft_sale_delete_creates_no_journal_entry_or_ledger_effect(appctx):
+    _books()
+    cust = _customer()
+    item = _item(stock=50)
+    manager = _manager()
+    admin_client = _admin()
+
+    _sale_via_form(manager, cust, item, 5, 20)
+    sal = _latest_sale()
+    je_before = JournalEntry.query.count()
+    entries_before = CustomerLedgerEntry.query.filter_by(customer_id=cust.id).count()
+
+    admin_client.post(f"/sale/{sal.id}/delete", follow_redirects=True)
+
+    assert JournalEntry.query.count() == je_before
+    assert CustomerLedgerEntry.query.filter_by(customer_id=cust.id).count() == entries_before
+
+
+# ── Regression: Posted/Reversed edit-delete protection still intact ────────
+
+
+def test_posted_sale_edit_is_still_refused(appctx):
+    account_id = _books()
+    cust = _customer()
+    item = _item(stock=50)
+    manager = _manager()
+
+    _sale_via_form(manager, cust, item, 5, 20)
+    sal = _latest_sale()
+    manager.post(f"/sale/{sal.id}/post", follow_redirects=True)
+    db.session.refresh(sal)
+    assert sal.status == STATUS_POSTED
+
+    r = manager.post(f"/sale/{sal.id}/edit", data={
+        "customer_id": str(cust.id), "date": "2026-01-01", "notes": "",
+        "item_id[]": str(item.id), "quantity[]": "8", "sale_price[]": "20",
+        "discount_type[]": "percent", "discount_value[]": "0", "tax_percent[]": "0",
+    }, follow_redirects=True)
+    assert r.status_code == 200
+    db.session.refresh(sal)
+    si = SaleItem.query.filter_by(sale_id=sal.id).first()
+    assert si.quantity == 5   # unchanged -- the edit was refused
+
+
+def test_posted_sale_delete_is_still_refused(appctx):
+    _books()
+    cust = _customer()
+    item = _item(stock=50)
+    manager = _manager()
+    admin_client = _admin()
+
+    _sale_via_form(manager, cust, item, 5, 20)
+    sal = _latest_sale()
+    manager.post(f"/sale/{sal.id}/post", follow_redirects=True)
+    db.session.refresh(sal)
+    assert sal.status == STATUS_POSTED
+
+    admin_client.post(f"/sale/{sal.id}/delete", follow_redirects=True)
+
+    assert db.session.get(Sale, sal.id) is not None

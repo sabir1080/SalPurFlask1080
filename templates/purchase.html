@@ -206,6 +206,14 @@
             </form>
             {% endif %}
             {% endif %}
+            {% if p.status == 'draft' and current_user.is_admin %}
+            <form method="POST" action="{{ url_for('delete_purchase', id=p.id) }}" class="d-inline"
+                  data-confirm="Delete this Draft Purchase? It has no accounting or stock effect yet, so nothing else is affected — but this cannot be undone.">
+              <button class="btn btn-sm btn-outline-danger" title="Delete this Draft">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+            {% endif %}
             {% with doc = p, kind = "purchase" %}{% include "_reverse_button.html" %}{% endwith %}
           </td>
         </tr>

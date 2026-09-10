@@ -467,8 +467,12 @@ def purchase_return():
             .filter((Supplier.name.ilike(f"%{search}%")) | (Item.name.ilike(f"%{search}%")))
         )
     returns, pagination = get_paginated_results(query)
+    # A Draft purchase has no stock/ledger/GL effect yet (see the Draft ->
+    # Posted workflow), so there is nothing on it a return could correctly
+    # unwind -- excluded the same way a reversed purchase already is.
     all_pis = (PurchaseItem.query.join(Purchase)
                .filter(Purchase.is_reversed.is_(False))
+               .filter(Purchase.status == STATUS_POSTED)
                .order_by(Purchase.date.desc(), PurchaseItem.id).all())
     items_available = [
         {"pi": pi, "remaining": pi.quantity - get_purchase_item_returned_qty(pi)}

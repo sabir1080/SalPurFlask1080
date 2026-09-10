@@ -208,6 +208,14 @@
             </form>
             {% endif %}
             {% endif %}
+            {% if s.status == 'draft' and current_user.is_admin %}
+            <form method="POST" action="{{ url_for('delete_sale', id=s.id) }}" class="d-inline"
+                  data-confirm="Delete this Draft Sale? It has no accounting or stock effect yet, so nothing else is affected — but this cannot be undone.">
+              <button class="btn btn-sm btn-outline-danger" title="Delete this Draft">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+            {% endif %}
             {% with doc = s, kind = "sale" %}{% include "_reverse_button.html" %}{% endwith %}
           </td>
         </tr>
