@@ -331,7 +331,7 @@ from salpurflask.purchase.routes import (
     export_purchase_report, export_purchase_return_report, export_supplier_purchase_report
 )
 from salpurflask.sales.routes import (
-    sale, edit_sale, delete_sale, post_sale_route,
+    sale, edit_sale, delete_sale, post_sale_route, correct_sale_route,
     sale_return, delete_sale_return, sale_invoice,
     pos, pos_lookup, pos_checkout, pos_receipt,
     pos_hold, list_pos_holds, get_pos_hold, delete_pos_hold,
@@ -427,6 +427,7 @@ app.add_url_rule("/sale", "sale", sale, methods=["GET", "POST"])
 app.add_url_rule("/sale/edit/<int:id>", "edit_sale", edit_sale, methods=["GET", "POST"])
 app.add_url_rule("/sale/<int:id>/post", "post_sale_route", post_sale_route, methods=["POST"])
 app.add_url_rule("/sale/delete/<int:id>", "delete_sale", delete_sale, methods=["POST"])
+app.add_url_rule("/sale/correct/<int:id>", "correct_sale_route", correct_sale_route, methods=["GET", "POST"])
 app.add_url_rule("/sale_return", "sale_return", sale_return, methods=["GET", "POST"])
 app.add_url_rule("/sale_return/delete/<int:id>", "delete_sale_return", delete_sale_return, methods=["POST"])
 app.add_url_rule("/sale/<int:id>/invoice", "sale_invoice", sale_invoice, methods=["GET"])

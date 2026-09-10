@@ -216,6 +216,11 @@
               </button>
             </form>
             {% endif %}
+            {% if s.status == 'posted' and not s.is_reversed and current_user.is_admin %}
+            <a href="{{ url_for('correct_sale_route', id=s.id) }}" class="btn btn-sm btn-outline-warning" title="Correct this Posted Sale (admin only)">
+              <i class="bi bi-shield-exclamation"></i>
+            </a>
+            {% endif %}
             {% with doc = s, kind = "sale" %}{% include "_reverse_button.html" %}{% endwith %}
           </td>
         </tr>

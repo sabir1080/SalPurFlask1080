@@ -12,7 +12,9 @@ from salpurflask.models import (
     MONEY, resolve_item_unit, line_base_qty,
     calc_discount_tax, allocate_document_number, assert_not_posted, assert_not_numbered,
     post_document, reverse_document, Quotation, STATUS_DRAFT, STATUS_POSTED,
+    PostingError, posted_entry, reverse_entry,
 )
+from salpurflask.models.models import _unwind_stock_and_subledger
 from salpurflask.models.business_config import BusinessCategory
 from salpurflask.auth import verified_required, manager_required, admin_required
 from salpurflask.utils import (
@@ -256,6 +258,240 @@ def post_sale_route(id):
     record_audit("post", "Sale", sal.id, f"Sale {sal.invoice_no} posted")
     flash(f"Sale {sal.invoice_no} posted successfully!", "success")
     return redirect(url_for("sale"))
+
+
+@sales_bp.route('/sale/<int:id>/correct', methods=['GET', 'POST'])
+@admin_required
+def correct_sale_route(id):
+    """Admin-only correction of a POSTED, non-reversed Sale — Phase 6A of the
+    Draft -> Posted workflow. Distinct from edit_sale (still blocked for a
+    Posted sale by assert_not_posted, unchanged) and distinct from
+    reverse_document_route (which permanently flags is_reversed=True and
+    stops there). A correction undoes the old GL/stock/ledger effect using
+    the exact same primitives reverse_document() itself uses --
+    reverse_entry() + _unwind_stock_and_subledger() -- but does NOT set
+    is_reversed, then applies the corrected values and re-posts through the
+    normal posting engine, all inside this one transaction. See the forensic
+    audit earlier in this project for why a second accounting engine was
+    not written here.
+
+    Hard rules enforced independently of the UI (a hand-built POST must fail
+    the same way a rendered page does):
+      - admin only (decorator)
+      - Sale must be status == STATUS_POSTED and is_reversed == False
+      - no existing SaleReturn against this Sale (sale_return.sale_item_id
+        has no ON DELETE / ORM cascade -- deleting/recreating SaleItems
+        under a return would orphan it; see SaleReturn.sale_item_id)
+      - active CustomerPayments require confirm_correction=1 before anything
+        is written; the payments themselves are never touched
+      - date and location_id are never changed here (out of scope this phase)
+      - invoice_no is preserved as-is; allocate_document_number() is never called
+    """
+    from app import (
+        record_audit, sync_customer_sale, item_add_stock, item_remove_stock,
+        validate_line_rows, get_sale_received, get_payment_status,
+        remove_customer_ledger_entry, recalculate_customer_ledger,
+    )
+    from salpurflask.models import stock_at_location, get_or_create_default_location
+
+    sal = (Sale.query.filter_by(id=id).with_for_update().first()) or abort(404)
+    # stock_at_location() (unlike item_add_stock/item_remove_stock) does not
+    # resolve location_id=None to the default location itself -- it compares
+    # the raw id against the default location's own id. Resolve once here so
+    # the stock-availability check below agrees with what item_remove_stock
+    # actually does.
+    stock_check_location_id = sal.location_id if sal.location_id is not None \
+        else get_or_create_default_location().id
+
+    if sal.status != STATUS_POSTED:
+        flash(f"Sale #{sal.id} is not Posted — nothing to correct.", "warning")
+        return redirect(url_for("sale"))
+    if sal.is_reversed:
+        flash(f"Sale #{sal.id} has been reversed and cannot be corrected.", "warning")
+        return redirect(url_for("sale"))
+    existing_returns = SaleReturn.query.filter_by(sale_id=sal.id).count()
+    if existing_returns:
+        flash(f"Sale #{sal.id} has {existing_returns} Sale Return(s) recorded against it "
+              "and cannot be corrected — reverse the returns first, or reverse the whole "
+              "Sale instead.", "danger")
+        return redirect(url_for("sale"))
+
+    old_total = sale_total(sal)
+    active_payments = [p for p in sal.customer_payments if not p.is_reversed]
+    received = get_sale_received(sal.id)
+
+    if request.method == "POST":
+        customer_id = request.form.get("customer_id", "").strip()
+        notes       = request.form.get("notes", "").strip()
+        reason      = request.form.get("reason", "").strip()
+        item_ids    = request.form.getlist("item_id[]")
+        quantities  = request.form.getlist("quantity[]")
+        prices      = request.form.getlist("sale_price[]")
+        disc_types  = request.form.getlist("discount_type[]")
+        disc_values = request.form.getlist("discount_value[]")
+        tax_pcts    = request.form.getlist("tax_percent[]")
+        unit_ids    = request.form.getlist("unit_id[]")
+        confirmed   = request.form.get("confirm_correction") == "1"
+
+        rows = []
+        for i, (iid, qty, price) in enumerate(zip(item_ids, quantities, prices)):
+            if iid.strip() and qty.strip() and price.strip():
+                rows.append((
+                    iid.strip(), qty.strip(), price.strip(),
+                    disc_types[i] if i < len(disc_types) else "percent",
+                    disc_values[i] if i < len(disc_values) else "0",
+                    tax_pcts[i] if i < len(tax_pcts) else "0",
+                    unit_ids[i] if i < len(unit_ids) else "",
+                ))
+
+        row_error = validate_line_rows(rows) if rows else None
+        new_customer_id = int(customer_id) if customer_id else sal.customer_id
+        customer_changing = new_customer_id != sal.customer_id
+
+        if not customer_id:
+            flash("Customer is required!", "danger")
+            return redirect(url_for("correct_sale_route", id=sal.id))
+        if not rows:
+            flash("At least one item is required!", "danger")
+            return redirect(url_for("correct_sale_route", id=sal.id))
+        if row_error:
+            flash(row_error, "danger")
+            return redirect(url_for("correct_sale_route", id=sal.id))
+        if not reason:
+            flash("A reason for this correction is required.", "danger")
+            return redirect(url_for("correct_sale_route", id=sal.id))
+        if customer_changing and active_payments:
+            flash("This Sale has active payment(s) recorded against the current customer. "
+                  "The customer cannot be changed while those payments exist — doing so "
+                  "would leave a payment attached to the wrong customer's ledger. Reconcile "
+                  "or reassign the payments first, or leave the customer unchanged.", "danger")
+            return redirect(url_for("correct_sale_route", id=sal.id))
+        if active_payments and not confirmed:
+            flash(
+                f"This Sale has {len(active_payments)} active payment(s) totalling "
+                f"{received:,.2f}. Correcting it will not touch those payments — they stay "
+                "exactly as recorded. If the corrected total ends up lower than the amount "
+                "already received, the difference becomes a customer credit; it is not "
+                "refunded or reversed automatically. Confirm to continue.", "warning")
+            return redirect(url_for("correct_sale_route", id=sal.id))
+
+        try:
+            # Stock availability is checked up front against a plain read, for a
+            # clean error message; item_remove_stock()'s own guard (below, on the
+            # locked row) is the real enforcement against a race.
+            stock_errors = []
+            for iid, qty, price, d_type, d_val, tax, unit_key in rows:
+                item_obj = db.session.get(Item, int(iid))
+                if item_obj and item_obj.item_type == "STOCK":
+                    _, factor = resolve_item_unit(item_obj, unit_key)
+                    available = stock_at_location(item_obj.id, stock_check_location_id)
+                    old_base_qty_same_item = sum(
+                        line_base_qty(si) for si in sal.line_items if si.item_id == int(iid))
+                    # The old lines for this item are about to be restored to stock
+                    # before the new lines remove it again, so the available figure
+                    # here (a snapshot taken before that restore happens) undercounts
+                    # by exactly what this Sale itself is about to give back.
+                    if available + old_base_qty_same_item < int(qty) * factor:
+                        stock_errors.append(
+                            f"{item_obj.name}: only {available + old_base_qty_same_item} "
+                            f"{item_obj.unit} would be available at this warehouse")
+            if stock_errors:
+                flash("Cannot correct — insufficient stock: " + "; ".join(stock_errors), "danger")
+                return redirect(url_for("correct_sale_route", id=sal.id))
+
+            # Step 1: undo the old Sale's GL effect -- same primitives
+            # reverse_document() uses, minus the terminal is_reversed flag.
+            entry = posted_entry("sale", sal.id)
+            if entry is None:
+                raise PostingError(
+                    f"Sale #{sal.id} has no live journal entry, so it cannot be corrected.")
+            reverse_entry(entry, created_by_id=current_user.id if current_user.is_authenticated else None)
+            _unwind_stock_and_subledger("sale", sal)
+            db.session.flush()
+
+            # Step 2: apply corrected header + line values. Same delete-and-recreate
+            # pattern edit_sale() already uses for a Posted sale -- safe here only
+            # because the SaleReturn check above guarantees no sale_item_id points
+            # at the rows being deleted.
+            old_customer_id = sal.customer_id
+            SaleItem.query.filter_by(sale_id=sal.id).delete()
+            first_iid, first_qty, first_price, first_d_type, first_d_val, first_tax = \
+                rows[0][0], rows[0][1], rows[0][2], rows[0][3], rows[0][4], rows[0][5]
+            first_d_val_f = float(first_d_val or 0)
+            first_tax_f = float(first_tax or 0)
+            first_gross = int(first_qty) * float(first_price)
+            first_disc_amt, first_tax_amt, _ = calc_discount_tax(
+                first_gross, first_d_type or "percent", first_d_val_f, first_tax_f)
+            sal.customer_id = new_customer_id
+            sal.item_id = int(first_iid); sal.quantity = int(first_qty)
+            sal.sale_price = float(first_price); sal.cost_price = 0.0
+            sal.discount_type = first_d_type or "percent"; sal.discount_value = first_d_val_f
+            sal.discount_amount = first_disc_amt; sal.tax_percent = first_tax_f
+            sal.tax_amount = first_tax_amt
+            sal.notes = notes or None
+            # date and location_id are intentionally left untouched -- out of
+            # scope for this phase (see module docstring above).
+
+            for iid, qty, price, d_type, d_val, tax, unit_key in rows:
+                item_obj = get_item_locked(int(iid)) or abort(404)
+                qty_i = int(qty); price_f = float(price)
+                d_val_f = float(d_val or 0); tax_f = float(tax or 0)
+                gross = qty_i * price_f
+                disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
+                unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
+                base_qty = qty_i * unit_factor
+                unit_cost = item_obj.avg_cost if item_obj.item_type == "STOCK" else 0
+                si = SaleItem(
+                    sale_id=sal.id, item_id=int(iid),
+                    quantity=qty_i, sale_price=price_f,
+                    cost_price=float(unit_cost),
+                    discount_type=d_type or "percent", discount_value=d_val_f,
+                    discount_amount=disc_amt, tax_percent=tax_f,
+                    tax_amount=tax_amt, amount=net,
+                    unit_name=unit_name, unit_factor=unit_factor,
+                )
+                db.session.add(si)
+                if item_obj.item_type == "STOCK":
+                    item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)),
+                                      location_id=sal.location_id,
+                                      movement_type="sale", source_type="sale", source_id=sal.id)
+            db.session.flush()
+            db.session.refresh(sal)
+
+            # Step 3: rebuild the customer ledger effect and re-post the GL.
+            # invoice_no is untouched -- allocate_document_number() is never
+            # called here, by design (see module docstring).
+            if customer_changing:
+                remove_customer_ledger_entry("sale", sal.id)
+                recalculate_customer_ledger(old_customer_id)
+            sync_customer_sale(sal)
+            post_document("sale", sal)
+
+            new_total = sale_total(sal)
+            db.session.commit()
+        except PostingError as e:
+            db.session.rollback()
+            flash(str(e), "danger")
+            return redirect(url_for("correct_sale_route", id=id))
+        except Exception:
+            db.session.rollback()
+            raise
+
+        record_audit(
+            "correction", "Sale", sal.id,
+            f"Sale {sal.invoice_no} corrected by admin: total {old_total:,.2f} -> "
+            f"{new_total:,.2f}, customer {old_customer_id}->{sal.customer_id}, "
+            f"{len(rows)} line(s). Reason: {reason[:150]}")
+        flash(f"Sale {sal.invoice_no} corrected successfully. "
+              f"Total: {old_total:,.2f} → {new_total:,.2f}.", "success")
+        return redirect(url_for("sale"))
+
+    from app import get_standard_tax_rate
+    default_tax = get_standard_tax_rate() or 0
+    return render_template(
+        "correct_sale.html", sale=sal, default_tax_rate=default_tax,
+        old_total=old_total, received=received, active_payments=active_payments,
+    )
 
 
 @sales_bp.route('/sale/<int:id>/edit', methods=['GET', 'POST'])
