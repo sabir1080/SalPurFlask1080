@@ -269,7 +269,12 @@ def test_sale_route_creates_no_movement_while_a_draft(appctx):
     assert len(rows) == 0
 
 
-def test_purchase_route_creates_correctly_typed_movement(appctx):
+def test_purchase_route_creates_no_movement_while_a_draft(appctx):
+    """/purchase now creates a Draft (Phase 3 of the Draft -> Posted
+    workflow, see STATUS_DRAFT in salpurflask/models/models.py): no stock
+    movement until the purchase is Posted, which doesn't exist yet. See
+    tests/test_draft_purchase.py for the full Draft-isolation contract this
+    route now has to uphold."""
     sup, cus = _world()
     it = _item(stock=0)
     c = _admin()
@@ -280,8 +285,7 @@ def test_purchase_route_creates_correctly_typed_movement(appctx):
     }, follow_redirects=True)
     assert r.status_code == 200
     rows = StockMovement.query.filter_by(movement_type="purchase").all()
-    assert len(rows) == 1
-    assert rows[0].quantity == 25
+    assert len(rows) == 0
 
 
 def test_stock_adjustment_route_creates_correctly_typed_movement(appctx):

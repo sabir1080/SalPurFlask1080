@@ -112,9 +112,12 @@ def test_purchase_accepts_draft(appctx):
 
 
 def test_purchase_created_via_the_real_route_is_posted(appctx):
-    """Uses the actual /purchase form route -- proves Phase 1 changed nothing
-    about how a normal Purchase is created; it just lands with status="posted"
-    now instead of no status at all."""
+    """Uses the actual /purchase form route. At the time this test was
+    written (Phase 1) it proved Phase 1 alone changed nothing about how a
+    normal Purchase is created. Phase 3 deliberately changed that: /purchase
+    now creates a Draft (status="draft", no invoice number, no stock/ledger/
+    GL effect) -- see tests/test_draft_purchase.py for the full Draft
+    contract this route now has to uphold."""
     from app import pwd_context, User
 
     _books()
@@ -137,7 +140,7 @@ def test_purchase_created_via_the_real_route_is_posted(appctx):
 
     pur = Purchase.query.order_by(Purchase.id.desc()).first()
     assert pur is not None
-    assert pur.status == STATUS_POSTED
+    assert pur.status == STATUS_DRAFT
 
 
 def test_sale_created_via_pos_checkout_is_posted(appctx):

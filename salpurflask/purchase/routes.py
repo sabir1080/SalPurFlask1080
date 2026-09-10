@@ -14,7 +14,7 @@ from salpurflask.models import (
     item_add_stock, item_remove_stock, line_base_qty,
     calc_discount_tax, allocate_document_number, assert_not_posted, assert_not_numbered,
     post_document, posted_entry, reverse_document,
-    PO_STATUSES,
+    PO_STATUSES, STATUS_DRAFT, STATUS_POSTED,
 )
 from salpurflask.auth import verified_required, manager_required, admin_required
 from salpurflask.utils import (
@@ -179,6 +179,13 @@ def purchase():
                 first_iid, first_qty, first_price, first_d_type, first_d_val, first_tax = rows[0][0], rows[0][1], rows[0][2], rows[0][3], rows[0][4], rows[0][5]
                 gross = int(first_qty) * float(first_price)
                 disc_amt, tax_amt, _ = calc_discount_tax(gross, first_d_type or "percent", float(first_d_val or 0), float(first_tax or 0))
+                # Phase 3 (Draft -> Posted): a Purchase created here starts as a
+                # Draft -- PurchaseItems are created with the same discount/tax
+                # math as before, but stock, invoice numbering, the supplier
+                # ledger and the GL are untouched until an explicit Post action
+                # exists (a later phase). See STATUS_DRAFT/STATUS_POSTED in
+                # salpurflask/models/models.py, and the identical Sale-side
+                # change in salpurflask/sales/routes.py (Phase 2).
                 pur = Purchase(
                     supplier_id=int(supplier_id),
                     item_id=int(first_iid),
@@ -188,6 +195,7 @@ def purchase():
                     tax_percent=float(first_tax or 0), tax_amount=tax_amt,
                     date=purchase_date, notes=notes or None,
                     location_id=location_id,
+                    status=STATUS_DRAFT,
                 )
                 db.session.add(pur)
                 db.session.flush()
@@ -209,17 +217,17 @@ def purchase():
                         unit_name=unit_name, unit_factor=unit_factor,
                     )
                     db.session.add(pi)
-                    item_add_stock(item_obj, qty_i * unit_factor, net - tax_amt, location_id=location_id,
-                                   movement_type="purchase", source_type="purchase", source_id=pur.id)
+                    # No item_add_stock() here -- a Draft has no stock effect.
+                    # The Post action (a later phase) is where this happens.
                 db.session.flush()
                 db.session.refresh(pur)
-                pur.invoice_no = allocate_document_number("purchase", pur.date)
-                sync_supplier_purchase(pur)
-                post_document("purchase", pur)
+                # No allocate_document_number() / sync_supplier_purchase() /
+                # post_document() here -- a Draft consumes no invoice number
+                # and has no supplier-ledger/GL effect.
                 db.session.commit()
                 record_audit("create", "Purchase", pur.id,
-                             f"Purchase {pur.invoice_no}, total {app_purchase_total(pur):,.2f}")
-                flash(f"Purchase {pur.invoice_no} added successfully!", "success")
+                             f"Draft Purchase #{pur.id}, total {app_purchase_total(pur):,.2f}")
+                flash(f"Draft Purchase #{pur.id} saved.", "success")
                 return redirect(url_for("purchase"))
             except ValueError as e:
                 flash(f"Invalid data: {e}", "danger")
@@ -280,15 +288,21 @@ def edit_purchase(id):
         else:
             try:
                 old_supplier_id = pur.supplier_id
+                # A Draft (Phase 3) never added stock at creation, so there is
+                # nothing to remove here or re-add below -- doing so would move
+                # Item.stock for a document that never touched it. Only a
+                # Posted purchase's existing lines get this remove/re-add dance.
+                is_posted = pur.status == STATUS_POSTED
                 touched_items = {}
-                for pi in pur.line_items:
-                    old_item = get_item_locked(pi.item_id)
-                    if old_item:
-                        cost_removed = pi.amount - pi.tax_amount
-                        item_remove_stock(old_item, line_base_qty(pi), cost_total=cost_removed,
-                                         location_id=location_id,
-                                         movement_type="purchase", source_type="purchase", source_id=pur.id)
-                        touched_items[old_item.id] = old_item
+                if is_posted:
+                    for pi in pur.line_items:
+                        old_item = get_item_locked(pi.item_id)
+                        if old_item:
+                            cost_removed = pi.amount - pi.tax_amount
+                            item_remove_stock(old_item, line_base_qty(pi), cost_total=cost_removed,
+                                             location_id=location_id,
+                                             movement_type="purchase", source_type="purchase", source_id=pur.id)
+                            touched_items[old_item.id] = old_item
                 PurchaseItem.query.filter_by(purchase_id=pur.id).delete()
                 pur.supplier_id    = int(supplier_id)
                 pur.item_id        = int(rows[0][0])
@@ -323,24 +337,30 @@ def edit_purchase(id):
                         unit_name=unit_name, unit_factor=unit_factor,
                     )
                     db.session.add(pi)
-                    item_add_stock(item_obj, qty_i * unit_factor, net - tax_amt, location_id=location_id,
-                                   movement_type="purchase", source_type="purchase", source_id=pur.id)
-                    touched_items[item_obj.id] = item_obj
+                    # Only a Posted purchase re-adds stock -- see is_posted above.
+                    if is_posted:
+                        item_add_stock(item_obj, qty_i * unit_factor, net - tax_amt, location_id=location_id,
+                                       movement_type="purchase", source_type="purchase", source_id=pur.id)
+                        touched_items[item_obj.id] = item_obj
 
-                negative_items = [it for it in touched_items.values() if it.stock < 0]
-                if negative_items:
-                    names = ", ".join(f"{it.name} ({it.stock})" for it in negative_items)
-                    db.session.rollback()
-                    flash(f"Cannot save — this change would make stock negative for: {names}", "danger")
-                    return render_template("edit_purchase.html", purchase=pur)
+                if is_posted:
+                    negative_items = [it for it in touched_items.values() if it.stock < 0]
+                    if negative_items:
+                        names = ", ".join(f"{it.name} ({it.stock})" for it in negative_items)
+                        db.session.rollback()
+                        flash(f"Cannot save — this change would make stock negative for: {names}", "danger")
+                        return render_template("edit_purchase.html", purchase=pur)
 
                 db.session.flush()
                 db.session.refresh(pur)
-                if old_supplier_id != int(supplier_id):
-                    remove_supplier_ledger_entry("purchase", pur.id)
-                    recalculate_supplier_ledger(old_supplier_id)
-                sync_supplier_purchase(pur)
-                post_document("purchase", pur)
+                # A Draft has no supplier-ledger/GL effect to update either --
+                # sync_supplier_purchase()/post_document() only apply once Posted.
+                if is_posted:
+                    if old_supplier_id != int(supplier_id):
+                        remove_supplier_ledger_entry("purchase", pur.id)
+                        recalculate_supplier_ledger(old_supplier_id)
+                    sync_supplier_purchase(pur)
+                    post_document("purchase", pur)
                 db.session.commit()
                 record_audit("update", "Purchase", pur.id, f"Purchase #{pur.id} edited")
                 flash("Purchase updated successfully!", "success")
@@ -368,13 +388,18 @@ def delete_purchase(id):
     if linked_po:
         flash(f"Cannot delete purchase — it was created from Purchase Order #{linked_po.id}.", "danger")
         return redirect(url_for("purchase"))
-    for pi in pur.line_items:
-        item_obj = db.session.get(Item, pi.item_id)
-        if item_obj:
-            cost_removed = pi.amount - pi.tax_amount
-            item_remove_stock(item_obj, line_base_qty(pi), cost_total=cost_removed,
-                             location_id=pur.location_id,
-                             movement_type="purchase", source_type="purchase", source_id=pur.id)
+    # A Draft (Phase 3) never added stock at creation, so there is nothing
+    # to remove here -- doing so would decrement Item.stock for a document
+    # that never actually raised it. Only a Posted purchase's line items
+    # get this removal.
+    if pur.status == STATUS_POSTED:
+        for pi in pur.line_items:
+            item_obj = db.session.get(Item, pi.item_id)
+            if item_obj:
+                cost_removed = pi.amount - pi.tax_amount
+                item_remove_stock(item_obj, line_base_qty(pi), cost_total=cost_removed,
+                                 location_id=pur.location_id,
+                                 movement_type="purchase", source_type="purchase", source_id=pur.id)
     audit_summary = f"Purchase #{pur.id} ({pur.supplier.name if pur.supplier else 'supplier'}) deleted"
     supplier_id = remove_supplier_ledger_entry("purchase", pur.id)
     db.session.delete(pur)

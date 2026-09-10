@@ -67,12 +67,43 @@ def _second_location():
 
 
 def _purchase(c, sup, item, qty, price, location_id=None):
+    """/purchase now creates a Draft (Phase 3 of the Draft -> Posted
+    workflow) with no stock effect -- but every test in this file is about
+    multi-warehouse stock behavior, which only means something once a
+    Purchase is Posted. So this helper posts the resulting Draft
+    immediately, using the exact real functions a future Post action will
+    call (see _post_draft_purchase below) -- nothing here is new business
+    logic, and the /purchase route itself is unchanged from what Phase 3
+    made it: a Draft, until posted."""
     data = {"supplier_id": sup.id, "date": "2026-03-01", "notes": "",
            "item_id[]": item.id, "quantity[]": str(qty), "purchase_price[]": str(price),
            "discount_type[]": "", "discount_value[]": "0", "tax_percent[]": "0"}
     if location_id is not None:
         data["location_id"] = str(location_id)
-    return c.post("/purchase", data=data, follow_redirects=True)
+    resp = c.post("/purchase", data=data, follow_redirects=True)
+    pur = Purchase.query.order_by(Purchase.id.desc()).first()
+    if pur is not None and pur.status != "posted":
+        _post_draft_purchase(pur)
+    return resp
+
+
+def _post_draft_purchase(pur):
+    from app import (item_add_stock, sync_supplier_purchase, post_document,
+                     allocate_document_number)
+    from salpurflask.models.models import STATUS_POSTED
+
+    for pi in pur.line_items:
+        item_obj = db.session.get(Item, pi.item_id)
+        base_qty = pi.quantity * (pi.unit_factor or 1)
+        item_add_stock(item_obj, base_qty, pi.amount - pi.tax_amount,
+                       location_id=pur.location_id,
+                       movement_type="purchase", source_type="purchase", source_id=pur.id)
+    pur.status = STATUS_POSTED
+    pur.invoice_no = allocate_document_number("purchase", pur.date)
+    sync_supplier_purchase(pur)
+    post_document("purchase", pur)
+    db.session.commit()
+    return pur
 
 
 def _sale(c, cus, item, qty, price, location_id=None):

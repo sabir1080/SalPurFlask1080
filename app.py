@@ -1195,14 +1195,17 @@ def backfill_ledgers():
     db.session.commit()
 
 def get_total_payable():
-    """Gross value of every active (non-reversed) purchase — the Dashboard's
-    Payable "Total" line. A reversed Purchase already has its subledger and
-    stock effects unwound by reverse_document(); the document row itself is
-    kept as an audit record, so it must be excluded here by joining back to
-    Purchase.is_reversed rather than by disappearing from the table."""
+    """Gross value of every active (non-reversed, posted) purchase — the
+    Dashboard's Payable "Total" line. A reversed Purchase already has its
+    subledger and stock effects unwound by reverse_document(); the document
+    row itself is kept as an audit record, so it must be excluded here by
+    joining back to Purchase.is_reversed rather than by disappearing from
+    the table. A Draft Purchase (Phase 3) has no payable/cost effect yet,
+    same reason a reversed one doesn't: excluded by status, not by
+    disappearing from the table."""
     return float(db.session.query(func.sum(PurchaseItem.amount))
                 .join(Purchase, PurchaseItem.purchase_id == Purchase.id)
-                .filter(Purchase.is_reversed.is_(False))
+                .filter(Purchase.is_reversed.is_(False), Purchase.status == STATUS_POSTED)
                 .scalar() or 0.0)
 
 def get_total_paid_suppliers():

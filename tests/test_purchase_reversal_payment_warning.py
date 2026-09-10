@@ -100,12 +100,42 @@ def _supplier(name="Supplier A"):
 
 def _purchase_via_form(client, supplier, item, qty, price):
     """Uses the real /purchase form route -- the existing supported way to
-    create a Purchase, matching how the Sale-side tests use /pos/checkout."""
-    return client.post("/purchase", data={
+    create a Purchase, matching how the Sale-side tests use /pos/checkout.
+
+    /purchase now creates a Draft (Phase 3 of the Draft -> Posted workflow;
+    see STATUS_DRAFT in salpurflask/models/models.py) with no stock/ledger/
+    GL effect and no invoice number. This whole file is about reversing an
+    existing Purchase, which only means something once it is Posted, so the
+    resulting Draft is posted immediately here using the exact real
+    functions a future Post action will call -- nothing here is new
+    business logic, and reverse_document() itself is untouched."""
+    resp = client.post("/purchase", data={
         "supplier_id": str(supplier.id), "date": "2026-01-01", "notes": "",
         "item_id[]": str(item.id), "quantity[]": str(qty), "purchase_price[]": str(price),
         "discount_type[]": "percent", "discount_value[]": "0", "tax_percent[]": "0",
     }, follow_redirects=True)
+    _post_draft_purchase(_latest_purchase_id())
+    return resp
+
+
+def _post_draft_purchase(purchase_id):
+    from app import (item_add_stock, sync_supplier_purchase, post_document,
+                     allocate_document_number)
+    from salpurflask.models.models import STATUS_POSTED
+
+    pur = db.session.get(Purchase, purchase_id)
+    for pi in pur.line_items:
+        item_obj = db.session.get(Item, pi.item_id)
+        base_qty = pi.quantity * (pi.unit_factor or 1)
+        item_add_stock(item_obj, base_qty, pi.amount - pi.tax_amount,
+                       location_id=pur.location_id,
+                       movement_type="purchase", source_type="purchase", source_id=pur.id)
+    pur.status = STATUS_POSTED
+    pur.invoice_no = allocate_document_number("purchase", pur.date)
+    sync_supplier_purchase(pur)
+    post_document("purchase", pur)
+    db.session.commit()
+    return pur
 
 
 def _pay_via_form(client, supplier, purchase_id, amount, account_id):
