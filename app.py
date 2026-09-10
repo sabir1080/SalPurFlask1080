@@ -48,6 +48,12 @@ if DATABASE_URL:
     # Render / PostgreSQL — Render deta hai "postgres://" lekin SQLAlchemy 1.4+ ko "postgresql://" chahiye
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    # "localhost" resolves to ::1 first on Windows, and a hung/dropped IPv6
+    # loopback connection there can time out startup before ever trying
+    # 127.0.0.1. Pin the literal host "localhost" to 127.0.0.1 to skip it;
+    # real hostnames (Render/Neon) never match, so they're unaffected.
+    if urlsplit(DATABASE_URL).hostname == "localhost":
+        DATABASE_URL = DATABASE_URL.replace("localhost", "127.0.0.1", 1)
     app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 else:
     # Local PC (SQLite)
