@@ -15,7 +15,9 @@ from salpurflask.models import (
     calc_discount_tax, allocate_document_number, assert_not_posted, assert_not_numbered,
     post_document, posted_entry, reverse_document,
     PO_STATUSES, STATUS_DRAFT, STATUS_POSTED,
+    PostingError, reverse_entry,
 )
+from salpurflask.models.models import _unwind_stock_and_subledger
 from salpurflask.auth import verified_required, manager_required, admin_required
 from salpurflask.utils import (
     now_local, get_paginated_results, csv_response, excel_response, get_item_locked
@@ -277,6 +279,248 @@ def post_purchase_route(id):
     record_audit("post", "Purchase", pur.id, f"Purchase {pur.invoice_no} posted")
     flash(f"Purchase {pur.invoice_no} posted successfully!", "success")
     return redirect(url_for("purchase"))
+
+
+@admin_required
+def correct_purchase_route(id):
+    """Admin-only correction of a POSTED, non-reversed Purchase -- the
+    Purchase-side counterpart of correct_sale_route (salpurflask/sales/routes.py,
+    Phase 6A). Distinct from edit_purchase (still blocked for a Posted
+    document by assert_not_posted, unchanged) and distinct from
+    reverse_document_route (which permanently flags is_reversed=True and
+    stops there). A correction undoes the old GL/stock/ledger effect using
+    the exact same primitives reverse_document() itself uses --
+    reverse_entry() + _unwind_stock_and_subledger() -- but does NOT set
+    is_reversed, then applies the corrected values and re-posts through the
+    normal posting engine, all inside this one transaction. See
+    correct_sale_route's own docstring for why a second accounting engine
+    was not written here.
+
+    Hard rules enforced independently of the UI (a hand-built POST must fail
+    the same way a rendered page does):
+      - admin only (decorator)
+      - Purchase must be status == STATUS_POSTED and is_reversed == False
+      - no existing PurchaseReturn against this Purchase (purchase_return.
+        purchase_item_id has no ON DELETE / ORM cascade -- deleting/
+        recreating PurchaseItems under a return would orphan it; see
+        PurchaseReturn.purchase_item_id)
+      - active SupplierPayments require confirm_correction=1 before anything
+        is written; the payments themselves are never touched
+      - date and location_id are never changed here (out of scope this phase)
+      - invoice_no is preserved as-is; allocate_document_number() is never
+        called -- and PurchaseOrder.converted_purchase_id keeps pointing at
+        this same Purchase.id throughout, since the row is never deleted or
+        recreated, only its line items and mutable header fields change
+    """
+    from app import (
+        record_audit, purchase_total as app_purchase_total,
+        validate_line_rows, get_purchase_paid, get_payment_status,
+        remove_supplier_ledger_entry, recalculate_supplier_ledger,
+    )
+    from salpurflask.models import stock_at_location, get_or_create_default_location
+
+    pur = (Purchase.query.filter_by(id=id).with_for_update().first()) or abort(404)
+    # stock_at_location() does not resolve location_id=None to the default
+    # location itself (unlike item_add_stock/item_remove_stock) -- it
+    # compares the raw id against the default location's own id. Resolve
+    # once here so the stock-availability check below agrees with what
+    # item_remove_stock/item_add_stock actually do. See correct_sale_route's
+    # identical note.
+    stock_check_location_id = pur.location_id if pur.location_id is not None \
+        else get_or_create_default_location().id
+
+    if pur.status != STATUS_POSTED:
+        flash(f"Purchase #{pur.id} is not Posted — nothing to correct.", "warning")
+        return redirect(url_for("purchase"))
+    if pur.is_reversed:
+        flash(f"Purchase #{pur.id} has been reversed and cannot be corrected.", "warning")
+        return redirect(url_for("purchase"))
+    existing_returns = PurchaseReturn.query.filter_by(purchase_id=pur.id).count()
+    if existing_returns:
+        flash(f"Purchase #{pur.id} has {existing_returns} Purchase Return(s) recorded "
+              "against it and cannot be corrected — reverse the returns first, or reverse "
+              "the whole Purchase instead.", "danger")
+        return redirect(url_for("purchase"))
+
+    old_total = app_purchase_total(pur)
+    active_payments = [p for p in pur.supplier_payments if not p.is_reversed]
+    paid = get_purchase_paid(pur.id)
+
+    if request.method == "POST":
+        supplier_id = request.form.get("supplier_id", "").strip()
+        notes       = request.form.get("notes", "").strip()
+        reason      = request.form.get("reason", "").strip()
+        item_ids    = request.form.getlist("item_id[]")
+        quantities  = request.form.getlist("quantity[]")
+        prices      = request.form.getlist("purchase_price[]")
+        disc_types  = request.form.getlist("discount_type[]")
+        disc_values = request.form.getlist("discount_value[]")
+        tax_pcts    = request.form.getlist("tax_percent[]")
+        unit_ids    = request.form.getlist("unit_id[]")
+        confirmed   = request.form.get("confirm_correction") == "1"
+
+        rows = []
+        for i, (iid, qty, price) in enumerate(zip(item_ids, quantities, prices)):
+            if iid.strip() and qty.strip() and price.strip():
+                rows.append((
+                    iid.strip(), qty.strip(), price.strip(),
+                    disc_types[i] if i < len(disc_types) else "percent",
+                    disc_values[i] if i < len(disc_values) else "0",
+                    tax_pcts[i] if i < len(tax_pcts) else "0",
+                    unit_ids[i] if i < len(unit_ids) else "",
+                ))
+
+        row_error = validate_line_rows(rows) if rows else None
+        new_supplier_id = int(supplier_id) if supplier_id else pur.supplier_id
+        supplier_changing = new_supplier_id != pur.supplier_id
+
+        if not supplier_id:
+            flash("Supplier is required!", "danger")
+            return redirect(url_for("correct_purchase_route", id=pur.id))
+        if not rows:
+            flash("At least one item is required!", "danger")
+            return redirect(url_for("correct_purchase_route", id=pur.id))
+        if row_error:
+            flash(row_error, "danger")
+            return redirect(url_for("correct_purchase_route", id=pur.id))
+        if not reason:
+            flash("A reason for this correction is required.", "danger")
+            return redirect(url_for("correct_purchase_route", id=pur.id))
+        if supplier_changing and active_payments:
+            flash("This Purchase has active payment(s) recorded against the current "
+                  "supplier. The supplier cannot be changed while those payments exist — "
+                  "doing so would leave a payment attached to the wrong supplier's ledger. "
+                  "Reconcile or reassign the payments first, or leave the supplier "
+                  "unchanged.", "danger")
+            return redirect(url_for("correct_purchase_route", id=pur.id))
+        if active_payments and not confirmed:
+            flash(
+                f"This Purchase has {len(active_payments)} active payment(s) totalling "
+                f"{paid:,.2f}. Correcting it will not touch those payments — they stay "
+                "exactly as recorded. If the corrected total ends up lower than the amount "
+                "already paid, the difference becomes a supplier credit; it is not "
+                "refunded or reversed automatically. Confirm to continue.", "warning")
+            return redirect(url_for("correct_purchase_route", id=pur.id))
+
+        try:
+            # A Purchase's OLD lines *added* stock, so undoing them (step 1 below,
+            # via _unwind_stock_and_subledger -> item_remove_stock) can only fail
+            # if some of that received stock has since moved on -- sold,
+            # transferred, or returned elsewhere. Check that up front against a
+            # plain read for a clean error message; item_remove_stock()'s own
+            # guard (reached inside _unwind_stock_and_subledger) is the real,
+            # race-safe enforcement either way.
+            stock_errors = []
+            for pi in pur.line_items:
+                available = stock_at_location(pi.item_id, stock_check_location_id)
+                if available < line_base_qty(pi):
+                    item_obj = db.session.get(Item, pi.item_id)
+                    stock_errors.append(
+                        f"{item_obj.name if item_obj else pi.item_id}: only {available} "
+                        f"available at this warehouse now, but this Purchase originally "
+                        f"received {line_base_qty(pi)} — some has already moved on "
+                        "(sold, transferred, or returned) and cannot be undone here.")
+            if stock_errors:
+                flash("Cannot correct — insufficient stock to undo the original receipt: "
+                      + "; ".join(stock_errors), "danger")
+                return redirect(url_for("correct_purchase_route", id=pur.id))
+
+            # Step 1: undo the old Purchase's GL effect -- same primitives
+            # reverse_document() uses, minus the terminal is_reversed flag.
+            entry = posted_entry("purchase", pur.id)
+            if entry is None:
+                raise PostingError(
+                    f"Purchase #{pur.id} has no live journal entry, so it cannot be corrected.")
+            reverse_entry(entry, created_by_id=current_user.id if current_user.is_authenticated else None)
+            _unwind_stock_and_subledger("purchase", pur)
+            db.session.flush()
+
+            # Step 2: apply corrected header + line values. Same delete-and-recreate
+            # pattern edit_purchase() already uses for a Posted purchase -- safe
+            # here only because the PurchaseReturn check above guarantees no
+            # purchase_item_id points at the rows being deleted.
+            old_supplier_id = pur.supplier_id
+            PurchaseItem.query.filter_by(purchase_id=pur.id).delete()
+            first_iid, first_qty, first_price, first_d_type, first_d_val, first_tax = \
+                rows[0][0], rows[0][1], rows[0][2], rows[0][3], rows[0][4], rows[0][5]
+            first_gross = int(first_qty) * float(first_price)
+            first_disc_amt, first_tax_amt, _ = calc_discount_tax(
+                first_gross, first_d_type or "percent", float(first_d_val or 0), float(first_tax or 0))
+            pur.supplier_id = new_supplier_id
+            pur.item_id = int(first_iid); pur.quantity = int(first_qty)
+            pur.purchase_price = float(first_price)
+            pur.discount_type = first_d_type or "percent"
+            pur.discount_value = float(first_d_val or 0)
+            pur.discount_amount = first_disc_amt
+            pur.tax_percent = float(first_tax or 0)
+            pur.tax_amount = first_tax_amt
+            pur.notes = notes or None
+            # date and location_id are intentionally left untouched -- out of
+            # scope for this phase (see module docstring above).
+
+            touched_items = {}
+            for iid, qty, price, d_type, d_val, tax, unit_key in rows:
+                item_obj = get_item_locked(int(iid)) or abort(404)
+                qty_i = int(qty); price_f = float(price)
+                d_val_f = float(d_val or 0); tax_f = float(tax or 0)
+                gross = qty_i * price_f
+                disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
+                unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
+                pi = PurchaseItem(
+                    purchase_id=pur.id, item_id=int(iid),
+                    quantity=qty_i, purchase_price=price_f,
+                    discount_type=d_type or "percent", discount_value=d_val_f,
+                    discount_amount=disc_amt, tax_percent=tax_f,
+                    tax_amount=tax_amt, amount=net,
+                    unit_name=unit_name, unit_factor=unit_factor,
+                )
+                db.session.add(pi)
+                item_add_stock(item_obj, qty_i * unit_factor, net - tax_amt,
+                               location_id=pur.location_id,
+                               movement_type="purchase", source_type="purchase", source_id=pur.id)
+                touched_items[item_obj.id] = item_obj
+
+            negative_items = [it for it in touched_items.values() if it.stock < 0]
+            if negative_items:
+                names = ", ".join(f"{it.name} ({it.stock})" for it in negative_items)
+                raise PostingError(f"Cannot correct — this change would make stock "
+                                   f"negative for: {names}")
+
+            db.session.flush()
+            db.session.refresh(pur)
+
+            # Step 3: rebuild the supplier ledger effect and re-post the GL.
+            # invoice_no is untouched -- allocate_document_number() is never
+            # called here, by design (see module docstring).
+            if supplier_changing:
+                remove_supplier_ledger_entry("purchase", pur.id)
+                recalculate_supplier_ledger(old_supplier_id)
+            sync_supplier_purchase(pur)
+            post_document("purchase", pur)
+
+            new_total = app_purchase_total(pur)
+            db.session.commit()
+        except PostingError as e:
+            db.session.rollback()
+            flash(str(e), "danger")
+            return redirect(url_for("correct_purchase_route", id=id))
+        except Exception:
+            db.session.rollback()
+            raise
+
+        record_audit(
+            "correction", "Purchase", pur.id,
+            f"Purchase {pur.invoice_no} corrected by admin: total {old_total:,.2f} -> "
+            f"{new_total:,.2f}, supplier {old_supplier_id}->{pur.supplier_id}, "
+            f"{len(rows)} line(s). Reason: {reason[:150]}")
+        flash(f"Purchase {pur.invoice_no} corrected successfully. "
+              f"Total: {old_total:,.2f} → {new_total:,.2f}.", "success")
+        return redirect(url_for("purchase"))
+
+    return render_template(
+        "correct_purchase.html", purchase=pur,
+        old_total=old_total, paid=paid, active_payments=active_payments,
+    )
 
 
 @manager_required

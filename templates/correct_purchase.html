@@ -1,0 +1,282 @@
+<!--correct_purchase.html-->
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header">
+  <div class="page-header-title">
+    <h1><i class="bi bi-shield-exclamation"></i> Correct Posted Purchase {{ purchase.invoice_no or ('#' ~ purchase.id) }}</h1>
+    <p>Admin-only correction of a Posted Purchase — original invoice number is preserved</p>
+  </div>
+</div>
+
+<div class="alert alert-warning">
+  <strong><i class="bi bi-exclamation-triangle"></i> This is a Posted correction, not an edit.</strong>
+  Saving will reverse the Purchase's existing accounting/stock effect and re-post the corrected
+  values as a new effect. The invoice number ({{ purchase.invoice_no or ('#' ~ purchase.id) }}) and
+  the original purchase date ({{ purchase.date.strftime('%Y-%m-%d') }}) never change. This action
+  is recorded in the audit log.
+</div>
+
+{% if active_payments %}
+<div class="alert alert-danger">
+  <strong><i class="bi bi-cash-coin"></i> This Purchase has {{ active_payments | length }} active payment(s)
+  totalling {{ paid | fmt_num }}.</strong>
+  Existing supplier payments will remain unchanged. If the corrected Purchase total is lower
+  than the amount already paid, the difference will remain as supplier credit. Because active
+  payments exist, <strong>the supplier cannot be changed</strong> on this correction.
+</div>
+{% endif %}
+
+<div class="card mb-6">
+  <div class="card-header bg-warning-subtle">
+    <h5 class="mb-0">Original Purchase — current values before correction</h5>
+  </div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-3"><strong>Invoice #</strong><br>{{ purchase.invoice_no or purchase.id }}</div>
+      <div class="col-md-3"><strong>Original Date</strong><br>{{ purchase.date.strftime('%Y-%m-%d') }} (unchanged)</div>
+      <div class="col-md-3"><strong>Current Total</strong><br>{{ old_total | fmt_num }}</div>
+      <div class="col-md-3"><strong>Paid</strong><br>{{ paid | fmt_num }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-6">
+  <div class="card-header bg-warning-subtle">
+    <h5 class="mb-0">Corrected Purchase Details</h5>
+  </div>
+  <div class="card-body">
+  <form method="POST">
+    <div class="row g-3 mb-3">
+        <div class="col-md-4">
+            <label class="form-label fw-semibold">Supplier <span class="text-danger">*</span></label>
+            <input type="hidden" id="supplier_id" name="supplier_id" required value="{{ purchase.supplier_id }}">
+            <button type="button" class="btn btn-outline-secondary w-100 text-start"
+                    onclick="{% if active_payments %}alert('Supplier cannot be changed while active payments exist on this Purchase.');{% else %}openSupplierLookup(){% endif %}"
+                    {% if active_payments %}disabled title="Locked — active payments exist"{% endif %}>
+                <i class="bi bi-search"></i> <span id="supplier_id_label">{{ purchase.supplier.name if purchase.supplier else 'Select Supplier' }}</span>
+            </button>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label fw-semibold">Date</label>
+            <input type="text" class="form-control" value="{{ purchase.date.strftime('%Y-%m-%d') }}" disabled>
+            <small class="text-muted">Date cannot be changed on a correction.</small>
+        </div>
+        <div class="col-md-5">
+            <label class="form-label fw-semibold">Notes</label>
+            <input type="text" class="form-control" name="notes" value="{{ purchase.notes or '' }}" placeholder="Optional notes">
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label fw-semibold">Reason for correction <span class="text-danger">*</span></label>
+        <input type="text" class="form-control" name="reason" required maxlength="200"
+               placeholder="e.g. wrong quantity entered at time of receiving">
+    </div>
+
+    <div class="table-wrapper mb-4">
+    <table class="table table-striped table-hover align-middle" id="itemsTable">
+      <thead>
+            <tr>
+                <th style="min-width:200px">Item *</th>
+                <th style="min-width:100px">Unit</th>
+                <th style="min-width:100px">Qty *</th>
+                <th style="min-width:120px">Price / Unit *</th>
+                <th style="min-width:120px">Discount</th>
+                <th style="min-width:90px">Tax (%)</th>
+                <th style="min-width:110px" class="text-end">Net Amount</th>
+                <th style="width:40px"></th>
+            </tr>
+        </thead>
+        <tbody id="itemsBody">
+            {% for pi in purchase.line_items %}
+            {% set gross = pi.quantity * pi.purchase_price %}
+            {% set net = gross - (pi.discount_amount or 0) + (pi.tax_amount or 0) %}
+            <tr class="item-row">
+                <td>
+                    <input type="hidden" class="item-select" name="item_id[]" required value="{{ pi.item_id }}">
+                    <button type="button" class="btn btn-outline-secondary btn-sm w-100 text-start item-picker-btn" onclick="openRowItemLookup(this)">
+                        <i class="bi bi-search"></i> <span class="item-picker-label">{{ pi.item.name if pi.item else 'Select Item…' }}</span>
+                    </button>
+                </td>
+                <td><select class="form-select form-select-sm unit-select" name="unit_id[]" onchange="onUnitChange(this)" data-existing-unit="{{ pi.unit_name or '' }}"></select></td>
+                <td><input type="number" class="form-control form-control-sm qty-input" name="quantity[]" min="1" value="{{ pi.quantity }}" oninput="calcRow(this)" required></td>
+                <td><input type="number" step="0.01" class="form-control form-control-sm price-input" name="purchase_price[]" min="0" value="{{ pi.purchase_price }}" oninput="calcRow(this)"></td>
+                <td>
+                    <div class="input-group input-group-sm">
+                        <select class="form-select form-select-sm disc-type" name="discount_type[]" onchange="calcRow(this)">
+                            <option value="percent" {% if (pi.discount_type or 'percent') == 'percent' %}selected{% endif %}>%</option>
+                            <option value="fixed" {% if pi.discount_type == 'fixed' %}selected{% endif %}>Fixed</option>
+                        </select>
+                        <input type="number" step="0.01" class="form-control form-control-sm disc-val" name="discount_value[]" value="{{ pi.discount_value or 0 }}" min="0" oninput="calcRow(this)">
+                    </div>
+                </td>
+                <td><input type="number" step="0.01" class="form-control form-control-sm tax-input" name="tax_percent[]" value="{{ pi.tax_percent or 0 }}" min="0" oninput="calcRow(this)"></td>
+                <td class="text-end fw-semibold row-total text-success">{{ net | fmt_num }}</td>
+                <td class="text-center"><button type="button" class="btn btn-danger btn-sm" onclick="removeRow(this)">×</button></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="6" class="text-end fw-bold">Grand Total:</td>
+          <td class="text-end fw-bold text-primary fs-5" id="grandTotal">0.00</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+    </div>
+
+    {% if active_payments %}
+    <div class="form-check mb-3">
+        <input class="form-check-input" type="checkbox" id="confirmCorrection" name="confirm_correction" value="1" required>
+        <label class="form-check-label" for="confirmCorrection">
+            I understand this Purchase has active payment(s), they will remain unchanged, and any
+            resulting shortfall becomes a supplier credit — not a refund.
+        </label>
+    </div>
+    {% endif %}
+
+    <div class="d-flex gap-2">
+      <button type="button" class="btn btn-secondary" onclick="addRow()"><i class="bi bi-plus-circle"></i> Add Item</button>
+      <button type="submit" class="btn btn-warning"
+              onclick="return confirm('Apply this correction? The Purchase\'s existing accounting effect will be reversed and re-posted with the corrected values. This cannot be undone from here.')">
+        <i class="bi bi-shield-check"></i> Apply Correction
+      </button>
+      <a href="{{ url_for('purchase') }}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+  </form>
+  </div>
+</div>
+
+<script>
+const DEFAULT_TAX_RATE = 0;
+
+function openSupplierLookup() {
+    PartyLookup.open({
+        type: "supplier",
+        onSelect: function (party) {
+            document.getElementById('supplier_id').value = party.id;
+            document.getElementById('supplier_id_label').textContent = party.name;
+        }
+    });
+}
+
+function openRowItemLookup(btn) {
+    const row = btn.closest('tr');
+    ItemLookup.open({
+        onSelect: function (item) { applyItemToRow(row, item); }
+    });
+}
+
+function applyItemToRow(row, item) {
+    row.querySelector('.item-select').value = item.id;
+    row.querySelector('.item-picker-label').textContent = item.name;
+    row.querySelector('.item-picker-label').classList.remove('text-muted');
+    fetchUnitsAndPopulate(row, item.id);
+}
+
+function fetchUnitsAndPopulate(row, itemId, keepUnitName) {
+    return fetch("/api/items/" + encodeURIComponent(itemId) + "/units")
+        .then(r => r.json())
+        .then(data => populateUnits(row, data.units || [], keepUnitName))
+        .catch(() => populateUnits(row, [{ key: "", name: "Pcs", factor: 1, purchase_price: null }], keepUnitName));
+}
+
+function populateUnits(row, units, keepUnitName) {
+    const unitSel = row.querySelector('.unit-select');
+    unitSel.innerHTML = '';
+    units.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.key;
+        opt.dataset.factor = u.factor;
+        if (u.purchase_price !== null && u.purchase_price !== undefined) opt.dataset.price = u.purchase_price;
+        opt.textContent = u.name;
+        unitSel.appendChild(opt);
+    });
+    if (keepUnitName) {
+        const match = [...unitSel.options].find(o => o.textContent === keepUnitName);
+        if (match) { unitSel.value = match.value; return; }
+    }
+    onUnitChange(unitSel);
+}
+
+function prefillUnit(row, itemId) {
+    const unitSel = row.querySelector('.unit-select');
+    const existing = unitSel.dataset.existingUnit || '';
+    return fetchUnitsAndPopulate(row, itemId, existing);
+}
+
+function onUnitChange(sel) {
+    const opt = sel.options[sel.selectedIndex];
+    const row = sel.closest('tr');
+    const priceInput = row.querySelector('.price-input');
+    if (opt && opt.dataset.price) priceInput.value = opt.dataset.price;
+    calcRow(sel);
+}
+
+function calcRow(el) {
+    const row = el.closest('tr');
+    const qty   = parseFloat(row.querySelector('.qty-input').value) || 0;
+    const price = parseFloat(row.querySelector('.price-input').value) || 0;
+    const dType = row.querySelector('.disc-type').value;
+    const dVal  = parseFloat(row.querySelector('.disc-val').value) || 0;
+    const tax   = parseFloat(row.querySelector('.tax-input').value) || 0;
+    const gross = qty * price;
+    const disc  = dType === 'percent' ? gross * dVal / 100 : Math.min(dVal, gross);
+    const taxAmt = (gross - disc) * tax / 100;
+    const net = gross - disc + taxAmt;
+    row.querySelector('.row-total').textContent = net > 0 ? net.toFixed(2) : '—';
+    calcGrand();
+}
+
+function calcGrand() {
+    let total = 0;
+    document.querySelectorAll('.row-total').forEach(td => {
+        const v = parseFloat(td.textContent.replace(/,/g, ''));
+        if (!isNaN(v)) total += v;
+    });
+    document.getElementById('grandTotal').textContent = total.toFixed(2);
+}
+
+function addRow() {
+    const tbody = document.getElementById('itemsBody');
+    const newRow = document.createElement('tr');
+    newRow.className = 'item-row';
+    newRow.innerHTML = `
+        <td>
+            <input type="hidden" class="item-select" name="item_id[]" required>
+            <button type="button" class="btn btn-outline-secondary btn-sm w-100 text-start item-picker-btn" onclick="openRowItemLookup(this)">
+                <i class="bi bi-search"></i> <span class="item-picker-label text-muted">Select Item…</span>
+            </button>
+        </td>
+        <td><select class="form-select form-select-sm unit-select" name="unit_id[]" onchange="onUnitChange(this)"></select></td>
+        <td><input type="number" class="form-control form-control-sm qty-input" name="quantity[]" min="1" placeholder="0" oninput="calcRow(this)" required></td>
+        <td><input type="number" step="0.01" class="form-control form-control-sm price-input" name="purchase_price[]" min="0" placeholder="0.00" oninput="calcRow(this)"></td>
+        <td><div class="input-group input-group-sm">
+            <select class="form-select form-select-sm disc-type" name="discount_type[]" onchange="calcRow(this)">
+                <option value="percent">%</option><option value="fixed">Fixed</option>
+            </select>
+            <input type="number" step="0.01" class="form-control form-control-sm disc-val" name="discount_value[]" value="0" min="0" oninput="calcRow(this)">
+        </div></td>
+        <td><input type="number" step="0.01" class="form-control form-control-sm tax-input" name="tax_percent[]" value="${DEFAULT_TAX_RATE}" min="0" oninput="calcRow(this)"></td>
+        <td class="text-end fw-semibold row-total text-success">—</td>
+        <td class="text-center"><button type="button" class="btn btn-danger btn-sm" onclick="removeRow(this)">×</button></td>`;
+    tbody.appendChild(newRow);
+}
+
+function removeRow(btn) {
+    const rows = document.querySelectorAll('#itemsBody .item-row');
+    if (rows.length === 1) { alert('At least one item row is required.'); return; }
+    btn.closest('tr').remove();
+    calcGrand();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+        const itemSel = row.querySelector('.item-select');
+        if (itemSel.value) prefillUnit(row, itemSel.value);
+    });
+    calcGrand();
+});
+</script>
+{% endblock %}

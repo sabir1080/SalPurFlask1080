@@ -325,7 +325,7 @@ from salpurflask.inventory.reconciliation_routes import (
 
 # Register purchase routes directly (not via blueprint, to preserve endpoint names)
 from salpurflask.purchase.routes import (
-    purchase, edit_purchase, delete_purchase, post_purchase_route,
+    purchase, edit_purchase, delete_purchase, post_purchase_route, correct_purchase_route,
     purchase_return, delete_purchase_return, purchase_invoice, api_purchase_return_lookup,
     purchase_orders, purchase_order_detail, update_po_status, convert_po_to_purchase, delete_purchase_order,
     export_purchase_report, export_purchase_return_report, export_supplier_purchase_report
@@ -411,6 +411,7 @@ app.add_url_rule("/purchase", "purchase", purchase, methods=["GET", "POST"])
 app.add_url_rule("/purchase/edit/<int:id>", "edit_purchase", edit_purchase, methods=["GET", "POST"])
 app.add_url_rule("/purchase/delete/<int:id>", "delete_purchase", delete_purchase, methods=["POST"])
 app.add_url_rule("/purchase/<int:id>/post", "post_purchase_route", post_purchase_route, methods=["POST"])
+app.add_url_rule("/purchase/correct/<int:id>", "correct_purchase_route", correct_purchase_route, methods=["GET", "POST"])
 app.add_url_rule("/purchase_return", "purchase_return", purchase_return, methods=["GET", "POST"])
 app.add_url_rule("/purchase_return/delete/<int:id>", "delete_purchase_return", delete_purchase_return, methods=["POST"])
 app.add_url_rule("/api/purchase-returns/lookup", "api_purchase_return_lookup", api_purchase_return_lookup, methods=["GET"])

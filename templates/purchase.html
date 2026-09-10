@@ -214,6 +214,11 @@
               </button>
             </form>
             {% endif %}
+            {% if p.status == 'posted' and not p.is_reversed and current_user.is_admin %}
+            <a href="{{ url_for('correct_purchase_route', id=p.id) }}" class="btn btn-sm btn-outline-warning" title="Correct this Posted Purchase (admin only)">
+              <i class="bi bi-shield-exclamation"></i>
+            </a>
+            {% endif %}
             {% with doc = p, kind = "purchase" %}{% include "_reverse_button.html" %}{% endwith %}
           </td>
         </tr>
