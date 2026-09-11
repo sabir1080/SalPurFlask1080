@@ -58,6 +58,39 @@
   </div>
 </div>
 
+{% if stock_by_location %}
+<!-- Stock by Warehouse -->
+<div class="card mb-6">
+  <div class="card-header">
+    <h5 class="mb-0"><i class="bi bi-geo-alt"></i> Where This Item Is Right Now</h5>
+  </div>
+  <div class="table-wrapper">
+    <table class="table table-striped">
+      <thead>
+        <tr>
+          <th>Warehouse</th>
+          <th class="text-end">Stock ({{ item.unit or 'Pcs' }})</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for loc_name, qty in stock_by_location %}
+        <tr>
+          <td>{{ loc_name }}</td>
+          <td class="text-end fw-semibold">{{ qty | fmt_num }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td class="fw-bold">Total</td>
+          <td class="text-end fw-bold text-primary">{{ stock_by_location | sum(attribute=1) | fmt_num }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+{% endif %}
+
 <!-- Date Filter -->
 <div class="card mb-6 no-print">
   <div class="card-body">

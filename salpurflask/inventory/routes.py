@@ -45,9 +45,29 @@ def _sale_line_value(si):
 @verified_required
 def item_ledger(id):
     """Display item ledger with stock movements."""
+    from salpurflask.models import Location, ItemStock
+    from salpurflask.services.location_permissions import accessible_location_ids
+
     item = db.session.get(Item, id) or abort(404)
     start_date_str = request.args.get("start_date", "")
     end_date_str   = request.args.get("end_date", "")
+
+    # Where this item actually sits right now, one row per warehouse — the
+    # single place that answers "where is X currently" without making
+    # someone flip through the Stock Valuation report one location at a
+    # time. Scoped to accessible locations, same as report_stock()/
+    # stock_movements(); only non-zero rows are shown, and only among
+    # active warehouses (a deactivated one still holding stock would be
+    # confusing to list here as if it were sellable from).
+    accessible_ids = accessible_location_ids()
+    stock_by_location_query = (
+        db.session.query(Location.name, ItemStock.quantity)
+        .join(ItemStock, ItemStock.location_id == Location.id)
+        .filter(ItemStock.item_id == id, Location.active.is_(True), ItemStock.quantity != 0)
+    )
+    if accessible_ids is not None:
+        stock_by_location_query = stock_by_location_query.filter(Location.id.in_(accessible_ids))
+    stock_by_location = stock_by_location_query.order_by(Location.name).all()
 
     # A reversed document never happened, so it must not still count here — its
     # stock effect was already undone, but its row still exists for the audit trail.
@@ -152,6 +172,7 @@ def item_ledger(id):
         total_out=total_out,
         opening_stock=opening,
         current_stock=item.stock,
+        stock_by_location=stock_by_location,
         start_date=start_date_str,
         end_date=end_date_str,
     )
