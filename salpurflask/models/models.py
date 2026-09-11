@@ -90,6 +90,12 @@ class Item(db.Model):
     # Default tax % applied to this item when sold — auto-populated in POS/forms, can be overridden.
     default_tax_percent = db.Column(db.Numeric(5, 2), nullable=False, default=0.0)
     is_taxable          = db.Column(db.Boolean, nullable=False, default=True)
+    # Batch/Lot tracking opt-in — Phase A foundation (see the Batch class below).
+    # False for every existing item by default: the whole batch subsystem stays
+    # completely inert for an item where this is False, exactly like a
+    # single-warehouse business seeing no change when Location/ItemStock were
+    # introduced. Not yet settable from any route in Phase A.
+    batch_tracked       = db.Column(db.Boolean, nullable=False, default=False)
     purchases           = db.relationship("Purchase", backref="id_item", lazy=True)
     sales               = db.relationship("Sale", backref="id_item", lazy=True)
     business_category   = db.relationship("BusinessCategory", backref="items", lazy=True, foreign_keys=[business_category_id])
@@ -367,6 +373,295 @@ class SaleItem(db.Model):
     def base_quantity(self):
         """See PurchaseItem.base_quantity."""
         return self.quantity * (self.unit_factor or 1)
+
+
+# ── Batch/Lot tracking — Phase A (foundation only) ──────────────────────────
+# Additive, the same convention as ItemStock/StockMovement (inventory_location.py):
+# nothing here alters Item.stock, ItemStock, StockMovement's existing role, or any
+# existing route's behavior for an item that isn't opted in. Item.batch_tracked
+# (added near the bottom of the Item class) is the single switch; everything below
+# is inert for an item where it is False.
+#
+# Batch is company-wide, like Item itself. BatchStock is the per-location layer on
+# top of it, the same split ItemStock already makes for Item.stock — see
+# inventory_location.py's own docstring for the identical reasoning.
+#
+# Phase A ships the schema and the two building blocks every later phase needs
+# (get_or_create_batch/get_or_create_unknown_batch, item_add_stock_batched/
+# item_remove_stock_batched) but wires them into no route yet. Purchase posting,
+# POS/FEFO, returns, transfers, stock adjustment, correction/reversal and reports
+# are later phases.
+
+class Batch(db.Model):
+    """One lot of one item — its identity (batch number, expiry) and the cost it
+    was received at. Quantity lives on BatchStock, not here, the same way Item
+    itself carries no per-location quantity beyond the company-wide Item.stock.
+
+    batch_no is nullable: NULL is not "no batch," it is THE single per-item
+    Unknown Batch — see get_or_create_unknown_batch(). There is deliberately no
+    database uniqueness constraint on (item_id, batch_no); see get_or_create_batch()
+    for why (this project's own established pattern for exactly this shape of
+    problem — allocate_document_number()'s locked-counter-row approach — is a
+    locked lookup-then-create, not a DB constraint, because a UNIQUE index here
+    would be blocking DDL on PostgreSQL)."""
+    __tablename__ = "batch"
+    __table_args__ = (
+        db.Index("ix_batch_item_expiry", "item_id", "expiry_date"),
+    )
+
+    id              = db.Column(db.Integer, primary_key=True)
+    item_id         = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
+    batch_no        = db.Column(db.String(60), nullable=True)
+    expiry_date     = db.Column(db.Date, nullable=True)
+    unit_cost       = db.Column(db.Numeric(14, 4), nullable=False)
+    received_date   = db.Column(db.Date, nullable=False, default=lambda: now_local().date())
+    source_type     = db.Column(db.String(30), nullable=True)
+    source_id       = db.Column(db.Integer, nullable=True)
+    created_by_id   = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    # Set once any transactional batch history exists against this batch (a
+    # PurchaseItemBatch/SaleItemBatch row, or a non-opening StockMovement).
+    # Phase A only defines the column; nothing sets or checks it yet — that is
+    # the batch-disable-guard work of a later phase.
+    is_locked       = db.Column(db.Boolean, nullable=False, default=False)
+
+    item            = db.relationship("Item", foreign_keys=[item_id])
+    created_by      = db.relationship("User", foreign_keys=[created_by_id])
+
+    def __repr__(self):
+        return f"<Batch item={self.item_id} batch_no={self.batch_no!r} expiry={self.expiry_date}>"
+
+
+class PurchaseItemBatch(db.Model):
+    """Which batch(es) a Posted PurchaseItem line's quantity was received into,
+    and how much went to each. Junction, not a single FK on PurchaseItem, because
+    one purchase line can receive into more than one batch (rare but must be
+    representable) and — more commonly on the sale side this mirrors — a line's
+    quantity can need splitting. Never written for a Draft; only at Post time."""
+    __tablename__ = "purchase_item_batch"
+    __table_args__ = (
+        db.Index("ix_purchase_item_batch_purchase_item", "purchase_item_id"),
+        db.Index("ix_purchase_item_batch_batch", "batch_id"),
+    )
+
+    id                = db.Column(db.Integer, primary_key=True)
+    purchase_item_id  = db.Column(db.Integer, db.ForeignKey("purchase_item.id"), nullable=False)
+    batch_id          = db.Column(db.Integer, db.ForeignKey("batch.id"), nullable=False)
+    quantity          = db.Column(db.Integer, nullable=False)
+
+    purchase_item     = db.relationship("PurchaseItem", backref=db.backref(
+        "batch_allocations", cascade="all,delete-orphan", lazy=True))
+    batch             = db.relationship("Batch")
+
+    def __repr__(self):
+        return f"<PurchaseItemBatch line={self.purchase_item_id} batch={self.batch_id} qty={self.quantity}>"
+
+
+class SaleItemBatch(db.Model):
+    """Which batch(es) a Posted SaleItem line's quantity was drawn from, and how
+    much from each — the record FEFO auto-split (a later phase) writes one row
+    per batch used to satisfy a line. See PurchaseItemBatch for the same shape
+    on the purchase side."""
+    __tablename__ = "sale_item_batch"
+    __table_args__ = (
+        db.Index("ix_sale_item_batch_sale_item", "sale_item_id"),
+        db.Index("ix_sale_item_batch_batch", "batch_id"),
+    )
+
+    id            = db.Column(db.Integer, primary_key=True)
+    sale_item_id  = db.Column(db.Integer, db.ForeignKey("sale_item.id"), nullable=False)
+    batch_id      = db.Column(db.Integer, db.ForeignKey("batch.id"), nullable=False)
+    quantity      = db.Column(db.Integer, nullable=False)
+
+    sale_item     = db.relationship("SaleItem", backref=db.backref(
+        "batch_allocations", cascade="all,delete-orphan", lazy=True))
+    batch         = db.relationship("Batch")
+
+    def __repr__(self):
+        return f"<SaleItemBatch line={self.sale_item_id} batch={self.batch_id} qty={self.quantity}>"
+
+
+def get_or_create_batch(item_id, batch_no, expiry_date, unit_cost, *,
+                        source_type=None, source_id=None, created_by_id=None):
+    """Locked lookup-then-create.
+
+    Concurrency: a SELECT ... FOR UPDATE on Batch alone does NOT prevent two
+    transactions from both creating the same first batch — a row that does
+    not exist yet has nothing for FOR UPDATE to lock, so two concurrent
+    callers can both see "not found" and both INSERT. Batch deliberately
+    carries no unique constraint on (item_id, batch_no) (a UNIQUE index there
+    would be blocking DDL on PostgreSQL — see migrate_database()'s invoice_no
+    comment for the same reasoning applied to DocumentSequence, which avoids
+    this problem differently: it DOES carry uq_docseq_type_year, the real
+    backstop that makes allocate_document_number()'s otherwise-identical
+    FOR UPDATE pattern safe). So the lock this function actually depends on
+    is the parent Item row, taken first, via the same get_item_locked() every
+    purchase/sale/adjustment route already uses to serialize concurrent stock
+    changes — two concurrent batch-creation attempts for the same item now
+    queue on that lock before either reaches the Batch lookup, closing the
+    window a Batch-only lock could not.
+
+    Must be called inside the same transaction as the stock mutation it is
+    supporting, and never committed on its own — a caller that flushes here and
+    then fails later must have this row roll back with everything else, the same
+    guarantee allocate_document_number()'s own docstring states.
+
+    batch_no=None (or blank) routes to the single per-item Unknown Batch instead
+    — see get_or_create_unknown_batch() (which takes the same Item lock; calling
+    through this function locks the Item row twice in one transaction, which is
+    a no-op the second time, not a deadlock — PostgreSQL row locks are held per
+    transaction, not per statement).
+
+    Same batch number received again: if the existing batch's unit_cost matches
+    the one given here, the existing Batch is returned unchanged (a top-up; its
+    quantity is the caller's job via BatchStock, not this function's). If the
+    cost differs, this refuses rather than silently overwriting or blending —
+    unit_cost is a fixed snapshot at first receipt, the same "cost_price is a
+    snapshot" principle SaleItem.cost_price already follows."""
+    from salpurflask.utils.helpers import get_item_locked
+    item = get_item_locked(item_id)
+    if item is None:
+        raise PostingError(f"Item #{item_id} does not exist.")
+
+    batch_no = (batch_no or "").strip() or None
+    if batch_no is None:
+        return get_or_create_unknown_batch(item_id, created_by_id=created_by_id)
+
+    unit_cost = Decimal(str(unit_cost)).quantize(MONEY)
+
+    batch = (Batch.query
+             .filter_by(item_id=item_id, batch_no=batch_no)
+             .with_for_update()
+             .first())
+    if batch is None:
+        batch = Batch(item_id=item_id, batch_no=batch_no, expiry_date=expiry_date,
+                      unit_cost=unit_cost, source_type=source_type, source_id=source_id,
+                      created_by_id=created_by_id)
+        db.session.add(batch)
+        db.session.flush()
+        return batch
+
+    existing_cost = Decimal(str(batch.unit_cost)).quantize(MONEY)
+    if existing_cost != unit_cost:
+        raise PostingError(
+            f"Batch {batch_no!r} of {batch.item.name if batch.item else 'this item'} "
+            f"already exists at cost {existing_cost}; this receipt specifies {unit_cost}. "
+            f"Use a different batch number, or correct the existing batch's cost first "
+            f"if this was a data-entry error on the original receipt.")
+    return batch
+
+
+def get_or_create_unknown_batch(item_id, *, created_by_id=None):
+    """The one-per-item bucket for stock received with no batch number recorded.
+
+    Concurrency: same fix as get_or_create_batch() (see its docstring for the
+    full reasoning) — the parent Item row is locked first, via get_item_locked(),
+    before the Batch lookup. A Batch-only FOR UPDATE could not prevent two
+    concurrent first-time callers from each creating their own "Unknown Batch"
+    for the same item, since there is nothing to lock until a row exists;
+    locking Item first makes the second caller wait, see the first caller's
+    now-committed-within-the-transaction row via the same SELECT, and reuse it.
+    Idempotent — calling this any number of times (sequentially, or serialized
+    through the Item lock) for the same item returns the same row.
+
+    Safe to call directly (not only via get_or_create_batch()) — it takes its
+    own Item lock rather than assuming the caller already holds one."""
+    from salpurflask.utils.helpers import get_item_locked
+    item = get_item_locked(item_id)
+    if item is None:
+        raise PostingError(f"Item #{item_id} does not exist.")
+
+    batch = (Batch.query
+             .filter_by(item_id=item_id, batch_no=None)
+             .with_for_update()
+             .first())
+    if batch is None:
+        batch = Batch(item_id=item_id, batch_no=None, expiry_date=None,
+                      unit_cost=Decimal("0"), source_type="unknown",
+                      created_by_id=created_by_id)
+        db.session.add(batch)
+        db.session.flush()
+    return batch
+
+
+def _resolve_batch_location(location_id):
+    """location_id=None must resolve to the SAME default location
+    item_add_stock()/item_remove_stock() themselves resolve to (via
+    _item_stock_row(), defined further down in this module), so BatchStock and
+    ItemStock are never keyed to two different location rows for what is meant
+    to be the same warehouse."""
+    if location_id is not None:
+        return location_id
+    from salpurflask.models.inventory_location import get_or_create_default_location
+    return get_or_create_default_location().id
+
+
+def _get_or_create_batch_stock(batch_id, location_id):
+    """The BatchStock row this mutation writes to, locked — the batch-level
+    sibling of _item_stock_row()."""
+    from salpurflask.models.inventory_location import BatchStock
+    row = (BatchStock.query
+           .filter_by(batch_id=batch_id, location_id=location_id)
+           .with_for_update()
+           .first())
+    if row is None:
+        row = BatchStock(batch_id=batch_id, location_id=location_id, quantity=0)
+        db.session.add(row)
+        db.session.flush()
+    return row
+
+
+def item_add_stock_batched(item, qty, cost_total, location_id, batch, *,
+                           movement_type=None, source_type=None, source_id=None):
+    """Batch-aware goods-in. Calls the existing, unmodified item_add_stock() for
+    the Item.stock/ItemStock/StockMovement effect — that function is not
+    behaviorally changed by this wrapper existing — then layers the BatchStock
+    effect on top, in the same transaction, and tags the StockMovement row
+    item_add_stock() already wrote with this batch (no second movement row is
+    created; record_stock_movement() is still called exactly once, from inside
+    item_add_stock() itself, same as always).
+
+    `batch` must already be resolved (get_or_create_batch/get_or_create_unknown_batch)
+    by the caller, inside the same transaction."""
+    movement_out = []
+    item_add_stock(item, qty, cost_total, location_id=location_id,
+                   movement_type=movement_type, source_type=source_type,
+                   source_id=source_id, _movement_out=movement_out)
+    if movement_out:
+        movement_out[0].batch_id = batch.id
+
+    resolved_location_id = _resolve_batch_location(location_id)
+    bstock = _get_or_create_batch_stock(batch.id, resolved_location_id)
+    bstock.quantity += qty
+    return movement_out[0] if movement_out else None
+
+
+def item_remove_stock_batched(item, qty, location_id, batch, *, cost_total=None,
+                              movement_type=None, source_type=None, source_id=None):
+    """Batch-aware goods-out. Calls the existing, unmodified item_remove_stock()
+    for the Item.stock/ItemStock/StockMovement/PostingError-guard effect — its
+    public return value (the Decimal cost removed) is untouched and still
+    returned here unchanged, so nothing about this wrapper can surprise a caller
+    reading item_remove_stock()'s own contract. Then decrements BatchStock for
+    the given batch, raising if that specific batch does not have enough at this
+    location (a location-scoped ItemStock total being sufficient does not mean
+    this one batch is)."""
+    resolved_location_id = _resolve_batch_location(location_id)
+    bstock = _get_or_create_batch_stock(batch.id, resolved_location_id)
+    if (bstock.quantity or 0) < qty:
+        raise PostingError(
+            f"Batch {batch.batch_no or '(unknown)'} of {item.name} has only "
+            f"{bstock.quantity or 0} available at this location, but {qty} requested.")
+
+    movement_out = []
+    cost = item_remove_stock(item, qty, cost_total=cost_total, location_id=location_id,
+                             movement_type=movement_type, source_type=source_type,
+                             source_id=source_id, _movement_out=movement_out)
+    if movement_out:
+        movement_out[0].batch_id = batch.id
+
+    bstock.quantity -= qty
+    return cost
+
 
 class PosHold(db.Model):
     __tablename__ = "pos_hold"
@@ -1795,7 +2090,7 @@ def _item_stock_row(item, location_id):
     return row
 
 def item_add_stock(item, qty, cost_total, location_id=None, *,
-                   movement_type=None, source_type=None, source_id=None):
+                   movement_type=None, source_type=None, source_id=None, _movement_out=None):
     """Goods in, at a known total cost. Writes Item.stock (the company-wide
     total) and the location's ItemStock.quantity together, in the caller's
     existing transaction — one commit or rollback covers both, so the two
@@ -1806,7 +2101,15 @@ def item_add_stock(item, qty, cost_total, location_id=None, *,
     inventory_location.py's record_stock_movement); omitting them changes
     nothing about the stock mutation itself, so no existing caller that
     predates the movement ledger needs to change to keep working. New and
-    updated callers pass them so the ledger stays complete."""
+    updated callers pass them so the ledger stays complete.
+
+    _movement_out is a private hook for item_add_stock_batched() (see
+    models.py's Batch section): pass a single-element list and, if a
+    StockMovement row was written, this function appends it there. This
+    function's return value stays None either way -- every existing caller
+    ignores it today (confirmed by a repo-wide grep before this was added),
+    so nothing about the public contract changes. Not part of the public
+    API; do not pass this from ordinary call sites."""
     row = _item_stock_row(item, location_id)
     item.stock += qty
     row.quantity += qty
@@ -1814,12 +2117,14 @@ def item_add_stock(item, qty, cost_total, location_id=None, *,
 
     if movement_type is not None:
         from salpurflask.models.inventory_location import record_stock_movement
-        record_stock_movement(item.id, row.location_id, "in", qty, movement_type,
-                              source_type=source_type, source_id=source_id,
-                              created_by_id=current_user_id())
+        movement = record_stock_movement(item.id, row.location_id, "in", qty, movement_type,
+                                         source_type=source_type, source_id=source_id,
+                                         created_by_id=current_user_id())
+        if _movement_out is not None and movement is not None:
+            _movement_out.append(movement)
 
 def item_remove_stock(item, qty, cost_total=None, location_id=None, *,
-                      movement_type=None, source_type=None, source_id=None):
+                      movement_type=None, source_type=None, source_id=None, _movement_out=None):
     """Goods out. Costed at the current average unless a cost is given (a sale
     return puts goods back at what they left at, not at today's average).
 
@@ -1841,7 +2146,14 @@ def item_remove_stock(item, qty, cost_total=None, location_id=None, *,
     has no per-location split to check against; narrowing it would mean
     per-location costing, a separate, larger change this fix does not make.
 
-    Returns the cost removed, which is what the caller posts as COGS."""
+    Returns the cost removed, which is what the caller posts as COGS. This
+    return value is a Decimal scalar, always — several existing callers
+    assign it straight into a Numeric column (e.g. PurchaseReturn.cost_removed)
+    or compare it directly (confirmed by a repo-wide grep before this was
+    touched), so it can never become a tuple or any other shape. A caller
+    that also needs the StockMovement row this call writes (see
+    item_remove_stock_batched()) passes the private _movement_out hook
+    instead — see item_add_stock()'s docstring for the same mechanism."""
     row = _item_stock_row(item, location_id)
     value = Decimal(str(item.inventory_value or 0))
     cost = Decimal(str(cost_total)) if cost_total is not None else (item.avg_cost * Decimal(str(qty)))
@@ -1900,9 +2212,11 @@ def item_remove_stock(item, qty, cost_total=None, location_id=None, *,
 
     if movement_type is not None:
         from salpurflask.models.inventory_location import record_stock_movement
-        record_stock_movement(item.id, row.location_id, "out", qty, movement_type,
-                              source_type=source_type, source_id=source_id,
-                              created_by_id=current_user_id())
+        movement = record_stock_movement(item.id, row.location_id, "out", qty, movement_type,
+                                         source_type=source_type, source_id=source_id,
+                                         created_by_id=current_user_id())
+        if _movement_out is not None and movement is not None:
+            _movement_out.append(movement)
 
     return cost
 
@@ -2690,6 +3004,9 @@ __all__ = [
     'Sale',
     'PurchaseItem',
     'SaleItem',
+    'Batch',
+    'PurchaseItemBatch',
+    'SaleItemBatch',
     'PosHold',
     'SupplierPayment',
     'CustomerPayment',
@@ -2785,6 +3102,10 @@ __all__ = [
     'reverse_document',
     'item_add_stock',
     'item_remove_stock',
+    'item_add_stock_batched',
+    'item_remove_stock_batched',
+    'get_or_create_batch',
+    'get_or_create_unknown_batch',
     'sale_line_cost',
     '_repost_opening',
     '_opening_date',

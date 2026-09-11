@@ -1907,6 +1907,33 @@ def migrate_database():
     # don't exist yet, so it is safe to run on every boot.
     backfill_item_stock_locations()
 
+    # Batch/Lot tracking — Phase A. db.create_all() (top of this function)
+    # already creates the brand-new batch/batch_stock/purchase_item_batch/
+    # sale_item_batch tables; it never alters an EXISTING table, so the new
+    # columns on Item/StockMovement/TransferItem need the same explicit,
+    # idempotent ALTER TABLE treatment every other column added to an
+    # existing table in this function already gets. All three are nullable
+    # or defaulted, so every existing row reads back exactly as it did
+    # before this migration ran — see item.batch_tracked's own default of
+    # False, which keeps the whole batch subsystem inert for it.
+    if "item" in inspector.get_table_names():
+        item_columns = {col["name"] for col in inspector.get_columns("item")}
+        if "batch_tracked" not in item_columns:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE item ADD COLUMN batch_tracked BOOLEAN DEFAULT FALSE"))
+    if "stock_movement" in inspector.get_table_names():
+        stock_movement_columns = {col["name"] for col in inspector.get_columns("stock_movement")}
+        if "batch_id" not in stock_movement_columns:
+            with db.engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE stock_movement ADD COLUMN batch_id INTEGER REFERENCES batch(id)"))
+    if "inventory_transfer_item" in inspector.get_table_names():
+        transfer_item_columns = {col["name"] for col in inspector.get_columns("inventory_transfer_item")}
+        if "batch_id" not in transfer_item_columns:
+            with db.engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE inventory_transfer_item ADD COLUMN batch_id INTEGER REFERENCES batch(id)"))
+
 # Create Database
 # Migrations still run on every real boot; the flag only stops the same process
 # from doing this work twice if anything re-enters this module.

@@ -89,6 +89,36 @@ class ItemStock(db.Model):
         return f"<ItemStock item={self.item_id} location={self.location_id} qty={self.quantity}>"
 
 
+class BatchStock(db.Model):
+    """How much of one batch is at one location — Batch/Lot tracking Phase A
+    (see salpurflask/models/models.py's Batch class for the full picture).
+    The exact same shape as ItemStock, one level deeper: one row per (batch,
+    location) pair, kept equal to the sum ItemStock/Item.stock already track by
+    construction — item_add_stock_batched()/item_remove_stock_batched()
+    (models.py) write this in the same transaction as the underlying
+    item_add_stock()/item_remove_stock() call, never independently.
+
+    Only meaningful for a batch whose Item has batch_tracked=True; nothing
+    reads or writes this table for any other item."""
+    __tablename__ = "batch_stock"
+    __table_args__ = (
+        db.UniqueConstraint("batch_id", "location_id", name="uq_batch_stock_batch_location"),
+        db.Index("ix_batch_stock_location", "location_id"),
+    )
+
+    id          = db.Column(db.Integer, primary_key=True)
+    batch_id    = db.Column(db.Integer, db.ForeignKey("batch.id"), nullable=False)
+    location_id = db.Column(db.Integer, db.ForeignKey("location.id"), nullable=False)
+    quantity    = db.Column(db.Integer, nullable=False, default=0)
+
+    batch       = db.relationship("Batch", backref=db.backref(
+        "stock_by_location", cascade="all,delete-orphan", lazy=True))
+    location    = db.relationship("Location")
+
+    def __repr__(self):
+        return f"<BatchStock batch={self.batch_id} location={self.location_id} qty={self.quantity}>"
+
+
 class UserLocationAccess(db.Model):
     """One row = this user may act on this location — Phase 5.
 
@@ -188,8 +218,14 @@ class TransferItem(db.Model):
     item_id      = db.Column(db.Integer, db.ForeignKey("item.id"), nullable=False)
     quantity     = db.Column(db.Integer, nullable=False)
     notes        = db.Column(db.String(200), nullable=True)
+    # Batch/Lot tracking Phase A: which batch this transfer line moves, when
+    # the item is batch-tracked. NULL for every existing row and for every
+    # non-batch-tracked item — transfer create/confirm logic is unchanged by
+    # this column existing; wiring it in is a later phase's work.
+    batch_id     = db.Column(db.Integer, db.ForeignKey("batch.id"), nullable=True)
 
     item         = db.relationship("Item")
+    batch        = db.relationship("Batch")
 
     def __repr__(self):
         return f"<TransferItem item={self.item_id} qty={self.quantity}>"
@@ -313,10 +349,18 @@ class StockMovement(db.Model):
     source_id     = db.Column(db.Integer, nullable=True)
     created_at    = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    # Batch/Lot tracking Phase A: which batch this movement affected, when the
+    # item is batch-tracked. NULL for every row written before this column
+    # existed, and for every row against a non-batch-tracked item — nothing
+    # about this table's existing role or existing readers changes. Set by
+    # item_add_stock_batched()/item_remove_stock_batched() (models.py) on the
+    # SAME row record_stock_movement() already created; never a second row.
+    batch_id      = db.Column(db.Integer, db.ForeignKey("batch.id"), nullable=True)
 
     item          = db.relationship("Item")
     location      = db.relationship("Location")
     created_by    = db.relationship("User", foreign_keys=[created_by_id])
+    batch         = db.relationship("Batch")
 
     def __repr__(self):
         return (f"<StockMovement {self.movement_type} item={self.item_id} "
