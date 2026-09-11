@@ -2038,14 +2038,13 @@ def post_stock_adjustment(adj, created_by_id=None):
                       allow_control=True, created_by_id=created_by_id, lines=lines)
 
 def seed_tax_codes():
-    """A single zero-rated code plus one standard rate. Everything else is the
-    user's to define — that is the point of the TaxCode/TaxComponent split."""
+    """A single standard rate. Everything else is the user's to define — that
+    is the point of the TaxCode/TaxComponent split."""
     if TaxCode.query.count():
         return 0
     tax_in  = get_account(ACC_TAX_INPUT).id
     tax_out = get_account(ACC_TAX_OUTPUT).id
     for name, comps in (
-        ("Zero-rated", [("Tax", 0)]),
         ("Standard",   [("Tax", 0)]),   # rate left at 0 — the user sets their country's rate
     ):
         code = TaxCode(name=name)
