@@ -91,7 +91,7 @@
                                         <input type="number" step="0.01" class="form-control form-control-sm disc-val" name="discount_value[]" value="0" min="0" oninput="calcRow(this)">
                                     </div>
                                 </td>
-                                <td><input type="number" step="0.01" class="form-control form-control-sm tax-input" name="tax_percent[]" value="0" min="0" oninput="calcRow(this)"></td>
+                                <td><input type="number" step="0.01" class="form-control form-control-sm tax-input" name="tax_percent[]" value="{{ '%.2f' | format(default_tax_rate) }}" min="0" oninput="calcRow(this)"></td>
                                 <td class="text-end fw-semibold row-total text-success">—</td>
                                 <td></td>
                             </tr>
@@ -146,6 +146,8 @@
 {{ pagination.links }}
 
 <script>
+const DEFAULT_TAX_RATE = {{ '%.2f' | format(default_tax_rate) }};
+
 // Item and Supplier selection now go through the Universal Item/Party Lookup
 // (static/js/item_lookup.js, static/js/party_lookup.js) instead of a <select>
 // pre-populated with every item/supplier — the browser never receives the
@@ -242,7 +244,7 @@ function addRow() {
     const clone = first.cloneNode(true);
     clone.querySelectorAll('input').forEach(i => {
         if (i.name === 'discount_value[]') i.value = '0';
-        else if (i.name === 'tax_percent[]') i.value = '0';
+        else if (i.name === 'tax_percent[]') i.value = DEFAULT_TAX_RATE;
         else if (i.classList.contains('item-select')) i.value = '';
         else i.value = '';
     });

@@ -149,7 +149,7 @@
 </div>
 
 <script>
-const DEFAULT_TAX_RATE = 0;
+const DEFAULT_TAX_RATE = {{ '%.2f' | format(default_tax_rate) }};
 
 function openSupplierLookup() {
     PartyLookup.open({
