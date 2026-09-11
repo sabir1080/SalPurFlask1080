@@ -935,7 +935,18 @@
                everywhere a <select> menu can appear, so restricted items are
                deliberately left out of this JS-tooltip upgrade. */
             document.querySelectorAll('.btn[title], a[title]:not(.nav-link.disabled):not(.dropdown-item.disabled)').forEach(function (el) {
-                new bootstrap.Tooltip(el, { trigger: 'hover', placement: 'top' });
+                new bootstrap.Tooltip(el, {
+                    trigger: 'hover',
+                    placement: 'top',
+                    // A button near the viewport's right edge (e.g. the last
+                    // action icon in a wide, horizontally-scrolled table) had
+                    // its tooltip clipped instead of flipping to fit — Popper
+                    // needs an explicit viewport boundary and fallback
+                    // placements to actually reposition it rather than only
+                    // trying to fit "top" and clipping when it doesn't.
+                    fallbackPlacements: ['top', 'bottom', 'left', 'right'],
+                    boundary: 'viewport',
+                });
             });
 
             /* ── Global Search ── */

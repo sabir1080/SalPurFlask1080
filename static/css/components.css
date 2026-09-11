@@ -945,6 +945,11 @@
  */
 
 .tooltip {
+  /* This also styles Bootstrap's own JS-rendered tooltip (base.html initializes
+     one on every .btn[title]/a[title]) via the shared .tooltip class name —
+     white-space: nowrap here forced every tooltip's text onto one line while
+     .tooltip-inner (style.css) caps the box at max-width: 250px, so any title
+     longer than that width was silently clipped rather than wrapping. */
   position: absolute;
   background: var(--text-primary);
   color: var(--surface-primary);
@@ -952,7 +957,6 @@
   border-radius: var(--radius-lg);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
-  white-space: nowrap;
   z-index: var(--z-tooltip);
   box-shadow: var(--shadow-lg);
   pointer-events: none;
