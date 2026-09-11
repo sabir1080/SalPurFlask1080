@@ -1278,4 +1278,9 @@ def api_item_units(id):
     return {"units": [{"key": c["key"], "name": c["name"], "factor": c["factor"],
                        "purchase_price": float(c["purchase_price"]) if c["purchase_price"] is not None else None,
                        "sale_price": float(c["sale_price"]) if c["sale_price"] is not None else None}
-                      for c in item_unit_choices(item)]}
+                      for c in item_unit_choices(item)],
+            # Batch/Lot tracking (Phase B): lets the Purchase row show/hide its
+            # Batch No / Expiry Date fields for the item actually picked --
+            # a client-side convenience only; the server re-checks this same
+            # flag independently before saving (see purchase()'s own gating).
+            "batch_tracked": bool(item.batch_tracked)}

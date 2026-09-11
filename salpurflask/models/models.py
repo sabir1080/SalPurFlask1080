@@ -333,6 +333,18 @@ class PurchaseItem(db.Model):
     # written before multi-unit existed reads back that way automatically.
     unit_name       = db.Column(db.String(20), nullable=True)
     unit_factor     = db.Column(db.Integer, nullable=False, default=1)
+    # Batch/Lot tracking — Phase B. What the user typed on a Draft, before it
+    # becomes real: NULL for a non-batch-tracked item's line, and NULL for
+    # any line written before this phase existed. This is deliberately a
+    # different fact from a Batch row (salpurflask/models/models.py's Batch
+    # class, Phase A) -- a Batch is the locked, uniqueness-checked record
+    # that exists only from the moment a line is actually Posted (via
+    # get_or_create_batch()); this pair is just the plain text/date a Draft
+    # line carries until then, surviving Draft reopen/edit the same way
+    # every other PurchaseItem field already does (see edit_purchase()'s
+    # delete-and-recreate of these rows on every save).
+    pending_batch_no     = db.Column(db.String(60), nullable=True)
+    pending_expiry_date  = db.Column(db.Date, nullable=True)
     item            = db.relationship("Item", foreign_keys=[item_id])
 
     @property
@@ -1945,15 +1957,41 @@ def _unwind_stock_and_subledger(kind, doc):
         for pi in doc.line_items:
             item = db.session.get(Item, pi.item_id)
             if item:
-                # Remove exactly the cost this line added — its taxable amount —
-                # not today's average, which later purchases may have moved.
-                # Stock moves in the item's base unit, however the line was priced.
                 # Same warehouse the goods were received into — never guessed,
                 # always the document's own location_id.
-                item_remove_stock(item, line_base_qty(pi),
-                                  cost_total=Decimal(str(pi.amount)) - Decimal(str(pi.tax_amount or 0)),
-                                  location_id=doc.location_id,
-                                  movement_type="purchase", source_type="purchase", source_id=doc.id)
+                if item.batch_tracked:
+                    # Batch/Lot tracking (Phase B): reverse each batch
+                    # allocation this line actually created at Post, not one
+                    # aggregate call — a batch-tracked line's stock may be
+                    # split across more than one Batch (rare, but the
+                    # PurchaseItemBatch junction exists precisely for this).
+                    # Read allocations BEFORE the caller deletes this
+                    # PurchaseItem row (both existing callers of this
+                    # function already do the delete afterwards — see
+                    # correct_purchase_route()/reverse_document()).
+                    allocations = list(pi.batch_allocations)
+                    allocated_qty = sum(a.quantity for a in allocations)
+                    expected_qty = line_base_qty(pi)
+                    if allocated_qty != expected_qty:
+                        raise PostingError(
+                            f"Purchase #{doc.id} line for {item.name}: batch "
+                            f"allocations total {allocated_qty} but the line "
+                            f"quantity is {expected_qty} — refusing to reverse "
+                            f"an inconsistent batch allocation.")
+                    for alloc in allocations:
+                        batch = db.session.get(Batch, alloc.batch_id)
+                        item_remove_stock_batched(
+                            item, alloc.quantity, location_id=doc.location_id,
+                            batch=batch, movement_type="purchase",
+                            source_type="purchase", source_id=doc.id)
+                else:
+                    # Remove exactly the cost this line added — its taxable amount —
+                    # not today's average, which later purchases may have moved.
+                    # Stock moves in the item's base unit, however the line was priced.
+                    item_remove_stock(item, line_base_qty(pi),
+                                      cost_total=Decimal(str(pi.amount)) - Decimal(str(pi.tax_amount or 0)),
+                                      location_id=doc.location_id,
+                                      movement_type="purchase", source_type="purchase", source_id=doc.id)
         sup_id = remove_supplier_ledger_entry("purchase", doc.id)
         return ("supplier", sup_id)
 

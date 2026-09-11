@@ -83,6 +83,8 @@
                 <th style="min-width:120px">Price / Unit *</th>
                 <th style="min-width:120px">Discount</th>
                 <th style="min-width:90px">Tax (%)</th>
+                <th style="min-width:110px" class="batch-col d-none">Batch No</th>
+                <th style="min-width:130px" class="batch-col d-none">Expiry Date</th>
                 <th style="min-width:110px" class="text-end">Net Amount</th>
                 <th style="width:40px"></th>
             </tr>
@@ -111,6 +113,8 @@
                     </div>
                 </td>
                 <td><input type="number" step="0.01" class="form-control form-control-sm tax-input" name="tax_percent[]" value="{{ pi.tax_percent or 0 }}" min="0" oninput="calcRow(this)"></td>
+                <td class="batch-col d-none"><input type="text" class="form-control form-control-sm batch-no-input" name="batch_no[]" placeholder="Batch No" value="{{ pi.pending_batch_no or '' }}"></td>
+                <td class="batch-col d-none"><input type="date" class="form-control form-control-sm expiry-date-input" name="expiry_date[]" value="{{ pi.pending_expiry_date.strftime('%Y-%m-%d') if pi.pending_expiry_date else '' }}"></td>
                 <td class="text-end fw-semibold row-total text-success">{{ net | fmt_num }}</td>
                 <td class="text-center"><button type="button" class="btn btn-danger btn-sm" onclick="removeRow(this)">×</button></td>
             </tr>
@@ -119,6 +123,8 @@
       <tfoot>
         <tr>
           <td colspan="6" class="text-end fw-bold">Grand Total:</td>
+          <td class="batch-col d-none"></td>
+          <td class="batch-col d-none"></td>
           <td class="text-end fw-bold text-primary fs-5" id="grandTotal">0.00</td>
           <td></td>
         </tr>
@@ -172,14 +178,41 @@ function applyItemToRow(row, item) {
     row.querySelector('.item-select').value = item.id;
     row.querySelector('.item-picker-label').textContent = item.name;
     row.querySelector('.item-picker-label').classList.remove('text-muted');
+    // A freshly (re)picked item's batch fields start blank -- see
+    // edit_purchase.html's identical comment for why.
+    setRowBatchTracked(row, false);
     fetchUnitsAndPopulate(row, item.id);
 }
 
-function fetchUnitsAndPopulate(row, itemId, keepUnitName) {
+function fetchUnitsAndPopulate(row, itemId, keepUnitName, preserveBatchFields) {
     return fetch("/api/items/" + encodeURIComponent(itemId) + "/units")
         .then(r => r.json())
-        .then(data => populateUnits(row, data.units || [], keepUnitName))
-        .catch(() => populateUnits(row, [{ key: "", name: "Pcs", factor: 1, purchase_price: null }], keepUnitName));
+        .then(data => {
+            populateUnits(row, data.units || [], keepUnitName);
+            setRowBatchTracked(row, !!data.batch_tracked, !preserveBatchFields);
+        })
+        .catch(() => {
+            populateUnits(row, [{ key: "", name: "Pcs", factor: 1, purchase_price: null }], keepUnitName);
+            setRowBatchTracked(row, false, !preserveBatchFields);
+        });
+}
+
+// Batch/Lot tracking (Phase B): see edit_purchase.html's identical helpers
+// for the full rationale (client-side convenience only; server re-checks).
+function setRowBatchTracked(row, tracked, clearFields) {
+    row.classList.toggle('batch-tracked-row', tracked);
+    if (!tracked && clearFields !== false) {
+        const batchNoInput = row.querySelector('.batch-no-input');
+        const expiryInput = row.querySelector('.expiry-date-input');
+        if (batchNoInput) batchNoInput.value = '';
+        if (expiryInput) expiryInput.value = '';
+    }
+    updateBatchColumnVisibility();
+}
+
+function updateBatchColumnVisibility() {
+    const anyTracked = !!document.querySelector('.item-row.batch-tracked-row');
+    document.querySelectorAll('.batch-col').forEach(el => el.classList.toggle('d-none', !anyTracked));
 }
 
 function populateUnits(row, units, keepUnitName) {
@@ -203,7 +236,7 @@ function populateUnits(row, units, keepUnitName) {
 function prefillUnit(row, itemId) {
     const unitSel = row.querySelector('.unit-select');
     const existing = unitSel.dataset.existingUnit || '';
-    return fetchUnitsAndPopulate(row, itemId, existing);
+    return fetchUnitsAndPopulate(row, itemId, existing, /* preserveBatchFields */ true);
 }
 
 function onUnitChange(sel) {
@@ -259,6 +292,8 @@ function addRow() {
             <input type="number" step="0.01" class="form-control form-control-sm disc-val" name="discount_value[]" value="0" min="0" oninput="calcRow(this)">
         </div></td>
         <td><input type="number" step="0.01" class="form-control form-control-sm tax-input" name="tax_percent[]" value="${DEFAULT_TAX_RATE}" min="0" oninput="calcRow(this)"></td>
+        <td class="batch-col d-none"><input type="text" class="form-control form-control-sm batch-no-input" name="batch_no[]" placeholder="Batch No"></td>
+        <td class="batch-col d-none"><input type="date" class="form-control form-control-sm expiry-date-input" name="expiry_date[]"></td>
         <td class="text-end fw-semibold row-total text-success">—</td>
         <td class="text-center"><button type="button" class="btn btn-danger btn-sm" onclick="removeRow(this)">×</button></td>`;
     tbody.appendChild(newRow);
@@ -269,6 +304,7 @@ function removeRow(btn) {
     if (rows.length === 1) { alert('At least one item row is required.'); return; }
     btn.closest('tr').remove();
     calcGrand();
+    updateBatchColumnVisibility();
 }
 
 document.addEventListener('DOMContentLoaded', () => {

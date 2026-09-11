@@ -17,7 +17,13 @@ from salpurflask.models import (
     PO_STATUSES, STATUS_DRAFT, STATUS_POSTED,
     PostingError, reverse_entry,
 )
-from salpurflask.models.models import _unwind_stock_and_subledger
+from salpurflask.models.models import (
+    _unwind_stock_and_subledger,
+    PurchaseItemBatch,
+    get_or_create_batch,
+    item_add_stock_batched,
+    item_remove_stock_batched,
+)
 from salpurflask.auth import verified_required, manager_required, admin_required
 from salpurflask.utils import (
     now_local, get_paginated_results, csv_response, excel_response, get_item_locked
@@ -156,6 +162,14 @@ def purchase():
         disc_values  = request.form.getlist("discount_value[]")
         tax_pcts     = request.form.getlist("tax_percent[]")
         unit_ids     = request.form.getlist("unit_id[]")
+        # Batch/Lot tracking (Phase B): held on the Draft line as plain,
+        # unvalidated text/date -- see PurchaseItem.pending_batch_no's own
+        # docstring for why this is not yet a real Batch. Read regardless of
+        # whether the item is batch-tracked; which of these actually gets
+        # saved is decided per-row below, server-side -- never trusted from
+        # a hidden/disabled UI field alone.
+        batch_nos    = request.form.getlist("batch_no[]")
+        expiry_dates = request.form.getlist("expiry_date[]")
 
         rows = []
         for i, (iid, qty, price) in enumerate(zip(item_ids, quantities, prices)):
@@ -166,6 +180,8 @@ def purchase():
                     disc_values[i] if i < len(disc_values) else "0",
                     tax_pcts[i] if i < len(tax_pcts) else "0",
                     unit_ids[i] if i < len(unit_ids) else "",
+                    batch_nos[i] if i < len(batch_nos) else "",
+                    expiry_dates[i] if i < len(expiry_dates) else "",
                 ))
 
         row_error = validate_line_rows(rows) if rows else None
@@ -201,7 +217,7 @@ def purchase():
                 )
                 db.session.add(pur)
                 db.session.flush()
-                for iid, qty, price, d_type, d_val, tax, unit_key in rows:
+                for iid, qty, price, d_type, d_val, tax, unit_key, batch_no_raw, expiry_raw in rows:
                     item_obj = get_item_locked(int(iid)) or abort(404)
                     qty_i = int(qty)
                     price_f = float(price)
@@ -210,6 +226,26 @@ def purchase():
                     gross = qty_i * price_f
                     disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
                     unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
+                    # Batch/Lot tracking (Phase B): server-side authoritative --
+                    # a non-batch-tracked item's submitted batch_no/expiry_date
+                    # is discarded here regardless of what the UI showed or hid,
+                    # never trusted from a hidden/disabled field alone.
+                    pending_batch_no = None
+                    pending_expiry_date = None
+                    if item_obj.batch_tracked:
+                        pending_batch_no = (batch_no_raw or "").strip() or None
+                        expiry_raw = (expiry_raw or "").strip()
+                        if expiry_raw:
+                            try:
+                                pending_expiry_date = datetime.strptime(expiry_raw, "%Y-%m-%d").date()
+                            except ValueError:
+                                # Caught by this function's own existing
+                                # `except ValueError as e: flash(...)` below --
+                                # same convention every other malformed-input
+                                # case in this loop already relies on.
+                                raise ValueError(
+                                    f"invalid expiry date for {item_obj.name}: {expiry_raw!r} "
+                                    "(use YYYY-MM-DD)")
                     pi = PurchaseItem(
                         purchase_id=pur.id, item_id=int(iid),
                         quantity=qty_i, purchase_price=price_f,
@@ -217,6 +253,8 @@ def purchase():
                         discount_amount=disc_amt, tax_percent=tax_f,
                         tax_amount=tax_amt, amount=net,
                         unit_name=unit_name, unit_factor=unit_factor,
+                        pending_batch_no=pending_batch_no,
+                        pending_expiry_date=pending_expiry_date,
                     )
                     db.session.add(pi)
                     # No item_add_stock() here -- a Draft has no stock effect.
@@ -268,9 +306,34 @@ def post_purchase_route(id):
         item_obj = get_item_locked(pi.item_id)
         if item_obj:
             base_qty = pi.quantity * (pi.unit_factor or 1)
-            item_add_stock(item_obj, base_qty, pi.amount - pi.tax_amount,
-                           location_id=pur.location_id,
-                           movement_type="purchase", source_type="purchase", source_id=pur.id)
+            cost_total = pi.amount - pi.tax_amount
+            if item_obj.batch_tracked:
+                # Batch/Lot tracking (Phase B): the Draft's plain
+                # pending_batch_no/pending_expiry_date becomes a real,
+                # locked Batch only now, at Post -- see PurchaseItem.
+                # pending_batch_no's own docstring. A PostingError here
+                # (e.g. same batch/different cost) propagates to the
+                # global handle_posting_error handler, which rolls back
+                # this entire transaction -- including any earlier lines
+                # already posted in this same loop -- so Post stays
+                # all-or-nothing across every line, batch-tracked or not.
+                unit_cost = (cost_total / base_qty) if base_qty else Decimal("0")
+                batch = get_or_create_batch(
+                    item_obj.id, pi.pending_batch_no, pi.pending_expiry_date,
+                    unit_cost, source_type="purchase", source_id=pur.id,
+                    created_by_id=current_user.id,
+                )
+                item_add_stock_batched(item_obj, base_qty, cost_total,
+                                       location_id=pur.location_id, batch=batch,
+                                       movement_type="purchase", source_type="purchase",
+                                       source_id=pur.id)
+                db.session.add(PurchaseItemBatch(
+                    purchase_item_id=pi.id, batch_id=batch.id, quantity=base_qty,
+                ))
+            else:
+                item_add_stock(item_obj, base_qty, cost_total,
+                               location_id=pur.location_id,
+                               movement_type="purchase", source_type="purchase", source_id=pur.id)
     pur.invoice_no = allocate_document_number("purchase", pur.date)
     sync_supplier_purchase(pur)
     post_document("purchase", pur)
@@ -358,6 +421,9 @@ def correct_purchase_route(id):
         tax_pcts    = request.form.getlist("tax_percent[]")
         unit_ids    = request.form.getlist("unit_id[]")
         confirmed   = request.form.get("confirm_correction") == "1"
+        # Batch/Lot tracking (Phase B): same read as purchase()/edit_purchase().
+        batch_nos    = request.form.getlist("batch_no[]")
+        expiry_dates = request.form.getlist("expiry_date[]")
 
         rows = []
         for i, (iid, qty, price) in enumerate(zip(item_ids, quantities, prices)):
@@ -368,6 +434,8 @@ def correct_purchase_route(id):
                     disc_values[i] if i < len(disc_values) else "0",
                     tax_pcts[i] if i < len(tax_pcts) else "0",
                     unit_ids[i] if i < len(unit_ids) else "",
+                    batch_nos[i] if i < len(batch_nos) else "",
+                    expiry_dates[i] if i < len(expiry_dates) else "",
                 ))
 
         row_error = validate_line_rows(rows) if rows else None
@@ -440,6 +508,27 @@ def correct_purchase_route(id):
             # here only because the PurchaseReturn check above guarantees no
             # purchase_item_id points at the rows being deleted.
             old_supplier_id = pur.supplier_id
+            # Batch/Lot tracking (Phase B): the raw bulk delete below does not
+            # go through the ORM, so PurchaseItemBatch's cascade="all,delete-
+            # orphan" (which only fires on an ORM-tracked delete) never runs --
+            # explicitly delete the old allocations first, or they survive as
+            # rows pointing at a purchase_item_id that no longer exists (or,
+            # worse, gets reused by a future insert). _unwind_stock_and_subledger
+            # above has already read these rows to reverse their stock; they
+            # are pure history from here and are being replaced by fresh
+            # allocations in the loop below.
+            old_pi_ids = [pi.id for pi in pur.line_items]
+            if old_pi_ids:
+                # synchronize_session="fetch" (not False) -- a plain bulk
+                # DELETE leaves the just-deleted rows' Python objects sitting
+                # in the session's identity map; on SQLite in particular, a
+                # brand-new PurchaseItemBatch can be assigned the very same
+                # id moments later in this same transaction (below), and
+                # flushing it then collides with that stale identity.
+                # "fetch" expires the matching objects from the session too.
+                PurchaseItemBatch.query.filter(
+                    PurchaseItemBatch.purchase_item_id.in_(old_pi_ids)).delete(
+                    synchronize_session="fetch")
             PurchaseItem.query.filter_by(purchase_id=pur.id).delete()
             first_iid, first_qty, first_price, first_d_type, first_d_val, first_tax = \
                 rows[0][0], rows[0][1], rows[0][2], rows[0][3], rows[0][4], rows[0][5]
@@ -459,13 +548,30 @@ def correct_purchase_route(id):
             # scope for this phase (see module docstring above).
 
             touched_items = {}
-            for iid, qty, price, d_type, d_val, tax, unit_key in rows:
+            for iid, qty, price, d_type, d_val, tax, unit_key, batch_no_raw, expiry_raw in rows:
                 item_obj = get_item_locked(int(iid)) or abort(404)
                 qty_i = int(qty); price_f = float(price)
                 d_val_f = float(d_val or 0); tax_f = float(tax or 0)
                 gross = qty_i * price_f
                 disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
                 unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
+                # Batch/Lot tracking (Phase B): a corrected line is re-posted
+                # immediately (this route has no separate Draft stage), so
+                # the pending_batch_no/pending_expiry_date pair is saved for
+                # the record and consumed right away, below, exactly like a
+                # fresh Post -- see post_purchase_route()'s identical block.
+                pending_batch_no = None
+                pending_expiry_date = None
+                if item_obj.batch_tracked:
+                    pending_batch_no = (batch_no_raw or "").strip() or None
+                    expiry_raw = (expiry_raw or "").strip()
+                    if expiry_raw:
+                        try:
+                            pending_expiry_date = datetime.strptime(expiry_raw, "%Y-%m-%d").date()
+                        except ValueError:
+                            raise ValueError(
+                                f"invalid expiry date for {item_obj.name}: {expiry_raw!r} "
+                                "(use YYYY-MM-DD)")
                 pi = PurchaseItem(
                     purchase_id=pur.id, item_id=int(iid),
                     quantity=qty_i, purchase_price=price_f,
@@ -473,11 +579,31 @@ def correct_purchase_route(id):
                     discount_amount=disc_amt, tax_percent=tax_f,
                     tax_amount=tax_amt, amount=net,
                     unit_name=unit_name, unit_factor=unit_factor,
+                    pending_batch_no=pending_batch_no,
+                    pending_expiry_date=pending_expiry_date,
                 )
                 db.session.add(pi)
-                item_add_stock(item_obj, qty_i * unit_factor, net - tax_amt,
-                               location_id=pur.location_id,
-                               movement_type="purchase", source_type="purchase", source_id=pur.id)
+                db.session.flush()
+                base_qty = qty_i * unit_factor
+                cost_total = net - tax_amt
+                if item_obj.batch_tracked:
+                    unit_cost = (Decimal(str(cost_total)) / base_qty) if base_qty else Decimal("0")
+                    batch = get_or_create_batch(
+                        item_obj.id, pending_batch_no, pending_expiry_date,
+                        unit_cost, source_type="purchase", source_id=pur.id,
+                        created_by_id=current_user.id,
+                    )
+                    item_add_stock_batched(item_obj, base_qty, cost_total,
+                                           location_id=pur.location_id, batch=batch,
+                                           movement_type="purchase", source_type="purchase",
+                                           source_id=pur.id)
+                    db.session.add(PurchaseItemBatch(
+                        purchase_item_id=pi.id, batch_id=batch.id, quantity=base_qty,
+                    ))
+                else:
+                    item_add_stock(item_obj, base_qty, cost_total,
+                                   location_id=pur.location_id,
+                                   movement_type="purchase", source_type="purchase", source_id=pur.id)
                 touched_items[item_obj.id] = item_obj
 
             negative_items = [it for it in touched_items.values() if it.stock < 0]
@@ -547,6 +673,10 @@ def edit_purchase(id):
         disc_values = request.form.getlist("discount_value[]")
         tax_pcts    = request.form.getlist("tax_percent[]")
         unit_ids    = request.form.getlist("unit_id[]")
+        # Batch/Lot tracking (Phase B): see purchase()'s identical read for
+        # why this is read unconditionally and filtered per-row below.
+        batch_nos    = request.form.getlist("batch_no[]")
+        expiry_dates = request.form.getlist("expiry_date[]")
 
         rows = []
         for i, (iid, qty, price) in enumerate(zip(item_ids, quantities, prices)):
@@ -557,6 +687,8 @@ def edit_purchase(id):
                     disc_values[i] if i < len(disc_values) else "0",
                     tax_pcts[i] if i < len(tax_pcts) else "0",
                     unit_ids[i] if i < len(unit_ids) else "",
+                    batch_nos[i] if i < len(batch_nos) else "",
+                    expiry_dates[i] if i < len(expiry_dates) else "",
                 ))
 
         row_error = validate_line_rows(rows) if rows else None
@@ -600,7 +732,7 @@ def edit_purchase(id):
                 pur.date           = datetime.strptime(date_str, "%Y-%m-%d")
                 pur.notes          = notes or None
                 pur.location_id    = location_id
-                for iid, qty, price, d_type, d_val, tax, unit_key in rows:
+                for iid, qty, price, d_type, d_val, tax, unit_key, batch_no_raw, expiry_raw in rows:
                     item_obj = touched_items.get(int(iid)) or get_item_locked(int(iid)) or abort(404)
                     qty_i = int(qty)
                     price_f = float(price)
@@ -609,6 +741,20 @@ def edit_purchase(id):
                     gross = qty_i * price_f
                     disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
                     unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
+                    # Batch/Lot tracking (Phase B): same server-side-authoritative
+                    # gating as purchase() -- see that route's identical block.
+                    pending_batch_no = None
+                    pending_expiry_date = None
+                    if item_obj.batch_tracked:
+                        pending_batch_no = (batch_no_raw or "").strip() or None
+                        expiry_raw = (expiry_raw or "").strip()
+                        if expiry_raw:
+                            try:
+                                pending_expiry_date = datetime.strptime(expiry_raw, "%Y-%m-%d").date()
+                            except ValueError:
+                                raise ValueError(
+                                    f"invalid expiry date for {item_obj.name}: {expiry_raw!r} "
+                                    "(use YYYY-MM-DD)")
                     pi = PurchaseItem(
                         purchase_id=pur.id, item_id=int(iid),
                         quantity=qty_i, purchase_price=price_f,
@@ -616,6 +762,8 @@ def edit_purchase(id):
                         discount_amount=disc_amt, tax_percent=tax_f,
                         tax_amount=tax_amt, amount=net,
                         unit_name=unit_name, unit_factor=unit_factor,
+                        pending_batch_no=pending_batch_no,
+                        pending_expiry_date=pending_expiry_date,
                     )
                     db.session.add(pi)
                     # Only a Posted purchase re-adds stock -- see is_posted above.

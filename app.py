@@ -1934,6 +1934,20 @@ def migrate_database():
                 conn.execute(text(
                     "ALTER TABLE inventory_transfer_item ADD COLUMN batch_id INTEGER REFERENCES batch(id)"))
 
+    # Batch/Lot tracking — Phase B. What a Draft Purchase line's user typed
+    # before it becomes a real Batch at Post time (see PurchaseItem.
+    # pending_batch_no's own docstring). Both nullable, same idempotent
+    # ALTER TABLE treatment as every other column added to an existing
+    # table in this function.
+    if "purchase_item" in inspector.get_table_names():
+        purchase_item_columns = {col["name"] for col in inspector.get_columns("purchase_item")}
+        if "pending_batch_no" not in purchase_item_columns:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE purchase_item ADD COLUMN pending_batch_no VARCHAR(60)"))
+        if "pending_expiry_date" not in purchase_item_columns:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE purchase_item ADD COLUMN pending_expiry_date DATE"))
+
 # Create Database
 # Migrations still run on every real boot; the flag only stops the same process
 # from doing this work twice if anything re-enters this module.

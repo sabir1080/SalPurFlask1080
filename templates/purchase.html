@@ -88,6 +88,8 @@
               <th style="min-width: 120px">Price / Unit <span class="text-danger">*</span></th>
               <th style="min-width: 120px">Discount</th>
               <th style="min-width: 90px">Tax (%)</th>
+              <th style="min-width: 110px" class="batch-col d-none">Batch No</th>
+              <th style="min-width: 130px" class="batch-col d-none">Expiry Date</th>
               <th style="min-width: 110px" class="text-end">Net Amount</th>
               <th style="width: 40px"></th>
             </tr>
@@ -113,6 +115,8 @@
                     </div>
                 </td>
                 <td><input type="number" step="0.01" class="form-control form-control-sm tax-input" name="tax_percent[]" value="{{ '%.2f' | format(default_tax_rate) }}" min="0" oninput="calcRow(this)"></td>
+                <td class="batch-col d-none"><input type="text" class="form-control form-control-sm batch-no-input" name="batch_no[]" placeholder="Batch No"></td>
+                <td class="batch-col d-none"><input type="date" class="form-control form-control-sm expiry-date-input" name="expiry_date[]"></td>
                 <td class="text-end fw-semibold row-total text-success">—</td>
                 <td class="text-center">
                     <button type="button" class="btn btn-danger btn-sm remove-row" onclick="removeRow(this)" title="Remove this row">×</button>
@@ -122,6 +126,8 @@
           <tfoot>
             <tr>
               <td colspan="6" class="text-end fw-bold">Grand Total:</td>
+              <td class="batch-col d-none"></td>
+              <td class="batch-col d-none"></td>
               <td class="text-end fw-bold text-primary" id="grandTotal">0.00</td>
               <td></td>
             </tr>
@@ -274,8 +280,37 @@ function applyItemToRow(row, item) {
     // per-item units endpoint below, same as every alternate unit's price already did.
     fetch("/api/items/" + encodeURIComponent(item.id) + "/units")
         .then(r => r.json())
-        .then(data => populateUnits(row, data.units || []))
-        .catch(() => populateUnits(row, [{ key: "", name: "Pcs", factor: 1, purchase_price: null }]));
+        .then(data => {
+            populateUnits(row, data.units || []);
+            setRowBatchTracked(row, !!data.batch_tracked);
+        })
+        .catch(() => {
+            populateUnits(row, [{ key: "", name: "Pcs", factor: 1, purchase_price: null }]);
+            setRowBatchTracked(row, false);
+        });
+}
+
+// Batch/Lot tracking (Phase B): show/hide this row's Batch No / Expiry Date
+// inputs, and the shared header columns, based on the picked item's
+// batch_tracked flag. Client-side convenience only -- the server independently
+// re-checks item.batch_tracked before saving anything (see purchase()'s own
+// gating), so a hidden/disabled field here can never smuggle a value through.
+function setRowBatchTracked(row, tracked) {
+    row.classList.toggle('batch-tracked-row', tracked);
+    const batchNoInput = row.querySelector('.batch-no-input');
+    const expiryInput = row.querySelector('.expiry-date-input');
+    if (!tracked) {
+        if (batchNoInput) batchNoInput.value = '';
+        if (expiryInput) expiryInput.value = '';
+    }
+    updateBatchColumnVisibility();
+}
+
+// The Batch No / Expiry Date header columns show as soon as any row on the
+// page needs them, so column alignment stays correct across every row.
+function updateBatchColumnVisibility() {
+    const anyTracked = !!document.querySelector('.item-row.batch-tracked-row');
+    document.querySelectorAll('.batch-col').forEach(el => el.classList.toggle('d-none', !anyTracked));
 }
 
 function populateUnits(row, units, keepKey) {
@@ -346,6 +381,8 @@ function addRow() {
             <input type="number" step="0.01" class="form-control form-control-sm disc-val" name="discount_value[]" value="0" min="0" oninput="calcRow(this)">
         </div></td>
         <td><input type="number" step="0.01" class="form-control form-control-sm tax-input" name="tax_percent[]" value="${DEFAULT_TAX_RATE}" min="0" oninput="calcRow(this)"></td>
+        <td class="batch-col d-none"><input type="text" class="form-control form-control-sm batch-no-input" name="batch_no[]" placeholder="Batch No"></td>
+        <td class="batch-col d-none"><input type="date" class="form-control form-control-sm expiry-date-input" name="expiry_date[]"></td>
         <td class="text-end fw-semibold row-total text-success">—</td>
         <td class="text-center"><button type="button" class="btn btn-danger btn-sm remove-row" onclick="removeRow(this)" title="Remove row">×</button></td>`;
     tbody.appendChild(newRow);
@@ -356,6 +393,7 @@ function removeRow(btn) {
     if (rows.length === 1) { alert('At least one item row is required.'); return; }
     btn.closest('tr').remove();
     calcGrand();
+    updateBatchColumnVisibility();
 }
 </script>
 {% endblock %}
