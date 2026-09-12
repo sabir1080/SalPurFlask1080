@@ -163,6 +163,10 @@ def item_ledger(id):
 
     total_in  = sum(e["stock_in"]  for e in entries if not e.get("is_opening"))
     total_out = sum(e["stock_out"] for e in entries if not e.get("is_opening"))
+    # The footer's closing balance must match the last transaction's running
+    # balance shown in the table above it, not item.stock — item.stock can
+    # differ (e.g. under a date filter, or if it's momentarily stale).
+    closing_balance = entries[-1]["balance"] if entries else opening
 
     return render_template(
         "item_ledger.html",
@@ -171,6 +175,7 @@ def item_ledger(id):
         total_in=total_in,
         total_out=total_out,
         opening_stock=opening,
+        closing_balance=closing_balance,
         current_stock=item.stock,
         stock_by_location=stock_by_location,
         start_date=start_date_str,

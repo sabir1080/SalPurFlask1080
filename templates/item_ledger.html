@@ -199,7 +199,7 @@
           <td class="text-center text-success fw-bold">+{{ total_in | fmt_num }}</td>
           <td class="text-center text-danger fw-bold">-{{ total_out | fmt_num }}</td>
           <td></td>
-          <td class="text-end text-primary fw-bold">{{ current_stock | fmt_num }}</td>
+          <td class="text-end text-primary fw-bold">{{ closing_balance | fmt_num }}</td>
         </tr>
       </tfoot>
       {% endif %}
