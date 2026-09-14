@@ -38,6 +38,42 @@ def _audit(action, entity, entity_id=None, summary=""):
 
 
 @manager_required
+def transfer_item_batches(item_id):
+    """Available batches for one item at one (source) location, FEFO-ordered
+    for display consistency with the Sale/POS picker — Phase D. Read-only,
+    never mutates anything. Expired batches ARE included here (unlike the
+    Sale/POS picker's own semantics elsewhere): a transfer is an internal
+    movement between the company's own warehouses, not a sale, and the
+    approved design explicitly allows moving expired stock without a
+    special authorization flag — this endpoint simply lists what exists at
+    the location; confirm_transfer() is what actually enforces sufficiency
+    when the transfer is confirmed."""
+    from salpurflask.models import Item as _Item
+    from salpurflask.models.inventory_location import BatchStock
+    from salpurflask.models.models import Batch
+
+    item = db.session.get(_Item, item_id) or abort(404)
+    try:
+        location_id = resolve_location_id(request.args.get("location_id")) \
+            if request.args.get("location_id") else get_or_create_default_location().id
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}, 400
+    require_location_access(location_id)
+
+    rows = (db.session.query(Batch, BatchStock.quantity)
+            .join(BatchStock, BatchStock.batch_id == Batch.id)
+            .filter(Batch.item_id == item_id,
+                    BatchStock.location_id == location_id,
+                    BatchStock.quantity > 0)
+            .order_by(Batch.expiry_date.is_(None), Batch.expiry_date.asc(), Batch.id.asc())
+            .all())
+    return {"ok": True, "batches": [{
+        "batch_id": b.id, "batch_no": b.batch_no, "quantity": qty,
+        "expiry_date": b.expiry_date.isoformat() if b.expiry_date else None,
+    } for b, qty in rows]}
+
+
+@manager_required
 def transfer_list():
     """List transfers, most recent first. Filterable by status, source and
     destination warehouse — the minimal warehouse visibility this phase adds
@@ -109,16 +145,27 @@ def transfer_new():
 
         item_ids = request.form.getlist("item_id[]")
         quantities = request.form.getlist("quantity[]")
+        # Batch/Lot tracking — Phase D. Optional, per-row; blank for a non-
+        # batch-tracked item or when no specific batch is chosen. Never
+        # trusted blindly — create_transfer() independently re-checks that
+        # a submitted batch exists and belongs to the submitted item, and
+        # confirm_transfer() is the only place batch STOCK availability is
+        # actually verified (stock can change between Draft creation and
+        # Confirm, so checking it here would only be stale by the time it
+        # matters).
+        batch_ids = request.form.getlist("batch_id[]")
         date_str = request.form.get("date", "").strip()
         notes = request.form.get("notes", "").strip()
 
         lines = []
-        for iid, qty in zip(item_ids, quantities):
+        for i, (iid, qty) in enumerate(zip(item_ids, quantities)):
             if iid.strip() and qty.strip():
                 if not qty.strip().lstrip("-").isdigit():
                     flash(f"Quantity must be a whole number (got '{qty}').", "danger")
                     return redirect(url_for("transfer_new"))
-                lines.append((int(iid), int(qty)))
+                batch_id_raw = batch_ids[i].strip() if i < len(batch_ids) else ""
+                batch_id = int(batch_id_raw) if batch_id_raw.isdigit() else None
+                lines.append((int(iid), int(qty), batch_id))
 
         try:
             transfer_date = datetime.strptime(date_str, "%Y-%m-%d") if date_str else datetime.utcnow()

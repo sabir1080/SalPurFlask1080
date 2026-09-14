@@ -316,6 +316,7 @@ from salpurflask.inventory.routes import (
 from salpurflask.inventory.transfer_routes import (
     transfer_list, transfer_new, transfer_detail,
     transfer_confirm, transfer_cancel, transfer_reverse,
+    transfer_item_batches,
 )
 from salpurflask.inventory.location_access_routes import (
     admin_location_access, admin_grant_location_access, admin_revoke_location_access,
@@ -396,6 +397,7 @@ app.add_url_rule("/transfers/<int:id>", "transfer_detail", transfer_detail, meth
 app.add_url_rule("/transfers/<int:id>/confirm", "transfer_confirm", transfer_confirm, methods=["POST"])
 app.add_url_rule("/transfers/<int:id>/cancel", "transfer_cancel", transfer_cancel, methods=["POST"])
 app.add_url_rule("/transfers/<int:id>/reverse", "transfer_reverse", transfer_reverse, methods=["POST"])
+app.add_url_rule("/transfers/item-batches/<int:item_id>", "transfer_item_batches", transfer_item_batches, methods=["GET"])
 app.add_url_rule("/reconciliations", "reconciliation_list", reconciliation_list, methods=["GET"])
 app.add_url_rule("/reconciliations/new", "reconciliation_new", reconciliation_new, methods=["GET", "POST"])
 app.add_url_rule("/reconciliations/<int:id>", "reconciliation_detail", reconciliation_detail, methods=["GET", "POST"])
@@ -1286,6 +1288,25 @@ def purchase_return_total(pr):
 def sale_return_total(sr):
     return float(sr.quantity * sr.return_price)
 
+def sale_return_batch_summary(sr):
+    """Batch/Lot tracking — Phase D. Read-only display helper for
+    sale_return.html's history table: which batch(es) a posted return
+    actually restored, reconstructed the same deterministic way reversal
+    itself does (see resolve_sale_return_reversal_batches()'s own
+    docstring) — never a stored field, since SaleReturn deliberately
+    carries no per-batch column. Returns None for a non-batch-tracked
+    item's return (the template shows nothing extra for those, same as
+    today) or if the reconstruction fails for any reason (never let a
+    display helper raise and break the page)."""
+    from salpurflask.models.models import resolve_sale_return_reversal_batches
+    try:
+        allocations = resolve_sale_return_reversal_batches(sr)
+    except Exception:
+        return None
+    if not allocations:
+        return None
+    return ", ".join(f"{b.batch_no or '(unknown)'}: {qty}" for b, qty in allocations)
+
 def parse_payment_amount(amount_str):
     amount_str = (amount_str or "").strip().replace(",", "")   # tolerate "1,000"
     if not amount_str.replace(".", "", 1).isdigit():
@@ -2174,6 +2195,7 @@ def inject_form_defaults():
         "get_sale_returned_qty": get_sale_returned_qty,
         "purchase_return_total": purchase_return_total,
         "sale_return_total": sale_return_total,
+        "sale_return_batch_summary": sale_return_batch_summary,
     }
     try:
         if request.method == "POST":

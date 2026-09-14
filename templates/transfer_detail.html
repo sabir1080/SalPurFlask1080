@@ -92,13 +92,14 @@
     <div class="table-responsive">
     <table class="table table-bordered mb-0 align-middle">
       <thead class="table-dark">
-        <tr><th>#</th><th>Item</th><th class="text-end">Quantity</th></tr>
+        <tr><th>#</th><th>Item</th><th>Batch</th><th class="text-end">Quantity</th></tr>
       </thead>
       <tbody>
         {% for line in transfer.lines %}
         <tr>
           <td>{{ loop.index }}</td>
           <td>{{ line.item.name }}</td>
+          <td>{{ line.batch.batch_no or '(unknown)' if line.batch else '—' }}</td>
           <td class="text-end">{{ line.quantity | fmt_num }}</td>
         </tr>
         {% endfor %}

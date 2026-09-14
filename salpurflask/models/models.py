@@ -851,6 +851,117 @@ def resolve_sale_batch_allocations(item_id, location_id, qty_needed, manual_allo
     return allocations
 
 
+def resolve_sale_return_batch_allocations(sale_item, qty_to_return, already_returned_qty):
+    """Phase D — Sale Return's own allocation policy: automatic, deterministic,
+    original-allocation order. Never manual, never FEFO-by-expiry (that
+    question doesn't apply here — the goods are coming BACK, they aren't
+    being freshly chosen from stock).
+
+    `sale_item.batch_allocations` (the SaleItemBatch rows written at Post/
+    checkout time — see resolve_sale_batch_allocations()'s own docstring for
+    where they come from) is the fixed, ordered record of which batches this
+    line actually drew from, and how much from each. A return walks that
+    SAME list, in the SAME order (by SaleItemBatch.id, i.e. creation order —
+    matching FEFO's own allocation order at Post/checkout time, since that
+    is the order the rows were written in), skipping over
+    `already_returned_qty` units already accounted for by earlier
+    SaleReturn rows against this same SaleItem, then takes `qty_to_return`
+    more from wherever that leaves off.
+
+    Example (matching the approved design exactly): original allocation
+    Batch A=10, Batch B=5. First return of 5 skips 0, takes 5 from A
+    (5 of A's 10 remain unreturned). A second return of 7 skips the 5
+    already accounted for, so it starts 5 units into Batch A's row: takes
+    A's remaining 5, then 2 from B. A third return of 3 skips the 12 now
+    already accounted for (all of A, 2 of B), so it takes B's remaining 3.
+
+    Raises PostingError if `already_returned_qty + qty_to_return` would
+    exceed the SaleItem's own original batch-allocation total — the same
+    "never return more than was sold" bound the route's own
+    get_sale_item_returned_qty()/remaining check already enforces, kept
+    here too as this function's own independent guarantee, since it is the
+    one place that actually knows the per-batch breakdown.
+
+    Returns a list of (batch, qty) pairs summing to exactly qty_to_return,
+    each qty > 0. Deterministic — the same inputs always produce the same
+    split, so two calls computing "what would return N more look like"
+    agree, and a return can never be allocated to the same original units
+    twice as long as `already_returned_qty` is computed correctly by the
+    caller before each call (see sale_return()'s own use of
+    get_sale_item_returned_qty())."""
+    allocations = sorted(sale_item.batch_allocations, key=lambda a: a.id)
+    total_allocated = sum(a.quantity for a in allocations)
+    if already_returned_qty + qty_to_return > total_allocated:
+        raise PostingError(
+            f"Cannot return {qty_to_return} unit(s) of {sale_item.item.name if sale_item.item else 'this item'}: "
+            f"only {total_allocated - already_returned_qty} of the original {total_allocated} "
+            f"sold unit(s) remain un-returned.")
+
+    result = []
+    skip = already_returned_qty
+    remaining = qty_to_return
+    for alloc in allocations:
+        if remaining <= 0:
+            break
+        if skip >= alloc.quantity:
+            skip -= alloc.quantity
+            continue
+        available_here = alloc.quantity - skip
+        skip = 0
+        take = min(remaining, available_here)
+        if take > 0:
+            result.append((alloc.batch, take))
+            remaining -= take
+
+    if remaining > 0:
+        # Defensive — the total-allocated check above should already have
+        # caught this; reached only if allocations/already_returned_qty were
+        # inconsistent with each other in a way that check didn't foresee.
+        raise PostingError(
+            f"Could not resolve a full batch allocation for the return of "
+            f"{sale_item.item.name if sale_item.item else 'this item'} — "
+            f"{remaining} unit(s) short.")
+
+    return result
+
+
+def resolve_sale_return_reversal_batches(sale_return):
+    """Reversal-side counterpart of resolve_sale_return_batch_allocations():
+    given a SaleReturn row that already exists, reconstruct exactly which
+    batch(es) it originally restored, so reversing it can send exactly that
+    stock back out (Batch A=10, Batch B=5 restored -> Batch A=10, Batch B=5
+    removed, never a blended lump sum).
+
+    SaleReturn does not itself store a per-batch breakdown (a deliberate
+    no-new-schema design decision — see resolve_sale_return_batch_
+    allocations()'s own docstring) — so this recomputes the SAME
+    deterministic split that sale_return() itself computed at creation
+    time, by walking earlier SaleReturn rows for the same sale_item_id,
+    ordered by id (creation order, matching the original allocation
+    order), to find how much was already returned BEFORE this specific
+    SaleReturn -- that number is the exact `already_returned_qty` this
+    return's own allocation was computed against, so re-running the same
+    resolver with it reproduces the identical split.
+
+    Returns [] for a non-batch-tracked item's return, or one with no
+    sale_item_id (a return with no traceable original line — cannot happen
+    through the normal UI, but the field is nullable)."""
+    if sale_return.sale_item_id is None:
+        return []
+    si = db.session.get(SaleItem, sale_return.sale_item_id)
+    if si is None or si.item is None or not si.item.batch_tracked:
+        return []
+
+    already_before_this = (
+        db.session.query(db.func.coalesce(db.func.sum(SaleReturn.quantity), 0))
+        .filter(SaleReturn.sale_item_id == sale_return.sale_item_id,
+                SaleReturn.id < sale_return.id)
+        .scalar()
+    )
+    return resolve_sale_return_batch_allocations(
+        si, line_base_qty(sale_return), already_before_this)
+
+
 class PosHold(db.Model):
     __tablename__ = "pos_hold"
     id                  = db.Column(db.Integer, primary_key=True)
@@ -2237,9 +2348,30 @@ def _unwind_stock_and_subledger(kind, doc):
         item = db.session.get(Item, doc.item_id)
         if item:                                   # goods had come back; send them out
             parent_location = doc.sale.location_id if doc.sale else None
-            item_remove_stock(item, line_base_qty(doc), cost_total=Decimal(str(doc.cost_restored or 0)),
-                              location_id=parent_location,
-                              movement_type="sale_return", source_type="sale_return", source_id=doc.id)
+            if item.batch_tracked:
+                # Batch/Lot tracking — Phase D. Reverse a return by sending
+                # exactly the batch(es) it restored back out — never a
+                # blended lump sum. resolve_sale_return_reversal_batches()
+                # reconstructs the split this return's own creation used
+                # (SaleReturn carries no per-batch column by design — see
+                # that function's own docstring).
+                allocations = resolve_sale_return_reversal_batches(doc)
+                allocated_qty = sum(qty for _, qty in allocations)
+                expected_qty = line_base_qty(doc)
+                if allocated_qty != expected_qty:
+                    raise PostingError(
+                        f"Sale return #{doc.id}: reconstructed batch allocations total "
+                        f"{allocated_qty} but the return quantity is {expected_qty} — "
+                        f"refusing to reverse an inconsistent batch allocation.")
+                for batch, qty in allocations:
+                    item_remove_stock_batched(
+                        item, qty, location_id=parent_location, batch=batch,
+                        cost_total=Decimal(str(batch.unit_cost)) * Decimal(str(qty)),
+                        movement_type="sale_return", source_type="sale_return", source_id=doc.id)
+            else:
+                item_remove_stock(item, line_base_qty(doc), cost_total=Decimal(str(doc.cost_restored or 0)),
+                                  location_id=parent_location,
+                                  movement_type="sale_return", source_type="sale_return", source_id=doc.id)
         return ("customer", remove_customer_ledger_entry("sale_return", doc.id))
 
     if kind == "stock_adjustment":
@@ -3349,6 +3481,8 @@ __all__ = [
     'get_or_create_unknown_batch',
     'fefo_allocate_batches',
     'resolve_sale_batch_allocations',
+    'resolve_sale_return_batch_allocations',
+    'resolve_sale_return_reversal_batches',
     'NEAR_EXPIRY_WARNING_DAYS',
     'sale_line_cost',
     '_repost_opening',

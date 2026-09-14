@@ -96,7 +96,11 @@
             <td><a href="{{ url_for('sale_invoice', id=r.sale_id) }}" target="_blank">#{{ r.sale_id }}</a></td>
             <td>{{ r.customer.name }}</td>
             <td>{{ r.item.name }}</td>
-            <td class="text-end">{{ r.quantity }} {{ r.unit_name or (r.item.unit if r.item else '') }}</td>
+            <td class="text-end">
+                {{ r.quantity }} {{ r.unit_name or (r.item.unit if r.item else '') }}
+                {% set batch_info = sale_return_batch_summary(r) %}
+                {% if batch_info %}<br><small class="text-muted">Batch: {{ batch_info }}</small>{% endif %}
+            </td>
             <td class="text-end">{{ r.return_price | fmt_num }}</td>
             <td class="text-end">{{ sale_return_total(r) | fmt_num }}</td>
             <td>{{ r.date.strftime('%Y-%m-%d') }}</td>

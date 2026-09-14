@@ -18,7 +18,9 @@ from salpurflask.models.models import (
     _unwind_stock_and_subledger,
     SaleItemBatch,
     item_remove_stock_batched,
+    item_add_stock_batched,
     resolve_sale_batch_allocations,
+    resolve_sale_return_batch_allocations,
     NEAR_EXPIRY_WARNING_DAYS,
 )
 from salpurflask.models.business_config import BusinessCategory
@@ -873,9 +875,21 @@ def sale_return():
                     for e in errors:
                         flash(e, "danger")
                 else:
+                    # Batch/Lot tracking — Phase D. Two or more rows in this
+                    # SAME submission can return against the same SaleItem
+                    # (e.g. the user adds two return rows for the same
+                    # line) -- a per-request running tally, seeded once per
+                    # SaleItem from the DB (before any new SaleReturn row
+                    # for it is added this request), so the second row's
+                    # allocation correctly skips over the first row's,
+                    # without a second query after each flush double-
+                    # counting the row just added.
+                    already_returned_by_si = {}
                     for si, qty, price, reason_val in rows:
                         sale = si.sale_header
                         item = get_item_locked(si.item_id)
+                        if si.id not in already_returned_by_si:
+                            already_returned_by_si[si.id] = get_sale_item_returned_qty(si.id)
                         sr = SaleReturn(
                             sale_id=sale.id,
                             customer_id=sale.customer_id,
@@ -891,12 +905,33 @@ def sale_return():
                         db.session.flush()
                         if item:
                             base_qty = qty * (si.unit_factor or 1)
-                            cost = (Decimal(str(si.cost_price or 0)) * Decimal(str(base_qty))).quantize(MONEY)
-                            sr.cost_restored = cost
-                            # Goods come back to the warehouse the sale actually left
-                            # from, never wherever happens to be default.
-                            item_add_stock(item, base_qty, cost, location_id=sale.location_id,
-                                          movement_type="sale_return", source_type="sale_return", source_id=sr.id)
+                            if item.batch_tracked:
+                                # Automatic, deterministic, original-
+                                # allocation-order restoration -- see
+                                # resolve_sale_return_batch_allocations()'s
+                                # own docstring for the exact policy.
+                                already = already_returned_by_si[si.id]
+                                allocations = resolve_sale_return_batch_allocations(
+                                    si, base_qty, already)
+                                already_returned_by_si[si.id] = already + base_qty
+                                cost = Decimal("0")
+                                for batch, alloc_qty in allocations:
+                                    item_add_stock_batched(
+                                        item, alloc_qty,
+                                        Decimal(str(batch.unit_cost)) * Decimal(str(alloc_qty)),
+                                        location_id=sale.location_id, batch=batch,
+                                        movement_type="sale_return", source_type="sale_return",
+                                        source_id=sr.id)
+                                    cost += Decimal(str(batch.unit_cost)) * Decimal(str(alloc_qty))
+                                cost = cost.quantize(MONEY)
+                                sr.cost_restored = cost
+                            else:
+                                cost = (Decimal(str(si.cost_price or 0)) * Decimal(str(base_qty))).quantize(MONEY)
+                                sr.cost_restored = cost
+                                # Goods come back to the warehouse the sale actually left
+                                # from, never wherever happens to be default.
+                                item_add_stock(item, base_qty, cost, location_id=sale.location_id,
+                                              movement_type="sale_return", source_type="sale_return", source_id=sr.id)
                         sync_customer_sale_return(sr)
                         post_document("sale_return", sr)
                     db.session.commit()

@@ -60,19 +60,24 @@
         <div class="card-body p-2">
           <table class="table table-sm mb-0" id="itemsTable">
             <thead class="table-light">
-              <tr><th>Item</th><th style="width:160px">Quantity</th><th></th></tr>
+              <tr><th>Item</th><th style="width:160px">Quantity</th><th style="width:220px" class="batch-col d-none">Batch</th><th></th></tr>
             </thead>
             <tbody id="itemBody">
               <tr>
                 <td>
-                  <select class="form-select form-select-sm" name="item_id[]" required>
+                  <select class="form-select form-select-sm item-select" name="item_id[]" required onchange="onItemChange(this)">
                     <option value="">— Item —</option>
                     {% for it in items %}
-                    <option value="{{ it.id }}">{{ it.name }}</option>
+                    <option value="{{ it.id }}" data-batch-tracked="{{ 'true' if it.batch_tracked else 'false' }}">{{ it.name }}</option>
                     {% endfor %}
                   </select>
                 </td>
                 <td><input type="number" min="1" class="form-control form-control-sm" name="quantity[]" required placeholder="Qty"></td>
+                <td class="batch-col d-none">
+                  <select class="form-select form-select-sm batch-select" name="batch_id[]">
+                    <option value="">Auto / not batch-tracked</option>
+                  </select>
+                </td>
                 <td></td>
               </tr>
             </tbody>
@@ -91,10 +96,57 @@ function addRow() {
     const clone = first.cloneNode(true);
     clone.querySelectorAll('input').forEach(i => i.value = '');
     clone.querySelectorAll('select').forEach(s => s.selectedIndex = 0);
+    const batchSel = clone.querySelector('.batch-select');
+    if (batchSel) batchSel.innerHTML = '<option value="">Auto / not batch-tracked</option>';
     const last = clone.querySelector('td:last-child');
     last.innerHTML = '<button type="button" class="btn btn-danger btn-sm" onclick="this.closest(\'tr\').remove()">×</button>';
     tbody.appendChild(clone);
 }
+
+// Batch/Lot tracking (Phase D): show the Batch column only once any row
+// needs it, same convention Purchase/POS already use for their own
+// Batch columns -- keeps the table's alignment correct for every row.
+function updateBatchColumnVisibility() {
+    const anyTracked = !!document.querySelector('#itemBody .item-select option:checked[data-batch-tracked="true"]');
+    document.querySelectorAll('.batch-col').forEach(el => el.classList.toggle('d-none', !anyTracked));
+}
+
+// Batch/Lot tracking (Phase D): picking a batch here is a convenience --
+// leaving it on "Auto / not batch-tracked" submits no batch_id for that
+// row, and the server independently re-validates whatever IS submitted
+// (see create_transfer()'s and confirm_transfer()'s own checks). This
+// list is read-only display data from a location-scoped endpoint, never
+// trusted as proof of availability -- confirm_transfer() is the only
+// place that actually locks and re-checks BatchStock.
+function onItemChange(sel) {
+    const row = sel.closest('tr');
+    const opt = sel.options[sel.selectedIndex];
+    const batchSel = row.querySelector('.batch-select');
+    const isTracked = opt && opt.dataset.batchTracked === 'true';
+    batchSel.innerHTML = '<option value="">Auto / not batch-tracked</option>';
+    batchSel.disabled = !isTracked;
+    updateBatchColumnVisibility();
+    if (!isTracked || !opt.value) return;
+
+    const sourceId = document.getElementById('sourceSelect').value;
+    const url = "{{ url_for('transfer_item_batches', item_id=0) }}".replace('/0', '/' + opt.value) +
+        (sourceId ? ('?location_id=' + encodeURIComponent(sourceId)) : '');
+    fetch(url).then(r => r.json()).then(data => {
+        if (!data.ok) return;
+        batchSel.innerHTML = '<option value="">Select batch (optional)</option>' +
+            data.batches.map(b => {
+                const label = (b.batch_no || '(unknown)') + ' — ' + b.quantity + ' available' +
+                    (b.expiry_date ? (' · exp ' + b.expiry_date) : '');
+                return '<option value="' + b.batch_id + '">' + label + '</option>';
+            }).join('');
+    }).catch(() => {});
+}
+
+// Changing the source warehouse invalidates every row's batch list (the
+// batches available differ per location) -- re-fetch each tracked row.
+document.getElementById('sourceSelect').addEventListener('change', function () {
+    document.querySelectorAll('#itemBody .item-select').forEach(onItemChange);
+});
 
 document.querySelector('form').addEventListener('submit', function (e) {
     const src = document.getElementById('sourceSelect').value;
