@@ -516,10 +516,27 @@
       const tax = (gross - disc) * (l.tax_percent / 100);
       const lineTotal = gross - disc + tax;
 
+      // Batch/Lot tracking (Phase C): a small line under the item name,
+      // shown only for a batch-tracked item -- "Auto (FEFO)" until a
+      // manager picks specific batches, then the chosen batch number(s).
+      // The whole /pos page is already @manager_required (see
+      // pos_checkout()'s own gate), so every viewer here may use the
+      // picker -- no separate permission check needed on this page.
+      const batchLabel = (l.manual_batch && l.manual_batch.length)
+        ? 'Batch: ' + l.manual_batch.map(a => a.batch_no || '(unknown)').join(', ')
+        : 'Batch: Auto (FEFO)';
+      const batchLine = l.batch_tracked
+        ? '<div class="meta pos-batch-line">' +
+            '<button type="button" class="btn btn-link btn-sm p-0 pos-batch-btn" data-i="' + i + '">' + batchLabel + '</button>' +
+            '</div>'
+        : '';
+
       row.innerHTML =
         '<div class="d-flex justify-content-between align-items-start">' +
           '<div><div class="nm">' + l.name + '</div>' +
-          '<div class="meta">' + money(l.price) + ' ea · ' + l.stock + ' stock · ' + unitDisplay + '</div></div>' +
+          '<div class="meta">' + money(l.price) + ' ea · ' + l.stock + ' stock · ' + unitDisplay + '</div>' +
+          batchLine +
+          '</div>' +
           '<div class="cart-amt">' + money(lineTotal) + '</div>' +
         '</div>' +
         '<div class="cart-line-controls">' +
@@ -665,6 +682,13 @@
         discount_value: 0,
         tax_percent: parseFloat(it.default_tax_percent || 0),
         is_taxable: it.is_taxable,
+        // Batch/Lot tracking (Phase C): batch_tracked just decides whether
+        // render() shows the Batch button at all; manual_batch (unset here,
+        // filled in only if a manager picks specific batches) is the only
+        // batch data actually sent to checkout — its absence means
+        // automatic FEFO, resolved server-side, never assumed here.
+        batch_tracked: !!it.batch_tracked,
+        manual_batch: null,
       });
     }
     results.innerHTML = '';
@@ -747,9 +771,71 @@
     }
   });
 
+  // Batch/Lot tracking (Phase C): the manual-override picker. Deliberately
+  // a small inline panel, not a new page or a large modal component -- it
+  // lists this item's FEFO-ordered batches (from /pos/item-batches/<id>,
+  // the same ordering fefo_allocate_batches() itself applies) with a qty
+  // input per batch; leaving every qty at 0 clears manual_batch, which
+  // means "use automatic FEFO" to pos_checkout() (see resolve_sale_batch_
+  // allocations()'s own contract: falsy manual_allocations -> FEFO). The
+  // server re-validates everything submitted here independently -- this
+  // panel exists only to make an informed choice easier, never to be trusted.
+  async function openBatchPicker(i) {
+    const line = cart[i];
+    if (!line) return;
+    let data;
+    try {
+      const r = await fetch("/pos/item-batches/" + line.item_id);
+      data = await r.json();
+    } catch (err) {
+      flash('Could not load batches.', true);
+      return;
+    }
+    if (!data.ok || !data.batches.length) {
+      flash('No batch stock available for ' + line.name + ' at this warehouse.', true);
+      return;
+    }
+    const lines = data.batches.map(b => {
+      const tag = b.expired ? ' [EXPIRED]' : (b.near_expiry ? ' [near expiry]' : '');
+      return (b.batch_no || '(unknown)') + tag + ' — ' + b.quantity + ' available (batch #' + b.batch_id + ')';
+    }).join('\n');
+    const promptText = 'Batches for ' + line.name + ' (earliest expiry first):\n' + lines +
+      '\n\nEnter "batch_id:qty" pairs separated by commas (e.g. "3:5, 7:2") ' +
+      'to override, or leave blank for automatic FEFO.';
+    const input = window.prompt(promptText, '');
+    if (input === null) return;                     // cancelled
+    const trimmed = input.trim();
+    if (!trimmed) { line.manual_batch = null; render(); return; }
+
+    const byId = Object.fromEntries(data.batches.map(b => [String(b.batch_id), b]));
+    const parsed = [];
+    for (const part of trimmed.split(',')) {
+      const [idStr, qtyStr] = part.split(':').map(s => (s || '').trim());
+      const batchId = parseInt(idStr), qty = parseInt(qtyStr);
+      if (!batchId || !qty || qty <= 0) {
+        flash('Could not parse "' + part + '" — use "batch_id:qty".', true);
+        return;
+      }
+      parsed.push({ batch_id: batchId, quantity: qty, batch_no: byId[String(batchId)] ? byId[String(batchId)].batch_no : null });
+    }
+    const total = parsed.reduce((s, a) => s + a.quantity, 0);
+    if (total !== line.qty) {
+      flash('Selected batch quantities total ' + total + ' but the line quantity is ' + line.qty + ' — they must match exactly.', true);
+      return;
+    }
+    line.manual_batch = parsed;
+    render();
+  }
+
   cartEl.addEventListener('click', function (e) {
     const x = e.target.getAttribute('data-x');
     if (x !== null) { cart.splice(x, 1); render(); refocus(); }
+
+    const batchBtn = e.target.closest('.pos-batch-btn');
+    if (batchBtn) {
+      openBatchPicker(parseInt(batchBtn.getAttribute('data-i')));
+      return;
+    }
 
     // Qty spinner up
     const qtyUpSpinner = e.target.closest('.cart-qty-up-spinner');
@@ -871,6 +957,11 @@
           discount_type: l.discount_type || 'percent',
           discount_value: l.discount_value || 0,
           tax_percent: l.tax_percent || 0,
+          // Batch/Lot tracking (Phase C): only sent when a manager picked
+          // specific batches; absent means automatic FEFO server-side.
+          batch_allocations: (l.manual_batch && l.manual_batch.length)
+            ? l.manual_batch.map(a => ({ batch_id: a.batch_id, quantity: a.quantity }))
+            : undefined,
         })),
         hold_id: resumedHoldId,
         client_version: holdVersion,

@@ -14,7 +14,13 @@ from salpurflask.models import (
     post_document, reverse_document, Quotation, STATUS_DRAFT, STATUS_POSTED,
     PostingError, posted_entry, reverse_entry,
 )
-from salpurflask.models.models import _unwind_stock_and_subledger
+from salpurflask.models.models import (
+    _unwind_stock_and_subledger,
+    SaleItemBatch,
+    item_remove_stock_batched,
+    resolve_sale_batch_allocations,
+    NEAR_EXPIRY_WARNING_DAYS,
+)
 from salpurflask.models.business_config import BusinessCategory
 from salpurflask.auth import verified_required, manager_required, admin_required
 from salpurflask.utils import (
@@ -216,6 +222,7 @@ def post_sale_route(id):
     action, reusing the same real functions unchanged. See
     salpurflask/models/models.py's STATUS_DRAFT/STATUS_POSTED and
     tests/test_draft_sale.py for the Draft contract this closes out."""
+    import json
     from app import record_audit, sync_customer_sale, item_remove_stock
     from salpurflask.models import stock_at_location
 
@@ -227,6 +234,24 @@ def post_sale_route(id):
     if sal.status != STATUS_DRAFT:
         flash(f"Sale #{sal.id} is not a Draft — nothing to post.", "warning")
         return redirect(url_for("sale"))
+
+    # Batch/Lot tracking — Phase C. Manual override is request-payload-only
+    # (never a Draft-schema field, per the approved design) — an optional
+    # JSON body keyed by SaleItem.id: {"<sale_item_id>": [{"batch_id":.., "quantity":..}, ...]}.
+    # Absent or malformed entries simply fall through to automatic FEFO below
+    # (resolve_sale_batch_allocations()'s own contract) rather than erroring —
+    # this keeps the plain single-button "Post" form (see sale.html) working
+    # unchanged for every Sale that doesn't need an override.
+    manual_by_line = {}
+    raw_manual = request.form.get("batch_allocations")
+    if raw_manual:
+        try:
+            parsed = json.loads(raw_manual)
+            if isinstance(parsed, dict):
+                manual_by_line = parsed
+        except (TypeError, ValueError):
+            manual_by_line = {}
+    allow_expired = request.form.get("allow_expired_sale") == "1"
 
     stock_errors = []
     for si in sal.line_items:
@@ -246,10 +271,25 @@ def post_sale_route(id):
         item_obj = get_item_locked(si.item_id)
         if item_obj and item_obj.item_type == "STOCK":
             base_qty = si.quantity * (si.unit_factor or 1)
-            item_remove_stock(item_obj, base_qty,
-                              cost_total=Decimal(str(si.cost_price or 0)) * Decimal(str(base_qty)),
-                              location_id=sal.location_id,
-                              movement_type="sale", source_type="sale", source_id=sal.id)
+            if item_obj.batch_tracked:
+                manual = manual_by_line.get(str(si.id))
+                allocations = resolve_sale_batch_allocations(
+                    item_obj.id, sal.location_id, base_qty, manual,
+                    allow_expired=allow_expired)
+                total_batch_cost = Decimal("0")
+                for batch, qty in allocations:
+                    item_remove_stock_batched(
+                        item_obj, qty, location_id=sal.location_id, batch=batch,
+                        cost_total=Decimal(str(batch.unit_cost)) * Decimal(str(qty)),
+                        movement_type="sale", source_type="sale", source_id=sal.id)
+                    db.session.add(SaleItemBatch(sale_item_id=si.id, batch_id=batch.id, quantity=qty))
+                    total_batch_cost += Decimal(str(batch.unit_cost)) * Decimal(str(qty))
+                si.cost_price = float((total_batch_cost / Decimal(str(base_qty))).quantize(MONEY))
+            else:
+                item_remove_stock(item_obj, base_qty,
+                                  cost_total=Decimal(str(si.cost_price or 0)) * Decimal(str(base_qty)),
+                                  location_id=sal.location_id,
+                                  movement_type="sale", source_type="sale", source_id=sal.id)
     sal.invoice_no = allocate_document_number("sale", sal.date)
     sync_customer_sale(sal)
     post_document("sale", sal)
@@ -332,6 +372,22 @@ def correct_sale_route(id):
         tax_pcts    = request.form.getlist("tax_percent[]")
         unit_ids    = request.form.getlist("unit_id[]")
         confirmed   = request.form.get("confirm_correction") == "1"
+        # Batch/Lot tracking — Phase C. Manual override is request-payload-
+        # only (see post_sale_route()'s identical block) — an optional JSON
+        # body keyed by item_id (there is no SaleItem.id yet for the new
+        # rows being submitted here, unlike Post's re-post of an existing
+        # Draft's already-persisted lines).
+        import json
+        manual_by_item = {}
+        raw_manual = request.form.get("batch_allocations")
+        if raw_manual:
+            try:
+                parsed = json.loads(raw_manual)
+                if isinstance(parsed, dict):
+                    manual_by_item = parsed
+            except (TypeError, ValueError):
+                manual_by_item = {}
+        allow_expired = request.form.get("allow_expired_sale") == "1"
 
         rows = []
         for i, (iid, qty, price) in enumerate(zip(item_ids, quantities, prices)):
@@ -414,6 +470,26 @@ def correct_sale_route(id):
             # because the SaleReturn check above guarantees no sale_item_id points
             # at the rows being deleted.
             old_customer_id = sal.customer_id
+            # Batch/Lot tracking — Phase C. Same fix Phase B applied to
+            # correct_purchase_route(): the raw bulk delete below does not
+            # go through the ORM, so SaleItemBatch's cascade="all,delete-
+            # orphan" (which only fires on an ORM-tracked delete) never
+            # runs — explicitly delete the old allocations first, or they
+            # survive as rows pointing at a sale_item_id that no longer
+            # exists (or, worse, gets reused by a future insert).
+            # _unwind_stock_and_subledger above has already read these rows
+            # to restore their stock; they are pure history from here.
+            # synchronize_session="fetch" (not False) -- a plain bulk DELETE
+            # leaves the just-deleted rows' Python objects in the session's
+            # identity map; "fetch" expires the matching objects too, so a
+            # brand-new SaleItemBatch reusing the same id later in this same
+            # transaction (SQLite in particular) does not collide with a
+            # stale identity.
+            old_si_ids = [si.id for si in sal.line_items]
+            if old_si_ids:
+                SaleItemBatch.query.filter(
+                    SaleItemBatch.sale_item_id.in_(old_si_ids)).delete(
+                    synchronize_session="fetch")
             SaleItem.query.filter_by(sale_id=sal.id).delete()
             first_iid, first_qty, first_price, first_d_type, first_d_val, first_tax = \
                 rows[0][0], rows[0][1], rows[0][2], rows[0][3], rows[0][4], rows[0][5]
@@ -451,10 +527,35 @@ def correct_sale_route(id):
                     unit_name=unit_name, unit_factor=unit_factor,
                 )
                 db.session.add(si)
+                db.session.flush()
                 if item_obj.item_type == "STOCK":
-                    item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)),
-                                      location_id=sal.location_id,
-                                      movement_type="sale", source_type="sale", source_id=sal.id)
+                    if item_obj.batch_tracked:
+                        # Corrected Sale re-allocation: fresh FEFO against
+                        # current BatchStock unless an explicit, valid
+                        # manual override is submitted for this item — the
+                        # original allocation was itself a system decision
+                        # (FEFO or an override not re-submitted here), and
+                        # the corrected quantity may differ from the
+                        # original, so re-running FEFO is the only choice
+                        # that stays consistent with what a fresh Post does.
+                        manual = manual_by_item.get(str(item_obj.id))
+                        allocations = resolve_sale_batch_allocations(
+                            item_obj.id, sal.location_id, base_qty, manual,
+                            allow_expired=allow_expired)
+                        total_batch_cost = Decimal("0")
+                        for batch, alloc_qty in allocations:
+                            item_remove_stock_batched(
+                                item_obj, alloc_qty, location_id=sal.location_id, batch=batch,
+                                cost_total=Decimal(str(batch.unit_cost)) * Decimal(str(alloc_qty)),
+                                movement_type="sale", source_type="sale", source_id=sal.id)
+                            db.session.add(SaleItemBatch(
+                                sale_item_id=si.id, batch_id=batch.id, quantity=alloc_qty))
+                            total_batch_cost += Decimal(str(batch.unit_cost)) * Decimal(str(alloc_qty))
+                        si.cost_price = float((total_batch_cost / Decimal(str(base_qty))).quantize(MONEY))
+                    else:
+                        item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)),
+                                          location_id=sal.location_id,
+                                          movement_type="sale", source_type="sale", source_id=sal.id)
             db.session.flush()
             db.session.refresh(sal)
 
@@ -972,7 +1073,51 @@ def pos_lookup():
         "units": [{"key": u["key"], "name": u["name"], "factor": u["factor"],
                    "price": float(u["sale_price"] or 0) or float(it.sale_price or 0)}
                   for u in item_unit_choices(it)],
+        # Batch/Lot tracking (Phase C): lets the POS cart show a manual-batch
+        # picker only for an item that actually has one — client-side
+        # convenience only, the server independently re-checks this same
+        # flag before allocating anything (see pos_checkout()'s own gating).
+        "batch_tracked": bool(it.batch_tracked),
     } for it in matches]}
+
+
+@sales_bp.route('/pos/item-batches/<int:item_id>', methods=['GET'])
+@manager_required
+def pos_item_batches(item_id):
+    """Available batches for one item at one location, FEFO-ordered, for the
+    POS manual-override picker — the same ordering fefo_allocate_batches()
+    itself applies, so what the cashier sees matches what automatic
+    allocation would choose first. Read-only; never mutates anything."""
+    from datetime import timedelta
+    from salpurflask.models import resolve_location_id, get_or_create_default_location
+    from salpurflask.models.inventory_location import BatchStock
+    from salpurflask.models.models import Batch
+
+    item = db.session.get(Item, item_id) or abort(404)
+    try:
+        location_id = resolve_location_id(request.args.get("location_id")) \
+            if request.args.get("location_id") else get_or_create_default_location().id
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}, 400
+
+    today = now_local().date()
+    rows = (db.session.query(Batch, BatchStock.quantity)
+            .join(BatchStock, BatchStock.batch_id == Batch.id)
+            .filter(Batch.item_id == item_id,
+                    BatchStock.location_id == location_id,
+                    BatchStock.quantity > 0)
+            # Same NULLS-LAST-on-every-engine ordering as fefo_allocate_batches()
+            # itself -- see that function's own comment for why plain ASC is
+            # not portable here.
+            .order_by(Batch.expiry_date.is_(None), Batch.expiry_date.asc(), Batch.id.asc())
+            .all())
+    return {"ok": True, "batches": [{
+        "batch_id": b.id, "batch_no": b.batch_no, "quantity": qty,
+        "expiry_date": b.expiry_date.isoformat() if b.expiry_date else None,
+        "expired": bool(b.expiry_date and b.expiry_date < today),
+        "near_expiry": bool(b.expiry_date and today <= b.expiry_date
+                            <= today + timedelta(days=NEAR_EXPIRY_WARNING_DAYS)),
+    } for b, qty in rows]}
 
 
 @sales_bp.route('/pos/checkout', methods=['POST'])
@@ -988,6 +1133,14 @@ def pos_checkout():
     lines = data.get("items") or []
     if not lines:
         return {"ok": False, "error": "The cart is empty."}, 400
+
+    # Batch/Lot tracking — Phase C. Manual override is request-payload-only
+    # (see post_sale_route()'s identical note) — each cart line may carry an
+    # optional "batch_allocations": [{"batch_id":.., "quantity":..}, ...],
+    # validated server-side inside resolve_sale_batch_allocations() exactly
+    # like every other untrusted request field in this route already is;
+    # absent/empty falls through to automatic FEFO.
+    allow_expired_sale = bool(data.get("allow_expired_sale"))
 
     try:
         location_id = resolve_location_id(data.get("location_id"))
@@ -1037,6 +1190,41 @@ def pos_checkout():
             disc_amt, tax_amt, net = calc_discount_tax(gross, d_type, d_val, tax_pct)
             total += Decimal(str(net)).quantize(MONEY)
 
+            # Remove stock. The Sale row this belongs to does not exist yet
+            # (POS validates and moves stock line-by-line, then creates the
+            # Sale once every line has passed) — movement_type is passed so
+            # the row exists and is correctly typed immediately, but
+            # source_id is filled in right after sal.id exists, a few lines
+            # below, rather than restructuring this loop's order. Batch-
+            # tracked items resolve FEFO/manual allocations here too, while
+            # the Item lock from get_item_locked() above is still held (see
+            # fefo_allocate_batches()'s own docstring on why this ordering
+            # is what makes concurrent checkouts of the same item safe) —
+            # item_remove_stock_batched() tags the same movement row via the
+            # identical _movement_out mechanism item_remove_stock() itself
+            # never changes, so the deferred source_id backfill below needs
+            # no change to find it.
+            batch_allocations = []
+            if item_obj.batch_tracked:
+                manual = ln.get("batch_allocations")
+                allocations = resolve_sale_batch_allocations(
+                    item_obj.id, location_id, base_qty, manual,
+                    allow_expired=allow_expired_sale)
+                total_batch_cost = Decimal("0")
+                for batch, alloc_qty in allocations:
+                    item_remove_stock_batched(
+                        item_obj, alloc_qty, location_id=location_id, batch=batch,
+                        cost_total=Decimal(str(batch.unit_cost)) * Decimal(str(alloc_qty)),
+                        movement_type="sale", source_type="sale")
+                    batch_allocations.append((batch, alloc_qty))
+                    total_batch_cost += Decimal(str(batch.unit_cost)) * Decimal(str(alloc_qty))
+                unit_cost = (total_batch_cost / Decimal(str(base_qty))).quantize(MONEY)
+            else:
+                unit_cost = item_obj.avg_cost
+                item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)),
+                                  location_id=location_id,
+                                  movement_type="sale", source_type="sale")
+
             # Store processed line data
             line_data = {
                 "item_obj": item_obj,
@@ -1051,23 +1239,14 @@ def pos_checkout():
                 "disc_amt": disc_amt,
                 "tax_amt": tax_amt,
                 "net": net,
+                "unit_cost": unit_cost,
+                "batch_allocations": batch_allocations,
             }
             processed_lines.append(line_data)
 
             # Capture first item for Sale record
             if ln == first:
                 first_item_data = line_data
-
-            # Remove stock. The Sale row this belongs to does not exist yet
-            # (POS validates and moves stock line-by-line, then creates the
-            # Sale once every line has passed) — movement_type is passed so
-            # the row exists and is correctly typed immediately, but
-            # source_id is filled in right after sal.id exists, a few lines
-            # below, rather than restructuring this loop's order.
-            unit_cost = item_obj.avg_cost
-            item_remove_stock(item_obj, base_qty, cost_total=unit_cost * Decimal(str(base_qty)),
-                              location_id=location_id,
-                              movement_type="sale", source_type="sale")
 
         # Create Sale record with first item data
         first = first_item_data
@@ -1076,7 +1255,7 @@ def pos_checkout():
             item_id=int(lines[0]["item_id"]),
             quantity=first["qty_i"],
             sale_price=float(first["price_f"]),
-            cost_price=float(first["item_obj"].avg_cost),
+            cost_price=float(first["unit_cost"]),
             discount_type=first["d_type"], discount_value=float(first["d_val"]),
             discount_amount=first["disc_amt"],
             tax_percent=float(first["tax_pct"]), tax_amount=first["tax_amt"],
@@ -1099,16 +1278,26 @@ def pos_checkout():
          .filter(StockMovement.item_id.in_([ld["item_obj"].id for ld in processed_lines]))
          .update({"source_id": sal.id}, synchronize_session=False))
 
-        # Add all SaleItems
+        # Add all SaleItems. unit_cost was already resolved in the validation
+        # loop above (batch-derived weighted average for a batch-tracked
+        # line, plain avg_cost otherwise) — reused here rather than re-read,
+        # since item.avg_cost has already moved by this point (the stock
+        # removal above changed it) and would give a different number than
+        # what was actually charged against COGS moments ago.
         for line_data in processed_lines:
-            unit_cost = line_data["item_obj"].avg_cost
-            db.session.add(SaleItem(
+            si = SaleItem(
                 sale_id=sal.id, item_id=line_data["item_obj"].id, quantity=line_data["qty_i"],
-                sale_price=line_data["price_f"], cost_price=float(unit_cost),
+                sale_price=line_data["price_f"], cost_price=float(line_data["unit_cost"]),
                 discount_type=line_data["d_type"], discount_value=line_data["d_val"],
                 discount_amount=line_data["disc_amt"], tax_percent=line_data["tax_pct"],
                 tax_amount=line_data["tax_amt"], amount=line_data["net"],
-                unit_name=line_data["unit_name"], unit_factor=line_data["unit_factor"]))
+                unit_name=line_data["unit_name"], unit_factor=line_data["unit_factor"])
+            db.session.add(si)
+            if line_data["batch_allocations"]:
+                db.session.flush()  # si.id needed for SaleItemBatch below
+                for batch, alloc_qty in line_data["batch_allocations"]:
+                    db.session.add(SaleItemBatch(
+                        sale_item_id=si.id, batch_id=batch.id, quantity=alloc_qty))
 
         db.session.flush()
         db.session.refresh(sal)

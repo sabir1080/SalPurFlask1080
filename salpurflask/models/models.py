@@ -675,6 +675,182 @@ def item_remove_stock_batched(item, qty, location_id, batch, *, cost_total=None,
     return cost
 
 
+# Near-expiry warning window (days). Purely informational -- never blocks a
+# sale, unlike expiry_date < today which always does (see fefo_allocate_batches()
+# below). A single module-level constant so Sale/POS/reports agree on the same
+# threshold without each guessing their own number.
+NEAR_EXPIRY_WARNING_DAYS = 60
+
+
+def fefo_allocate_batches(item_id, location_id, qty_needed, *, allow_expired=False):
+    """First-Expiry-First-Out candidate selection for a batch-tracked Sale line.
+
+    Locks the parent Item row first (get_item_locked()), the same lock
+    get_or_create_batch() depends on (see its own docstring) -- every batch
+    operation for this item is reached only after this lock is held, so the
+    candidate read below (a plain, unlocked query) is safe: no concurrent
+    transaction can be mutating this item's BatchStock rows while the lock is
+    held, and a second concurrent sale of the same item blocks here until this
+    one commits or rolls back. See item_remove_stock_batched()'s own BatchStock
+    lock, taken per-batch as allocation proceeds below -- this function itself
+    does not read-then-trust BatchStock.quantity without that lock backing it;
+    the actual decrement (by the caller, via item_remove_stock_batched()) is
+    what re-locks and re-checks each row.
+
+    Expired batches (expiry_date < today) are excluded entirely unless
+    allow_expired=True (the explicit, server-confirmed authorized-expired-sale
+    path — see pos_checkout()/post_sale_route()'s own handling). A NULL expiry
+    is always valid and sorts last, after every dated batch, which is the
+    plain everyday meaning of FEFO: sell what expires soonest first, and treat
+    "no known expiry" as if it expires last of all.
+
+    Returns a list of (batch, qty_to_take) pairs summing to exactly qty_needed,
+    or raises PostingError if the combined valid batch stock at this location
+    is insufficient -- never a partial list. Does not itself mutate anything;
+    the caller applies each pair via item_remove_stock_batched() inside the
+    same transaction, so a failure anywhere in that loop rolls back allocation
+    and mutation together."""
+    from salpurflask.models.inventory_location import BatchStock
+    from salpurflask.utils.helpers import get_item_locked
+
+    item = get_item_locked(item_id)
+    if item is None:
+        raise PostingError(f"Item #{item_id} does not exist.")
+
+    resolved_location_id = _resolve_batch_location(location_id)
+    today = now_local().date()
+
+    candidates = (
+        db.session.query(Batch, BatchStock.quantity)
+        .join(BatchStock, BatchStock.batch_id == Batch.id)
+        .filter(Batch.item_id == item_id,
+                BatchStock.location_id == resolved_location_id,
+                BatchStock.quantity > 0)
+    )
+    if not allow_expired:
+        candidates = candidates.filter(
+            db.or_(Batch.expiry_date.is_(None), Batch.expiry_date >= today))
+    candidates = candidates.order_by(
+        # NULL expiry must sort LAST, but plain ascending order does not do
+        # that on both engines this app runs on: PostgreSQL's default for
+        # ASC is NULLS LAST, but SQLite's default for ASC is NULLS FIRST --
+        # confirmed the hard way (a first version of this function assumed
+        # otherwise and a test caught it). (expiry_date IS NULL) evaluates to
+        # 0/false for a dated batch and 1/true for an undated one on both
+        # engines, so ordering by that first, then by expiry_date itself,
+        # puts every dated batch before every undated one regardless of
+        # dialect, without a dialect-specific NULLS LAST clause.
+        Batch.expiry_date.is_(None), Batch.expiry_date.asc(), Batch.id.asc(),
+    ).all()
+
+    remaining = qty_needed
+    allocations = []
+    for batch, available_at_query_time in candidates:
+        if remaining <= 0:
+            break
+        # available_at_query_time is a plain, unlocked read from the candidate
+        # query above -- safe only because get_item_locked() at the top of
+        # this function already serializes every writer for this item (see
+        # this function's own docstring). item_remove_stock_batched() (the
+        # caller's next step for each pair returned here) re-locks and
+        # re-checks the same BatchStock row before actually decrementing it,
+        # so a stale read here can never result in an overdraw -- at worst it
+        # would raise there, inside the same still-open transaction.
+        available = available_at_query_time or 0
+        if available <= 0:
+            continue
+        take = min(remaining, available)
+        allocations.append((batch, take))
+        remaining -= take
+
+    if remaining > 0:
+        raise PostingError(
+            f"Not enough valid batch stock for {item.name} at this location: "
+            f"{qty_needed - remaining} of {qty_needed} requested unit(s) could be "
+            f"allocated across existing batches (excluding expired batches unless "
+            f"explicitly authorized).")
+
+    return allocations
+
+
+def resolve_sale_batch_allocations(item_id, location_id, qty_needed, manual_allocations=None,
+                                   *, allow_expired=False):
+    """The single entry point every batch-tracked Sale/POS line goes through to
+    decide which Batch(es) its quantity is drawn from — automatic FEFO by
+    default, or an explicit, server-validated manual override.
+
+    `manual_allocations`, if given, is a list of {"batch_id": int, "quantity": int}
+    dicts taken directly from the request payload (Post form or POS JSON body)
+    — untrusted input. Every one of the checks below exists because the value
+    came from outside this transaction: a submitted batch_id may not exist, may
+    belong to a different item, may have already been depleted by a concurrent
+    sale, may be expired, may be duplicated across two entries, or may not sum
+    to the line's own quantity. Any failure here raises PostingError, which
+    rolls back the whole transaction via the caller's existing handler — never
+    a partial allocation.
+
+    Falls through to fefo_allocate_batches() when manual_allocations is None or
+    empty -- "no valid manual allocation supplied" means automatic FEFO, not an
+    error."""
+    from salpurflask.models.inventory_location import BatchStock
+    from salpurflask.utils.helpers import get_item_locked
+
+    if not manual_allocations:
+        return fefo_allocate_batches(item_id, location_id, qty_needed, allow_expired=allow_expired)
+
+    item = get_item_locked(item_id)
+    if item is None:
+        raise PostingError(f"Item #{item_id} does not exist.")
+    resolved_location_id = _resolve_batch_location(location_id)
+    today = now_local().date()
+
+    seen_batch_ids = set()
+    allocations = []
+    total = 0
+    for entry in manual_allocations:
+        try:
+            batch_id = int(entry.get("batch_id"))
+            qty = int(entry.get("quantity"))
+        except (TypeError, ValueError):
+            raise PostingError(f"Invalid batch allocation entry for {item.name}.")
+        if qty <= 0:
+            raise PostingError(f"Batch allocation quantity for {item.name} must be positive.")
+        if batch_id in seen_batch_ids:
+            raise PostingError(
+                f"Batch #{batch_id} was selected more than once for {item.name} — "
+                f"combine it into a single allocation entry.")
+        seen_batch_ids.add(batch_id)
+
+        batch = db.session.get(Batch, batch_id)
+        if batch is None or batch.item_id != item_id:
+            raise PostingError(
+                f"Batch #{batch_id} does not exist or does not belong to {item.name}.")
+        if not allow_expired and batch.expiry_date is not None and batch.expiry_date < today:
+            raise PostingError(
+                f"Batch {batch.batch_no or '(unknown)'} of {item.name} expired on "
+                f"{batch.expiry_date} and cannot be sold without explicit authorization.")
+
+        bstock = (BatchStock.query
+                  .filter_by(batch_id=batch.id, location_id=resolved_location_id)
+                  .with_for_update()
+                  .first())
+        available = (bstock.quantity or 0) if bstock else 0
+        if available < qty:
+            raise PostingError(
+                f"Batch {batch.batch_no or '(unknown)'} of {item.name} has only "
+                f"{available} available at this location, but {qty} requested.")
+
+        allocations.append((batch, qty))
+        total += qty
+
+    if total != qty_needed:
+        raise PostingError(
+            f"Selected batch quantities for {item.name} total {total}, but the line "
+            f"quantity is {qty_needed} — they must match exactly.")
+
+    return allocations
+
+
 class PosHold(db.Model):
     __tablename__ = "pos_hold"
     id                  = db.Column(db.Integer, primary_key=True)
@@ -1999,14 +2175,41 @@ def _unwind_stock_and_subledger(kind, doc):
         for si in doc.line_items:
             item = db.session.get(Item, si.item_id)
             if item:
-                # Goods come back in at the cost they left at. cost_price is per base
-                # unit (it is a snapshot of avg_cost), so the total needs the base qty.
                 # Same warehouse they were sold from — never the wrong one.
                 base_qty = line_base_qty(si)
-                item_add_stock(item, base_qty,
-                               Decimal(str(si.cost_price or 0)) * Decimal(str(base_qty)),
-                               location_id=doc.location_id,
-                               movement_type="sale", source_type="sale", source_id=doc.id)
+                if item.batch_tracked:
+                    # Batch/Lot tracking — Phase C. Restore each batch
+                    # allocation this line actually drew from at Post/
+                    # checkout, exactly (Batch A: 10, Batch B: 5 goes back
+                    # as Batch A: 10, Batch B: 5, never a blended lump sum) —
+                    # not one aggregate item_add_stock() call. Read
+                    # allocations BEFORE the caller deletes this SaleItem row
+                    # (both existing callers of this function already do the
+                    # delete afterwards — see correct_sale_route()/
+                    # reverse_document()). Mirrors the "purchase" branch
+                    # above exactly, but restoring instead of removing.
+                    allocations = list(si.batch_allocations)
+                    allocated_qty = sum(a.quantity for a in allocations)
+                    if allocated_qty != base_qty:
+                        raise PostingError(
+                            f"Sale #{doc.id} line for {item.name}: batch "
+                            f"allocations total {allocated_qty} but the line "
+                            f"quantity is {base_qty} — refusing to reverse "
+                            f"an inconsistent batch allocation.")
+                    for alloc in allocations:
+                        batch = db.session.get(Batch, alloc.batch_id)
+                        item_add_stock_batched(
+                            item, alloc.quantity,
+                            Decimal(str(batch.unit_cost)) * Decimal(str(alloc.quantity)),
+                            location_id=doc.location_id, batch=batch,
+                            movement_type="sale", source_type="sale", source_id=doc.id)
+                else:
+                    # Goods come back in at the cost they left at. cost_price is per base
+                    # unit (it is a snapshot of avg_cost), so the total needs the base qty.
+                    item_add_stock(item, base_qty,
+                                   Decimal(str(si.cost_price or 0)) * Decimal(str(base_qty)),
+                                   location_id=doc.location_id,
+                                   movement_type="sale", source_type="sale", source_id=doc.id)
         cust_id = remove_customer_ledger_entry("sale", doc.id)
         return ("customer", cust_id)
 
@@ -3144,6 +3347,9 @@ __all__ = [
     'item_remove_stock_batched',
     'get_or_create_batch',
     'get_or_create_unknown_batch',
+    'fefo_allocate_batches',
+    'resolve_sale_batch_allocations',
+    'NEAR_EXPIRY_WARNING_DAYS',
     'sale_line_cost',
     '_repost_opening',
     '_opening_date',
