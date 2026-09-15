@@ -27,21 +27,21 @@
     <h5 class="mb-0"><i class="bi bi-plus-circle"></i> New Adjustment</h5>
   </div>
   <div class="card-body">
-        <form method="POST" class="row g-3">
+        <form method="POST" class="row g-3" id="adjustmentForm">
             <div class="col-md-3">
                 <label class="form-label fw-semibold">Item <span class="text-danger">*</span></label>
-                <select class="form-select" name="item_id" required>
+                <select class="form-select" name="item_id" id="adjItemSelect" required onchange="onAdjItemOrTypeChange()">
                     <option value="">— Select Item —</option>
                     {% for item in items %}
-                    <option value="{{ item.id }}">{{ item.name }} (Stock: {{ item.stock }})</option>
+                    <option value="{{ item.id }}" data-batch-tracked="{{ 'true' if item.batch_tracked else 'false' }}">{{ item.name }} (Stock: {{ item.stock }})</option>
                     {% endfor %}
                 </select>
             </div>
             <div class="col-md-2">
                 <label class="form-label fw-semibold">Type <span class="text-danger">*</span></label>
-                <select class="form-select" name="adj_type" required>
+                <select class="form-select" name="adj_type" id="adjTypeSelect" required onchange="onAdjItemOrTypeChange()">
                     {% for t in adj_types %}
-                    <option value="{{ t }}">{{ t }}</option>
+                    <option value="{{ t }}" data-direction="{{ 'in' if t in ('Stock In', 'Count Correction (Increase)') else 'out' }}">{{ t }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -60,15 +60,36 @@
             {% if locations|length > 1 %}
             <div class="col-md-3">
                 <label class="form-label fw-semibold">Warehouse <span class="text-danger">*</span></label>
-                <select class="form-select" name="location_id" required>
+                <select class="form-select" name="location_id" id="adjLocationSelect" required onchange="onAdjItemOrTypeChange()">
                     {% for loc in locations %}
                     <option value="{{ loc.id }}" {% if loc.id == default_location.id %}selected{% endif %}>{{ loc.name }}</option>
                     {% endfor %}
                 </select>
             </div>
             {% else %}
-            <input type="hidden" name="location_id" value="{{ default_location.id }}">
+            <input type="hidden" name="location_id" id="adjLocationSelect" value="{{ default_location.id }}">
             {% endif %}
+            <!-- Batch/Lot tracking (Phase E): shown only for a batch-tracked
+                 item. OUT requires picking an existing batch (mandatory,
+                 no automatic FEFO — a write-off is a specific physical
+                 batch). IN may pick an existing batch to top up, or leave
+                 it on "New batch" and optionally name one (blank routes
+                 into the item's Unknown Batch, same as Purchase's own
+                 Draft fields). -->
+            <div class="col-md-4 d-none" id="adjBatchExistingWrap">
+                <label class="form-label fw-semibold" id="adjBatchExistingLabel">Batch</label>
+                <select class="form-select" name="batch_id" id="adjBatchExistingSelect">
+                    <option value="">— Select Batch —</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-none" id="adjBatchNewNoWrap">
+                <label class="form-label fw-semibold">New Batch No.</label>
+                <input type="text" class="form-control" name="batch_no" id="adjBatchNewNo" placeholder="Leave blank for Unknown Batch">
+            </div>
+            <div class="col-md-3 d-none" id="adjBatchNewExpiryWrap">
+                <label class="form-label fw-semibold">Expiry Date</label>
+                <input type="date" class="form-control" name="expiry_date" id="adjBatchNewExpiry">
+            </div>
             <div class="col-12">
                 <button type="submit" class="btn btn-warning"><i class="bi bi-check-circle"></i> Save Adjustment</button>
             </div>
@@ -117,4 +138,71 @@
     </div>
 </div>
 {{ pagination.links }}
+
+<script>
+// Batch/Lot tracking (Phase E): show/hide the batch fields based on the
+// selected item's batch_tracked flag and the selected adjustment type's
+// direction. Client-side convenience only -- the server independently
+// re-checks item.batch_tracked and the OUT-requires-a-batch rule before
+// saving anything (see stock_adjustment()'s own gating), so a hidden/
+// disabled field here can never smuggle a value through.
+function onAdjItemOrTypeChange() {
+    const itemSel = document.getElementById('adjItemSelect');
+    const typeSel = document.getElementById('adjTypeSelect');
+    const opt = itemSel.options[itemSel.selectedIndex];
+    const isTracked = opt && opt.dataset.batchTracked === 'true';
+    const typeOpt = typeSel.options[typeSel.selectedIndex];
+    const direction = typeOpt ? typeOpt.dataset.direction : 'in';
+
+    const existingWrap = document.getElementById('adjBatchExistingWrap');
+    const existingLabel = document.getElementById('adjBatchExistingLabel');
+    const existingSelect = document.getElementById('adjBatchExistingSelect');
+    const newNoWrap = document.getElementById('adjBatchNewNoWrap');
+    const newExpiryWrap = document.getElementById('adjBatchNewExpiryWrap');
+
+    if (!isTracked) {
+        existingWrap.classList.add('d-none');
+        newNoWrap.classList.add('d-none');
+        newExpiryWrap.classList.add('d-none');
+        existingSelect.value = '';
+        return;
+    }
+
+    existingWrap.classList.remove('d-none');
+    existingLabel.innerHTML = direction === 'out'
+        ? 'Batch <span class="text-danger">*</span>'
+        : 'Existing Batch (optional)';
+    existingSelect.required = direction === 'out';
+    // "New batch" fields only make sense for IN -- OUT always moves an
+    // existing, already-received batch.
+    if (direction === 'out') {
+        newNoWrap.classList.add('d-none');
+        newExpiryWrap.classList.add('d-none');
+    } else {
+        newNoWrap.classList.remove('d-none');
+        newExpiryWrap.classList.remove('d-none');
+    }
+
+    if (opt && opt.value) {
+        loadAdjItemBatches(opt.value);
+    }
+}
+
+function loadAdjItemBatches(itemId) {
+    const locationSelect = document.getElementById('adjLocationSelect');
+    const locationId = locationSelect ? locationSelect.value : '';
+    const existingSelect = document.getElementById('adjBatchExistingSelect');
+    const url = "{{ url_for('stock_adjustment_item_batches', item_id=0) }}".replace('/0', '/' + itemId) +
+        (locationId ? ('?location_id=' + encodeURIComponent(locationId)) : '');
+    fetch(url).then(r => r.json()).then(data => {
+        if (!data.ok) return;
+        existingSelect.innerHTML = '<option value="">— Select Batch —</option>' +
+            data.batches.map(b => {
+                const label = (b.batch_no || '(unknown)') + ' — ' + b.quantity + ' available' +
+                    (b.expiry_date ? (' · exp ' + b.expiry_date) : '');
+                return '<option value="' + b.batch_id + '">' + label + '</option>';
+            }).join('');
+    }).catch(() => {});
+}
+</script>
 {% endblock %}

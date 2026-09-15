@@ -1120,6 +1120,15 @@ class StockAdjustment(db.Model):
     # Which warehouse this adjustment counted. Same NULL-means-default
     # convention as Purchase.location_id.
     location_id     = db.Column(db.Integer, db.ForeignKey("location.id"), nullable=True)
+    # Batch/Lot tracking — Phase E. Which single Batch this adjustment moved,
+    # for a batch-tracked item. NULL for every non-batch-tracked item's
+    # adjustment, and for every row written before this phase existed.
+    # StockAdjustment is one row per submission (no line-items array, unlike
+    # Purchase/Sale), so — mirroring TransferItem.batch_id's exact shape,
+    # not a junction table — a single nullable FK is the whole story: one
+    # adjustment always touches exactly one batch.
+    batch_id        = db.Column(db.Integer, db.ForeignKey("batch.id"), nullable=True)
+    batch           = db.relationship("Batch")
 
 # ── Expense Tracking ──────────────────────────────────────────────────────────
 class ExpenseCategory(db.Model):
@@ -2378,12 +2387,29 @@ def _unwind_stock_and_subledger(kind, doc):
         item = db.session.get(Item, doc.item_id)
         if item:
             value = Decimal(str(doc.cost_value or 0))
-            if doc.direction == "out":
-                item_add_stock(item, doc.quantity, value, location_id=doc.location_id,
-                               movement_type="adjustment", source_type="stock_adjustment", source_id=doc.id)
+            if item.batch_tracked and doc.batch_id:
+                # Batch/Lot tracking — Phase E. StockAdjustment carries its
+                # own batch_id directly (one row = one batch, no junction
+                # table to reconstruct from — see StockAdjustment.batch_id's
+                # own docstring) — reverse through that exact batch, never a
+                # blended/company-wide figure.
+                batch = db.session.get(Batch, doc.batch_id)
+                if doc.direction == "out":
+                    item_add_stock_batched(item, doc.quantity, value, location_id=doc.location_id,
+                                           batch=batch, movement_type="adjustment",
+                                           source_type="stock_adjustment", source_id=doc.id)
+                else:
+                    item_remove_stock_batched(item, doc.quantity, location_id=doc.location_id,
+                                              batch=batch, cost_total=value,
+                                              movement_type="adjustment",
+                                              source_type="stock_adjustment", source_id=doc.id)
             else:
-                item_remove_stock(item, doc.quantity, cost_total=value, location_id=doc.location_id,
-                                  movement_type="adjustment", source_type="stock_adjustment", source_id=doc.id)
+                if doc.direction == "out":
+                    item_add_stock(item, doc.quantity, value, location_id=doc.location_id,
+                                   movement_type="adjustment", source_type="stock_adjustment", source_id=doc.id)
+                else:
+                    item_remove_stock(item, doc.quantity, cost_total=value, location_id=doc.location_id,
+                                      movement_type="adjustment", source_type="stock_adjustment", source_id=doc.id)
         return (None, None)
 
     raise PostingError(f"Don't know how to reverse a {kind}.")

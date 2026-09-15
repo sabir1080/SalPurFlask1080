@@ -18,6 +18,9 @@ from salpurflask.models import (
     post_customer_opening, post_supplier_opening,
     item_add_stock, item_remove_stock, _repost_opening, _opening_date,
     assert_not_posted, post_document,
+    Batch, get_or_create_batch,
+    item_add_stock_batched, item_remove_stock_batched,
+    PostingError,
 )
 from salpurflask.models.business_config import BusinessCategory
 from salpurflask.auth import verified_required, manager_required, admin_required
@@ -1052,6 +1055,19 @@ def stock_adjustment():
         qty_str  = request.form.get("quantity", "").strip()
         reason   = request.form.get("reason", "").strip()
         date_str = request.form.get("date", "").strip()
+        # Batch/Lot tracking — Phase E. Read regardless of whether the item
+        # is batch-tracked; which of these actually gets used is decided
+        # per-submission below, server-side — never trusted from a hidden/
+        # disabled UI field alone (same rule Purchase/Sale/Transfer already
+        # follow). batch_id: an existing batch selected for OUT, or an
+        # existing batch to top up for IN. batch_no/expiry_date: a NEW
+        # batch's identity for IN when no existing batch was selected —
+        # blank batch_no still routes through get_or_create_batch() into
+        # the item's single Unknown Batch, same as Purchase's own Draft
+        # fields do.
+        batch_id_raw    = request.form.get("batch_id", "").strip()
+        new_batch_no    = request.form.get("batch_no", "").strip()
+        new_expiry_str  = request.form.get("expiry_date", "").strip()
         try:
             location_id = resolve_location_id(request.form.get("location_id"))
         except ValueError as e:
@@ -1068,6 +1084,12 @@ def stock_adjustment():
             # Never guess. An unrecognised type used to fall through to "in" and add
             # stock that nobody asked for.
             flash("Unknown adjustment type.", "danger")
+        elif item_obj.batch_tracked and ADJUSTMENT_DIRECTIONS[adj_type] == "out" and not batch_id_raw:
+            # Mandatory manual selection for OUT — a damaged/lost/miscounted
+            # unit is a specific physical batch, never "whichever expires
+            # soonest" (FEFO does not apply to a write-off the way it does
+            # to a sale), so there is deliberately no automatic fallback here.
+            flash("Select which batch this adjustment applies to.", "danger")
         else:
             qty = int(qty_str)
             direction = ADJUSTMENT_DIRECTIONS[adj_type]
@@ -1075,27 +1097,84 @@ def stock_adjustment():
             if direction == "out" and available < qty:
                 flash(f"Insufficient stock at this warehouse. Available: {available}", "danger")
             else:
-                adj = StockAdjustment(
-                    item_id=int(item_id), adj_type=adj_type, quantity=qty,
-                    direction=direction,
-                    date=datetime.strptime(date_str, "%Y-%m-%d"),
-                    reason=reason or None,
-                    location_id=location_id,
-                )
-                db.session.add(adj)
-                db.session.flush()
-                # Both directions are valued at the average: stock found is worth
-                # what the rest of the stock is worth, stock lost costs the same.
-                unit = item_obj.avg_cost
-                if direction == "out":
-                    adj.cost_value = item_remove_stock(item_obj, qty, location_id=location_id,
-                                                       movement_type="adjustment",
-                                                       source_type="stock_adjustment", source_id=adj.id)
-                else:
-                    adj.cost_value = (unit * Decimal(str(qty))).quantize(MONEY)
-                    item_add_stock(item_obj, qty, adj.cost_value, location_id=location_id,
-                                   movement_type="adjustment",
-                                   source_type="stock_adjustment", source_id=adj.id)
+                new_expiry_date = None
+                if item_obj.batch_tracked and direction == "in" and not batch_id_raw and new_expiry_str:
+                    try:
+                        new_expiry_date = datetime.strptime(new_expiry_str, "%Y-%m-%d").date()
+                    except ValueError:
+                        flash(f"Invalid expiry date {new_expiry_str!r}. Use YYYY-MM-DD.", "danger")
+                        return render_template("stock_adjustment.html",
+                            adjustments=adjustments, items=items, pagination=pagination,
+                            search=search, adj_types=ADJUSTMENT_TYPES,
+                            today=now_local().strftime("%Y-%m-%d"),
+                            locations=locations,
+                            default_location=(locations[0] if (accessible_ids is not None and locations)
+                                              else get_or_create_default_location()))
+                try:
+                    batch = None
+                    if item_obj.batch_tracked:
+                        if batch_id_raw:
+                            batch = db.session.get(Batch, int(batch_id_raw)) if batch_id_raw.isdigit() else None
+                            if batch is None or batch.item_id != item_obj.id:
+                                flash("Selected batch does not exist or does not belong to this item.", "danger")
+                                return redirect(url_for("stock_adjustment"))
+                        else:
+                            # direction == "in" with no batch selected: create
+                            # or top up a named batch, or route into the
+                            # Unknown Batch if no batch number was given —
+                            # unit_cost comes from item.avg_cost, the exact
+                            # figure this route already computes for every
+                            # non-batch "in" adjustment today (see the
+                            # comment on that original computation below) —
+                            # not a new, invented pricing input.
+                            batch = get_or_create_batch(
+                                item_obj.id, new_batch_no or None, new_expiry_date,
+                                item_obj.avg_cost, source_type="stock_adjustment",
+                                created_by_id=current_user.id)
+
+                    adj = StockAdjustment(
+                        item_id=int(item_id), adj_type=adj_type, quantity=qty,
+                        direction=direction,
+                        date=datetime.strptime(date_str, "%Y-%m-%d"),
+                        reason=reason or None,
+                        location_id=location_id,
+                        batch_id=batch.id if batch else None,
+                    )
+                    db.session.add(adj)
+                    db.session.flush()
+                    # Both directions are valued at the average: stock found is worth
+                    # what the rest of the stock is worth, stock lost costs the same.
+                    # For a batch-tracked adjustment, the SPECIFIC batch's own
+                    # unit_cost is used instead — a write-off costs exactly
+                    # what that lot was received at, and found stock joining
+                    # an existing/new batch is valued at that batch's own cost.
+                    unit = batch.unit_cost if batch else item_obj.avg_cost
+                    if direction == "out":
+                        if batch:
+                            adj.cost_value = item_remove_stock_batched(
+                                item_obj, qty, location_id=location_id, batch=batch,
+                                cost_total=Decimal(str(batch.unit_cost)) * Decimal(str(qty)),
+                                movement_type="adjustment",
+                                source_type="stock_adjustment", source_id=adj.id)
+                        else:
+                            adj.cost_value = item_remove_stock(item_obj, qty, location_id=location_id,
+                                                               movement_type="adjustment",
+                                                               source_type="stock_adjustment", source_id=adj.id)
+                    else:
+                        adj.cost_value = (unit * Decimal(str(qty))).quantize(MONEY)
+                        if batch:
+                            item_add_stock_batched(
+                                item_obj, qty, adj.cost_value, location_id=location_id,
+                                batch=batch, movement_type="adjustment",
+                                source_type="stock_adjustment", source_id=adj.id)
+                        else:
+                            item_add_stock(item_obj, qty, adj.cost_value, location_id=location_id,
+                                          movement_type="adjustment",
+                                          source_type="stock_adjustment", source_id=adj.id)
+                except PostingError as e:
+                    db.session.rollback()
+                    flash(str(e), "danger")
+                    return redirect(url_for("stock_adjustment"))
                 db.session.flush()
                 post_document("stock_adjustment", adj)
                 db.session.commit()
@@ -1114,23 +1193,79 @@ def stock_adjustment():
 
 @admin_required
 def delete_stock_adjustment(id):
-    """Delete a stock adjustment and reverse its effect."""
+    """Delete a stock adjustment and reverse its effect.
+
+    Reachable today only for a zero-cost adjustment (post_stock_adjustment()
+    posts no JournalEntry when cost_value == 0, so assert_not_posted's
+    "a JournalEntry exists" check passes) — see the Phase E audit for why
+    this route is not fully dead code the way its Purchase/Sale equivalents
+    are. A batch-tracked adjustment can still be zero-cost (e.g. a batch
+    genuinely received/costed at 0), so this must stay batch-aware: if
+    adj.batch_id is set, reverse through the *_batched() wrappers so
+    BatchStock moves with ItemStock, exactly as the create route already
+    does — never leave the two out of sync for a batch this route can
+    still reach."""
     adj = db.session.get(StockAdjustment, id) or abort(404)
     assert_not_posted("stock_adjustment", adj.id, f"Stock adjustment #{adj.id}")
     item_obj = get_item_locked(adj.item_id)
     if item_obj:
+        batch = db.session.get(Batch, adj.batch_id) if adj.batch_id else None
         if adj.direction == "out":
-            item_add_stock(item_obj, adj.quantity, cost_total=adj.cost_value or 0,
-                           location_id=adj.location_id,
-                           movement_type="adjustment", source_type="stock_adjustment", source_id=adj.id)
+            if batch:
+                item_add_stock_batched(item_obj, adj.quantity, cost_total=adj.cost_value or 0,
+                                       location_id=adj.location_id, batch=batch,
+                                       movement_type="adjustment", source_type="stock_adjustment", source_id=adj.id)
+            else:
+                item_add_stock(item_obj, adj.quantity, cost_total=adj.cost_value or 0,
+                               location_id=adj.location_id,
+                               movement_type="adjustment", source_type="stock_adjustment", source_id=adj.id)
         else:
-            item_remove_stock(item_obj, adj.quantity, cost_total=adj.cost_value or 0,
-                              location_id=adj.location_id,
-                              movement_type="adjustment", source_type="stock_adjustment", source_id=adj.id)
+            if batch:
+                item_remove_stock_batched(item_obj, adj.quantity, location_id=adj.location_id,
+                                          batch=batch, cost_total=adj.cost_value or 0,
+                                          movement_type="adjustment", source_type="stock_adjustment", source_id=adj.id)
+            else:
+                item_remove_stock(item_obj, adj.quantity, cost_total=adj.cost_value or 0,
+                                  location_id=adj.location_id,
+                                  movement_type="adjustment", source_type="stock_adjustment", source_id=adj.id)
     db.session.delete(adj)
     db.session.commit()
     flash("Adjustment deleted and stock reversed.", "success")
     return redirect(url_for("stock_adjustment"))
+
+
+@manager_required
+def stock_adjustment_item_batches(item_id):
+    """Available batches for one item at one warehouse — Phase E, the Stock
+    Adjustment OUT picker. Read-only, never mutates anything. Mirrors
+    transfer_item_batches()'s own shape exactly (same endpoint contract,
+    same NULLS-LAST expiry ordering) — Stock Adjustment gets its own route
+    rather than reusing that one because it belongs to a different feature
+    area with its own URL/permission surface, even though the permission
+    (manager_required) happens to be the same."""
+    from salpurflask.models import resolve_location_id, get_or_create_default_location
+    from salpurflask.models.inventory_location import BatchStock
+    from salpurflask.services.location_permissions import require_location_access
+
+    item = db.session.get(Item, item_id) or abort(404)
+    try:
+        location_id = resolve_location_id(request.args.get("location_id")) \
+            if request.args.get("location_id") else get_or_create_default_location().id
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}, 400
+    require_location_access(location_id)
+
+    rows = (db.session.query(Batch, BatchStock.quantity)
+            .join(BatchStock, BatchStock.batch_id == Batch.id)
+            .filter(Batch.item_id == item_id,
+                    BatchStock.location_id == location_id,
+                    BatchStock.quantity > 0)
+            .order_by(Batch.expiry_date.is_(None), Batch.expiry_date.asc(), Batch.id.asc())
+            .all())
+    return {"ok": True, "batches": [{
+        "batch_id": b.id, "batch_no": b.batch_no, "quantity": qty,
+        "expiry_date": b.expiry_date.isoformat() if b.expiry_date else None,
+    } for b, qty in rows]}
 
 
 # ─── LABEL ROUTES ──────────────────────────────────────────────────────────────

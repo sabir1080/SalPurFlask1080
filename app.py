@@ -308,7 +308,7 @@ from salpurflask.inventory.routes import (
     category, edit_category, delete_category,
     export_item_ledger, export_item_ledger_excel,
     bulk_import, process_import,
-    stock_adjustment, delete_stock_adjustment,
+    stock_adjustment, delete_stock_adjustment, stock_adjustment_item_batches,
     labels, labels_assign, send_low_stock_alert,
     get_product_category_data, stock_movements,
     api_item_lookup, api_item_filter_fields, api_item_units,
@@ -388,6 +388,7 @@ app.add_url_rule("/import", "bulk_import", bulk_import, methods=["GET"])
 app.add_url_rule("/import/process", "process_import", process_import, methods=["POST"])
 app.add_url_rule("/stock_adjustment", "stock_adjustment", stock_adjustment, methods=["GET", "POST"])
 app.add_url_rule("/stock_adjustment/delete/<int:id>", "delete_stock_adjustment", delete_stock_adjustment, methods=["POST"])
+app.add_url_rule("/stock_adjustment/item-batches/<int:item_id>", "stock_adjustment_item_batches", stock_adjustment_item_batches, methods=["GET"])
 app.add_url_rule("/labels", "labels", labels, methods=["GET"])
 app.add_url_rule("/labels/assign", "labels_assign", labels_assign, methods=["POST"])
 app.add_url_rule("/low_stock_alert", "send_low_stock_alert", send_low_stock_alert, methods=["POST"])
@@ -1964,6 +1965,16 @@ def migrate_database():
             with db.engine.begin() as conn:
                 conn.execute(text(
                     "ALTER TABLE inventory_transfer_item ADD COLUMN batch_id INTEGER REFERENCES batch(id)"))
+
+    # Batch/Lot tracking — Phase E. Which single Batch a Stock Adjustment
+    # moved, for a batch-tracked item — see StockAdjustment.batch_id's own
+    # docstring for why this is one nullable column, not a junction table.
+    if "stock_adjustment" in inspector.get_table_names():
+        stock_adjustment_columns = {col["name"] for col in inspector.get_columns("stock_adjustment")}
+        if "batch_id" not in stock_adjustment_columns:
+            with db.engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE stock_adjustment ADD COLUMN batch_id INTEGER REFERENCES batch(id)"))
 
     # Batch/Lot tracking — Phase B. What a Draft Purchase line's user typed
     # before it becomes a real Batch at Post time (see PurchaseItem.
