@@ -239,8 +239,31 @@ async function loadCategoryFields() {
   }
 }
 
+// A category field's name, label, placeholder, help text, options and any
+// previously saved value are all admin/user-entered free text (ProductField/
+// ProductCategoryData carry no character restriction) -- inserting them into
+// an HTML string via template literal without escaping lets a value like
+// Batch "A1" break out of its value="..." attribute and corrupt the rest of
+// the generated markup, up to and including detaching the Update Item
+// button from its <form>. escapeHtml() neutralises the five characters that
+// matter inside an HTML attribute or text position; nothing here changes
+// what value ends up in the DOM, only how it's written into markup.
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function renderField(field, currentValue = '') {
   const fieldId = `category_field_${field.id}`;
+  const fieldName = escapeHtml(field.field_name);
+  const fieldLabel = escapeHtml(field.field_label);
+  const placeholder = escapeHtml(field.placeholder || '');
+  const helpText = escapeHtml(field.help_text || '');
+  const value = escapeHtml(currentValue || '');
   const required = field.is_required ? 'required' : '';
   const requiredLabel = field.is_required ? '<span class="text-danger">*</span>' : '';
 
@@ -248,47 +271,47 @@ function renderField(field, currentValue = '') {
 
   switch (field.field_type) {
     case 'text':
-      inputHtml = `<input type="text" class="form-control" id="${fieldId}" name="${field.field_name}"
-                           placeholder="${field.placeholder || ''}" value="${currentValue || ''}" ${required}>`;
+      inputHtml = `<input type="text" class="form-control" id="${fieldId}" name="${fieldName}"
+                           placeholder="${placeholder}" value="${value}" ${required}>`;
       break;
     case 'number':
-      inputHtml = `<input type="number" class="form-control" id="${fieldId}" name="${field.field_name}"
-                           placeholder="${field.placeholder || ''}" value="${currentValue || ''}" ${required}>`;
+      inputHtml = `<input type="number" class="form-control" id="${fieldId}" name="${fieldName}"
+                           placeholder="${placeholder}" value="${value}" ${required}>`;
       break;
     case 'date':
-      inputHtml = `<input type="date" class="form-control" id="${fieldId}" name="${field.field_name}" value="${currentValue || ''}" ${required}>`;
+      inputHtml = `<input type="date" class="form-control" id="${fieldId}" name="${fieldName}" value="${value}" ${required}>`;
       break;
     case 'select':
       const options = field.options && Array.isArray(field.options) ? field.options : [];
       inputHtml = `
-        <select class="form-select" id="${fieldId}" name="${field.field_name}" ${required}>
-          <option value="">Select ${field.field_label}...</option>
-          ${options.map(opt => `<option value="${opt}">${opt}</option>`).join('')}
+        <select class="form-select" id="${fieldId}" name="${fieldName}" ${required}>
+          <option value="">Select ${fieldLabel}...</option>
+          ${options.map(opt => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`).join('')}
         </select>`;
       break;
     case 'boolean':
       inputHtml = `
         <div class="form-check">
-          <input type="checkbox" class="form-check-input" id="${fieldId}" name="${field.field_name}" value="true">
-          <label class="form-check-label" for="${fieldId}">${field.help_text || ''}</label>
+          <input type="checkbox" class="form-check-input" id="${fieldId}" name="${fieldName}" value="true">
+          <label class="form-check-label" for="${fieldId}">${helpText}</label>
         </div>`;
       break;
     case 'textarea':
-      inputHtml = `<textarea class="form-control" id="${fieldId}" name="${field.field_name}"
-                              placeholder="${field.placeholder || ''}" ${required}></textarea>`;
+      inputHtml = `<textarea class="form-control" id="${fieldId}" name="${fieldName}"
+                              placeholder="${placeholder}" ${required}></textarea>`;
       break;
     default:
-      inputHtml = `<input type="text" class="form-control" id="${fieldId}" name="${field.field_name}" ${required}>`;
+      inputHtml = `<input type="text" class="form-control" id="${fieldId}" name="${fieldName}" ${required}>`;
   }
 
   return `
     <div class="mb-3">
       <label for="${fieldId}" class="form-label">
-        ${field.field_label}
+        ${fieldLabel}
         ${requiredLabel}
       </label>
       ${inputHtml}
-      ${field.help_text ? `<small class="text-muted d-block mt-1">${field.help_text}</small>` : ''}
+      ${helpText ? `<small class="text-muted d-block mt-1">${helpText}</small>` : ''}
     </div>
   `;
 }
