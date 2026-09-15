@@ -20,6 +20,7 @@ from salpurflask.models import (
 from salpurflask.models.models import (
     _unwind_stock_and_subledger,
     PurchaseItemBatch,
+    Batch,
     get_or_create_batch,
     item_add_stock_batched,
     item_remove_stock_batched,
@@ -344,6 +345,128 @@ def post_purchase_route(id):
     return redirect(url_for("purchase"))
 
 
+def _correction_new_qty_by_item_batch(rows):
+    """From the corrected form rows, how much quantity (in the item's base
+    unit) is being claimed for each (item_id, batch_no) pair -- batch_no
+    normalised the same way the re-post loop treats it (blank -> None, the
+    item's Unknown Batch). Two rows for the same item+batch_no (unusual but
+    not disallowed by the form) are summed, matching how the re-post loop
+    would add stock to that one batch twice."""
+    from salpurflask.models import resolve_item_unit
+
+    totals = {}
+    for iid, qty, price, d_type, d_val, tax, unit_key, batch_no_raw, expiry_raw in rows:
+        item_obj = db.session.get(Item, int(iid))
+        if item_obj is None:
+            continue
+        _unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
+        base_qty = int(qty) * unit_factor
+        batch_no = (batch_no_raw or "").strip() or None
+        key = (int(iid), batch_no)
+        totals[key] = totals.get(key, 0) + base_qty
+    return totals
+
+
+def _unwind_batch_tracked_purchase_for_correction(pur, new_qty_by_item_batch):
+    """Correction-specific replacement for _unwind_stock_and_subledger()'s
+    purchase branch, for batch-tracked lines only. A non-batch-tracked
+    line is still unwound exactly as before (see the caller, which keeps
+    calling item_remove_stock() directly for those).
+
+    Unlike a genuine reversal (reverse_document(), which must still refuse
+    outright if the batch's stock has moved on -- that document is being
+    permanently cancelled, so it genuinely cannot be undone, and that
+    existing behavior is intentionally left unchanged), a correction is
+    allowed to unwind only the PORTION of the original receipt that is
+    still physically sitting in that batch. Whatever has already left the
+    batch (a later Sale/Transfer/Adjustment) stays exactly as recorded --
+    this never reads or writes SaleItemBatch, TransferItem, or
+    StockAdjustment; it only compares BatchStock.quantity, the number those
+    other documents already correctly moved.
+
+    For each original PurchaseItemBatch allocation:
+      - consumed = original allocation qty - current BatchStock.quantity.
+        In a consistent system this is never negative: PurchaseItemBatch is
+        THIS purchase's own record of what it put into the batch, so the
+        batch cannot hold more of it than that without something else
+        having gone wrong first (out of scope here).
+      - The corrected purchase's own claimed quantity for that same
+        (item, batch_no) may not be less than `consumed` -- that would mean
+        the correction admits to receiving fewer units than have already
+        been demonstrably sold/moved out of the very batch this purchase
+        created, a genuine contradiction, not a clamping problem. Refused
+        with a PostingError naming the batch, the consumed amount, and the
+        corrected amount, before anything is written.
+      - Otherwise, only min(original_qty, current BatchStock.quantity) is
+        actually removed now; the already-consumed portion is left alone,
+        never re-removed. Cost removed scales with quantity at the batch's
+        own fixed unit_cost -- the same formula the Sale-reversal branch of
+        _unwind_stock_and_subledger() already uses for the mirror-image
+        case (restoring stock into a batch at batch.unit_cost per unit).
+
+    Returns a {(item_id, batch_no): consumed_qty} map — how much of each
+    original allocation was already consumed and therefore was NOT removed
+    here. The caller's re-post step must subtract this same amount from
+    whatever it adds back into that SAME batch_no, or the already-consumed
+    portion would be silently re-materialised as fresh stock (a batch that
+    is genuinely empty right now must not become non-empty again just
+    because a same-quantity correction was saved). A re-post into a
+    DIFFERENT batch_no is unaffected — that is a distinct batch with its
+    own, unrelated balance.
+
+    Raises PostingError on the contradiction described above, or if an
+    original allocation's total doesn't match its line's quantity (the same
+    consistency guard _unwind_stock_and_subledger() itself carries). Does
+    not commit -- same contract as _unwind_stock_and_subledger()."""
+    from salpurflask.models.inventory_location import BatchStock
+
+    consumed_by_item_batch = {}
+    for pi in pur.line_items:
+        item = db.session.get(Item, pi.item_id)
+        if item is None or not item.batch_tracked:
+            continue
+        allocations = list(pi.batch_allocations)
+        allocated_qty = sum(a.quantity for a in allocations)
+        expected_qty = line_base_qty(pi)
+        if allocated_qty != expected_qty:
+            raise PostingError(
+                f"Purchase #{pur.id} line for {item.name}: batch "
+                f"allocations total {allocated_qty} but the line "
+                f"quantity is {expected_qty} — refusing to reverse "
+                f"an inconsistent batch allocation.")
+
+        for alloc in allocations:
+            batch = db.session.get(Batch, alloc.batch_id)
+            bstock = BatchStock.query.filter_by(
+                batch_id=batch.id, location_id=pur.location_id).first()
+            current_qty = bstock.quantity if bstock else 0
+            consumed = alloc.quantity - current_qty
+
+            corrected_qty = new_qty_by_item_batch.get((item.id, batch.batch_no), 0)
+            if corrected_qty < consumed:
+                raise PostingError(
+                    f"Cannot correct — Batch {batch.batch_no or '(unknown)'} of "
+                    f"{item.name} already had {consumed} unit(s) consumed by a "
+                    f"later Sale, Transfer, or Adjustment since this Purchase was "
+                    f"posted. The corrected quantity for this batch ({corrected_qty}) "
+                    f"cannot be less than what has already moved on ({consumed}). "
+                    f"Correct or reverse the later movement first, or enter a "
+                    f"quantity of at least {consumed}.")
+
+            remove_qty = min(alloc.quantity, current_qty)
+            if remove_qty > 0:
+                cost_to_remove = (Decimal(str(batch.unit_cost))
+                                  * Decimal(str(remove_qty))).quantize(MONEY)
+                item_remove_stock_batched(
+                    item, remove_qty, location_id=pur.location_id,
+                    batch=batch, cost_total=cost_to_remove,
+                    movement_type="purchase", source_type="purchase", source_id=pur.id)
+
+            key = (item.id, batch.batch_no)
+            consumed_by_item_batch[key] = consumed_by_item_batch.get(key, 0) + consumed
+    return consumed_by_item_batch
+
+
 @admin_required
 def correct_purchase_route(id):
     """Admin-only correction of a POSTED, non-reversed Purchase -- the
@@ -471,18 +594,24 @@ def correct_purchase_route(id):
             return redirect(url_for("correct_purchase_route", id=pur.id))
 
         try:
-            # A Purchase's OLD lines *added* stock, so undoing them (step 1 below,
-            # via _unwind_stock_and_subledger -> item_remove_stock) can only fail
-            # if some of that received stock has since moved on -- sold,
-            # transferred, or returned elsewhere. Check that up front against a
-            # plain read for a clean error message; item_remove_stock()'s own
-            # guard (reached inside _unwind_stock_and_subledger) is the real,
-            # race-safe enforcement either way.
+            # A Purchase's OLD lines *added* stock, so undoing them (step 1 below)
+            # can only fail if some of that received stock has since moved on --
+            # sold, transferred, or returned elsewhere. This pre-check only
+            # applies to NON-batch-tracked lines: for those, undoing is still an
+            # all-or-nothing item-level operation (item_remove_stock()'s own
+            # guard, reached below, is the real, race-safe enforcement either
+            # way). A batch-tracked line gets its own, precise, per-batch check
+            # instead — see _unwind_batch_tracked_purchase_for_correction()
+            # below, which allows unwinding just the portion of the receipt
+            # still sitting in its batch, rather than refusing outright the
+            # moment ANY of it has moved on.
             stock_errors = []
             for pi in pur.line_items:
+                item_obj = db.session.get(Item, pi.item_id)
+                if item_obj and item_obj.batch_tracked:
+                    continue
                 available = stock_at_location(pi.item_id, stock_check_location_id)
                 if available < line_base_qty(pi):
-                    item_obj = db.session.get(Item, pi.item_id)
                     stock_errors.append(
                         f"{item_obj.name if item_obj else pi.item_id}: only {available} "
                         f"available at this warehouse now, but this Purchase originally "
@@ -500,7 +629,26 @@ def correct_purchase_route(id):
                 raise PostingError(
                     f"Purchase #{pur.id} has no live journal entry, so it cannot be corrected.")
             reverse_entry(entry, created_by_id=current_user.id if current_user.is_authenticated else None)
-            _unwind_stock_and_subledger("purchase", pur)
+
+            # Step 1b: undo the old stock effect. Batch-tracked lines go
+            # through the correction-specific, clamped unwind above (never
+            # blindly demanding the full original quantity back — see its own
+            # docstring); non-batch-tracked lines are unwound exactly as
+            # _unwind_stock_and_subledger()'s own purchase branch always has.
+            # reverse_document() (a genuine, permanent reversal) still calls
+            # that unmodified function directly and is unaffected by this.
+            new_qty_by_item_batch = _correction_new_qty_by_item_batch(rows)
+            consumed_by_item_batch = _unwind_batch_tracked_purchase_for_correction(
+                pur, new_qty_by_item_batch)
+            for pi in pur.line_items:
+                item_obj = db.session.get(Item, pi.item_id)
+                if item_obj is None or item_obj.batch_tracked:
+                    continue
+                item_remove_stock(item_obj, line_base_qty(pi),
+                                  cost_total=Decimal(str(pi.amount)) - Decimal(str(pi.tax_amount or 0)),
+                                  location_id=pur.location_id,
+                                  movement_type="purchase", source_type="purchase", source_id=pur.id)
+            remove_supplier_ledger_entry("purchase", pur.id)
             db.session.flush()
 
             # Step 2: apply corrected header + line values. Same delete-and-recreate
@@ -513,10 +661,13 @@ def correct_purchase_route(id):
             # orphan" (which only fires on an ORM-tracked delete) never runs --
             # explicitly delete the old allocations first, or they survive as
             # rows pointing at a purchase_item_id that no longer exists (or,
-            # worse, gets reused by a future insert). _unwind_stock_and_subledger
-            # above has already read these rows to reverse their stock; they
-            # are pure history from here and are being replaced by fresh
-            # allocations in the loop below.
+            # worse, gets reused by a future insert). The unwind step above
+            # (_unwind_batch_tracked_purchase_for_correction() for a batch-
+            # tracked line, the plain item_remove_stock() loop for a non-batch
+            # one) has already read these rows to reverse whatever portion of
+            # their stock was still physically present; they are pure history
+            # from here and are being replaced by fresh allocations in the
+            # loop below.
             old_pi_ids = [pi.id for pi in pur.line_items]
             if old_pi_ids:
                 # synchronize_session="fetch" (not False) -- a plain bulk
@@ -593,10 +744,30 @@ def correct_purchase_route(id):
                         unit_cost, source_type="purchase", source_id=pur.id,
                         created_by_id=current_user.id,
                     )
-                    item_add_stock_batched(item_obj, base_qty, cost_total,
-                                           location_id=pur.location_id, batch=batch,
-                                           movement_type="purchase", source_type="purchase",
-                                           source_id=pur.id)
+                    # PurchaseItemBatch always records the full corrected
+                    # quantity (base_qty) -- that is this line's own claim
+                    # about what it received, and must match PurchaseItem.
+                    # quantity exactly for the consistency check any FUTURE
+                    # correction's unwind step relies on (see
+                    # _unwind_batch_tracked_purchase_for_correction()'s own
+                    # allocated_qty != expected_qty guard). Physically,
+                    # though, only the portion NOT already consumed by a
+                    # prior Sale/Transfer/Adjustment from this same batch_no
+                    # (consumed_by_item_batch, computed by this correction's
+                    # own unwind step above) is actually re-added — the
+                    # already-consumed portion stays consumed, never
+                    # silently re-materialised as fresh stock.
+                    already_consumed = consumed_by_item_batch.get(
+                        (item_obj.id, pending_batch_no), 0)
+                    physical_qty = base_qty - already_consumed
+                    physical_cost = (Decimal(str(cost_total))
+                                     * Decimal(str(physical_qty)) / Decimal(str(base_qty))
+                                     ).quantize(MONEY) if base_qty and physical_qty else Decimal("0")
+                    if physical_qty > 0:
+                        item_add_stock_batched(item_obj, physical_qty, physical_cost,
+                                               location_id=pur.location_id, batch=batch,
+                                               movement_type="purchase", source_type="purchase",
+                                               source_id=pur.id)
                     db.session.add(PurchaseItemBatch(
                         purchase_item_id=pi.id, batch_id=batch.id, quantity=base_qty,
                     ))
