@@ -595,6 +595,91 @@ def get_or_create_unknown_batch(item_id, *, created_by_id=None):
     return batch
 
 
+def enable_batch_tracking(item_id, *, created_by_id=None):
+    """Turn batch tracking on for an item that already has stock, without
+    losing, duplicating, or re-costing that stock — Phase G.
+
+    Existing stock has no real batch history (it predates batch tracking
+    entirely), so this does not invent one: everything the item currently
+    holds is folded into the item's single Unknown Batch (batch_no=None,
+    see get_or_create_unknown_batch() above), with one BatchStock row per
+    location it already sits at, each set to exactly that location's
+    existing ItemStock.quantity. Item.stock, ItemStock.quantity,
+    Item.inventory_value and every historical StockMovement are read-only
+    inputs here — none of them are written by this function. No
+    StockMovement is created (nothing physically moved) and no GL entry is
+    posted (this is a data-shape backfill, not a transaction) — the same
+    "straight copy, no computation" shape backfill_item_stock_locations()
+    already uses for the analogous Item.stock -> ItemStock migration.
+
+    Idempotent and concurrency-safe the same way every other batch primitive
+    in this module is: the parent Item row is locked FIRST (get_item_locked()),
+    before any Batch/BatchStock access, so two concurrent callers for the same
+    item serialize on that lock rather than racing — the second one to run
+    sees batch_tracked already True and returns as a no-op.
+
+    Does not commit; the caller owns the transaction boundary, exactly like
+    get_or_create_batch()/get_or_create_unknown_batch() themselves."""
+    from salpurflask.utils.helpers import get_item_locked
+    from salpurflask.models.inventory_location import ItemStock, get_or_create_default_location
+
+    item = get_item_locked(item_id)
+    if item is None:
+        raise PostingError(f"Item #{item_id} does not exist.")
+
+    if item.batch_tracked:
+        # Already enabled -- nothing to do. Also what a second concurrent
+        # caller lands on once it acquires the Item lock the first caller
+        # just released by committing.
+        return
+
+    if (item.stock or 0) < 0:
+        raise PostingError(
+            f"Item '{item.name}' has a negative stock ({item.stock}). "
+            f"Correct the stock via a Stock Adjustment before enabling batch tracking.")
+
+    stock_rows = ItemStock.query.filter_by(item_id=item_id).all()
+    for row in stock_rows:
+        if (row.quantity or 0) < 0:
+            raise PostingError(
+                f"Item '{item.name}' has negative stock at one of its locations. "
+                f"Correct the stock via a Stock Adjustment before enabling batch tracking.")
+
+    # Whether the Unknown Batch already exists (and so must keep its
+    # established unit_cost untouched) has to be known BEFORE calling the
+    # idempotent get_or_create -- that helper does not report which case it
+    # hit, and re-deriving "was this just created" from its return value
+    # would be guesswork (a genuine pre-existing Unknown Batch can equally
+    # have unit_cost == 0).
+    pre_existing_batch = (Batch.query
+                          .filter_by(item_id=item_id, batch_no=None)
+                          .first())
+
+    if stock_rows:
+        batch = get_or_create_unknown_batch(item_id, created_by_id=created_by_id)
+        for row in stock_rows:
+            bstock = _get_or_create_batch_stock(batch.id, row.location_id)
+            bstock.quantity = row.quantity
+    elif item.stock:
+        # Legacy item: real stock, but no per-location row yet -- the same
+        # case stock_at_location() documents and backfill_item_stock_locations()
+        # backfills for ItemStock itself. Resolves to the same default
+        # location those two already agree on.
+        batch = get_or_create_unknown_batch(item_id, created_by_id=created_by_id)
+        location_id = get_or_create_default_location().id
+        bstock = _get_or_create_batch_stock(batch.id, location_id)
+        bstock.quantity = item.stock
+    else:
+        # Zero stock: still a valid, queryable batch-tracked state -- just
+        # with nothing to mirror into BatchStock yet.
+        batch = get_or_create_unknown_batch(item_id, created_by_id=created_by_id)
+
+    if pre_existing_batch is None:
+        batch.unit_cost = item.avg_cost
+
+    item.batch_tracked = True
+
+
 def _resolve_batch_location(location_id):
     """location_id=None must resolve to the SAME default location
     item_add_stock()/item_remove_stock() themselves resolve to (via
@@ -3505,6 +3590,7 @@ __all__ = [
     'item_remove_stock_batched',
     'get_or_create_batch',
     'get_or_create_unknown_batch',
+    'enable_batch_tracking',
     'fefo_allocate_batches',
     'resolve_sale_batch_allocations',
     'resolve_sale_return_batch_allocations',

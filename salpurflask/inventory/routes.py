@@ -18,7 +18,7 @@ from salpurflask.models import (
     post_customer_opening, post_supplier_opening,
     item_add_stock, item_remove_stock, _repost_opening, _opening_date,
     assert_not_posted, post_document,
-    Batch, get_or_create_batch,
+    Batch, get_or_create_batch, enable_batch_tracking,
     item_add_stock_batched, item_remove_stock_batched,
     PostingError,
 )
@@ -1401,6 +1401,31 @@ def stock_adjustment_item_batches(item_id):
         "batch_id": b.id, "batch_no": b.batch_no, "quantity": qty,
         "expiry_date": b.expiry_date.isoformat() if b.expiry_date else None,
     } for b, qty in rows]}
+
+
+@admin_required
+def enable_item_batch_tracking(id):
+    """Turn on batch tracking for an item that already has stock — Phase G.
+    Admin-only (not manager_required, unlike most Item configuration
+    routes): this migrates every location's stock into BatchStock in one
+    pass, with no location filter, so a manager restricted to a subset of
+    warehouses must not be able to trigger it — see enable_batch_tracking()
+    (models.py) for the full migration itself. This route is only the
+    request/response wrapper: permission check, calling that function,
+    and owning the commit/rollback boundary."""
+    item = db.session.get(Item, id) or abort(404)
+    if item.batch_tracked:
+        flash(f"Batch tracking is already enabled for '{item.name}'.", "info")
+        return redirect(url_for("edit_item", id=item.id))
+    try:
+        enable_batch_tracking(item.id, created_by_id=current_user.id)
+        db.session.commit()
+        flash(f"Batch tracking enabled for '{item.name}'. Existing stock is now "
+              f"tracked under its Unknown Batch.", "success")
+    except PostingError as e:
+        db.session.rollback()
+        flash(str(e), "danger")
+    return redirect(url_for("edit_item", id=item.id))
 
 
 # ─── LABEL ROUTES ──────────────────────────────────────────────────────────────

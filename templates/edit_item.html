@@ -149,6 +149,42 @@
     </div>
   </form>
 </div>
+
+<!-- Batch/Lot Tracking (Phase G) -->
+<div class="card mt-4">
+  <div class="card-header">
+    <h5 class="mb-0"><i class="bi bi-upc-scan"></i> Batch/Lot Tracking</h5>
+  </div>
+  <div class="card-body">
+    {% if item.batch_tracked %}
+    <span class="badge bg-success"><i class="bi bi-check-circle"></i> Batch Tracking: Enabled</span>
+    {% else %}
+    <p class="text-muted small mb-3">
+      Turn on batch/lot tracking for this item. Existing stock is not lost or re-valued —
+      it is recorded under this item's single <strong>Unknown Batch</strong>, one entry per
+      warehouse it currently sits in.
+    </p>
+    <ul class="small text-tertiary mb-3">
+      <li>Current stock: <strong>{{ item.stock | fmt_num }} {{ item.unit or 'Pcs' }}</strong></li>
+      {% if item.stock_by_location %}
+      <li>Affected warehouses:
+        {% for loc_stock in item.stock_by_location %}{{ loc_stock.location.name }} ({{ loc_stock.quantity | fmt_num }}){% if not loop.last %}, {% endif %}{% endfor %}
+      </li>
+      {% endif %}
+      <li>Valuation: current average cost <strong>{{ item.avg_cost | fmt_num }}</strong> per {{ item.unit or 'Pcs' }}, applied to the Unknown Batch</li>
+    </ul>
+    <div class="alert alert-warning small mb-3">
+      <i class="bi bi-exclamation-triangle"></i> Batch tracking cannot be turned off again once any batch stock exists.
+    </div>
+    <form method="POST" action="{{ url_for('enable_item_batch_tracking', id=item.id) }}"
+          onsubmit="return confirm('Enable batch tracking for {{ item.name }}? This cannot be undone while batch stock remains.');">
+      <button type="submit" class="btn btn-warning">
+        <i class="bi bi-upc-scan"></i> Enable Batch Tracking
+      </button>
+    </form>
+    {% endif %}
+  </div>
+</div>
 <script>
 // Form data management disabled to prevent localStorage conflicts
 // Data is preserved on page reload via browser's built-in form state

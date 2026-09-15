@@ -311,6 +311,7 @@ from salpurflask.inventory.routes import (
     stock_adjustment, delete_stock_adjustment, stock_adjustment_item_batches,
     labels, labels_assign, send_low_stock_alert,
     get_product_category_data, stock_movements, expiring_batches,
+    enable_item_batch_tracking,
     api_item_lookup, api_item_filter_fields, api_item_units,
 )
 from salpurflask.inventory.transfer_routes import (
@@ -375,6 +376,7 @@ app.add_url_rule("/reports/stock-movements", "stock_movements", stock_movements)
 app.add_url_rule("/reports/expiring-batches", "expiring_batches", expiring_batches)
 app.add_url_rule("/item", "item", item, methods=["GET", "POST"])
 app.add_url_rule("/item/edit/<int:id>", "edit_item", edit_item, methods=["GET", "POST"])
+app.add_url_rule("/item/<int:id>/enable-batch-tracking", "enable_item_batch_tracking", enable_item_batch_tracking, methods=["POST"])
 app.add_url_rule("/item/delete/<int:id>", "delete_item", delete_item, methods=["POST"])
 app.add_url_rule("/category", "category", category, methods=["GET", "POST"])
 app.add_url_rule("/category/edit/<int:id>", "edit_category", edit_category, methods=["GET", "POST"])
