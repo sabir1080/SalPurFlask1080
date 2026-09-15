@@ -156,6 +156,7 @@
           <th>Type</th>
           <th>Reference</th>
           <th>Party</th>
+          <th>Batch</th>
           <th class="text-end">Rate</th>
           <th class="text-center text-success">Stock In ({{ item.unit or 'Pcs' }})</th>
           <th class="text-center text-danger">Stock Out ({{ item.unit or 'Pcs' }})</th>
@@ -170,6 +171,7 @@
           <td><span class="badge bg-{{ e.badge }}">{{ e.type }}</span></td>
           <td class="text-nowrap">{{ e.ref }}</td>
           <td>{{ e.party }}</td>
+          <td class="small">{{ e.batch_info }}</td>
           <td class="text-end">{% if e.rate %}{{ e.rate | fmt_num }}{% else %}—{% endif %}</td>
           <td class="text-center fw-semibold text-success">
             {% if e.stock_in %} +{{ e.stock_in | fmt_num }} {% else %} — {% endif %}
@@ -184,7 +186,7 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="9" class="text-center text-tertiary py-8">
+          <td colspan="10" class="text-center text-tertiary py-8">
             <i class="bi bi-inbox" style="font-size: 2rem; margin-bottom: 1rem; display: block;"></i>
             No transactions found{% if start_date or end_date %} for the selected date range{% endif %}.
           </td>
@@ -194,7 +196,7 @@
       {% if entries %}
       <tfoot>
         <tr>
-          <td colspan="4" class="text-end fw-bold">Totals:</td>
+          <td colspan="5" class="text-end fw-bold">Totals:</td>
           <td></td>
           <td class="text-center text-success fw-bold">+{{ total_in | fmt_num }}</td>
           <td class="text-center text-danger fw-bold">-{{ total_out | fmt_num }}</td>

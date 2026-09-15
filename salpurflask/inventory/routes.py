@@ -45,6 +45,18 @@ def _sale_line_value(si):
     return si.quantity * si.sale_price * (si.unit_factor or 1)
 
 
+def _batch_allocations_display(allocations):
+    """Render a line's batch_allocations (PurchaseItemBatch/SaleItemBatch rows,
+    one per batch — a FEFO split can leave more than one) as 'BatchNo (qty),
+    BatchNo (qty)' for the Item Ledger. Descriptive only; never touches the
+    ledger's own stock_in/out/value/balance math."""
+    if not allocations:
+        return "—"
+    return ", ".join(
+        f"{a.batch.batch_no or '(unknown)'} ({a.quantity})" for a in allocations
+    )
+
+
 @verified_required
 def item_ledger(id):
     """Display item ledger with stock movements."""
@@ -94,6 +106,7 @@ def item_ledger(id):
             "ref": f"PO #{pi.purchase_header.id}", "party": pi.purchase_header.supplier.name,
             "stock_in": line_base_qty(pi), "stock_out": 0,
             "rate": pi.purchase_price / factor, "value": _purchase_line_value(pi),
+            "batch_info": _batch_allocations_display(pi.batch_allocations),
         })
     for si in sale_items:
         factor = si.unit_factor or 1
@@ -102,6 +115,7 @@ def item_ledger(id):
             "ref": f"SO #{si.sale_header.id}", "party": si.sale_header.customer.name,
             "stock_in": 0, "stock_out": line_base_qty(si),
             "rate": si.sale_price / factor, "value": _sale_line_value(si),
+            "batch_info": _batch_allocations_display(si.batch_allocations),
         })
     for pr in purchase_returns:
         factor = pr.unit_factor or 1
@@ -110,6 +124,7 @@ def item_ledger(id):
             "ref": f"PR #{pr.id}", "party": pr.supplier.name,
             "stock_in": 0, "stock_out": line_base_qty(pr),
             "rate": pr.return_price / factor, "value": round(pr.quantity * pr.return_price, 2),
+            "batch_info": "—",
         })
     for sr in sale_returns:
         factor = sr.unit_factor or 1
@@ -118,6 +133,7 @@ def item_ledger(id):
             "ref": f"SR #{sr.id}", "party": sr.customer.name,
             "stock_in": line_base_qty(sr), "stock_out": 0,
             "rate": sr.return_price / factor, "value": round(sr.quantity * sr.return_price, 2),
+            "batch_info": "—",
         })
 
     adjustments = StockAdjustment.query.filter_by(item_id=id).all()
@@ -129,6 +145,7 @@ def item_ledger(id):
             "ref": f"ADJ #{adj.id}", "party": adj.reason or "—",
             "stock_in": stock_in, "stock_out": stock_out,
             "rate": 0, "value": 0,
+            "batch_info": (adj.batch.batch_no or "(unknown)") if adj.batch else "—",
         })
 
     entries.sort(key=lambda x: (x["date"], x["ref"]))
@@ -150,7 +167,7 @@ def item_ledger(id):
             "date": None, "type": "Opening Stock", "badge": "dark",
             "ref": "—", "party": "—",
             "stock_in": opening, "stock_out": 0,
-            "rate": 0, "value": 0,
+            "rate": 0, "value": 0, "batch_info": "—",
             "balance": opening, "is_opening": True,
         }
         entries = [opening_entry] + entries
@@ -223,7 +240,7 @@ def report_stock():
     their own accessible locations, not the whole company's — see
     location_permissions.py for the one place this decision is made.
     """
-    from salpurflask.models import Location, ItemStock
+    from salpurflask.models import Location, ItemStock, Batch, BatchStock
     from salpurflask.services.location_permissions import (
         accessible_location_ids, require_location_access)
 
@@ -259,6 +276,35 @@ def report_stock():
     else:
         stock_lookup = {it.id: (it.stock or 0) for it in items}
 
+    # Batch-wise breakdown (Phase F): one row per (batch, location) with
+    # quantity > 0, for every batch-tracked item — an expandable detail under
+    # each item row, not a replacement for the item-level figures above.
+    # Scoped to the same accessible_ids as everything else on this page, so a
+    # restricted user never sees another location's batch stock. Grouped in
+    # memory by item_id, same N+1-avoidance shape as stock_lookup above.
+    batch_tracked_item_ids = [it.id for it in items if it.batch_tracked]
+    batch_breakdown = {}
+    if batch_tracked_item_ids:
+        bquery = (db.session.query(Batch, BatchStock.quantity, Location.name)
+                  .join(BatchStock, BatchStock.batch_id == Batch.id)
+                  .join(Location, Location.id == BatchStock.location_id)
+                  .filter(Batch.item_id.in_(batch_tracked_item_ids), BatchStock.quantity > 0))
+        if selected_location:
+            bquery = bquery.filter(BatchStock.location_id == selected_location.id)
+        elif accessible_ids is not None:
+            bquery = bquery.filter(BatchStock.location_id.in_(accessible_ids))
+        bquery = bquery.order_by(Batch.expiry_date.is_(None), Batch.expiry_date.asc(), Batch.id.asc())
+        for batch, qty, loc_name in bquery.all():
+            unit_cost = Decimal(str(batch.unit_cost or 0))
+            batch_breakdown.setdefault(batch.item_id, []).append({
+                "batch_no": batch.batch_no or "(unknown)",
+                "expiry_date": batch.expiry_date,
+                "location_name": loc_name,
+                "quantity": qty,
+                "unit_cost": unit_cost,
+                "value": (unit_cost * Decimal(str(qty))).quantize(MONEY),
+            })
+
     return render_template(
         "report_stock.html",
         stock_report=items,
@@ -269,6 +315,7 @@ def report_stock():
         items_in_stock=sum(1 for i in items if stock_lookup.get(i.id, 0) > 0),
         reorder_report=[i for i in items if stock_lookup.get(i.id, 0) <= i.reorder_level],
         as_of=now_local().strftime("%d %B %Y"),
+        batch_breakdown=batch_breakdown,
     )
 
 
@@ -326,6 +373,94 @@ def stock_movements():
         locations=locations,
         movement_types=MOVEMENT_TYPES,
         filters={"item_id": item_id, "location_id": location_id, "movement_type": movement_type},
+    )
+
+
+@manager_required
+def expiring_batches():
+    """Company-wide (permission-scoped) view of batch stock by expiry status —
+    the report gap Phase F closes: NEAR_EXPIRY_WARNING_DAYS previously only
+    ever surfaced inside the POS batch picker's JSON response for a single
+    item, never as a standalone list. Read-only; never mutates Batch or
+    BatchStock.
+
+    Only BatchStock.quantity > 0 rows are shown — a batch that's been fully
+    consumed/transferred out is not "expiring stock" anymore. A NULL
+    expiry_date is a real, valid state (see Batch's own docstring on Unknown
+    Batch / undated receipts) and is classified as its own "no_expiry"
+    bucket, never silently folded into "expired" or "near_expiry".
+
+    Location-scoped exactly like report_stock()/stock_movements(): an
+    explicit location_id the user isn't authorized for is refused, and the
+    unfiltered view is scoped to only the locations they may see."""
+    from salpurflask.models import Location, Batch, BatchStock, NEAR_EXPIRY_WARNING_DAYS
+    from salpurflask.services.location_permissions import (
+        accessible_location_ids, require_location_access)
+
+    accessible_ids = accessible_location_ids()
+    today = now_local().date()
+
+    location_id = request.args.get("location_id", "").strip()
+    status_filter = request.args.get("status", "").strip()
+    try:
+        threshold_days = int(request.args.get("days", "").strip() or NEAR_EXPIRY_WARNING_DAYS)
+    except ValueError:
+        threshold_days = NEAR_EXPIRY_WARNING_DAYS
+
+    query = (db.session.query(Batch, BatchStock.quantity, BatchStock.location_id, Location.name, Item.name)
+             .join(BatchStock, BatchStock.batch_id == Batch.id)
+             .join(Location, Location.id == BatchStock.location_id)
+             .join(Item, Item.id == Batch.item_id)
+             .filter(BatchStock.quantity > 0))
+
+    if location_id.isdigit():
+        require_location_access(int(location_id))
+        query = query.filter(BatchStock.location_id == int(location_id))
+    elif accessible_ids is not None:
+        query = query.filter(BatchStock.location_id.in_(accessible_ids))
+
+    query = query.order_by(Batch.expiry_date.is_(None), Batch.expiry_date.asc(), Batch.id.asc())
+
+    rows = []
+    for batch, qty, loc_id, loc_name, item_name in query.all():
+        if batch.expiry_date is None:
+            status, days_to_expiry = "no_expiry", None
+        else:
+            days_to_expiry = (batch.expiry_date - today).days
+            if batch.expiry_date < today:
+                status = "expired"
+            elif batch.expiry_date == today:
+                status = "today"
+            elif days_to_expiry <= threshold_days:
+                status = "near_expiry"
+            else:
+                status = "ok"
+        unit_cost = Decimal(str(batch.unit_cost or 0))
+        rows.append({
+            "item_name": item_name, "batch_no": batch.batch_no or "(unknown)",
+            "location_name": loc_name, "quantity": qty,
+            "expiry_date": batch.expiry_date, "days_to_expiry": days_to_expiry,
+            "unit_cost": unit_cost, "value": (unit_cost * Decimal(str(qty))).quantize(MONEY),
+            "status": status,
+        })
+
+    if status_filter in ("expired", "today", "near_expiry", "ok", "no_expiry"):
+        rows = [r for r in rows if r["status"] == status_filter]
+
+    locations_query = Location.query.filter_by(active=True)
+    if accessible_ids is not None:
+        locations_query = locations_query.filter(Location.id.in_(accessible_ids))
+    locations = locations_query.order_by(Location.name).all()
+
+    return render_template(
+        "expiring_batches.html",
+        rows=rows,
+        locations=locations,
+        threshold_days=threshold_days,
+        default_threshold=NEAR_EXPIRY_WARNING_DAYS,
+        filters={"location_id": location_id, "status": status_filter, "days": str(threshold_days)},
+        total_value=sum((r["value"] for r in rows), Decimal("0")),
+        as_of=now_local().strftime("%d %B %Y"),
     )
 
 
