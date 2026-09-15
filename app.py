@@ -1923,11 +1923,6 @@ def migrate_database():
     # Reversals written before reverse_entry refused to backdate.
     realign_backdated_reversals()
 
-    # Multi-warehouse foundation: every existing item's stock lives at one
-    # seeded default location. Idempotent — only fills ItemStock rows that
-    # don't exist yet, so it is safe to run on every boot.
-    backfill_item_stock_locations()
-
     # Batch/Lot tracking — Phase A. db.create_all() (top of this function)
     # already creates the brand-new batch/batch_stock/purchase_item_batch/
     # sale_item_batch tables; it never alters an EXISTING table, so the new
@@ -1937,6 +1932,21 @@ def migrate_database():
     # or defaulted, so every existing row reads back exactly as it did
     # before this migration ran — see item.batch_tracked's own default of
     # False, which keeps the whole batch subsystem inert for it.
+    #
+    # Must run BEFORE backfill_item_stock_locations() below: that function
+    # queries the Item ORM model, whose class already declares batch_tracked
+    # (it's defined in Python regardless of which phase's code is running) —
+    # SQLAlchemy includes every mapped column in the SELECT it generates,
+    # so on a database that has not yet had this ALTER TABLE applied,
+    # backfill_item_stock_locations()'s very first query fails with
+    # "column item.batch_tracked does not exist" before this block ever
+    # gets a chance to add it. This bit Render's live Postgres database
+    # in production: every boot crashed here, migration never completed,
+    # the column was never added, so every subsequent boot crashed the
+    # same way. Ordering ALTER TABLE additions before any ORM read of the
+    # table they touch is the general rule this fixes; ALTER TABLE additions
+    # among themselves may stay in any order, since a raw ALTER TABLE never
+    # goes through the ORM's column list.
     if "item" in inspector.get_table_names():
         item_columns = {col["name"] for col in inspector.get_columns("item")}
         if "batch_tracked" not in item_columns:
@@ -1968,6 +1978,15 @@ def migrate_database():
         if "pending_expiry_date" not in purchase_item_columns:
             with db.engine.begin() as conn:
                 conn.execute(text("ALTER TABLE purchase_item ADD COLUMN pending_expiry_date DATE"))
+
+    # Multi-warehouse foundation: every existing item's stock lives at one
+    # seeded default location. Idempotent — only fills ItemStock rows that
+    # don't exist yet, so it is safe to run on every boot.
+    #
+    # Must run AFTER every Item-table column addition above (see the
+    # batch_tracked block's own comment for why) — this function queries
+    # the Item ORM model directly.
+    backfill_item_stock_locations()
 
 # Create Database
 # Migrations still run on every real boot; the flag only stops the same process
