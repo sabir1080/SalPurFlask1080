@@ -223,6 +223,25 @@ def post_reconciliation(reconciliation, *, posted_by_id=None):
     (stock found or lost), netted across every line so the entry always
     balances regardless of how the variances' signs mix.
 
+    Batch/Lot tracking — Phase H. A batch_tracked item's variance goes
+    through item_add_stock_batched()/item_remove_stock_batched() instead,
+    against the item's single Unknown Batch (get_or_create_unknown_batch())
+    — counting here is still item-level only (no per-batch physical count
+    exists), so a "found" quantity has no real batch identity to record
+    other than Unknown, the same principle Phase G's enable-tracking
+    migration already applies to pre-existing stock. A "lost" quantity is
+    removed from the Unknown Batch ONLY: item_remove_stock_batched() raises
+    PostingError unmodified if that batch alone does not have enough at this
+    location — this never falls back to deducting from a differently-named
+    batch, which would be guessing which physical lot was actually short.
+    That refusal aborts the whole reconciliation via the caller's existing
+    single-transaction rollback (see reconciliation_post() in the route
+    module), the same as any other PostingError here. A non-batch-tracked
+    item's line is completely unaffected — same item_add_stock()/
+    item_remove_stock() calls as before this phase, same net_value/GL math
+    either way since the batch-aware wrappers return/consume identical
+    values (see their own docstrings in models.py).
+
     Re-verifies every line's snapshot against current stock BEFORE moving
     anything: if a sale, adjustment or transfer touched this item at this
     location since finalize_count() ran, the approved variance no longer
@@ -259,7 +278,9 @@ def post_reconciliation(reconciliation, *, posted_by_id=None):
         raise PostingError("Cannot post — " + "; ".join(stale))
 
     from salpurflask.models.models import (
-        item_add_stock, item_remove_stock, allocate_document_number,
+        item_add_stock, item_remove_stock,
+        item_add_stock_batched, item_remove_stock_batched, get_or_create_unknown_batch,
+        allocate_document_number,
         post_entry, posted_entry, ACC_INVENTORY, ACC_STOCK_ADJ, MONEY,
     )
 
@@ -273,17 +294,33 @@ def post_reconciliation(reconciliation, *, posted_by_id=None):
         item = line.item
         if line.variance > 0:
             cost_total = (Decimal(str(line.variance)) * item.avg_cost).quantize(MONEY)
-            item_add_stock(item, line.variance, cost_total,
-                           location_id=reconciliation.location_id,
-                           movement_type="adjustment",
-                           source_type="inventory_reconciliation", source_id=reconciliation.id)
+            if item.batch_tracked:
+                batch = get_or_create_unknown_batch(item.id, created_by_id=posted_by_id)
+                item_add_stock_batched(item, line.variance, cost_total,
+                                       location_id=reconciliation.location_id, batch=batch,
+                                       movement_type="adjustment",
+                                       source_type="inventory_reconciliation", source_id=reconciliation.id)
+            else:
+                item_add_stock(item, line.variance, cost_total,
+                               location_id=reconciliation.location_id,
+                               movement_type="adjustment",
+                               source_type="inventory_reconciliation", source_id=reconciliation.id)
             net_value += cost_total
         else:
-            cost_removed = item_remove_stock(item, abs(line.variance),
-                                             location_id=reconciliation.location_id,
-                                             movement_type="adjustment",
-                                             source_type="inventory_reconciliation",
-                                             source_id=reconciliation.id)
+            if item.batch_tracked:
+                batch = get_or_create_unknown_batch(item.id, created_by_id=posted_by_id)
+                cost_removed = item_remove_stock_batched(item, abs(line.variance),
+                                                          location_id=reconciliation.location_id,
+                                                          batch=batch,
+                                                          movement_type="adjustment",
+                                                          source_type="inventory_reconciliation",
+                                                          source_id=reconciliation.id)
+            else:
+                cost_removed = item_remove_stock(item, abs(line.variance),
+                                                 location_id=reconciliation.location_id,
+                                                 movement_type="adjustment",
+                                                 source_type="inventory_reconciliation",
+                                                 source_id=reconciliation.id)
             net_value -= Decimal(str(cost_removed or 0))
 
     if not reconciliation.reference:
