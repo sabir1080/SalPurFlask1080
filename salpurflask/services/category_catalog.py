@@ -571,7 +571,8 @@ DEFAULT_PRODUCT_FIELDS = {
         {"field_name": "brand", "field_label": "Brand", "field_type": "text", "tab_name": "General", "position": 1},
         {"field_name": "batch_no", "field_label": "Batch No.", "field_type": "text", "is_required": True, "tab_name": "Batch & Expiry", "position": 2},
         {"field_name": "expiry_date", "field_label": "Expiry Date", "field_type": "date", "is_required": True, "tab_name": "Batch & Expiry", "position": 3},
-        {"field_name": "mrp", "field_label": "MRP", "field_type": "number", "is_required": True, "tab_name": "General", "position": 4},
+        {"field_name": "mrp", "field_label": "MRP", "field_type": "number", "is_required": True, "tab_name": "General", "position": 4,
+         "help_text": "Maximum Retail Price — for reference only; the price charged is based on Sale Price."},
         {"field_name": "manufacturer", "field_label": "Manufacturer", "field_type": "text", "is_required": True, "tab_name": "General", "position": 5},
         {"field_name": "dosage_form", "field_label": "Dosage Form", "field_type": "select", "tab_name": "General", "position": 6,
          "options": ["Tablet", "Capsule", "Syrup", "Injection", "Cream", "Drops", "Other"]},
@@ -723,6 +724,8 @@ def ensure_default_product_fields():
                 options=spec.get("options"),
                 tab_name=spec.get("tab_name", "General"),
                 position=spec.get("position", 0),
+                placeholder=spec.get("placeholder"),
+                help_text=spec.get("help_text"),
                 is_active=True,
                 is_system_default=True,
             ))
