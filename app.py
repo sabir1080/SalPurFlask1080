@@ -2872,10 +2872,24 @@ def quotations():
 @app.route("/quotations/<int:id>")
 @manager_required
 def quotation_detail(id):
+    from salpurflask.models import Location, get_or_create_default_location
+    from salpurflask.services.location_permissions import accessible_location_ids
+
     q = db.session.get(Quotation, id) or abort(404)
     total = quotation_total(q)
+    # Same warehouse picker /sale uses: a Quotation itself carries no
+    # location (it's a price proposal, not yet a stock commitment) — the
+    # warehouse is chosen only now, at the moment it becomes a real Sale.
+    accessible_ids = accessible_location_ids()
+    locations_query = Location.query.filter_by(active=True)
+    if accessible_ids is not None:
+        locations_query = locations_query.filter(Location.id.in_(accessible_ids))
+    locations = locations_query.order_by(Location.name).all()
+    default_location = locations[0] if (accessible_ids is not None and locations) \
+        else get_or_create_default_location()
     return render_template("quotation_detail.html", q=q, total=total,
-                           q_item_net=quotation_item_net, quote_statuses=QUOTATION_STATUSES)
+                           q_item_net=quotation_item_net, quote_statuses=QUOTATION_STATUSES,
+                           locations=locations, default_location=default_location)
 
 @app.route("/quotations/<int:id>/status", methods=["POST"])
 @manager_required
@@ -2895,6 +2909,9 @@ def update_quotation_status(id):
 @app.route("/quotations/<int:id>/convert", methods=["POST"])
 @manager_required
 def convert_quotation_to_sale(id):
+    from salpurflask.models import resolve_location_id
+    from salpurflask.services.location_permissions import require_location_access
+
     q = db.session.get(Quotation, id) or abort(404)
     if q.converted_sale_id:
         flash(f"Already converted to Sale #{q.converted_sale_id}.", "warning")
@@ -2907,12 +2924,33 @@ def convert_quotation_to_sale(id):
         sal_date = datetime.strptime(date_str, "%Y-%m-%d") if date_str else now_local()
     except ValueError:
         sal_date = now_local()
-    # stock check
+    # A Quotation itself carries no location (a price proposal isn't yet a
+    # stock commitment) -- the warehouse to fulfil it from is chosen only
+    # now, at the moment it becomes a real Sale, the exact same
+    # resolve_location_id()/require_location_access() pattern sale() uses
+    # (salpurflask/sales/routes.py). location_id="" resolves to the default
+    # location, so a single-warehouse business sees no change at all.
+    try:
+        location_id = resolve_location_id(request.form.get("location_id"))
+    except ValueError as e:
+        flash(str(e), "danger")
+        return redirect(url_for("quotation_detail", id=id))
+    require_location_access(location_id)
+    # stock check -- at the SAME location the removal below will actually
+    # use, not the company-wide Item.stock total. A multi-warehouse item can
+    # have enough stock company-wide while this specific warehouse has none;
+    # checking the company-wide figure here let that case slip past this
+    # check only to fail item_remove_stock()'s own location-scoped guard a
+    # few lines down, rolling back the whole conversion (GL entry included)
+    # and leaving the Quotation silently stuck on Draft -- see the forensic
+    # investigation that found this gap for the full trace.
     stock_errors = []
     for qi in q.line_items:
         item_obj = db.session.get(Item, qi.item_id)
-        if item_obj and item_obj.stock < line_base_qty(qi):
-            stock_errors.append(f"{item_obj.name}: only {item_obj.stock} in stock")
+        if item_obj:
+            available = stock_at_location(item_obj.id, location_id)
+            if available < line_base_qty(qi):
+                stock_errors.append(f"{item_obj.name}: only {available} in stock at this warehouse")
     if stock_errors:
         flash("Insufficient stock — " + "; ".join(stock_errors), "danger")
         return redirect(url_for("quotation_detail", id=id))
@@ -2934,7 +2972,7 @@ def convert_quotation_to_sale(id):
         discount_type=first_qi.discount_type or "percent", discount_value=first_qi.discount_value,
         discount_amount=first_disc_amt,
         tax_percent=first_qi.tax_percent, tax_amount=first_tax_amt,
-        date=sal_date, notes=q.notes,
+        date=sal_date, notes=q.notes, location_id=location_id,
     )
     db.session.add(sal)
     db.session.flush()
@@ -2955,7 +2993,8 @@ def convert_quotation_to_sale(id):
         ))
         if item_obj:
             item_remove_stock(item_obj, base_qty,
-                              cost_total=unit_cost * Decimal(str(base_qty)))
+                              cost_total=unit_cost * Decimal(str(base_qty)),
+                              location_id=location_id)
     db.session.flush()
     db.session.refresh(sal)
     sal.invoice_no = allocate_document_number("sale", sal.date)

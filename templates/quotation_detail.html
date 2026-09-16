@@ -70,9 +70,18 @@
                     <button type="submit" class="btn btn-outline-primary btn-sm text-nowrap">Update</button>
                 </form>
                 {% if not q.converted_sale_id and q.status not in ('Rejected',) %}
-                <form method="POST" action="{{ url_for('convert_quotation_to_sale', id=q.id) }}" class="d-flex gap-2 align-items-center">
+                <form method="POST" action="{{ url_for('convert_quotation_to_sale', id=q.id) }}" class="d-flex gap-2 align-items-center flex-wrap">
                     <input type="date" class="form-control form-control-sm" name="sale_date"
                            value="{{ q.quote_date.strftime('%Y-%m-%d') }}" style="max-width:160px">
+                    {% if locations|length > 1 %}
+                    <select class="form-select form-select-sm" name="location_id" style="max-width:180px" required>
+                      {% for loc in locations %}
+                      <option value="{{ loc.id }}" {% if loc.id == default_location.id %}selected{% endif %}>{{ loc.name }}</option>
+                      {% endfor %}
+                    </select>
+                    {% else %}
+                    <input type="hidden" name="location_id" value="{{ default_location.id }}">
+                    {% endif %}
                     <button type="submit" class="btn btn-success btn-sm text-nowrap"
                             onclick="return confirm('Convert this quotation to a Sale?')">
                         <i class="bi bi-arrow-right-circle"></i> Convert to Sale
