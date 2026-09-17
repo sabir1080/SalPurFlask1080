@@ -404,28 +404,53 @@ def _unwind_batch_tracked_purchase_for_correction(pur, new_qty_by_item_batch):
         _unwind_stock_and_subledger() already uses for the mirror-image
         case (restoring stock into a batch at batch.unit_cost per unit).
 
-    Returns a {(item_id, batch_no): consumed_qty} map — how much of each
-    original allocation was already consumed and therefore was NOT removed
-    here. The caller's re-post step must subtract this same amount from
-    whatever it adds back into that SAME batch_no, or the already-consumed
-    portion would be silently re-materialised as fresh stock (a batch that
-    is genuinely empty right now must not become non-empty again just
-    because a same-quantity correction was saved). A re-post into a
-    DIFFERENT batch_no is unaffected — that is a distinct batch with its
-    own, unrelated balance.
+    Returns a (consumed_by_item_batch, historical_pi_ids) pair.
+
+    consumed_by_item_batch is a {(item_id, batch_no): consumed_qty} map —
+    how much of each original allocation was already consumed and therefore
+    was NOT removed here. The caller's re-post step must subtract this same
+    amount from whatever it adds back into that SAME batch_no, or the
+    already-consumed portion would be silently re-materialised as fresh
+    stock (a batch that is genuinely empty right now must not become
+    non-empty again just because a same-quantity correction was saved). A
+    re-post into a DIFFERENT batch_no is unaffected — that is a distinct
+    batch with its own, unrelated balance.
+
+    historical_pi_ids is the set of this Purchase's PurchaseItem ids that
+    are batch-tracked NOW (item.batch_tracked is True) but carry ZERO
+    PurchaseItemBatch allocations. Every Post/Correction code path
+    (post_purchase_route(), correct_purchase_route() itself) unconditionally
+    writes a PurchaseItemBatch row whenever item.batch_tracked is True at
+    the moment a line is posted — so a batch-tracked item with no allocation
+    at all for one of its own lines can only mean that line was posted (or
+    last corrected) BEFORE batch tracking was turned on for this item (e.g.
+    via enable_batch_tracking()'s Phase G backfill), which never rewrites
+    old documents. Such a line was never given batch machinery in the first
+    place, so there is nothing here to unwind at the batch level; the
+    caller must fall back to the plain, non-batch unwind (item_remove_stock())
+    for these ids instead — the exact mechanism the line was originally
+    posted with. This is NOT the same as a genuine partial/mismatched
+    allocation (allocated_qty != expected_qty with allocations present),
+    which still raises below exactly as before — only a total absence of
+    allocations is treated as this historical case.
 
     Raises PostingError on the contradiction described above, or if an
     original allocation's total doesn't match its line's quantity (the same
-    consistency guard _unwind_stock_and_subledger() itself carries). Does
+    consistency guard _unwind_stock_and_subledger() itself carries) --
+    except for the historical zero-allocation case just described. Does
     not commit -- same contract as _unwind_stock_and_subledger()."""
     from salpurflask.models.inventory_location import BatchStock
 
     consumed_by_item_batch = {}
+    historical_pi_ids = set()
     for pi in pur.line_items:
         item = db.session.get(Item, pi.item_id)
         if item is None or not item.batch_tracked:
             continue
         allocations = list(pi.batch_allocations)
+        if not allocations:
+            historical_pi_ids.add(pi.id)
+            continue
         allocated_qty = sum(a.quantity for a in allocations)
         expected_qty = line_base_qty(pi)
         if allocated_qty != expected_qty:
@@ -464,7 +489,7 @@ def _unwind_batch_tracked_purchase_for_correction(pur, new_qty_by_item_batch):
 
             key = (item.id, batch.batch_no)
             consumed_by_item_batch[key] = consumed_by_item_batch.get(key, 0) + consumed
-    return consumed_by_item_batch
+    return consumed_by_item_batch, historical_pi_ids
 
 
 @admin_required
@@ -597,18 +622,24 @@ def correct_purchase_route(id):
             # A Purchase's OLD lines *added* stock, so undoing them (step 1 below)
             # can only fail if some of that received stock has since moved on --
             # sold, transferred, or returned elsewhere. This pre-check only
-            # applies to NON-batch-tracked lines: for those, undoing is still an
-            # all-or-nothing item-level operation (item_remove_stock()'s own
-            # guard, reached below, is the real, race-safe enforcement either
-            # way). A batch-tracked line gets its own, precise, per-batch check
-            # instead — see _unwind_batch_tracked_purchase_for_correction()
-            # below, which allows unwinding just the portion of the receipt
-            # still sitting in its batch, rather than refusing outright the
-            # moment ANY of it has moved on.
+            # applies to lines that will be unwound via the plain, item-level
+            # mechanism below: genuinely non-batch-tracked lines, AND lines
+            # that are batch-tracked NOW but have zero PurchaseItemBatch
+            # allocations (posted/last corrected before batch tracking was
+            # enabled for this item -- see _unwind_batch_tracked_purchase_for_
+            # correction()'s historical_pi_ids docstring). For those, undoing
+            # is still an all-or-nothing item-level operation (item_remove_stock()'s
+            # own guard, reached below, is the real, race-safe enforcement
+            # either way). A genuinely batch-tracked line (real allocations
+            # present) gets its own, precise, per-batch check instead — see
+            # _unwind_batch_tracked_purchase_for_correction() below, which
+            # allows unwinding just the portion of the receipt still sitting
+            # in its batch, rather than refusing outright the moment ANY of
+            # it has moved on.
             stock_errors = []
             for pi in pur.line_items:
                 item_obj = db.session.get(Item, pi.item_id)
-                if item_obj and item_obj.batch_tracked:
+                if item_obj and item_obj.batch_tracked and list(pi.batch_allocations):
                     continue
                 available = stock_at_location(pi.item_id, stock_check_location_id)
                 if available < line_base_qty(pi):
@@ -638,11 +669,19 @@ def correct_purchase_route(id):
             # reverse_document() (a genuine, permanent reversal) still calls
             # that unmodified function directly and is unaffected by this.
             new_qty_by_item_batch = _correction_new_qty_by_item_batch(rows)
-            consumed_by_item_batch = _unwind_batch_tracked_purchase_for_correction(
-                pur, new_qty_by_item_batch)
+            consumed_by_item_batch, historical_pi_ids = \
+                _unwind_batch_tracked_purchase_for_correction(pur, new_qty_by_item_batch)
             for pi in pur.line_items:
                 item_obj = db.session.get(Item, pi.item_id)
-                if item_obj is None or item_obj.batch_tracked:
+                if item_obj is None:
+                    continue
+                # A line that is batch-tracked NOW but was posted (or last
+                # corrected) BEFORE batch tracking was enabled for this item
+                # has no PurchaseItemBatch allocation to unwind at the batch
+                # level (see historical_pi_ids' own docstring on the unwind
+                # function above) -- it was originally added via plain
+                # item_add_stock(), so it must be removed the same way here.
+                if item_obj.batch_tracked and pi.id not in historical_pi_ids:
                     continue
                 item_remove_stock(item_obj, line_base_qty(pi),
                                   cost_total=Decimal(str(pi.amount)) - Decimal(str(pi.tax_amount or 0)),
