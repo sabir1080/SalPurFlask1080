@@ -208,6 +208,14 @@ const FORM_STORAGE_KEY = 'itemFormData';
 // below on re-render; never assumed accurate after that.
 const EXISTING_CATEGORY_FIELD_DATA = {{ dict(form_data) | tojson }};
 
+// Which category tab (e.g. "Batch & Expiry") the failing field lives on,
+// when this re-render was caused by a category-field validation error —
+// see _first_error_tab_name() in salpurflask/inventory/routes.py. null on
+// every other path (a General-tab error, success, or a plain GET), in
+// which case loadCategoryFields() keeps its existing default-to-first-tab
+// behavior unchanged.
+const ERROR_TAB_NAME = {{ error_tab_name | default(none) | tojson }};
+
 // Toggle stock fields based on item type
 function toggleStockFields() {
   const itemType = document.getElementById('item_type').value;
@@ -310,10 +318,18 @@ async function loadCategoryFields() {
       fieldsByTab[tab].push(field);
     });
 
+    // Which tab opens active: the tab a validation error landed on (see
+    // ERROR_TAB_NAME above), if that tab actually exists among this
+    // category's own tabs -- otherwise the existing default of "whichever
+    // tab is first", unchanged for the success/GET/General-error paths.
+    const activeTab = (ERROR_TAB_NAME && fieldsByTab[ERROR_TAB_NAME])
+      ? ERROR_TAB_NAME
+      : Object.keys(fieldsByTab)[0];
+
     // Build tabs and fields HTML
     const tabsHtml = Object.keys(fieldsByTab).map(tab => `
       <li class="nav-item">
-        <button class="nav-link ${Object.keys(fieldsByTab)[0] === tab ? 'active' : ''}"
+        <button class="nav-link ${activeTab === tab ? 'active' : ''}"
                 id="tab-${tab.replace(/\s+/g, '-')}-tab"
                 data-bs-toggle="tab"
                 data-bs-target="#tab-${tab.replace(/\s+/g, '-')}"
@@ -324,7 +340,7 @@ async function loadCategoryFields() {
     `).join('');
 
     const contentHtml = Object.entries(fieldsByTab).map(([tab, tabFields]) => `
-      <div class="tab-pane fade ${Object.keys(fieldsByTab)[0] === tab ? 'show active' : ''}"
+      <div class="tab-pane fade ${activeTab === tab ? 'show active' : ''}"
            id="tab-${tab.replace(/\s+/g, '-')}">
         ${tabFields.map(field => renderField(field, EXISTING_CATEGORY_FIELD_DATA[field.field_name] || '')).join('')}
       </div>

@@ -35,6 +35,25 @@ RESERVED_ITEM_FIELD_NAMES = {"id", "name", "sku", "barcode", "item_type", "unit"
                             "business_category_id", "category_id"}
 
 
+def _first_error_tab_name(category_slug, category_field_errors):
+    """Which category tab (e.g. "Batch & Expiry") the FIRST rejected field
+    lives on, so the item-create form can open that tab automatically
+    instead of always defaulting to whichever tab happens to be first —
+    validate_product_data()'s error dict is keyed by field_name with no
+    tab_name of its own, so this looks the field back up by name to read
+    its tab_name off the real ProductField row. Returns None if the
+    category has no fields, or none of the failing field names are found
+    among them (defensive; should not happen for a genuine failure)."""
+    from salpurflask.services.config_service import ConfigurationService
+
+    fields_by_name = {f.field_name: f for f in ConfigurationService.get_category_fields(category_slug)}
+    for field_name in category_field_errors:
+        field = fields_by_name.get(field_name)
+        if field:
+            return field.tab_name or "General"
+    return None
+
+
 def _purchase_line_value(pi):
     """Calculate purchase line value for ledger display (simple, no discount/tax)."""
     return pi.quantity * pi.purchase_price * (pi.unit_factor or 1)
@@ -532,6 +551,13 @@ def item():
                   "A SKU must point at one item only.", "danger")
         elif category_field_errors:
             flash("; ".join(category_field_errors.values()), "danger")
+            return render_template("item.html", items=items, categories=categories,
+                                   business_categories=business_categories,
+                                   pagination=pagination, search=search,
+                                   category_filter=category_filter,
+                                   form_data=request.form,
+                                   error_tab_name=_first_error_tab_name(
+                                       resolved_category.slug, category_field_errors))
         else:
             os_val = int(opening_stock)
             reorder_val = int(reorder_level) if reorder_level else 50
