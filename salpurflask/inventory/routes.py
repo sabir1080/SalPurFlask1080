@@ -698,6 +698,10 @@ def edit_item(id):
                   "A SKU must point at one item only.", "danger")
         elif category_field_errors:
             flash("; ".join(category_field_errors.values()), "danger")
+            return render_template("edit_item.html", item=item, categories=categories,
+                                   business_categories=business_categories,
+                                   error_tab_name=_first_error_tab_name(
+                                       resolved_category.slug, category_field_errors))
         else:
             new_os = int(opening_stock)
             stock_adjustment = new_os - item.opening_stock

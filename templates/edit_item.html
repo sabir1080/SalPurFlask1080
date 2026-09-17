@@ -8,7 +8,7 @@
 </div>
 
 <div class="card">
-  <form method="POST" class="card-body">
+  <form method="POST" class="card-body" id="itemEditForm">
     <div class="row g-3 mb-4">
       <div class="col-md-6">
         <div class="form-group">
@@ -190,6 +190,14 @@
 // Data is preserved on page reload via browser's built-in form state
 const ITEM_ID = {{ item.id }};
 
+// Which category tab (e.g. "Batch & Expiry") the failing field lives on,
+// when this re-render was caused by a category-field validation error --
+// see _first_error_tab_name() in salpurflask/inventory/routes.py (shared
+// with the item-create page's identical fix). null on every other path
+// (a General-tab error, success, or a plain GET), in which case
+// loadCategoryFields() keeps its existing default-to-first-tab behavior.
+const ERROR_TAB_NAME = {{ error_tab_name | default(none) | tojson }};
+
 // Placeholder functions for compatibility
 function saveEditItemFormData() {
   // Auto-save disabled - form data preserved via browser session
@@ -229,10 +237,18 @@ async function loadCategoryFields() {
       fieldsByTab[tab].push(field);
     });
 
+    // Which tab opens active: the tab a validation error landed on (see
+    // ERROR_TAB_NAME above), if that tab actually exists among this
+    // category's own tabs -- otherwise the existing default of "whichever
+    // tab is first", unchanged for the success/GET/General-error paths.
+    const activeTab = (ERROR_TAB_NAME && fieldsByTab[ERROR_TAB_NAME])
+      ? ERROR_TAB_NAME
+      : Object.keys(fieldsByTab)[0];
+
     // Build tabs and fields HTML
     const tabsHtml = Object.keys(fieldsByTab).map(tab => `
       <li class="nav-item">
-        <button class="nav-link ${Object.keys(fieldsByTab)[0] === tab ? 'active' : ''}"
+        <button class="nav-link ${activeTab === tab ? 'active' : ''}"
                 id="tab-${tab.replace(/\s+/g, '-')}-tab"
                 data-bs-toggle="tab"
                 data-bs-target="#tab-${tab.replace(/\s+/g, '-')}"
@@ -248,7 +264,7 @@ async function loadCategoryFields() {
       .catch(() => ({}));
 
     const contentHtml = Object.entries(fieldsByTab).map(([tab, tabFields]) => `
-      <div class="tab-pane fade ${Object.keys(fieldsByTab)[0] === tab ? 'show active' : ''}"
+      <div class="tab-pane fade ${activeTab === tab ? 'show active' : ''}"
            id="tab-${tab.replace(/\s+/g, '-')}">
         ${tabFields.map(field => renderField(field, existingData[field.field_name] || '')).join('')}
       </div>
@@ -365,6 +381,28 @@ document.querySelector('form[method="POST"]').addEventListener('submit', functio
     el.addEventListener('change', saveEditItemFormData);
   }
 });
+
+// Reveal a category tab hidden by Bootstrap (display:none via its own
+// fade/tab-pane CSS, not this form's doing) BEFORE the browser paints its
+// native "Please fill in this field" tooltip for a required field inside
+// it -- a tooltip cannot anchor to an element the browser cannot see, so
+// on a hidden required field it is silently swallowed instead of shown.
+// This only reveals the tab; it never touches validity itself -- no
+// preventDefault(), no custom error UI, the `required` attribute and the
+// browser's own native constraint validation continue completely
+// unchanged, immediately after this handler returns. Identical mechanism
+// to the item-create page's own fix (templates/item.html) -- see that
+// file for the full reasoning on why `invalid` requires a capture-phase
+// listener (it does not bubble, unlike `submit`).
+document.getElementById('itemEditForm').addEventListener('invalid', function(event) {
+  const field = event.target;
+  const pane = field.closest('.tab-pane');
+  if (!pane || pane.classList.contains('active')) return; // General fields, or already-visible tab -- untouched
+  const tabButton = document.getElementById(pane.id + '-tab');
+  if (tabButton && window.bootstrap && bootstrap.Tab) {
+    bootstrap.Tab.getOrCreateInstance(tabButton).show();
+  }
+}, true);
 
 // Load category fields when category changes
 document.getElementById('business_category_id').addEventListener('change', loadCategoryFields);

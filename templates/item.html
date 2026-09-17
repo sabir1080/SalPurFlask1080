@@ -63,7 +63,7 @@ try {
     <h4 class="mb-0"><i class="bi bi-plus-circle"></i> Add New Item</h4>
   </div>
   <div class="card-body">
-    <form method="POST">
+    <form method="POST" id="itemCreateForm">
       <div class="row g-3 mb-4">
         <div class="col-md-6">
           <div class="form-group">
@@ -448,6 +448,32 @@ function renderField(field, currentValue = '') {
     el.addEventListener('change', saveFormData);
   }
 });
+
+// Reveal a category tab hidden by Bootstrap (display:none via its own
+// fade/tab-pane CSS, not this form's doing) BEFORE the browser paints its
+// native "Please fill in this field" tooltip for a required field inside
+// it -- a tooltip cannot anchor to an element the browser cannot see, so
+// on a hidden required field it is silently swallowed instead of shown.
+// This only reveals the tab; it never touches validity itself -- no
+// preventDefault(), no custom error UI, the `required` attribute and the
+// browser's own native constraint validation continue completely
+// unchanged, immediately after this handler returns.
+//
+// The `invalid` event does NOT bubble (unlike `submit`), so it cannot be
+// caught with an ordinary listener on the form -- every browser requires
+// either one listener per field or, as here, a single listener on an
+// ancestor registered for the CAPTURE phase (the `true` third argument),
+// which does see every descendant's invalid event on its way down, before
+// the browser's own default handling (painting the tooltip) runs.
+document.getElementById('itemCreateForm').addEventListener('invalid', function(event) {
+  const field = event.target;
+  const pane = field.closest('.tab-pane');
+  if (!pane || pane.classList.contains('active')) return; // General fields, or already-visible tab -- untouched
+  const tabButton = document.getElementById(pane.id + '-tab');
+  if (tabButton && window.bootstrap && bootstrap.Tab) {
+    bootstrap.Tab.getOrCreateInstance(tabButton).show();
+  }
+}, true);
 
 // Load category fields when category changes
 document.getElementById('business_category_id').addEventListener('change', loadCategoryFields);
