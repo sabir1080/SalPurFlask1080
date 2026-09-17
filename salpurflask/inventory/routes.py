@@ -598,7 +598,8 @@ def item():
                 return render_template("item.html", items=items, categories=categories,
                                        business_categories=business_categories,
                                        pagination=pagination, search=search,
-                                       category_filter=category_filter)
+                                       category_filter=category_filter,
+                                       form_data=request.form)
             post_item_opening(item_obj)
             db.session.commit()
             # Import record_audit locally to avoid circular imports
@@ -614,6 +615,7 @@ def item():
         pagination=pagination,
         search=search,
         category_filter=category_filter,
+        form_data=request.form if request.method == "POST" else {},
     )
 
 
