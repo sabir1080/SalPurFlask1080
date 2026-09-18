@@ -8,6 +8,52 @@
 
 {% block content %}
 
+{# ── QUICK ACTIONS (compact shortcut bar, first thing on the page) ── #}
+<section class="nh-shortcuts">
+    <div class="container">
+        <div class="nh-shortcuts-grid">
+            {% if current_user.is_manager %}
+            <a href="{{ url_for('pos') }}" class="nh-shortcut" style="--ac:#22d3ee; --ac-rgb:34,211,238">
+                <span class="nh-shortcut-icon"><i class="bi bi-cash-coin"></i></span>
+                <span class="nh-shortcut-label">POS</span>
+            </a>
+            {% endif %}
+            <a href="{{ url_for('sale') }}" class="nh-shortcut" style="--ac:#f59e0b; --ac-rgb:245,158,11">
+                <span class="nh-shortcut-icon"><i class="bi bi-receipt"></i></span>
+                <span class="nh-shortcut-label">Sales</span>
+            </a>
+            {% if current_user.is_manager %}
+            <a href="{{ url_for('report_stock') }}" class="nh-shortcut" style="--ac:#6366f1; --ac-rgb:99,102,241">
+                <span class="nh-shortcut-icon"><i class="bi bi-boxes"></i></span>
+                <span class="nh-shortcut-label">Stock</span>
+            </a>
+            {% endif %}
+            <a href="{{ url_for('purchase') }}" class="nh-shortcut" style="--ac:#10b981; --ac-rgb:16,185,129">
+                <span class="nh-shortcut-icon"><i class="bi bi-bag-plus"></i></span>
+                <span class="nh-shortcut-label">Purchases</span>
+            </a>
+            <a href="{{ url_for('supplier') }}" class="nh-shortcut" style="--ac:#f97316; --ac-rgb:249,115,22">
+                <span class="nh-shortcut-icon"><i class="bi bi-truck"></i></span>
+                <span class="nh-shortcut-label">Suppliers</span>
+            </a>
+            <a href="{{ url_for('customer') }}" class="nh-shortcut" style="--ac:#ec4899; --ac-rgb:236,72,153">
+                <span class="nh-shortcut-icon"><i class="bi bi-people"></i></span>
+                <span class="nh-shortcut-label">Customers</span>
+            </a>
+            {% if current_user.is_manager %}
+            <a href="{{ url_for('report_stock') }}#reorder-report" class="nh-shortcut" style="--ac:#ef4444; --ac-rgb:239,68,68">
+                <span class="nh-shortcut-icon"><i class="bi bi-exclamation-triangle"></i></span>
+                <span class="nh-shortcut-label">Low Stock</span>
+            </a>
+            <a href="{{ url_for('reports') }}" class="nh-shortcut" style="--ac:#a78bfa; --ac-rgb:167,139,250">
+                <span class="nh-shortcut-icon"><i class="bi bi-bar-chart-line"></i></span>
+                <span class="nh-shortcut-label">Reports</span>
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</section>
+
 {# ── HERO ── #}
 <section class="nh-hero">
     <div class="nh-orb nh-orb-1"></div>
@@ -37,53 +83,46 @@
                         your business.
                     </p>
 
-                    <div class="nh-actions">
-                        {% if current_user.is_manager %}
-                        <a href="{{ url_for('dashboard.dashboard') }}" class="nh-btn-primary">
-                            <i class="bi bi-speedometer2"></i> Open Dashboard
-                        </a>
-                        <a href="{{ url_for('reports') }}" class="nh-btn-ghost">
-                            <i class="bi bi-bar-chart-line"></i> View Reports
-                        </a>
-                        {% else %}
-                        <a href="{{ url_for('purchase') }}" class="nh-btn-primary">
-                            <i class="bi bi-cart-plus"></i> Add Purchase
-                        </a>
-                        <a href="{{ url_for('sale') }}" class="nh-btn-ghost">
-                            <i class="bi bi-bag-plus"></i> Record Sale
-                        </a>
-                        {% endif %}
-                    </div>
-
                     <div class="nh-stats-bar">
                         <div class="nh-stat">
                             <i class="bi bi-grid-1x2-fill"></i>
                             <strong>10+</strong>
                             <span>Modules</span>
                         </div>
-                        <div class="nh-stat-sep"></div>
                         <div class="nh-stat">
                             <i class="bi bi-arrow-repeat"></i>
                             <strong>Real-time</strong>
                             <span>Stock Updates</span>
                         </div>
-                        <div class="nh-stat-sep"></div>
                         <div class="nh-stat">
                             <i class="bi bi-journal-check"></i>
                             <strong>Auto</strong>
                             <span>Ledger Sync</span>
                         </div>
-                        <div class="nh-stat-sep"></div>
                         <div class="nh-stat">
                             <i class="bi bi-shield-lock-fill"></i>
                             <strong>3-Tier</strong>
                             <span>Role Control</span>
                         </div>
-                        <div class="nh-stat-sep"></div>
                         <div class="nh-stat">
                             <i class="bi bi-file-earmark-pdf-fill"></i>
                             <strong>PDF</strong>
                             <span>Invoices</span>
+                        </div>
+                        <div class="nh-stat">
+                            <i class="bi bi-shield-check"></i>
+                            <strong>Secure</strong>
+                            <span>Safety &amp; Security</span>
+                        </div>
+                        <div class="nh-stat">
+                            <i class="bi bi-hourglass-split"></i>
+                            <strong>Batch</strong>
+                            <span>Expiry Tracking</span>
+                        </div>
+                        <div class="nh-stat">
+                            <i class="bi bi-geo-alt-fill"></i>
+                            <strong>Multi</strong>
+                            <span>Warehouse</span>
                         </div>
                     </div>
                 </div>
@@ -95,32 +134,55 @@
                         <div class="nh-mock-dots"><span></span><span></span><span></span></div>
                         <div class="nh-mock-title"><i class="bi bi-speedometer2"></i> Dashboard Overview</div>
                     </div>
-                    <div class="nh-mock-stats">
-                        <div class="nh-mock-stat">
-                            <span class="nh-mock-stat-label">Revenue</span>
-                            <span class="nh-mock-stat-value">Rs 2.4M</span>
-                            <span class="nh-mock-stat-trend"><i class="bi bi-graph-up-arrow"></i> +12%</span>
-                        </div>
-                        <div class="nh-mock-stat">
-                            <span class="nh-mock-stat-label">Profit</span>
-                            <span class="nh-mock-stat-value">Rs 480K</span>
-                            <span class="nh-mock-stat-trend"><i class="bi bi-graph-up-arrow"></i> +8%</span>
-                        </div>
+                    <div class="nh-mock-stats nh-mock-stats-6">
+                        <a href="{{ url_for('sale') }}" class="nh-mock-stat nh-mock-stat-link">
+                            <span class="nh-mock-stat-label">Today's Sales</span>
+                            <span class="nh-mock-stat-value">{{ overview.today_sales | fmt_num if overview.today_sales is defined else '—' }}</span>
+                        </a>
+                        <a href="{{ url_for('purchase') }}" class="nh-mock-stat nh-mock-stat-link">
+                            <span class="nh-mock-stat-label">Today's Purchases</span>
+                            <span class="nh-mock-stat-value">{{ overview.today_purchases | fmt_num if overview.today_purchases is defined else '—' }}</span>
+                        </a>
+                        <a href="{{ url_for('customer') }}" class="nh-mock-stat nh-mock-stat-link">
+                            <span class="nh-mock-stat-label">Receivables</span>
+                            <span class="nh-mock-stat-value">{{ overview.receivables | fmt_num if overview.receivables is defined else '—' }}</span>
+                        </a>
+                        <a href="{{ url_for('supplier') }}" class="nh-mock-stat nh-mock-stat-link">
+                            <span class="nh-mock-stat-label">Payables</span>
+                            <span class="nh-mock-stat-value">{{ overview.payables | fmt_num if overview.payables is defined else '—' }}</span>
+                        </a>
+                        {% if current_user.is_manager %}
+                        <a href="{{ url_for('report_stock') }}#reorder-report" class="nh-mock-stat nh-mock-stat-link {{ 'nh-mock-stat-alert' if overview.low_stock_count }}">
+                        {% else %}
+                        <div class="nh-mock-stat {{ 'nh-mock-stat-alert' if overview.low_stock_count }}">
+                        {% endif %}
+                            <span class="nh-mock-stat-label">Low Stock Items</span>
+                            <span class="nh-mock-stat-value">{{ overview.low_stock_count if overview.low_stock_count is defined else '—' }}</span>
+                        {% if current_user.is_manager %}</a>{% else %}</div>{% endif %}
+                        {% if current_user.is_manager %}
+                        <a href="{{ url_for('expiring_batches') }}" class="nh-mock-stat nh-mock-stat-link {{ 'nh-mock-stat-alert' if overview.near_expiry_count }}">
+                        {% else %}
+                        <div class="nh-mock-stat {{ 'nh-mock-stat-alert' if overview.near_expiry_count }}">
+                        {% endif %}
+                            <span class="nh-mock-stat-label">Near-Expiry Batches</span>
+                            <span class="nh-mock-stat-value">{{ overview.near_expiry_count if overview.near_expiry_count is defined else '—' }}</span>
+                        {% if current_user.is_manager %}</a>{% else %}</div>{% endif %}
                     </div>
-                    <div class="nh-mock-chart">
-                        <div class="nh-mock-bar" style="--h:38%"></div>
-                        <div class="nh-mock-bar" style="--h:62%"></div>
-                        <div class="nh-mock-bar" style="--h:48%"></div>
-                        <div class="nh-mock-bar" style="--h:80%"></div>
-                        <div class="nh-mock-bar" style="--h:58%"></div>
-                        <div class="nh-mock-bar" style="--h:95%"></div>
-                        <div class="nh-mock-bar" style="--h:72%"></div>
-                    </div>
+                    {% if overview.activity %}
                     <div class="nh-mock-rows">
-                        <div class="nh-mock-row"><i class="bi bi-check-circle-fill"></i> Purchase #1042 synced to ledger</div>
-                        <div class="nh-mock-row"><i class="bi bi-check-circle-fill"></i> Stock auto-updated on sale</div>
-                        <div class="nh-mock-row"><i class="bi bi-check-circle-fill"></i> Invoice #889 generated</div>
+                        {% for a in overview.activity[:5] %}
+                        {% if a.url %}
+                        <a href="{{ a.url }}" class="nh-mock-row nh-mock-row-link">
+                        {% else %}
+                        <div class="nh-mock-row">
+                        {% endif %}
+                            <i class="bi bi-{{ a.icon }} nh-mock-row-{{ a.color }}"></i>
+                            <span class="nh-mock-row-text">{{ a.text }}</span>
+                            {% if a.amount is not none %}<span class="nh-mock-row-amount">{{ a.amount | fmt_num }}</span>{% endif %}
+                        {% if a.url %}</a>{% else %}</div>{% endif %}
+                        {% endfor %}
                     </div>
+                    {% endif %}
                     <div class="nh-hero-visual-glow"></div>
                 </div>
             </div>
@@ -133,61 +195,92 @@
     <div class="container">
         <div class="nh-section-head">
             <span class="nh-label">What's Inside</span>
-            <h2>Six modules. One platform.</h2>
+            <h2>10+ modules. One platform.</h2>
             <p>Every module is tightly integrated — a purchase updates stock and the supplier ledger in a single save.</p>
         </div>
 
-        <div class="row g-4">
-            <div class="col-sm-6 col-lg-4">
-                <div class="nh-card" style="--ac:#6366f1; --ac-rgb:99,102,241">
-                    <div class="nh-card-icon"><i class="bi bi-boxes"></i></div>
-                    <h3>Inventory</h3>
-                    <p>Items, categories and stock levels. Auto-updates on every purchase, sale or return — no manual entry needed.</p>
-                    <a href="{{ url_for('item') }}" class="nh-card-link">Manage Items <i class="bi bi-arrow-right"></i></a>
-                </div>
+        <div class="nh-modules-grid">
+            <div class="nh-card" style="--ac:#6366f1; --ac-rgb:99,102,241">
+                <div class="nh-card-icon"><i class="bi bi-boxes"></i></div>
+                <h3>Inventory</h3>
+                <p>Items, categories and stock levels. Auto-updates on every purchase, sale or return — no manual entry needed.</p>
+                <a href="{{ url_for('item') }}" class="nh-card-link">Manage Items <i class="bi bi-arrow-right"></i></a>
             </div>
-            <div class="col-sm-6 col-lg-4">
-                <div class="nh-card" style="--ac:#10b981; --ac-rgb:16,185,129">
-                    <div class="nh-card-icon"><i class="bi bi-cart-check"></i></div>
-                    <h3>Purchases</h3>
-                    <p>Record supplier purchases with discount and tax. Stock and supplier ledger sync the instant you save.</p>
-                    <a href="{{ url_for('purchase') }}" class="nh-card-link">Add Purchase <i class="bi bi-arrow-right"></i></a>
-                </div>
+            <div class="nh-card" style="--ac:#10b981; --ac-rgb:16,185,129">
+                <div class="nh-card-icon"><i class="bi bi-cart-check"></i></div>
+                <h3>Purchases</h3>
+                <p>Record supplier purchases with discount and tax. Stock and supplier ledger sync the instant you save.</p>
+                <a href="{{ url_for('purchase') }}" class="nh-card-link">Add Purchase <i class="bi bi-arrow-right"></i></a>
             </div>
-            <div class="col-sm-6 col-lg-4">
-                <div class="nh-card" style="--ac:#f59e0b; --ac-rgb:245,158,11">
-                    <div class="nh-card-icon"><i class="bi bi-bag-check"></i></div>
-                    <h3>Sales</h3>
-                    <p>Sell to customers, generate PDF invoices and track revenue. Low-stock alerts built in automatically.</p>
-                    <a href="{{ url_for('sale') }}" class="nh-card-link">Record Sale <i class="bi bi-arrow-right"></i></a>
-                </div>
+            <div class="nh-card" style="--ac:#f59e0b; --ac-rgb:245,158,11">
+                <div class="nh-card-icon"><i class="bi bi-bag-check"></i></div>
+                <h3>Sales</h3>
+                <p>Sell to customers, generate PDF invoices and track revenue. Low-stock alerts built in automatically.</p>
+                <a href="{{ url_for('sale') }}" class="nh-card-link">Record Sale <i class="bi bi-arrow-right"></i></a>
             </div>
-            <div class="col-sm-6 col-lg-4">
-                <div class="nh-card" style="--ac:#22d3ee; --ac-rgb:34,211,238">
-                    <div class="nh-card-icon"><i class="bi bi-journal-text"></i></div>
-                    <h3>Accounts &amp; Ledger</h3>
-                    <p>Full double-entry ledger for every supplier and customer. Balances stay accurate and fully auditable.</p>
-                    <a href="{{ url_for('supplier') }}" class="nh-card-link">View Ledgers <i class="bi bi-arrow-right"></i></a>
-                </div>
+            <div class="nh-card" style="--ac:#22d3ee; --ac-rgb:34,211,238">
+                <div class="nh-card-icon"><i class="bi bi-journal-text"></i></div>
+                <h3>Accounts &amp; Ledger</h3>
+                <p>Full double-entry ledger for every supplier and customer. Balances stay accurate and fully auditable.</p>
+                <a href="{{ url_for('supplier') }}" class="nh-card-link">View Ledgers <i class="bi bi-arrow-right"></i></a>
             </div>
-            <div class="col-sm-6 col-lg-4">
-                <div class="nh-card" style="--ac:#ec4899; --ac-rgb:236,72,153">
-                    <div class="nh-card-icon"><i class="bi bi-cash-stack"></i></div>
-                    <h3>Payments</h3>
-                    <p>Supplier payments and customer receipts via Cash, Bank, Cheque or Online — link to specific bills.</p>
-                    <a href="{{ url_for('supplier_payment') }}" class="nh-card-link">View Payments <i class="bi bi-arrow-right"></i></a>
-                </div>
+            <div class="nh-card" style="--ac:#ec4899; --ac-rgb:236,72,153">
+                <div class="nh-card-icon"><i class="bi bi-cash-stack"></i></div>
+                <h3>Payments</h3>
+                <p>Supplier payments and customer receipts via Cash, Bank, Cheque or Online — link to specific bills.</p>
+                <a href="{{ url_for('supplier_payment') }}" class="nh-card-link">View Payments <i class="bi bi-arrow-right"></i></a>
             </div>
-            {% if current_user.is_manager %}
-            <div class="col-sm-6 col-lg-4">
-                <div class="nh-card" style="--ac:#f97316; --ac-rgb:249,115,22">
-                    <div class="nh-card-icon"><i class="bi bi-pie-chart"></i></div>
-                    <h3>Reports</h3>
-                    <p>Profit, category and date-wise analysis. Export any report to CSV in one click for deeper review.</p>
-                    <a href="{{ url_for('reports') }}" class="nh-card-link">Open Reports <i class="bi bi-arrow-right"></i></a>
-                </div>
+            <div class="nh-card" style="--ac:#f97316; --ac-rgb:249,115,22">
+                <div class="nh-card-icon"><i class="bi bi-pie-chart"></i></div>
+                <h3>Reports</h3>
+                <p>Profit, category and date-wise analysis. Export any report to CSV in one click for deeper review.</p>
+                {% if current_user.is_manager %}
+                <a href="{{ url_for('reports') }}" class="nh-card-link">Open Reports <i class="bi bi-arrow-right"></i></a>
+                {% endif %}
+            </div>
+            <div class="nh-card" style="--ac:#0ea5e9; --ac-rgb:14,165,233">
+                <div class="nh-card-icon"><i class="bi bi-shop"></i></div>
+                <h3>POS</h3>
+                <p>Fast point-of-sale checkout with batch/FEFO picking and held bills — built for the counter, not just the back office.</p>
+                {% if current_user.is_manager %}
+                <a href="{{ url_for('pos') }}" class="nh-card-link">Open POS <i class="bi bi-arrow-right"></i></a>
+                {% endif %}
+            </div>
+            {% if module_enabled('module_hr') or module_enabled('module_attendance') or module_enabled('module_payroll') %}
+            <div class="nh-card" style="--ac:#a78bfa; --ac-rgb:167,139,250">
+                <div class="nh-card-icon"><i class="bi bi-people-fill"></i></div>
+                <h3>HR &amp; Payroll</h3>
+                <p>Employees, attendance and payroll processing — advances, leave and salary structures, all posted straight to the ledger.</p>
+                {% if current_user.is_manager and module_enabled('module_hr') %}
+                <a href="{{ url_for('hr.employees') }}" class="nh-card-link">View Employees <i class="bi bi-arrow-right"></i></a>
+                {% endif %}
+            </div>
+            {% else %}
+            <div class="nh-card" style="--ac:#84cc16; --ac-rgb:132,204,22">
+                <div class="nh-card-icon"><i class="bi bi-file-earmark-ruled"></i></div>
+                <h3>Quotations</h3>
+                <p>Send price quotes to a customer and convert an accepted one straight into a Sale — no re-entry, no mismatch.</p>
+                {% if current_user.is_manager %}
+                <a href="{{ url_for('quotations') }}" class="nh-card-link">View Quotations <i class="bi bi-arrow-right"></i></a>
+                {% endif %}
             </div>
             {% endif %}
+            <div class="nh-card" style="--ac:#14b8a6; --ac-rgb:20,184,166">
+                <div class="nh-card-icon"><i class="bi bi-hourglass-split"></i></div>
+                <h3>Batch &amp; Expiry</h3>
+                <p>Lot-level batch tracking with FEFO allocation and near-expiry alerts — built for medical and pharma stock.</p>
+                {% if current_user.is_manager %}
+                <a href="{{ url_for('expiring_batches') }}" class="nh-card-link">Expiring Batches <i class="bi bi-arrow-right"></i></a>
+                {% endif %}
+            </div>
+            <div class="nh-card" style="--ac:#64748b; --ac-rgb:100,116,139">
+                <div class="nh-card-icon"><i class="bi bi-shield-lock-fill"></i></div>
+                <h3>Admin &amp; Security</h3>
+                <p>Users, warehouses, location access and audit log — role-based control over who can see and do what.</p>
+                {% if current_user.is_admin %}
+                <a href="{{ url_for('admin_users') }}" class="nh-card-link">Manage Users <i class="bi bi-arrow-right"></i></a>
+                {% endif %}
+            </div>
         </div>
     </div>
 </section>

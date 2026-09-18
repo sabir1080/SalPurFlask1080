@@ -123,7 +123,8 @@
            silently defeats) any per-document @media print rule that resets the
            container to full width, e.g. invoice_sale.html's print layout. */
         @media screen {
-            body > div[style*="margin-left: 250px"] {
+            body > div[style*="margin-left: 250px"],
+            footer.main-footer {
                 margin-left: 250px !important;
                 max-width: calc(100% - 250px) !important;
                 width: calc(100% - 250px) !important;
@@ -176,7 +177,8 @@
 
             /* The content column no longer needs to leave room for a sidebar
                that isn't visible — full width, no reserved margin. */
-            body > div[style*="margin-left: 250px"] {
+            body > div[style*="margin-left: 250px"],
+            footer.main-footer {
                 margin-left: 0 !important;
                 max-width: 100% !important;
                 width: 100% !important;
@@ -475,6 +477,15 @@
     {% block extra_head %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}" style="overflow-x: hidden;">
+    {# This button must be a sibling of <nav>, not a descendant of it: <nav> gets
+       a CSS transform on mobile to slide off-screen, and a transform on an
+       ancestor makes it the containing block for any position:fixed descendant
+       — so a fixed-position button left inside <nav> would inherit that same
+       off-screen offset instead of staying fixed to the viewport. Markup,
+       classes, attributes and behavior are otherwise unchanged from before. #}
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation" style="display: none;">
+        <span class="navbar-toggler-icon"></span>
+    </button>
     <nav class="navbar navbar-expand-lg {% block navbar_class %}navbar-light bg-light{% endblock %}" style="position: fixed; top: 0; left: 0; min-height: 100vh; width: 250px; z-index: 1000; flex-direction: column; padding: 0; overflow: visible;">
         <div class="{% block nav_container_class %}container-fluid{% endblock %}" style="flex-direction: column; padding: 1rem; width: 100%;">
             <a class="navbar-brand" href="{{ url_for('dashboard.index') }}">
@@ -792,11 +803,13 @@
         {% block content %}{% endblock %}
     </div>
 
-    <footer class="mt-5 py-3 border-top text-center text-muted small">
+    <footer class="main-footer mt-5 py-3 border-top text-center text-muted small">
         <div class="container">
-            <span><i class="bi bi-box-seam-fill"></i> <strong>{{ company_name }}</strong> &mdash; {{ company_tagline }}</span>
-            <span class="mx-2">&bull;</span>
             <span>Designed &amp; Developed by <strong>{{ designed_developed }}</strong></span>
+            <span class="mx-1">&middot;</span>
+            <a href="mailto:sabir1212@yahoo.com"><i class="bi bi-envelope-at"></i> sabir1212@yahoo.com</a>
+            <span class="mx-1">&middot;</span>
+            <a href="https://wa.me/923453231545"><i class="bi bi-whatsapp"></i> +92 345 3231545</a>
         </div>
     </footer>
 

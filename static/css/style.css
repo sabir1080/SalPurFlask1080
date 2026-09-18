@@ -438,7 +438,7 @@ body {
     overflow: hidden;
     background: #070d1a;
     color: #f1f5f9;
-    padding: 7rem 0 6rem;
+    padding: 0.5rem 0 6rem;
     min-height: 88vh;
     display: flex;
     align-items: center;
@@ -628,15 +628,24 @@ body {
     color: #fff;
 }
 
+/* 4 columns x 2 rows, always -- a plain flex-wrap row would let the
+   browser decide how many stats fit per line at a given width (3+3, 5+1,
+   ...); grid-template-columns: repeat(4, ...) fixes the row break at
+   exactly 4 regardless of container width, so the 6 stats always read as
+   4-then-2, centred. The old .nh-stat-sep divider (a flex sibling between
+   items) doesn't translate to a grid the same way -- a border on .nh-stat
+   itself reproduces the same visual divider without an extra grid cell
+   throwing off the 4-column count (6 stats, not 6 stats + 5 separators). */
 .nh-stats-bar {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0;
+    display: grid;
+    grid-template-columns: repeat(4, auto);
+    justify-content: center;
+    column-gap: 0;
+    row-gap: 0.75rem;
     background: rgba(255,255,255,0.04);
     border: 1px solid rgba(255,255,255,0.07);
     border-radius: 14px;
-    padding: 1.1rem 1.5rem;
+    padding: 0.9rem 0.5rem;
     backdrop-filter: blur(12px);
 }
 
@@ -644,36 +653,44 @@ body {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 0 1.4rem;
+    padding: 0 0.55rem;
     text-align: center;
-    min-width: 90px;
+    border-right: 1px solid rgba(255,255,255,0.09);
+}
+
+.nh-stat:last-child,
+.nh-stat:nth-child(4n) {
+    border-right: none;
 }
 
 .nh-stat i {
-    font-size: 1.1rem;
+    font-size: 1rem;
     color: #818cf8;
-    margin-bottom: 0.35rem;
+    margin-bottom: 0.3rem;
 }
 
 .nh-stat strong {
-    font-size: 1.15rem;
+    font-size: 0.95rem;
     font-weight: 800;
     color: #e0e7ff;
     letter-spacing: -0.01em;
+    white-space: nowrap;
 }
 
 .nh-stat span {
-    font-size: 0.72rem;
+    font-size: 0.62rem;
     color: #64748b;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.04em;
     margin-top: 0.1rem;
+    white-space: nowrap;
 }
 
 .nh-stat-sep {
     width: 1px;
-    height: 32px;
+    height: 28px;
     background: rgba(255,255,255,0.09);
+    flex-shrink: 0;
 }
 
 /* ─── Hero Visual (floating dashboard mock) ─── */
@@ -776,50 +793,116 @@ body {
     color: #34d399;
 }
 
-.nh-mock-chart {
-    display: flex;
-    align-items: flex-end;
-    gap: 0.55rem;
-    height: 90px;
-    padding: 0.75rem 0.25rem 0;
-    margin-bottom: 1.25rem;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
+/* Every stat tile is a real shortcut to its own page (Sales/Purchases/
+   Customers/Suppliers for the first four; Low Stock and Near-Expiry render
+   as <a> only for a manager, since their target routes are @manager_required
+   -- a non-manager still sees the same numbers as a plain <div>). Reset the
+   usual link colour/underline since it reuses .nh-mock-stat's own text
+   colours, and add a hover affordance so every tile reads as clickable. */
+.nh-mock-stat-link {
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+    transition: transform 0.18s, border-color 0.18s, background 0.18s;
 }
 
-.nh-mock-bar {
-    flex: 1;
-    height: var(--h, 40%);
-    border-radius: 6px 6px 0 0;
-    background: linear-gradient(180deg, #818cf8, rgba(99,102,241,0.25));
-    animation: mockBarGrow 1.1s cubic-bezier(.22,1,.36,1) both;
+.nh-mock-stat-link:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.07);
+    color: inherit;
 }
 
-.nh-mock-bar:nth-child(6) {
-    background: linear-gradient(180deg, #22d3ee, rgba(34,211,238,0.25));
+.nh-mock-stat-link.nh-mock-stat-alert:hover {
+    border-color: rgba(251,191,36,0.6);
+    background: rgba(251,191,36,0.1);
 }
 
-@keyframes mockBarGrow {
-    from { transform: scaleY(0); transform-origin: bottom; }
-    to   { transform: scaleY(1); transform-origin: bottom; }
+/* Real 6-metric grid (Today's Sales/Purchases, Receivables/Payables, Low
+   Stock, Near-Expiry) replacing the old fixed 2-stat + fake bar-chart mock.
+   3 compact columns keep the panel the same rough height as the two-stat
+   version it replaces -- this is still a small decorative preview panel
+   (d-none d-lg-block, hidden below lg), not the real /dashboard page, so
+   it stays dense rather than growing taller. */
+.nh-mock-stats-6 {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.6rem;
+    margin-bottom: 1rem;
+}
+
+.nh-mock-stats-6 .nh-mock-stat {
+    padding: 0.6rem 0.65rem;
+}
+
+.nh-mock-stats-6 .nh-mock-stat-value {
+    font-size: 1rem;
+}
+
+/* Low Stock / Near-Expiry: an amber border when the count is > 0, since
+   these two are alerts, not neutral figures -- 0 stays visually the same
+   as every other stat. */
+.nh-mock-stat-alert {
+    border-color: rgba(251,191,36,0.4);
+    background: rgba(251,191,36,0.06);
+}
+
+.nh-mock-stat-alert .nh-mock-stat-value {
+    color: #fbbf24;
 }
 
 .nh-mock-rows {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: 0.55rem;
 }
 
 .nh-mock-row {
     display: flex;
     align-items: center;
-    gap: 0.55rem;
-    font-size: 0.8rem;
+    gap: 0.5rem;
+    font-size: 0.78rem;
     color: #94a3b8;
 }
 
-.nh-mock-row i {
-    color: #34d399;
-    font-size: 0.85rem;
+.nh-mock-row-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nh-mock-row-amount {
+    font-weight: 700;
+    color: #e2e8f0;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+}
+
+.nh-mock-row-success { color: #34d399; }
+.nh-mock-row-primary { color: #818cf8; }
+.nh-mock-row-info { color: #22d3ee; }
+.nh-mock-row-warning { color: #fbbf24; }
+.nh-mock-row-danger { color: #f87171; }
+
+/* Activity row rendered as <a> when it has a real target page (invoice,
+   ledger, transfer detail, low-stock/expiring-batches report) -- a row
+   with no reliable link (e.g. transfer detail for a non-manager) stays a
+   plain <div>, same convention the stat tiles above use. */
+.nh-mock-row-link {
+    text-decoration: none;
+    border-radius: 8px;
+    margin: 0 -0.4rem;
+    padding: 0.15rem 0.4rem;
+    transition: background 0.16s;
+}
+
+.nh-mock-row-link:hover {
+    background: rgba(255,255,255,0.06);
+}
+
+.nh-mock-row-link:hover .nh-mock-row-text {
+    color: #cbd5e1;
 }
 
 /* ─── Scroll Reveal ─── */
@@ -842,8 +925,7 @@ body {
         transition: none;
     }
     .nh-hero-visual,
-    .nh-orb,
-    .nh-mock-bar {
+    .nh-orb {
         animation: none !important;
     }
 }
@@ -891,11 +973,35 @@ body {
     line-height: 1.75;
 }
 
+/* 10 module cards, always exactly 5 columns x 2 rows on desktop -- a
+   Bootstrap col-lg-N grid can't do 5 even columns (12 isn't divisible by
+   5), so this is a plain CSS grid instead, the same fixed-column-count
+   approach .nh-stats-bar/.nh-shortcuts-grid already use elsewhere on this
+   page. Below lg it steps down to 2 columns (5 rows), matching the
+   col-sm-6 this replaced. */
+.nh-modules-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 1.25rem;
+}
+
+@media (max-width: 991.98px) {
+    .nh-modules-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 575.98px) {
+    .nh-modules-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 .nh-card {
     background: #0f1a2e;
     border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 18px;
-    padding: 2rem;
+    border-radius: 16px;
+    padding: 1.25rem;
     height: 100%;
     position: relative;
     overflow: hidden;
@@ -933,15 +1039,15 @@ body {
 }
 
 .nh-card-icon {
-    width: 52px; height: 52px;
-    border-radius: 14px;
+    width: 40px; height: 40px;
+    border-radius: 11px;
     background: rgba(var(--ac-rgb),0.12);
     color: var(--ac);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.4rem;
-    margin-bottom: 1.35rem;
+    font-size: 1.1rem;
+    margin-bottom: 0.85rem;
     transition: background 0.28s;
 }
 
@@ -950,24 +1056,24 @@ body {
 }
 
 .nh-card h3 {
-    font-size: 1.1rem;
+    font-size: 0.95rem;
     font-weight: 700;
     color: #e2e8f0;
-    margin-bottom: 0.55rem;
+    margin-bottom: 0.4rem;
 }
 
 .nh-card p {
-    font-size: 0.9rem;
+    font-size: 0.8rem;
     color: #64748b;
-    line-height: 1.7;
-    margin-bottom: 1.4rem;
+    line-height: 1.5;
+    margin-bottom: 0.9rem;
 }
 
 .nh-card-link {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
-    font-size: 0.88rem;
+    gap: 0.35rem;
+    font-size: 0.8rem;
     font-weight: 600;
     color: var(--ac);
     text-decoration: none;
@@ -979,6 +1085,102 @@ body {
     gap: 0.65rem;
     opacity: 1;
     color: var(--ac);
+}
+
+/* ─── Quick Actions (homepage, compact shortcut bar above the hero) ───
+   Sits on the same #070d1a dark palette as .nh-hero/.nh-modules -- this
+   whole nh-* home-page system is a deliberately dark, always-on
+   "marketing hero" surface with no light-theme variant of its own (see
+   .nh-card above), so this bar matches its neighbours rather than
+   introducing a second, inconsistent light/dark hybrid. Each shortcut's
+   accent comes from the same --ac/--ac-rgb custom-property pattern
+   .nh-card already uses, so icon colour and hover glow stay in sync with
+   the rest of the page's existing per-card colour system.
+
+   Deliberately compact, unlike .nh-card: this is a shortcut bar, not a
+   content section -- small height/padding/gap so it reads as "quick
+   buttons" sitting above the hero, not a second hero of its own. The
+   icon is the one place given real size (28-34px desktop / 26-32px
+   mobile, well above .nh-card-icon's 1.4rem/~22px) so it stays the
+   visual focus of an otherwise tiny button. */
+.nh-shortcuts {
+    background: #070d1a;
+    padding: 1.1rem 0 0.7rem;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.nh-shortcuts-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 0.6rem;
+}
+
+.nh-shortcut {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    text-decoration: none;
+    background: #0f1a2e;
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 12px;
+    padding: 0.6rem 0.4rem;
+    text-align: center;
+    transition: transform 0.18s, border-color 0.18s, box-shadow 0.18s, background 0.18s;
+}
+
+.nh-shortcut:hover,
+.nh-shortcut:focus-visible {
+    transform: translateY(-2px);
+    border-color: rgba(var(--ac-rgb),0.4);
+    background: #121f37;
+    box-shadow: 0 8px 20px rgba(var(--ac-rgb),0.16), 0 0 0 1px rgba(var(--ac-rgb),0.14);
+}
+
+.nh-shortcut-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 11px;
+    background: rgba(var(--ac-rgb),0.14);
+    color: var(--ac);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.9rem;
+    line-height: 1;
+    transition: background 0.18s;
+}
+
+.nh-shortcut:hover .nh-shortcut-icon {
+    background: rgba(var(--ac-rgb),0.26);
+}
+
+.nh-shortcut-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #e2e8f0;
+}
+
+@media (max-width: 767.98px) {
+    .nh-shortcuts-grid {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.5rem;
+    }
+
+    .nh-shortcut {
+        padding: 0.65rem 0.4rem;
+    }
+
+    .nh-shortcut-icon {
+        width: 42px;
+        height: 42px;
+        font-size: 1.75rem;
+    }
+
+    .nh-shortcut-label {
+        font-size: 0.78rem;
+    }
 }
 
 /* ─── Workflow Section ─── */
@@ -1077,6 +1279,16 @@ body {
 
 .page-home footer i {
     color: #818cf8;
+}
+
+.page-home footer a {
+    color: #a5b4fc;
+    text-decoration: none;
+}
+
+.page-home footer a:hover {
+    color: #c7d2fe;
+    text-decoration: underline;
 }
 
 /* ─── CTA Section ─── */
@@ -1613,17 +1825,8 @@ body {
         grid-template-columns: 1fr 1fr;
     }
 
-    .nh-stats-bar {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-    }
-
-    .nh-stat-sep {
-        display: none;
-    }
-
     .nh-stat {
-        padding: 0.6rem;
+        padding: 0 0.4rem;
     }
 
     .auth-card {
@@ -1852,6 +2055,10 @@ body {
     background: var(--surface) !important;
     border-top-color: var(--border) !important;
     color: var(--text-muted) !important;
+}
+
+[data-theme="dark"] footer a {
+    color: var(--primary);
 }
 
 [data-theme="dark"] .nav-search-wrapper .input-group-text {
