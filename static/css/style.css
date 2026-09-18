@@ -61,6 +61,30 @@
     --bs-secondary-color: var(--text-muted);   /* .text-muted, .text-secondary */
     --bs-emphasis-color: var(--text-dark);     /* .table cells, .text-emphasis */
     --bs-heading-color: var(--text-dark);
+
+    /* The one place that reasoning above bit us: an element carrying ONLY a
+       bare Bootstrap background utility (.bg-body-tertiary, .bg-body-secondary,
+       .bg-light) or an unpaired ".badge"/"-subtle" background, with no other
+       app CSS behind it, still gets Bootstrap's light-mode background --
+       painted with the --bs-body-color we just forced to near-white above.
+       Same bug, same fix as the block this one follows: darken exactly the
+       backgrounds that were left untouched and are reachable with no other
+       class to carry a safe color (report_stock.html's batch-breakdown table,
+       `bg-body-tertiary`, is the reported case). Cards/tables/dropdowns this
+       app already themes itself (.card-header, .table-striped, etc., below)
+       are untouched here on purpose -- this only reaches the utilities that
+       had nothing else backing them. */
+    --bs-tertiary-bg: var(--surface);          /* .bg-body-tertiary */
+    --bs-secondary-bg: var(--surface);         /* .bg-body-secondary */
+    --bs-light-bg-subtle: var(--surface);      /* .bg-light-subtle */
+    --bs-light-rgb: 30, 41, 59;                /* .bg-light (reads --bs-light-rgb, not a *-bg-subtle var) */
+
+    --bs-primary-bg-subtle: #1e3a5f;    --bs-primary-text-emphasis: #93c5fd;
+    --bs-secondary-bg-subtle: #334155;  --bs-secondary-text-emphasis: #e2e8f0;
+    --bs-success-bg-subtle: #0f3d2e;    --bs-success-text-emphasis: #6ee7b7;
+    --bs-danger-bg-subtle: #4a1d1d;     --bs-danger-text-emphasis: #fca5a5;
+    --bs-warning-bg-subtle: #4a3b0f;    --bs-warning-text-emphasis: #fde68a;
+    --bs-info-bg-subtle: #0e3a47;       --bs-info-text-emphasis: #67e8f9;
 }
 
 * {
