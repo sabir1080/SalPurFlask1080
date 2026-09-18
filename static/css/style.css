@@ -2207,16 +2207,48 @@ body {
     --bs-gray-200: #2d3748 !important;
 }
 
-/* Table light row visibility in dark mode */
+/* Table light row visibility in dark mode.
+
+   The real paint layer here is NOT background-color -- Bootstrap's own
+   `.table > :not(caption) > * > *` rule paints each cell with
+   `box-shadow: inset 0 0 0 9999px var(--bs-table-bg-state, var(--bs-table-bg-type,
+   var(--bs-table-accent-bg)))`, which sits visually on top of any
+   background-color regardless of !important (different CSS property
+   entirely). `.table-light` itself sets --bs-table-striped-bg: #ecedee
+   (a light colour), and Bootstrap's OWN `.table-striped>tbody>tr:nth-of-
+   type(odd)>*` rule copies that straight into --bs-table-bg-type on every
+   <td> of an odd .table-light row -- confirmed via a real browser's
+   computed styles (getComputedStyle(td).boxShadow), not just reading the
+   CSS source: background-color/color resolved correctly (#2d2d2d / #e9ecef)
+   while the box-shadow still painted #ecedee over the entire cell. A
+   previous fix here only addressed a DIFFERENT, unrelated background-color
+   rule further down this file and never touched this variable, which is
+   why the row still failed for a user on an ODD row position while
+   appearing fixed for one on an even position. Resetting the three
+   variables the box-shadow actually reads (state/type/accent) is the only
+   way to stop it, on both the <tr> (for inheritance) and each <td>/<th>
+   directly (nth-of-type(odd)>* sets --bs-table-bg-type on the cell itself,
+   closer than anything inherited from the row). */
 [data-theme="dark"] .table-light {
     background-color: #2d2d2d !important;
     color: #e9ecef !important;
+    --bs-table-bg-type: initial;
+    --bs-table-bg-state: initial;
+    --bs-table-accent-bg: transparent;
+    --bs-table-color-type: initial;
+    --bs-table-color-state: initial;
 }
 
 [data-theme="dark"] .table-light td,
 [data-theme="dark"] .table-light th {
     color: #e9ecef !important;
     background-color: #2d2d2d !important;
+    box-shadow: none !important;
+    --bs-table-bg-type: initial;
+    --bs-table-bg-state: initial;
+    --bs-table-accent-bg: transparent;
+    --bs-table-color-type: initial;
+    --bs-table-color-state: initial;
 }
 
 [data-theme="dark"] .table-light .text-dark {
