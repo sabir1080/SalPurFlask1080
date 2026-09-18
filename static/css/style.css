@@ -2669,7 +2669,14 @@ body {
     padding: 0.5rem 0.5rem !important;
 }
 
-[data-theme="dark"] .table-striped > tbody > tr:nth-of-type(odd) {
+/* :not(.table-light) -- a row explicitly marked .table-light (e.g. the
+   current-user row on User Management) has its own, much stronger dark-mode
+   background further up this file; the striping rule here used to win
+   anyway because it is declared later in the cascade with the same
+   !important + specificity, painting a near-transparent stripe over that
+   row and leaving its text unreadable against the page's own dark
+   background showing through. */
+[data-theme="dark"] .table-striped > tbody > tr:nth-of-type(odd):not(.table-light) {
     background-color: rgba(255, 255, 255, 0.02) !important;
 }
 
