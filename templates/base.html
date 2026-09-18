@@ -28,9 +28,24 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/layout.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <style>
-        /* Navbar styling - main menu items */
-        .navbar-nav > .nav-item > .nav-link {
+        /* Navbar styling - main menu items.
+
+           body:not(.page-home) on the two colour declarations only: this
+           inline block is physically positioned after style.css's own
+           <link> above, so at equal specificity (.navbar-nav > .nav-item >
+           .nav-link is 3 classes, same as .page-home .home-navbar .nav-link
+           in style.css) it wins purely by being later in the document --
+           confirmed on the live Render deployment via
+           CSS.getMatchedStylesForNode, which showed exactly this selector
+           overriding the homepage's own light-text rule and forcing
+           near-black text onto the homepage sidebar's permanently dark
+           background. Every other page's navbar (no .page-home ancestor)
+           keeps this exact same colour/hover behaviour unchanged. */
+        body:not(.page-home) .navbar-nav > .nav-item > .nav-link {
             color: #212529 !important;
+        }
+
+        .navbar-nav > .nav-item > .nav-link {
             font-weight: 600;
             padding: 0.35rem 0.75rem !important;
             margin-bottom: 0 !important;
@@ -38,7 +53,7 @@
             transition: all 0.3s ease;
         }
 
-        .navbar-nav > .nav-item > .nav-link:hover {
+        body:not(.page-home) .navbar-nav > .nav-item > .nav-link:hover {
             background-color: #d4d8dd;
             border-left-color: #0d6efd;
             color: #0d6efd !important;
