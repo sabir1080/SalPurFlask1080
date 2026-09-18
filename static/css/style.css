@@ -2801,77 +2801,94 @@ body {
     color: #ffffff !important;
 }
 
-/* Auth page navbar styling (navbar-dark) - Light theme (default) */
-.navbar-dark {
+/* Auth page navbar styling (navbar-dark) - Light theme (default).
+
+   :not(.page-home) throughout this block: `navbar-dark` is a shared Bootstrap
+   class name two DIFFERENT navbars on this site both carry for two DIFFERENT
+   reasons -- the auth/signin page's navbar (genuinely light background,
+   needs dark text, which is what this block was written for) and the
+   homepage's navbar (.home-navbar, permanently dark background by design,
+   see .page-home .home-navbar further up this file -- independent of
+   data-theme). Without this exclusion, `.navbar-dark .navbar-nav > .nav-item
+   > .nav-link { color: #212529 !important }` (4 classes) out-specifies
+   `.page-home .home-navbar .nav-link`'s own, correct light-text rule
+   (3 classes) regardless of source order, forcing near-black text onto the
+   homepage's own near-black sidebar in light mode -- confirmed unreadable
+   via a real browser's matched-CSS-rules inspection (this exact selector
+   was the one winning). The homepage's background rule already had enough
+   specificity to win on its own (.page-home .home-navbar, 2 classes, beats
+   .navbar-dark's 1), which is why only the TEXT stayed broken while the
+   background looked correct -- an easy trap to miss reading the CSS alone. */
+body:not(.page-home) .navbar-dark {
     background-color: #f8f9fa !important;
     border-bottom: 1px solid #dee2e6 !important;
 }
 
-.navbar-dark .navbar-nav > .nav-item > .nav-link {
+body:not(.page-home) .navbar-dark .navbar-nav > .nav-item > .nav-link {
     color: #212529 !important;
     font-weight: 500;
 }
 
-.navbar-dark .navbar-nav > .nav-item > .nav-link:hover {
+body:not(.page-home) .navbar-dark .navbar-nav > .nav-item > .nav-link:hover {
     background-color: #e9ecef !important;
     border-left-color: #0d6efd !important;
     color: #0d6efd !important;
 }
 
-.navbar-dark .dropdown-menu {
+body:not(.page-home) .navbar-dark .dropdown-menu {
     background-color: #ffffff !important;
     border: 1px solid #dee2e6 !important;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
 }
 
-.navbar-dark .dropdown-menu .dropdown-item {
+body:not(.page-home) .navbar-dark .dropdown-menu .dropdown-item {
     color: #212529 !important;
 }
 
-.navbar-dark .dropdown-menu .dropdown-item:hover {
+body:not(.page-home) .navbar-dark .dropdown-menu .dropdown-item:hover {
     background-color: #0d6efd !important;
     border-left-color: #0d6efd !important;
     color: #ffffff !important;
 }
 
-.navbar-dark .dropdown-menu .dropdown-item.active {
+body:not(.page-home) .navbar-dark .dropdown-menu .dropdown-item.active {
     background-color: #0d6efd !important;
     color: #ffffff !important;
 }
 
 /* Dark theme override for navbar-dark */
-[data-theme="dark"] .navbar-dark {
+[data-theme="dark"] body:not(.page-home) .navbar-dark {
     background-color: #1e293b !important;
     border-bottom-color: #334155 !important;
 }
 
-[data-theme="dark"] .navbar-dark .navbar-nav > .nav-item > .nav-link {
+[data-theme="dark"] body:not(.page-home) .navbar-dark .navbar-nav > .nav-item > .nav-link {
     color: #e9ecef !important;
 }
 
-[data-theme="dark"] .navbar-dark .navbar-nav > .nav-item > .nav-link:hover {
+[data-theme="dark"] body:not(.page-home) .navbar-dark .navbar-nav > .nav-item > .nav-link:hover {
     background-color: #2d3748 !important;
     border-left-color: #0d6efd !important;
     color: #0d6efd !important;
 }
 
-[data-theme="dark"] .navbar-dark .dropdown-menu {
+[data-theme="dark"] body:not(.page-home) .navbar-dark .dropdown-menu {
     background-color: #2d3748 !important;
     border: 1px solid #4a5065 !important;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
 }
 
-[data-theme="dark"] .navbar-dark .dropdown-menu .dropdown-item {
+[data-theme="dark"] body:not(.page-home) .navbar-dark .dropdown-menu .dropdown-item {
     color: #e9ecef !important;
 }
 
-[data-theme="dark"] .navbar-dark .dropdown-menu .dropdown-item:hover {
+[data-theme="dark"] body:not(.page-home) .navbar-dark .dropdown-menu .dropdown-item:hover {
     background-color: #0d6efd !important;
     border-left-color: #0d6efd !important;
     color: #ffffff !important;
 }
 
-[data-theme="dark"] .navbar-dark .dropdown-menu .dropdown-item.active {
+[data-theme="dark"] body:not(.page-home) .navbar-dark .dropdown-menu .dropdown-item.active {
     background-color: #0d6efd !important;
     color: #ffffff !important;
 }
