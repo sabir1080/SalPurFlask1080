@@ -73,11 +73,19 @@
        `bg-body-tertiary`, is the reported case). Cards/tables/dropdowns this
        app already themes itself (.card-header, .table-striped, etc., below)
        are untouched here on purpose -- this only reaches the utilities that
-       had nothing else backing them. */
-    --bs-tertiary-bg: var(--surface);          /* .bg-body-tertiary */
-    --bs-secondary-bg: var(--surface);         /* .bg-body-secondary */
+       had nothing else backing them.
+
+       .bg-body-tertiary/.bg-body-secondary/.bg-light do NOT read the plain
+       --bs-*-bg hex variable -- Bootstrap builds their background from the
+       *-rgb comma-triplet via rgba(var(--bs-*-bg-rgb), var(--bs-bg-opacity)),
+       so only the -rgb variable actually reaches the rendered page; the hex
+       one is dead weight here (kept below only because *-bg-subtle DOES
+       read the plain hex variable, for the badges further down). 30,41,59
+       is var(--surface)'s #1e293b as an r,g,b triplet. */
+    --bs-tertiary-bg-rgb: 30, 41, 59;          /* .bg-body-tertiary (rgba(), not the hex var) */
+    --bs-secondary-bg-rgb: 30, 41, 59;         /* .bg-body-secondary (rgba(), not the hex var) */
     --bs-light-bg-subtle: var(--surface);      /* .bg-light-subtle */
-    --bs-light-rgb: 30, 41, 59;                /* .bg-light (reads --bs-light-rgb, not a *-bg-subtle var) */
+    --bs-light-rgb: 30, 41, 59;                /* .bg-light (rgba(), not a *-bg-subtle var) */
 
     --bs-primary-bg-subtle: #1e3a5f;    --bs-primary-text-emphasis: #93c5fd;
     --bs-secondary-bg-subtle: #334155;  --bs-secondary-text-emphasis: #e2e8f0;
