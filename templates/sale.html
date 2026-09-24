@@ -6,6 +6,9 @@
     <p>Create and manage customer sales invoices</p>
   </div>
   <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Sales', document.getElementById('tbl-sales-list'))">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
     <a href="{{ url_for('customer_receipt') }}" class="btn btn-primary" title="Record customer receipts">
       <i class="bi bi-cash-coin"></i> Customer Receipts
     </a>
@@ -147,7 +150,7 @@
 <!-- Sales List -->
 <div class="card">
   <div class="table-wrapper">
-    <table class="table table-striped table-hover">
+    <table class="table table-striped table-hover" id="tbl-sales-list">
       <thead>
         <tr>
           <th>Invoice #</th>
@@ -160,15 +163,20 @@
           <th>Status</th>
           <th>Date</th>
           <th>Notes</th>
-          <th class="table-cell-center">Actions</th>
+          <th class="table-cell-center no-print">Actions</th>
         </tr>
       </thead>
       <tbody>
+        {% set ns = namespace(qty=0, total=0, recv=0, due=0) %}
         {% for s in sales %}
         {% set s_total = sale_total(s) %}
         {% set s_recv = get_sale_received(s.id) %}
         {% set s_due = s_total - s_recv %}
         {% set s_status = get_payment_status(s_total, s_recv) %}
+        {% set ns.qty = ns.qty + (s.line_items | sum(attribute='base_quantity')) %}
+        {% set ns.total = ns.total + s_total %}
+        {% set ns.recv = ns.recv + s_recv %}
+        {% set ns.due = ns.due + s_due %}
         <tr>
           <td class="text-nowrap">
             <span class="fw-semibold">{{ s.invoice_no or s.id }}</span>
@@ -191,7 +199,7 @@
           <td><span class="badge pay-status-{{ s_status|lower }}">{{ s_status }}</span></td>
           <td class="text-nowrap text-tertiary">{{ s.date.strftime('%Y-%m-%d') }}</td>
           <td class="text-muted small">{{ s.notes or '—' }}</td>
-          <td class="table-cell-center">
+          <td class="table-cell-center no-print">
             <a href="{{ url_for('sale_invoice', id=s.id) }}" class="btn btn-sm btn-outline-primary" target="_blank" title="View invoice">
               <i class="bi bi-receipt"></i>
             </a>
@@ -230,6 +238,18 @@
         </tr>
         {% endfor %}
       </tbody>
+      {% if sales %}
+      <tfoot class="table-light fw-semibold">
+        <tr>
+          <td colspan="3">Total</td>
+          <td class="text-end">{{ ns.qty | fmt_num }}</td>
+          <td class="text-end">{{ ns.total | fmt_num }}</td>
+          <td class="text-end">{{ ns.recv | fmt_num }}</td>
+          <td class="text-end">{{ ns.due | fmt_num }}</td>
+          <td colspan="4"></td>
+        </tr>
+      </tfoot>
+      {% endif %}
     </table>
   </div>
 </div>

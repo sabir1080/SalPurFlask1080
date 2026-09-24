@@ -39,18 +39,23 @@
             <span class="badge bg-success ms-2">open</span>
             {% endif %}
         </span>
+        <div class="d-flex align-items-center gap-2">
+        <button type="button" class="btn btn-sm btn-outline-primary" onclick="printTablePDF('Fiscal Year {{ fy.name }} — Periods', document.getElementById('tbl-fy-{{ fy.id }}'), {excludeSelector: '.no-print'})">
+            <i class="bi bi-printer"></i> Print PDF
+        </button>
         {% if current_user.is_admin and not fy.is_closed %}
         <form method="POST" action="{{ url_for('close_year', id=fy.id) }}"
               data-confirm="Close {{ fy.name }}? A closing entry moves the year's profit into Retained Earnings and every period is locked. This cannot be undone.">
             <button class="btn btn-sm btn-warning"><i class="bi bi-lock"></i> Close Year</button>
         </form>
         {% endif %}
+        </div>
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
-        <table class="table table-sm mb-0 align-middle">
+        <table class="table table-sm mb-0 align-middle" id="tbl-fy-{{ fy.id }}">
             <thead class="table-light">
-                <tr><th>Period</th><th>From</th><th>To</th><th class="text-center">Status</th><th class="text-end">Action</th></tr>
+                <tr><th>Period</th><th>From</th><th>To</th><th class="text-center">Status</th><th class="text-end no-print">Action</th></tr>
             </thead>
             <tbody>
                 {% for p in fy.periods %}
@@ -62,7 +67,7 @@
                         {% if p.is_closed %}<span class="badge bg-secondary">closed</span>
                         {% else %}<span class="badge bg-success">open</span>{% endif %}
                     </td>
-                    <td class="text-end">
+                    <td class="text-end no-print">
                         {% if current_user.is_admin and not fy.is_closed %}
                         <form method="POST" action="{{ url_for('toggle_period', id=p.id) }}" class="d-inline">
                             <button class="btn btn-sm {{ 'btn-outline-success' if p.is_closed else 'btn-outline-secondary' }}">

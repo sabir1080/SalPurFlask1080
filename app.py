@@ -968,6 +968,17 @@ def customer_balance_label(balance):
     return "Settled"
 
 def recalculate_supplier_ledger(supplier_id):
+    # A pooled Neon connection can go stale between requests; pool_pre_ping
+    # only re-validates at checkout, not for a connection already checked
+    # out and reused across many calls in one long-running process (e.g. a
+    # bulk-import loop calling this once per row). This query's own
+    # autoflush is a write (upsert_supplier_ledger() just added a dirty
+    # SupplierLedgerEntry above it in the same call chain), so a drop here
+    # surfaces as an autoflush failure, not a clean read error. Pinging
+    # first — same pattern as the /health route just below — gives SQLAlchemy
+    # a cheap statement to fail on and recover from before the real,
+    # write-carrying query runs.
+    db.session.execute(text("SELECT 1"))
     entries = (
         SupplierLedgerEntry.query.filter_by(supplier_id=supplier_id)
         .order_by(SupplierLedgerEntry.entry_date.asc(), SupplierLedgerEntry.id.asc())
@@ -979,6 +990,9 @@ def recalculate_supplier_ledger(supplier_id):
         entry.balance_after = balance
 
 def recalculate_customer_ledger(customer_id):
+    # Same pre-flight ping as recalculate_supplier_ledger() just above, for
+    # the identical reason — see that function's comment.
+    db.session.execute(text("SELECT 1"))
     entries = (
         CustomerLedgerEntry.query.filter_by(customer_id=customer_id)
         .order_by(CustomerLedgerEntry.entry_date.asc(), CustomerLedgerEntry.id.asc())

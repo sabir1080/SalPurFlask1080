@@ -1,0 +1,515 @@
+{% extends 'base.html' %}
+{% block title %}Business Insights — {{ app_name }}{% endblock %}
+{% block content %}
+
+<div class="page-header" style="margin-bottom: 1rem;">
+    <div class="page-header-title">
+        <h2 style="margin: 0; font-size: 1.5rem;"><i class="bi bi-stars"></i> Business Insights</h2>
+        <p style="margin: 0.25rem 0 0 0; font-size: 0.85rem;">Deeper analytics beyond the main dashboard</p>
+    </div>
+    <div class="page-header-actions">
+        <a href="{{ url_for('dashboard.dashboard') }}" class="btn btn-outline-secondary" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;">
+            <i class="bi bi-arrow-left"></i> Back to Dashboard
+        </a>
+    </div>
+</div>
+
+<!-- 1. Cash Flow Snapshot -->
+<div class="card card-elevated mb-4">
+    <div class="card-header d-flex flex-between align-items-center" style="padding: 0.6rem 0.9rem; display: flex; justify-content: space-between; align-items: center;">
+        <h6 class="card-title mb-0" style="margin: 0; font-size: 0.9rem;">💰 Cash Flow Snapshot</h6>
+        <span class="fw-bold" style="font-size: 1rem;">{{ total_cash_bank | fmt_num }}</span>
+    </div>
+    <div class="card-body" style="padding: 0.75rem;">
+        {% if cash_flow %}
+        <div class="grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.6rem;">
+            {% for acct in cash_flow %}
+            <div class="p-3 rounded" style="padding: 0.75rem; border-radius: var(--radius-2); background: var(--surface);">
+                <div class="text-tertiary text-sm" style="font-size: 0.75rem;">{{ acct.label }} <span class="badge bg-secondary" style="font-size: 0.6rem;">{{ acct.type }}</span></div>
+                <div class="fw-bold {{ 'text-success' if acct.value >= 0 else 'text-danger' }}" style="font-size: 1.05rem;">{{ acct.value | fmt_num }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-tertiary mb-0">No active cash/bank accounts found.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="grid grid-2 mb-4" style="gap: 0.75rem;">
+    <!-- 2. Overdue Receivables -->
+    <div class="card card-elevated">
+        <div class="card-header" style="padding: 0.6rem 0.9rem;">
+            <h6 class="card-title mb-0" style="margin: 0; font-size: 0.9rem;">⏰ Overdue Receivables (Top 10)</h6>
+        </div>
+        <div class="table-wrapper">
+            <table class="table table-striped">
+                <thead>
+                    <tr><th>Customer</th><th class="table-cell-right">Balance Due</th><th class="table-cell-right">Oldest Sale Age</th></tr>
+                </thead>
+                <tbody>
+                    {% if overdue_receivables %}
+                        {% for row in overdue_receivables %}
+                        <tr>
+                            <td class="font-medium">{{ row.name }}</td>
+                            <td class="table-cell-right text-danger font-medium">{{ row.balance | fmt_num }}</td>
+                            <td class="table-cell-right">{{ (row.days_old ~ ' days') if row.days_old is not none else '—' }}</td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr><td colspan="3" class="text-center text-tertiary py-8">No overdue receivables</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 7. Supplier Payments Due -->
+    <div class="card card-elevated">
+        <div class="card-header" style="padding: 0.6rem 0.9rem;">
+            <h6 class="card-title mb-0" style="margin: 0; font-size: 0.9rem;">📤 Supplier Payments Due (Top 10)</h6>
+        </div>
+        <div class="table-wrapper">
+            <table class="table table-striped">
+                <thead>
+                    <tr><th>Supplier</th><th class="table-cell-right">Balance Due</th></tr>
+                </thead>
+                <tbody>
+                    {% if supplier_payments_due %}
+                        {% for row in supplier_payments_due %}
+                        <tr>
+                            <td class="font-medium">{{ row.label }}</td>
+                            <td class="table-cell-right text-danger font-medium">{{ row.value | fmt_num }}</td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr><td colspan="2" class="text-center text-tertiary py-8">No outstanding supplier balances</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- 3. Today vs Yesterday vs Last Week -->
+<div class="grid grid-3 mb-4" style="gap: 0.75rem;">
+    <div class="card card-elevated">
+        <div class="card-body" style="padding: 0.9rem;">
+            <div class="text-tertiary text-sm" style="font-size: 0.75rem;">Today's Sales</div>
+            <div class="fw-bold text-success" style="font-size: 1.3rem;">{{ today_sales | fmt_num }}</div>
+        </div>
+    </div>
+    <div class="card card-elevated">
+        <div class="card-body" style="padding: 0.9rem;">
+            <div class="text-tertiary text-sm" style="font-size: 0.75rem;">Yesterday's Sales</div>
+            <div class="fw-bold" style="font-size: 1.3rem;">{{ yesterday_sales | fmt_num }}</div>
+        </div>
+    </div>
+    <div class="card card-elevated">
+        <div class="card-body" style="padding: 0.9rem;">
+            <div class="text-tertiary text-sm" style="font-size: 0.75rem;">Same Day Last Week</div>
+            <div class="fw-bold" style="font-size: 1.3rem;">{{ last_week_same_day_sales | fmt_num }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- 9. Customer Retention -->
+<div class="grid grid-2 mb-4" style="gap: 0.75rem;">
+    <div class="card card-elevated">
+        <div class="card-body" style="padding: 0.9rem;">
+            <div class="text-tertiary text-sm" style="font-size: 0.75rem;">New Customers This Month</div>
+            <div class="fw-bold text-primary" style="font-size: 1.3rem;">{{ new_customers_count }}</div>
+        </div>
+    </div>
+    <div class="card card-elevated">
+        <div class="card-body" style="padding: 0.9rem;">
+            <div class="text-tertiary text-sm" style="font-size: 0.75rem;">Repeat Customers</div>
+            <div class="fw-bold text-info" style="font-size: 1.3rem;">{{ repeat_customers_count }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- 4. Fast vs Slow Moving Items -->
+<div class="grid grid-2 mb-4" style="gap: 0.75rem;">
+    <div class="card card-elevated">
+        <div class="card-header" style="padding: 0.6rem 0.9rem;">
+            <h6 class="card-title mb-0" style="margin: 0; font-size: 0.9rem;">🔥 Fast Moving Items (30 days)</h6>
+        </div>
+        <div class="card-body" style="padding: 0.5rem; position: relative; height: 260px;">
+            <canvas id="fastMovingChart"></canvas>
+        </div>
+    </div>
+    <div class="card card-elevated">
+        <div class="card-header" style="padding: 0.6rem 0.9rem;">
+            <h6 class="card-title mb-0" style="margin: 0; font-size: 0.9rem;">🐢 Slow Moving Items (no sales in 30 days)</h6>
+        </div>
+        <div class="table-wrapper" style="max-height: 260px; overflow-y: auto;">
+            <table class="table table-striped">
+                <thead><tr><th>Item</th><th class="table-cell-right">Current Stock</th></tr></thead>
+                <tbody>
+                    {% if slow_moving_items %}
+                        {% for row in slow_moving_items %}
+                        <tr><td>{{ row.label }}</td><td class="table-cell-right">{{ row.stock | fmt_num }}</td></tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr><td colspan="2" class="text-center text-tertiary py-8">Nothing found</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- 5 & 6. Profit Margin -->
+<div class="grid grid-2 mb-4" style="gap: 0.75rem;">
+    <div class="card card-elevated">
+        <div class="card-header" style="padding: 0.6rem 0.9rem;">
+            <h6 class="card-title mb-0" style="margin: 0; font-size: 0.9rem;">📊 Profit Margin by Category</h6>
+        </div>
+        <div class="card-body" style="padding: 0.5rem; position: relative; height: 260px;">
+            <canvas id="categoryMarginChart"></canvas>
+        </div>
+    </div>
+    <div class="card card-elevated">
+        <div class="card-header" style="padding: 0.6rem 0.9rem;">
+            <h6 class="card-title mb-0" style="margin: 0; font-size: 0.9rem;">🏆 Top 10 Items by Margin %</h6>
+        </div>
+        <div class="card-body" style="padding: 0.5rem; position: relative; height: 260px;">
+            <canvas id="itemMarginChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- 8. Top Selling Days + 10. Monthly Sales Trend -->
+<div class="grid grid-2 mb-4" style="gap: 0.75rem;">
+    <div class="card card-elevated">
+        <div class="card-header" style="padding: 0.6rem 0.9rem;">
+            <h6 class="card-title mb-0" style="margin: 0; font-size: 0.9rem;">📅 Top Selling Days Pattern</h6>
+        </div>
+        <div class="card-body" style="padding: 0.5rem; position: relative; height: 260px;">
+            <canvas id="sellingDaysChart"></canvas>
+        </div>
+    </div>
+    <div class="card card-elevated">
+        <div class="card-header" style="padding: 0.6rem 0.9rem;">
+            <h6 class="card-title mb-0" style="margin: 0; font-size: 0.9rem;">📈 Monthly Sales Trend</h6>
+        </div>
+        <div class="card-body" style="padding: 0.5rem; position: relative; height: 260px;">
+            <canvas id="monthlySalesTrendChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const css = getComputedStyle(document.documentElement);
+    const COLORS = {
+        primary: css.getPropertyValue('--color-primary').trim(),
+        success: css.getPropertyValue('--color-success').trim(),
+        warning: css.getPropertyValue('--color-warning').trim(),
+        danger: css.getPropertyValue('--color-danger').trim(),
+        info: css.getPropertyValue('--color-info').trim(),
+        textPrimary: css.getPropertyValue('--text-primary').trim(),
+        textSecondary: css.getPropertyValue('--text-secondary').trim(),
+        borderPrimary: css.getPropertyValue('--border-primary').trim(),
+        surfacePrimary: css.getPropertyValue('--surface-primary').trim()
+    };
+    Chart.defaults.color = COLORS.textSecondary;
+    Chart.defaults.borderColor = COLORS.borderPrimary;
+
+    // Drops a soft vertical shadow behind every bar in a bar chart, so
+    // rectangular bars read as raised/3D instead of flat fills — applied
+    // per-chart (not globally) via each bar chart's own `plugins` array
+    // below, so the line chart is unaffected. Draws in 'beforeDatasetsDraw'
+    // (before the bars themselves paint) using the canvas's native
+    // shadowBlur/shadowOffset, then clears the shadow state immediately
+    // after so it never leaks onto axis lines, gridlines or tooltips drawn
+    // afterward.
+    const barShadowPlugin = {
+        id: 'barShadow',
+        beforeDatasetsDraw(chart) {
+            const ctx = chart.ctx;
+            ctx.save();
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+            ctx.shadowBlur = 8;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 6;
+        },
+        afterDatasetsDraw(chart) {
+            chart.ctx.restore();
+        }
+    };
+
+    const PALETTE = [
+        COLORS.primary, COLORS.success, COLORS.warning, COLORS.danger, COLORS.info,
+        '#8b5cf6', '#ec4899', '#14b8a6', '#f59e0b', '#6366f1'
+    ];
+    function paletteFor(n) {
+        return Array.from({length: n}, (_, i) => PALETTE[i % PALETTE.length]);
+    }
+    // Same PALETTE cycle, but each color lightened toward white (mixed 65%
+    // white / 35% original) — "light colors" per request, still one
+    // distinct hue per bar rather than shades of a single color.
+    function lightenHex(hex, amount) {
+        const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec((hex || '').trim());
+        if (!m) return hex;
+        const h6 = m[1].length === 3 ? m[1].split('').map(c => c + c).join('') : m[1];
+        const r = parseInt(h6.slice(0, 2), 16), g = parseInt(h6.slice(2, 4), 16), b = parseInt(h6.slice(4, 6), 16);
+        const mix = c => Math.round(c + (255 - c) * amount);
+        return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
+    }
+    function lightPaletteFor(n) {
+        return Array.from({length: n}, (_, i) => lightenHex(PALETTE[i % PALETTE.length], 0.5));
+    }
+    const TOOLTIP_STYLE = {
+        backgroundColor: COLORS.surfacePrimary,
+        titleColor: COLORS.textPrimary,
+        bodyColor: COLORS.textSecondary,
+        borderColor: COLORS.borderPrimary,
+        borderWidth: 1,
+        padding: 10,
+        cornerRadius: 8,
+        titleFont: { size: 12, weight: '600' },
+        bodyFont: { size: 12 },
+        boxPadding: 4
+    };
+    // Guards against a non-hex/empty color and a zero-size chartArea on
+    // first paint the same way dashboard.html's identical helpers do — see
+    // that file's comments for exactly why both checks are needed.
+    function hexToRgba(hex, alpha) {
+        const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec((hex || '').trim());
+        if (!m) return hex || '#808080';
+        const h = m[1].length === 3 ? m[1].split('').map(c => c + c).join('') : m[1];
+        const bigint = parseInt(h, 16);
+        const r = (bigint >> 16) & 255, g = (bigint >> 8) & 255, b = bigint & 255;
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+    function vGradient(ctx, area, colorFrom, colorTo) {
+        if (!area || area.bottom - area.top <= 0) return colorTo;
+        try {
+            const g = ctx.createLinearGradient(0, area.bottom, 0, area.top);
+            g.addColorStop(0, colorFrom);
+            g.addColorStop(1, colorTo);
+            return g;
+        } catch (e) { return colorTo; }
+    }
+    function hGradient(ctx, area, colorFrom, colorTo) {
+        if (!area || area.right - area.left <= 0) return colorTo;
+        try {
+            const g = ctx.createLinearGradient(area.left, 0, area.right, 0);
+            g.addColorStop(0, colorFrom);
+            g.addColorStop(1, colorTo);
+            return g;
+        } catch (e) { return colorTo; }
+    }
+    // n distinct shades of one base hue — for "each month/category its own
+    // color, all shades of the same color" rather than n unrelated colors
+    // from PALETTE. Walks lightness from dark to light across the series so
+    // adjacent bars are still visually distinguishable even with only 2-3
+    // values, and clamps to a readable range (never near-black or
+    // near-white) regardless of n.
+    function shadesOf(hex, n) {
+        const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec((hex || '').trim());
+        if (!m || n <= 0) return Array(Math.max(n, 0)).fill(hex);
+        const h6 = m[1].length === 3 ? m[1].split('').map(c => c + c).join('') : m[1];
+        const r = parseInt(h6.slice(0, 2), 16) / 255, g = parseInt(h6.slice(2, 4), 16) / 255, b = parseInt(h6.slice(4, 6), 16) / 255;
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        let hue = 0, sat = 0;
+        const light = (max + min) / 2;
+        const d = max - min;
+        if (d !== 0) {
+            sat = d / (1 - Math.abs(2 * light - 1));
+            if (max === r) hue = ((g - b) / d) % 6;
+            else if (max === g) hue = (b - r) / d + 2;
+            else hue = (r - g) / d + 4;
+            hue *= 60;
+            if (hue < 0) hue += 360;
+        }
+        const lo = 0.30, hi = 0.72; // clamp: never near-black, never near-white
+        return Array.from({length: n}, (_, i) => {
+            const l = n === 1 ? light : lo + (hi - lo) * (i / (n - 1));
+            return `hsl(${hue.toFixed(1)}, ${Math.round(sat * 100)}%, ${Math.round(l * 100)}%)`;
+        });
+    }
+
+    // Monthly Sales Trend — bar, each month a different color from
+    // PALETTE, rectangular bars (no rounded corners), each bar its own
+    // vertical gradient (its light tint at the base fading up to its full
+    // solid color) rather than one flat fill.
+    const trendLabels = [{% for row in monthly_sales_trend %}'{{ row.label }}'{% if not loop.last %},{% endif %}{% endfor %}];
+    const trendData = [{% for row in monthly_sales_trend %}{{ row.value }}{% if not loop.last %},{% endif %}{% endfor %}];
+    const trendBaseColors = paletteFor(trendLabels.length);
+    new Chart(document.getElementById('monthlySalesTrendChart').getContext('2d'), {
+        type: 'bar',
+        plugins: [barShadowPlugin],
+        data: {
+            labels: trendLabels,
+            datasets: [{
+                label: 'Sales',
+                data: trendData,
+                backgroundColor: ctx => {
+                    const base = trendBaseColors[ctx.dataIndex % trendBaseColors.length];
+                    return vGradient(ctx.chart.ctx, ctx.chart.chartArea || {top: 0, bottom: 200}, hexToRgba(base, 0.35), base);
+                },
+                hoverBackgroundColor: ctx => trendBaseColors[ctx.dataIndex % trendBaseColors.length],
+                borderRadius: 0, borderSkipped: false, maxBarThickness: 40
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            animation: { easing: 'easeOutQuart', duration: 800 },
+            plugins: { legend: { display: false }, tooltip: TOOLTIP_STYLE },
+            scales: {
+                y: { beginAtZero: true, ticks: { color: COLORS.textSecondary, font: { size: 10 } }, grid: { color: COLORS.borderPrimary, drawBorder: false } },
+                x: { ticks: { color: COLORS.textSecondary, font: { size: 10 } }, grid: { display: false, drawBorder: false } }
+            }
+        }
+    });
+
+    // Fast Moving Items — line + area fill, ranked left-to-right by qty
+    // sold (still a ranking, just drawn as a trend line across the top 10
+    // rather than bars, per request).
+    const fastLabels = [{% for row in fast_moving_items %}'{{ row.label[:15] }}'{% if not loop.last %},{% endif %}{% endfor %}];
+    const fastData = [{% for row in fast_moving_items %}{{ row.value }}{% if not loop.last %},{% endif %}{% endfor %}];
+    new Chart(document.getElementById('fastMovingChart').getContext('2d'), {
+        type: 'line',
+        data: {
+            labels: fastLabels,
+            datasets: [{
+                label: 'Qty Sold',
+                data: fastData,
+                borderColor: COLORS.danger,
+                borderWidth: 3,
+                backgroundColor: ctx => vGradient(ctx.chart.ctx, ctx.chart.chartArea || {top: 0, bottom: 200}, hexToRgba(COLORS.danger, 0.02), hexToRgba(COLORS.danger, 0.35)),
+                fill: true,
+                tension: 0.4,
+                pointRadius: 4,
+                pointHoverRadius: 7,
+                pointBackgroundColor: COLORS.surfacePrimary,
+                pointBorderColor: COLORS.danger,
+                pointBorderWidth: 2,
+                pointHoverBackgroundColor: COLORS.danger,
+                pointHoverBorderColor: COLORS.surfacePrimary
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            animation: { easing: 'easeOutQuart', duration: 900 },
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { display: false }, tooltip: TOOLTIP_STYLE },
+            scales: {
+                y: { beginAtZero: true, ticks: { color: COLORS.textSecondary, font: { size: 10 } }, grid: { color: COLORS.borderPrimary, drawBorder: false } },
+                x: { ticks: { color: COLORS.textSecondary, font: { size: 9 }, maxRotation: 40, minRotation: 40 }, grid: { display: false, drawBorder: false } }
+            }
+        }
+    });
+
+    // Category Margins (%) — bar, each category a different color,
+    // rectangular bars, same per-bar vertical gradient (light tint at base
+    // fading up to solid) as Monthly Sales Trend above. A negative margin
+    // still needs to stand out from the positive ones though, so it's
+    // forced to the danger color regardless of where it falls in the
+    // palette cycle — losing that signal would make a loss-making category
+    // look like just another color.
+    const catMarginLabels = [{% for row in category_margins %}'{{ row.label }}'{% if not loop.last %},{% endif %}{% endfor %}];
+    const catMarginData = [{% for row in category_margins %}{{ row.value }}{% if not loop.last %},{% endif %}{% endfor %}];
+    const catMarginBaseColors = paletteFor(catMarginLabels.length);
+    new Chart(document.getElementById('categoryMarginChart').getContext('2d'), {
+        type: 'bar',
+        plugins: [barShadowPlugin],
+        data: {
+            labels: catMarginLabels,
+            datasets: [{
+                label: 'Margin %',
+                data: catMarginData,
+                backgroundColor: ctx => {
+                    const base = ctx.raw < 0 ? COLORS.danger : catMarginBaseColors[ctx.dataIndex % catMarginBaseColors.length];
+                    return vGradient(ctx.chart.ctx, ctx.chart.chartArea || {top: 0, bottom: 200}, hexToRgba(base, 0.35), base);
+                },
+                hoverBackgroundColor: ctx => ctx.raw < 0 ? COLORS.danger : catMarginBaseColors[ctx.dataIndex % catMarginBaseColors.length],
+                borderRadius: 0, borderSkipped: false, maxBarThickness: 40
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            animation: { easing: 'easeOutQuart', duration: 800 },
+            plugins: { legend: { display: false }, tooltip: Object.assign({}, TOOLTIP_STYLE, { callbacks: { label: ctx => ` ${ctx.parsed.y}%` } }) },
+            scales: {
+                y: { ticks: { color: COLORS.textSecondary, font: { size: 10 }, callback: v => v + '%' }, grid: { color: COLORS.borderPrimary, drawBorder: false } },
+                x: { ticks: { color: COLORS.textSecondary, font: { size: 10 } }, grid: { display: false, drawBorder: false } }
+            }
+        }
+    });
+
+    // Top Margin Items (%) — horizontal gradient, brightens on hover.
+    const itemMarginLabels = [{% for row in top_margin_items %}'{{ row.label[:15] }}'{% if not loop.last %},{% endif %}{% endfor %}];
+    const itemMarginData = [{% for row in top_margin_items %}{{ row.value }}{% if not loop.last %},{% endif %}{% endfor %}];
+    new Chart(document.getElementById('itemMarginChart').getContext('2d'), {
+        type: 'bar',
+        plugins: [barShadowPlugin],
+        data: {
+            labels: itemMarginLabels,
+            datasets: [{
+                label: 'Margin %',
+                data: itemMarginData,
+                backgroundColor: ctx => hGradient(ctx.chart.ctx, ctx.chart.chartArea || {left: 0, right: 300}, hexToRgba(COLORS.success, 0.45), COLORS.success),
+                hoverBackgroundColor: COLORS.success,
+                borderRadius: 8, borderSkipped: false, barThickness: 14
+            }]
+        },
+        options: {
+            indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+            animation: { easing: 'easeOutQuart', duration: 800 },
+            plugins: { legend: { display: false }, tooltip: Object.assign({}, TOOLTIP_STYLE, { callbacks: { label: ctx => ` ${ctx.parsed.x}%` } }) },
+            scales: {
+                x: { ticks: { color: COLORS.textSecondary, font: { size: 10 }, callback: v => v + '%' }, grid: { color: COLORS.borderPrimary, drawBorder: false } },
+                y: { ticks: { color: COLORS.textSecondary, font: { size: 10 } }, grid: { display: false, drawBorder: false } }
+            }
+        }
+    });
+
+    // Top Selling Days — bar, one shade of blue per day (Mon darkest,
+    // Sunday lightest).
+    const dayLabels = [{% for row in selling_days %}'{{ row.label }}'{% if not loop.last %},{% endif %}{% endfor %}];
+    const dayData = [{% for row in selling_days %}{{ row.value }}{% if not loop.last %},{% endif %}{% endfor %}];
+    const dayShades = shadesOf(COLORS.primary, dayLabels.length);
+    new Chart(document.getElementById('sellingDaysChart').getContext('2d'), {
+        type: 'bar',
+        plugins: [barShadowPlugin],
+        data: {
+            labels: dayLabels,
+            datasets: [{
+                label: 'Sales',
+                data: dayData,
+                backgroundColor: dayShades,
+                hoverBackgroundColor: dayShades,
+                borderRadius: 8, borderSkipped: false, maxBarThickness: 50
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            animation: { easing: 'easeOutQuart', duration: 800 },
+            plugins: { legend: { display: false }, tooltip: TOOLTIP_STYLE },
+            scales: {
+                y: { beginAtZero: true, ticks: { color: COLORS.textSecondary, font: { size: 10 } }, grid: { color: COLORS.borderPrimary, drawBorder: false } },
+                x: { ticks: { color: COLORS.textSecondary, font: { size: 11 } }, grid: { display: false, drawBorder: false } }
+            }
+        }
+    });
+
+    window.addEventListener('themechange', function() { location.reload(); });
+    window.addEventListener('storage', function(e) { if (e.key === 'theme') location.reload(); });
+});
+</script>
+
+<style>
+.grid { display: grid; gap: var(--space-8); }
+.grid-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 900px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+}
+.py-8 { padding-top: var(--space-8); padding-bottom: var(--space-8); }
+</style>
+
+{% endblock %}

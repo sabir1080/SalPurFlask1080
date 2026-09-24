@@ -6,6 +6,11 @@
     <h1><i class="bi bi-file-earmark-ruled"></i> Quotations / Proforma</h1>
     <p>Manage sales quotations and proforma invoices</p>
   </div>
+  <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Quotations / Proforma', document.getElementById('tbl-quotations'))">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
+  </div>
 </div>
 
 <!-- Search Card -->
@@ -104,15 +109,17 @@
 <div class="card border-0 shadow-sm">
     <div class="card-body p-0">
         <div class="table-responsive">
-        <table class="table table-bordered table-hover mb-0">
+        <table class="table table-bordered table-hover mb-0" id="tbl-quotations">
             <thead class="table-dark">
                 <tr>
                     <th>Q #</th><th>Customer</th><th>Date</th><th>Valid Until</th>
-                    <th class="text-end">Total</th><th class="text-center">Status</th><th>Action</th>
+                    <th class="text-end">Total</th><th class="text-center">Status</th><th class="no-print">Action</th>
                 </tr>
             </thead>
             <tbody>
+                {% set ns = namespace(total=0) %}
                 {% for q in quotes %}
+                {% set ns.total = ns.total + quotation_total(q) %}
                 <tr>
                     <td><strong>#{{ q.id }}</strong></td>
                     <td>{{ q.customer.name }}</td>
@@ -128,7 +135,7 @@
                             {{ q.status }}
                         </span>
                     </td>
-                    <td>
+                    <td class="no-print">
                         <a href="{{ url_for('quotation_detail', id=q.id) }}" class="btn btn-outline-success btn-sm">View</a>
                     </td>
                 </tr>
@@ -136,6 +143,15 @@
                 <tr><td colspan="7" class="text-center text-muted py-3">No quotations yet</td></tr>
                 {% endfor %}
             </tbody>
+            {% if quotes %}
+            <tfoot class="table-light fw-semibold">
+                <tr>
+                    <td colspan="4">Total</td>
+                    <td class="text-end">{{ ns.total | fmt_num }}</td>
+                    <td colspan="2"></td>
+                </tr>
+            </tfoot>
+            {% endif %}
         </table>
         </div>
     </div>

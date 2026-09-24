@@ -6,6 +6,11 @@
     <h1><i class="bi bi-arrow-return-right"></i> Sale Returns</h1>
     <p>Record and track sale returns</p>
   </div>
+  <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Sale Returns', document.getElementById('tbl-sale-returns'))">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
+  </div>
 </div>
 
 <!-- Search Card -->
@@ -81,16 +86,18 @@
 
 <!-- Returns Table -->
 <div class="table-responsive">
-<table class="table table-bordered table-sm table-hover">
+<table class="table table-bordered table-sm table-hover" id="tbl-sale-returns">
     <thead class="table-dark">
         <tr>
             <th>ID</th><th>Sale #</th><th>Customer</th><th>Item</th>
             <th class="text-end">Qty</th><th class="text-end">Price</th><th class="text-end">Total</th>
-            <th>Date</th><th>Reason</th><th>Action</th>
+            <th>Date</th><th>Reason</th><th class="no-print">Action</th>
         </tr>
     </thead>
     <tbody>
+        {% set ns = namespace(total=0) %}
         {% for r in returns %}
+        {% set ns.total = ns.total + sale_return_total(r) %}
         <tr>
             <td>{{ r.id }}</td>
             <td><a href="{{ url_for('sale_invoice', id=r.sale_id) }}" target="_blank">#{{ r.sale_id }}</a></td>
@@ -105,7 +112,7 @@
             <td class="text-end">{{ sale_return_total(r) | fmt_num }}</td>
             <td>{{ r.date.strftime('%Y-%m-%d') }}</td>
             <td>{{ r.reason or '—' }}</td>
-            <td>
+            <td class="no-print">
                 {% with doc = r, kind = "sale_return" %}{% include "_reverse_button.html" %}{% endwith %}
             </td>
         </tr>
@@ -113,6 +120,15 @@
         <tr><td colspan="10" class="text-center text-muted">No sale returns found.</td></tr>
         {% endfor %}
     </tbody>
+    {% if returns %}
+    <tfoot class="table-light fw-semibold">
+        <tr>
+            <td colspan="6">Total</td>
+            <td class="text-end">{{ ns.total | fmt_num }}</td>
+            <td colspan="3"></td>
+        </tr>
+    </tfoot>
+    {% endif %}
 </table>
 </div>
 <div class="pagination">{{ pagination.links }}</div>

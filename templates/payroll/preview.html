@@ -7,6 +7,9 @@
     <p>{{ employee.name }} — {{ period.name }} <span class="badge bg-secondary">nothing saved</span></p>
   </div>
   <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Payroll Preview — {{ employee.name }}', document.getElementById('tbl-payroll-preview'), {meta: '{{ period.name }}'})">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
     <a href="{{ url_for('payroll.period_detail', period_id=period.id) }}" class="btn btn-secondary">
       <i class="bi bi-arrow-left"></i> Back
     </a>
@@ -34,7 +37,7 @@
 
 <div class="card">
   <div class="card-body">
-    <table class="table table-sm mb-0">
+    <table class="table table-sm mb-0" id="tbl-payroll-preview">
       {% for i in result.lines %}
       <tr>
         <td>

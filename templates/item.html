@@ -20,6 +20,9 @@ try {
     <p>Manage product catalog, pricing, and stock levels</p>
   </div>
   <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Inventory Items', document.getElementById('tbl-items-list'))">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
     <form method="POST" action="{{ url_for('send_low_stock_alert') }}" style="display:inline;">
       <button type="submit" class="btn btn-warning" title="Send low stock alert email" onclick="return confirm('Send low stock alert email?')">
         <i class="bi bi-bell"></i> Low Stock Alert
@@ -499,7 +502,7 @@ function addUnitRow() {
 <!-- Items List -->
 <div class="card">
   <div class="table-wrapper">
-    <table class="table table-striped table-hover">
+    <table class="table table-striped table-hover" id="tbl-items-list">
       <thead>
         <tr>
           <th>ID</th>
@@ -513,7 +516,7 @@ function addUnitRow() {
           <th class="text-end">Reorder Level</th>
           <th class="text-end">Buy Price</th>
           <th class="text-end">Sell Price</th>
-          <th class="table-cell-center">Actions</th>
+          <th class="table-cell-center no-print">Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -540,7 +543,7 @@ function addUnitRow() {
           <td class="text-end">{{ item.reorder_level | fmt_num }}</td>
           <td class="text-end">{{ item.purchase_price | fmt_num if item.purchase_price else '—' }}</td>
           <td class="text-end">{{ item.sale_price | fmt_num if item.sale_price else '—' }}</td>
-          <td class="table-cell-center">
+          <td class="table-cell-center no-print">
             <a href="{{ url_for('item_ledger', id=item.id) }}" class="btn btn-sm btn-outline-primary" title="View ledger">
               <i class="bi bi-journal-text"></i>
             </a>
@@ -560,6 +563,17 @@ function addUnitRow() {
         </tr>
         {% endfor %}
       </tbody>
+      {% if items %}
+      <tfoot class="table-light fw-semibold">
+        <tr>
+          <td colspan="6">Total (this page)</td>
+          <td class="text-end text-muted">{{ items | sum(attribute='opening_stock') | fmt_num }}</td>
+          <td class="text-end">{{ items | sum(attribute='stock') | fmt_num }}</td>
+          <td class="text-end">{{ items | sum(attribute='reorder_level') | fmt_num }}</td>
+          <td colspan="3"></td>
+        </tr>
+      </tfoot>
+      {% endif %}
     </table>
   </div>
 </div>

@@ -7,6 +7,9 @@
     <p>{{ rows | length }} record{{ '' if rows | length == 1 else 's' }}</p>
   </div>
   <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Employee Advances', document.getElementById('tbl-employee-advances'))">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
     <a href="{{ url_for('payroll.index') }}" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Payroll</a>
   </div>
 </div>
@@ -69,13 +72,13 @@
         </form>
 
         <div class="table-wrapper table-responsive">
-          <table class="table table-striped table-hover align-middle">
+          <table class="table table-striped table-hover align-middle" id="tbl-employee-advances">
             <thead>
               <tr>
                 <th>Date</th><th>Employee</th>
                 <th class="text-end">Amount</th><th class="text-end">Recovered</th>
                 <th class="text-end">Outstanding</th><th>Status</th>
-                <th class="text-center">Actions</th>
+                <th class="text-center no-print">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -88,7 +91,7 @@
                 <td class="text-end">{{ currency }} {{ a.recovered | fmt_num }}</td>
                 <td class="text-end"><strong>{{ currency }} {{ a.outstanding | fmt_num }}</strong></td>
                 <td><span class="badge bg-{{ cls.get(a.status,'secondary') }}">{{ a.status }}</span></td>
-                <td class="text-center table-cell-center">
+                <td class="text-center table-cell-center no-print">
                   {% if a.status == 'Active' and has_permission('payroll.edit') %}
                   <form method="POST" action="{{ url_for('payroll.advance_cancel', row_id=a.id) }}" class="d-inline"
                         onsubmit="return confirm('Cancel this advance?');">
@@ -104,6 +107,17 @@
               <tr><td colspan="7" class="text-center text-muted py-4">No advances recorded.</td></tr>
               {% endfor %}
             </tbody>
+            {% if rows %}
+            <tfoot class="table-light fw-semibold">
+              <tr>
+                <td colspan="2">Total</td>
+                <td class="text-end">{{ currency }} {{ rows | sum(attribute='amount') | fmt_num }}</td>
+                <td class="text-end">{{ currency }} {{ rows | sum(attribute='recovered') | fmt_num }}</td>
+                <td class="text-end">{{ currency }} {{ rows | sum(attribute='outstanding') | fmt_num }}</td>
+                <td colspan="2"></td>
+              </tr>
+            </tfoot>
+            {% endif %}
           </table>
         </div>
       </div>

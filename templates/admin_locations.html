@@ -6,6 +6,11 @@
     <h1><i class="bi bi-building"></i> Warehouses</h1>
     <p>Add or manage the warehouses stock is held at</p>
   </div>
+  <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Warehouses', document.getElementById('tbl-warehouses'))">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
+  </div>
 </div>
 
 <div class="card mb-6">
@@ -31,13 +36,13 @@
 
 <div class="card">
   <div class="table-wrapper">
-    <table class="table table-striped table-hover align-middle">
+    <table class="table table-striped table-hover align-middle" id="tbl-warehouses">
       <thead>
         <tr>
           <th>Name</th>
           <th>Address</th>
           <th>Status</th>
-          <th class="text-end">Action</th>
+          <th class="text-end no-print">Action</th>
         </tr>
       </thead>
       <tbody>
@@ -55,7 +60,7 @@
               <span class="badge bg-secondary">Inactive</span>
             {% endif %}
           </td>
-          <td class="text-end">
+          <td class="text-end no-print">
             <form method="POST" action="{{ url_for('admin_location_toggle_active', id=loc.id) }}" class="d-inline"
                   {% if loc.is_default and loc.active %}
                   title="The default warehouse cannot be deactivated"

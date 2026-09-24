@@ -7,6 +7,9 @@
     <p>Manage cash and bank account balances</p>
   </div>
   <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Cash &amp; Bank Accounts', document.getElementById('tbl-cash-bank-accounts'))">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
     {% if current_user.is_admin %}
     <a href="{{ url_for('admin_financial_accounts') }}" class="btn btn-primary">
       <i class="bi bi-gear"></i> Manage Accounts
@@ -39,14 +42,14 @@
 <div class="card mb-6">
     <div class="card-body p-0">
         <div class="table-responsive">
-        <table class="table table-hover mb-0 align-middle">
+        <table class="table table-hover mb-0 align-middle" id="tbl-cash-bank-accounts">
             <thead class="table-dark">
                 <tr>
                     <th>Account</th>
                     <th>Type</th>
                     <th class="text-end">Opening</th>
                     <th class="text-end">Current Balance</th>
-                    <th class="text-end">Actions</th>
+                    <th class="text-end no-print">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -59,7 +62,7 @@
                     <td><span class="badge bg-{{ 'success' if r.acct.account_type == 'Cash' else 'primary' }}">{{ r.acct.account_type }}</span></td>
                     <td class="text-end">—</td>
                     <td class="text-end fw-bold {{ 'text-success' if r.balance >= 0 else 'text-danger' }}">{{ r.balance | fmt_num }}</td>
-                    <td class="text-end text-nowrap"></td>
+                    <td class="text-end text-nowrap no-print"></td>
                 </tr>
                 {% else %}
                 <tr {% if r.level > 0 %}class="table-light"{% endif %}>
@@ -69,7 +72,7 @@
                     <td><span class="badge bg-{{ 'success' if r.acct.account_type == 'Cash' else 'primary' }}">{{ r.acct.account_type }}</span></td>
                     <td class="text-end">{{ r.acct.opening_balance | fmt_num }}</td>
                     <td class="text-end fw-bold {{ 'text-success' if r.balance >= 0 else 'text-danger' }}">{{ r.balance | fmt_num }}</td>
-                    <td class="text-end text-nowrap">
+                    <td class="text-end text-nowrap no-print">
                         <a href="{{ url_for('account_ledger', id=r.acct.id) }}" class="btn btn-sm btn-outline-primary" title="Ledger"><i class="bi bi-journal-text"></i></a>
                     </td>
                 </tr>
@@ -82,7 +85,7 @@
                 <tr class="table-light fw-bold">
                     <td colspan="3" class="text-end">Total</td>
                     <td class="text-end {{ 'text-success' if total >= 0 else 'text-danger' }}">{{ total | fmt_num }}</td>
-                    <td></td>
+                    <td class="no-print"></td>
                 </tr>
             </tfoot>
         </table>

@@ -16,6 +16,9 @@
     <p>Compare physical counts to system stock, by warehouse</p>
   </div>
   <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Inventory Reconciliation', document.getElementById('tbl-reconciliations'))">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
     <a href="{{ url_for('reconciliation_new') }}" class="btn btn-primary">
       <i class="bi bi-plus-circle"></i> New Reconciliation
     </a>
@@ -53,12 +56,12 @@
 <div class="card border-0 shadow-sm">
   <div class="card-body p-0">
     <div class="table-responsive">
-    <table class="table table-bordered table-hover mb-0">
+    <table class="table table-bordered table-hover mb-0" id="tbl-reconciliations">
       <thead class="table-dark">
         <tr>
           <th>Reference</th><th>Warehouse</th><th>Date</th>
           <th class="text-center">Items</th><th class="text-end">Net Variance</th>
-          <th class="text-center">Status</th><th></th>
+          <th class="text-center">Status</th><th class="no-print"></th>
         </tr>
       </thead>
       <tbody>
@@ -84,7 +87,7 @@
           <td class="text-center">
             <span class="badge recon-badge-{{ r.status }}">{{ r.status }}</span>
           </td>
-          <td>
+          <td class="no-print">
             <a href="{{ url_for('reconciliation_detail', id=r.id) }}" class="btn btn-outline-primary btn-sm">View</a>
           </td>
         </tr>

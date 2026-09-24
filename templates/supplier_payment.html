@@ -7,6 +7,9 @@
     <p>Record and manage supplier payment transactions</p>
   </div>
   <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Supplier Payments', document.getElementById('tbl-supplier-payments'))">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
     <a href="{{ url_for('supplier_bulk_payment') }}" class="btn btn-primary">
       <i class="bi bi-cash-stack"></i> Bulk Payment
     </a>
@@ -108,7 +111,7 @@
 <!-- Payments Table -->
 <div class="card">
   <div class="table-wrapper">
-    <table class="table table-striped table-hover">
+    <table class="table table-striped table-hover" id="tbl-supplier-payments">
       <thead>
         <tr>
           <th>ID</th>
@@ -119,7 +122,7 @@
           <th>Reference</th>
           <th>Date</th>
           <th>Notes</th>
-          <th class="table-cell-center">Actions</th>
+          <th class="table-cell-center no-print">Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -133,7 +136,7 @@
           <td class="text-nowrap">{{ p.reference_no or '—' }}</td>
           <td class="text-tertiary text-nowrap">{{ p.payment_date.strftime('%Y-%m-%d') }}</td>
           <td class="text-muted small">{{ p.notes or '—' }}</td>
-          <td class="table-cell-center">
+          <td class="table-cell-center no-print">
             {% if current_user.is_manager %}
             <a href="{{ url_for('edit_supplier_payment', id=p.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit">
               <i class="bi bi-pencil"></i>
@@ -148,6 +151,15 @@
         </tr>
         {% endfor %}
       </tbody>
+      {% if payments %}
+      <tfoot class="table-light fw-semibold">
+        <tr>
+          <td colspan="3">Total (this page)</td>
+          <td class="text-end">{{ payments | sum(attribute='amount') | fmt_num }}</td>
+          <td colspan="5"></td>
+        </tr>
+      </tfoot>
+      {% endif %}
     </table>
   </div>
 </div>

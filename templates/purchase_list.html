@@ -1,0 +1,174 @@
+{% extends 'base.html' %}
+{% block title %}Create Purchase List — {{ app_name }}{% endblock %}
+{% block content %}
+
+<div class="page-header" style="margin-bottom: 1rem;">
+    <div class="page-header-title">
+        <h2 style="margin: 0; font-size: 1.5rem;"><i class="bi bi-cart-plus"></i> Create Purchase List</h2>
+        <p style="margin: 0.25rem 0 0 0; font-size: 0.85rem;">Enter quantities to order, remove anything you don't need, then print.</p>
+    </div>
+    <div class="page-header-actions">
+        <a href="{{ url_for('dashboard.dashboard') }}#low-stock-items" class="btn btn-outline-secondary" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;">
+            <i class="bi bi-arrow-left"></i> Back to Dashboard
+        </a>
+        <button type="button" class="btn btn-outline-primary" style="font-size: 0.85rem; padding: 0.35rem 0.75rem;" onclick="printPurchaseList()">
+            <i class="bi bi-printer"></i> Print PDF
+        </button>
+    </div>
+</div>
+
+<div class="card card-elevated mb-4">
+    <div class="card-body" style="padding: 0.75rem;">
+        <p class="text-tertiary mb-0" style="font-size: 0.8rem;">
+            This list is not saved anywhere — it's a working worksheet. Fill in quantities, use
+            <i class="bi bi-x-circle text-danger"></i> to drop an item you don't want to order, then print.
+        </p>
+    </div>
+</div>
+
+<div class="card card-elevated">
+    <div class="card-header">
+        <h6 class="card-title mb-0" style="margin: 0; font-size: 0.9rem;">Items Below Reorder Level ({{ items | length }})</h6>
+    </div>
+    <div class="table-wrapper">
+        <table class="table table-striped" id="tbl-purchase-list">
+            <thead>
+                <tr>
+                    <th>Item Name</th>
+                    <th>SKU</th>
+                    <th>Category</th>
+                    <th class="table-cell-right">Current Stock</th>
+                    <th class="table-cell-right">Reorder Level</th>
+                    <th class="table-cell-right" style="width: 140px;">Purchase Qty</th>
+                    <th class="table-cell-center no-print" style="width: 60px;">Remove</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if items %}
+                    {% for item in items %}
+                    <tr data-row>
+                        <td class="font-medium">{{ item.name }}</td>
+                        <td class="text-tertiary">{{ item.sku or '—' }}</td>
+                        <td>{{ item.business_category.name if item.business_category else (item.id_category.name if item.id_category else '—') }}</td>
+                        <td class="table-cell-right">
+                            <span class="badge badge-danger-solid">{{ item.stock | fmt_num }}</span>
+                        </td>
+                        <td class="table-cell-right">{{ item.reorder_level | fmt_num }}</td>
+                        <td class="table-cell-right">
+                            <input type="number" class="form-control form-control-sm qty-input" min="0" step="1"
+                                   value="{{ ((item.reorder_level - item.stock) if item.reorder_level > item.stock else 0) | int }}"
+                                   style="text-align: right;">
+                        </td>
+                        <td class="table-cell-center no-print">
+                            <button type="button" class="btn btn-icon btn-text text-danger" title="Remove from list" onclick="this.closest('tr').remove()">
+                                <i class="bi bi-x-circle"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr><td colspan="7" class="text-center text-tertiary py-8">No items below reorder level right now</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+function printPurchaseList() {
+    const tbl = document.getElementById('tbl-purchase-list');
+    if (!tbl) { alert('No data to print.'); return; }
+
+    const rows = tbl.querySelectorAll('tbody tr[data-row]');
+    if (!rows.length) { alert('The list is empty — nothing to print.'); return; }
+
+    // Build a plain print table: qty comes from each row's <input> current
+    // value (the live DOM value, not the server-rendered default), and the
+    // Remove column is dropped entirely rather than hidden via CSS, since
+    // print windows don't share this page's stylesheet.
+    let bodyRows = '';
+    rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        const name = cells[0].textContent.trim();
+        const sku = cells[1].textContent.trim();
+        const category = cells[2].textContent.trim();
+        const stock = cells[3].textContent.trim();
+        const reorder = cells[4].textContent.trim();
+        const qty = row.querySelector('.qty-input').value || '0';
+        bodyRows += `<tr>
+            <td>${name}</td><td>${sku}</td><td>${category}</td>
+            <td class="table-cell-right">${stock}</td>
+            <td class="table-cell-right">${reorder}</td>
+            <td class="table-cell-right"><strong>${qty}</strong></td>
+        </tr>`;
+    });
+
+    const companyName = {{ company_name | tojson }};
+    const companyTagline = {{ company_tagline | tojson }};
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Purchase List — ${companyName}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 12px; color: #111; background: #fff; }
+  @page { margin: 1.2cm; size: A4; }
+
+  .print-header { display: flex; justify-content: space-between; align-items: flex-start;
+                  border-bottom: 3px solid #1e3a5f; padding-bottom: 10px; margin-bottom: 16px; }
+  .company-block .cname { font-size: 18px; font-weight: 900; color: #1e3a5f; }
+  .company-block .ctag  { font-size: 10px; color: #666; }
+  .report-block { text-align: right; }
+  .report-block .rtitle { font-size: 15px; font-weight: 800; color: #1e3a5f; text-transform: uppercase; letter-spacing: 1px; }
+  .report-block .rmeta  { font-size: 10px; color: #555; }
+  .print-footer { margin-top: 20px; border-top: 1px solid #ccc; padding-top: 8px;
+                  display: flex; justify-content: space-between; font-size: 10px; color: #888; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  th { background: #1e3a5f; color: white; padding: 6px 8px; text-align: left; font-size: 11px; }
+  th.table-cell-right, td.table-cell-right { text-align: right; white-space: nowrap; }
+  td { padding: 5px 8px; border-bottom: 1px solid #e5e7eb; font-size: 11px; overflow-wrap: break-word; }
+  tr:nth-child(even) td { background: #f9fafb; }
+</style>
+</head>
+<body>
+<div class="print-header">
+  <div class="company-block">
+    <div class="cname">&#9633; ${companyName}</div>
+    <div class="ctag">${companyTagline}</div>
+  </div>
+  <div class="report-block">
+    <div class="rtitle">Purchase List</div>
+    <div class="rmeta">${rows.length} item(s) to order</div>
+  </div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Item Name</th><th>SKU</th><th>Category</th>
+      <th class="table-cell-right">Current Stock</th>
+      <th class="table-cell-right">Reorder Level</th>
+      <th class="table-cell-right">Purchase Qty</th>
+    </tr>
+  </thead>
+  <tbody>${bodyRows}</tbody>
+</table>
+
+<div class="print-footer">
+  <span>Generated by ${companyName} &mdash; ${companyTagline}</span>
+  <span>Printed: ${new Date().toLocaleDateString('en-GB', {day:'2-digit',month:'short',year:'numeric'})}</span>
+</div>
+</body></html>`;
+
+    const win = window.open('', '_blank', 'width=900,height=700');
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 400);
+}
+</script>
+
+{% endblock %}

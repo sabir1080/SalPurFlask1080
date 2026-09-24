@@ -100,6 +100,7 @@
 .btn-secondary:hover {
   background: var(--surface-secondary);
   border-color: var(--text-secondary);
+  color: var(--text-primary);
 }
 
 .btn-secondary:active {
@@ -187,6 +188,7 @@
 .btn-outline-primary:hover {
   background: rgba(59, 130, 246, 0.1);
   border-color: var(--color-primary-dark);
+  color: var(--color-primary-dark);
 }
 
 .btn-outline-primary:active {
@@ -202,6 +204,29 @@
 .btn-outline-danger:hover {
   background: rgba(220, 38, 38, 0.1);
   border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+/* Bootstrap's own .btn-outline-warning has no custom override here, so it
+   used Bootstrap's raw --bs-warning (#ffc107, a light yellow) as text color
+   directly on a transparent/white background — barely legible until hover
+   filled the background solid and switched to dark text. --color-warning
+   (#d97706) is the same token .btn-warning's solid background already uses,
+   at a real 6.5:1 contrast on white (see design-tokens.css). */
+.btn-outline-warning {
+  background: transparent;
+  color: var(--color-warning);
+  border: 2px solid var(--color-warning);
+}
+
+.btn-outline-warning:hover {
+  background: rgba(217, 119, 6, 0.1);
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+}
+
+.btn-outline-warning:active {
+  background: rgba(217, 119, 6, 0.2);
 }
 
 .btn-outline-danger:active {
@@ -713,6 +738,17 @@
   border-bottom: 2px solid var(--border-primary);
   white-space: nowrap;
   user-select: none;
+}
+
+/* Bootstrap's .table-dark forces a dark header background on any theme —
+   the unconditional `color: var(--text-primary)` above stayed near-black
+   even against that dark background in light mode, making every
+   table-dark header unreadable (black text on black). Its own text needs
+   to stay light regardless of the app's current theme, same as Bootstrap's
+   un-overridden default. */
+.table thead.table-dark th,
+.table thead.table-dark {
+  color: #f8f9fa;
 }
 
 .table td {

@@ -8,6 +8,11 @@
     <p>{{ reconciliation.location.name }}</p>
   </div>
   <div class="page-header-actions">
+    {% if reconciliation.status != 'Draft' %}
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Reconciliation {{ reconciliation.reference or ('DRAFT-' ~ reconciliation.id) }}', document.getElementById('tbl-reconciliation-lines'), {meta: '{{ reconciliation.location.name }} — {{ reconciliation.date.strftime('%d %b %Y') }}'})">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
+    {% endif %}
     <a href="{{ url_for('reconciliation_list') }}" class="btn btn-secondary">
       <i class="bi bi-arrow-left"></i> Back
     </a>
@@ -158,7 +163,7 @@
       </div>
     </form>
     {% else %}
-    <table class="table table-bordered mb-0 align-middle">
+    <table class="table table-bordered mb-0 align-middle" id="tbl-reconciliation-lines">
       <thead class="table-dark">
         <tr>
           <th>#</th><th>Item</th>
@@ -182,6 +187,17 @@
         </tr>
         {% endfor %}
       </tbody>
+      {% if reconciliation.lines %}
+      <tfoot class="table-light fw-semibold">
+        <tr>
+          <td colspan="2">Total</td>
+          <td class="text-end">{{ reconciliation.lines | sum(attribute='system_quantity') | fmt_num }}</td>
+          <td class="text-end">{{ reconciliation.lines | sum(attribute='physical_quantity') | fmt_num }}</td>
+          <td class="text-end">{{ '%+d' | format(reconciliation.lines | sum(attribute='variance')) }}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+      {% endif %}
     </table>
     {% endif %}
     </div>

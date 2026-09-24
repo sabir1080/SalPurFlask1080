@@ -6,6 +6,11 @@
     <h1><i class="bi bi-truck"></i> Delivery Challans</h1>
     <p>Create and manage delivery documentation</p>
   </div>
+  <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Delivery Challans', document.getElementById('tbl-delivery-challans'))">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
+  </div>
 </div>
 
 <!-- Filter Card -->
@@ -70,14 +75,14 @@
 <div class="card border-0 shadow-sm">
     <div class="card-body p-0">
         <div class="table-responsive">
-        <table class="table table-bordered table-hover mb-0">
+        <table class="table table-bordered table-hover mb-0" id="tbl-delivery-challans">
             <thead class="table-dark">
                 <tr>
                     <th>DC #</th><th>Sale #</th><th>Customer</th>
                     <th>Challan Date</th><th>Dispatch</th><th>Delivery</th>
                     <th>Transport</th>
                     <th class="text-center">Status</th>
-                    <th>Update</th>
+                    <th class="no-print">Update</th>
                 </tr>
             </thead>
             <tbody>
@@ -99,7 +104,7 @@
                             {{ dc.status }}
                         </span>
                     </td>
-                    <td>
+                    <td class="no-print">
                         <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal"
                                 data-bs-target="#updateModal{{ dc.id }}">
                             <i class="bi bi-pencil"></i>
@@ -112,7 +117,7 @@
                                         <h5 class="modal-title">Update DC #{{ dc.id }}</h5>
                                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                     </div>
-                                    <form method="POST" action="{{ url_for('update_challan_status', id=dc.id) }}">
+                                    <form method="POST" action="{{ url_for('update_delivery_challan', id=dc.id) }}">
                                         <div class="modal-body row g-3">
                                             <div class="col-6">
                                                 <label class="form-label">Status</label>

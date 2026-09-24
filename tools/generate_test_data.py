@@ -1,16 +1,22 @@
 """Generate a large, realistic, interconnected ERP test dataset directly in
-PostgreSQL, using TradeFlow's own business-logic primitives wherever one
-exists (item_add_stock/item_remove_stock, post_document/post_entry, the
-transfer service, the payroll engine/accounting) rather than raw INSERTs.
+PostgreSQL (or, with an explicit opt-in, the local SQLite dev database — see
+below), using TradeFlow's own business-logic primitives wherever one exists
+(item_add_stock/item_remove_stock, post_document/post_entry, the transfer
+service, the payroll engine/accounting, the batch/FEFO primitives) rather
+than raw INSERTs.
 
 Run via the CLI, not directly:
-    python tools/test_data_cli.py generate [--seed N] [--force]
+    python tools/test_data_cli.py generate [--seed N] [--force] [--allow-sqlite]
 
 Safety:
-  - Refuses to run against anything but PostgreSQL (see _data_common.require_postgres).
+  - Refuses to run against anything but PostgreSQL, UNLESS --allow-sqlite was
+    passed on the CLI — see _data_common.require_database() and this module's
+    own ALLOW_SQLITE handling just below. Without that flag, behavior is
+    unchanged from before: SQLite is refused, exactly as require_postgres()
+    always refused it.
   - Refuses to run twice unless --force is passed (see _data_common sentinel).
-  - Never touches SQLite, never drops/recreates the schema, never deletes the
-    67 baseline system rows (it only ever adds to master/transactional tables).
+  - Never drops/recreates the schema, never deletes the 67 baseline system
+    rows (it only ever adds to master/transactional tables).
 
 Design reference: see the Phase 3 design conversation for the full dependency
 graph, record-count table, and per-domain rationale. This file follows that
@@ -21,12 +27,29 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tools._data_common import require_postgres, make_rng, write_sentinel, read_sentinel
+from tools._data_common import require_database, make_rng, write_sentinel, read_sentinel
+from tools._medical_catalog import MEDICINES, NON_MEDICAL_ITEMS
 
-DATABASE_URL = require_postgres()
+# test_data_cli.py sets TEST_DATA_ALLOW_SQLITE=1 BEFORE importing this
+# module, from its own --allow-sqlite flag — the primary entry point. A
+# direct `python tools/generate_test_data.py --allow-sqlite` invocation has
+# no chance to parse argparse args before this module-level line runs (the
+# `if __name__ == "__main__":` block below only executes AFTER the whole
+# module body, including this gate, has already run), so it is checked here
+# too via a raw sys.argv scan — the same one-line technique _data_common
+# itself needs for the identical reason (this must run before `import app`).
+# Both entry points end up setting/reading the same env var, so there is
+# exactly one gate, never two independently-maintained ones. Never inferred
+# from DATABASE_URL alone.
+if "--allow-sqlite" in sys.argv:
+    os.environ["TEST_DATA_ALLOW_SQLITE"] = "1"
+ALLOW_SQLITE = os.environ.get("TEST_DATA_ALLOW_SQLITE") == "1"
+DATABASE_URL = require_database(allow_sqlite=ALLOW_SQLITE)
 
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+
+from sqlalchemy.exc import OperationalError, PendingRollbackError
 
 from app import app, db, PostingError
 from salpurflask.models import (
@@ -42,10 +65,15 @@ from salpurflask.models import (
     item_add_stock, item_remove_stock,
     seed_chart_of_accounts, seed_fixed_asset_accounts, seed_tax_codes, seed_fiscal_year,
 )
+from salpurflask.models.models import (
+    get_or_create_batch, item_add_stock_batched, item_remove_stock_batched,
+    resolve_sale_batch_allocations, resolve_sale_return_batch_allocations,
+    PurchaseItemBatch, SaleItemBatch, MONEY,
+)
 from salpurflask.models.inventory_location import (
     get_or_create_default_location, stock_at_location,
 )
-from salpurflask.models.business_config import BusinessCategory
+from salpurflask.models.business_config import BusinessCategory, ProductCategoryData
 from salpurflask.services.transfers import create_transfer, confirm_transfer
 from salpurflask.services.feature_flags import set_module
 from salpurflask.models.hr import Department, Designation, Employee, next_employee_code
@@ -69,6 +97,7 @@ from app import (
     sync_customer_sale, sync_customer_sale_return, sync_customer_receipt,
     validate_supplier_payment, validate_customer_receipt,
 )
+from salpurflask.sales.routes import get_sale_item_returned_qty
 
 
 # ─── Name pools (deterministic, no external dependency like Faker) ─────────
@@ -139,6 +168,48 @@ def log(step, total, message):
     print(f"[{step}/{total}] {message}")
 
 
+# Neon (and similarly-configured managed Postgres) can autosuspend its compute
+# after a few idle minutes — confirmed 5 minutes on the tradeflow-demo Neon
+# project via its dashboard. app.py's pool_pre_ping/pool_recycle only protect
+# a connection that gets CHECKED BACK IN to the pool between uses; they do
+# nothing for a connection that is still checked out and mid-transaction
+# (this script's own session holds exactly one connection across long runs of
+# per-record flush()/commit() calls). If the round-trip gap between two
+# statements on that same connection exceeds the autosuspend window — several
+# hundred small commits at real network latency to a remote region adds up —
+# Neon kills the TCP connection server-side, and the next statement on it
+# fails with "server closed the connection unexpectedly", regardless of how
+# recently the Python side last touched the session. A cheap SELECT 1 issued
+# periodically inside the largest loops keeps the wire active so this gap
+# never opens, without changing any business logic. See _KEEPALIVE_EVERY below
+# for the call sites.
+_KEEPALIVE_EVERY = 15
+
+
+def keepalive(i):
+    """Call from inside a large loop with the loop's own 0-based index.
+    Cheap — a single SELECT 1 every _KEEPALIVE_EVERY iterations, not every
+    iteration — this is purely a connection-liveness ping, unrelated to and
+    independent of every commit()/flush() the loop's own logic already does."""
+    if i % _KEEPALIVE_EVERY == 0:
+        db.session.execute(db.text("SELECT 1"))
+
+
+def keepalive_every(i, n):
+    """Same as keepalive(), but with a caller-chosen interval instead of the
+    shared _KEEPALIVE_EVERY. Attempt #9 died inside stage6_sales's 400-record
+    standard-sales loop (sale #66, i%15=6 — several iterations past the last
+    ping) even though every iteration already calls keepalive(i): each
+    iteration there does a full multi-line document post (several flushes)
+    plus its own commit(), which is heavier than the lighter loops the
+    15-iteration cadence was tuned against, so the gap between pings was
+    still wide enough for Neon's pooled endpoint to drop the connection
+    server-side between two statements. Loops whose body is this expensive
+    should ping on a tighter interval than the default."""
+    if i % n == 0:
+        db.session.execute(db.text("SELECT 1"))
+
+
 def uniq_contact(rng, used):
     while True:
         c = "03" + "".join(str(rng.randint(0, 9)) for _ in range(9))
@@ -156,6 +227,15 @@ class Ctx:
         self.cash_account = None     # FinancialAccount id (Cash)
         self.bank_account = None     # FinancialAccount id (Bank)
         self.items = []              # [Item, ...] STOCK type
+        # Plain-int ids, same order/index as self.items — see the
+        # sellable_items() comment in stage6_sales for why this exists:
+        # ORM objects in self.items expire on every db.session.commit()
+        # (expire_on_commit=True is SQLAlchemy's default, never overridden
+        # here), so re-reading it.id after a commit is a real database
+        # round-trip, not a memory read. Cached once, right after self.items
+        # is populated and before anything could have committed.
+        self.item_ids = []
+        self.medical_items = []      # [Item, ...] STOCK type, batch_tracked=True subset
         self.suppliers = []
         self.customers = []
         self.employees = []
@@ -303,6 +383,9 @@ def stage2_master_data(ctx):
 
     ctx.items = (Item.query.filter_by(item_type="STOCK")
                  .filter(Item.sku.like("ITEM-%")).order_by(Item.sku).all())
+    # Cache ids as plain ints now, while these objects are freshly loaded
+    # and definitely not expired — see Ctx.item_ids' own comment.
+    ctx.item_ids = [it.id for it in ctx.items]
 
     # A meaningful subset of items get an alternate unit (multi-unit)
     for item in ctx.items[:20]:
@@ -401,7 +484,8 @@ def stage2_master_data(ctx):
 def stage3_opening_stock(ctx):
     rng = ctx.rng
     default_loc = ctx.locations[0]
-    for item in ctx.items:
+    for i, item in enumerate(ctx.items):
+        keepalive(i)
         existing = stock_at_location(item.id, default_loc.id)
         if existing:
             ctx.stock_by_loc[(item.id, default_loc.id)] = existing
@@ -457,6 +541,43 @@ def _make_purchase(ctx, supplier, lines, when, location_id, notes=None):
     return pur
 
 
+def _make_purchase_with_retry(ctx, supplier, lines, when, location_id, notes=None):
+    """Wraps _make_purchase() with one retry for a raw Neon connection drop.
+
+    A drop mid-flush inside item_add_stock()'s record_stock_movement() call
+    is swallowed there by design (it logs and returns None rather than
+    raising), but SQLAlchemy has already marked the transaction rolled-back
+    at that point — the *next* statement anywhere in this same transaction
+    (e.g. this file's own db.session.refresh(pur) a few lines later) is what
+    actually raises, as PendingRollbackError, a sibling of OperationalError
+    under SQLAlchemyError, not a subclass of it, so both must be caught
+    explicitly. db.session.rollback() cleanly discards the whole failed
+    transaction (the uncommitted Purchase/PurchaseItem/StockMovement rows,
+    and item.stock's in-memory mutation, since a rollback also reverts
+    pending attribute writes on session-tracked objects) — nothing from a
+    failed attempt is left half-persisted for the retry to collide with.
+    ctx.stock_by_loc is the one exception: a plain dict outside the ORM
+    session, untouched by rollback(), so this function snapshots the
+    handful of (item.id, location_id) keys the given `lines` can touch
+    before each attempt and restores exactly those keys on failure, so a
+    retry's own ctx.stock_by_loc update in _make_purchase() cannot double
+    up on a partial update the failed attempt already made."""
+    keys = [(item.id, location_id) for item, _qty, _price, _tax in lines]
+    for attempt in range(2):
+        snapshot = {k: ctx.stock_by_loc[k] for k in keys if k in ctx.stock_by_loc}
+        try:
+            return _make_purchase(ctx, supplier, lines, when, location_id, notes=notes)
+        except (OperationalError, PendingRollbackError):
+            db.session.rollback()
+            for k in keys:
+                if k in snapshot:
+                    ctx.stock_by_loc[k] = snapshot[k]
+                else:
+                    ctx.stock_by_loc.pop(k, None)
+            if attempt == 1:
+                raise
+
+
 def _purchase_total(pur):
     return sum(float(pi.amount) for pi in pur.line_items)
 
@@ -468,6 +589,7 @@ def stage4_purchasing(ctx, skipped):
     # Purchase Orders — some converted, some left standing
     pos = []
     for i in range(60):
+        keepalive(i)
         supplier = rng.choice(ctx.suppliers)
         n_lines = rng.randint(1, 4)
         items = rng.sample(ctx.items, n_lines)
@@ -486,9 +608,9 @@ def stage4_purchasing(ctx, skipped):
                 unit_factor=1,
             ))
         db.session.flush()
+        db.session.commit()
         ctx.bump(1 + n_lines)
         pos.append(po)
-    db.session.commit()
 
     # Purchases — 250 total, ~60 of them born from converting a PO
     convert_pool = list(pos)
@@ -496,6 +618,7 @@ def stage4_purchasing(ctx, skipped):
     purchases = []
     n_purchases = 250
     for i in range(n_purchases):
+        keepalive_every(i, 5)
         supplier = rng.choice(ctx.suppliers)
         location = ctx.locations[0] if rng.random() < 0.7 else rng.choice(ctx.locations)
         n_lines = rng.randint(1, 3)
@@ -508,38 +631,60 @@ def stage4_purchasing(ctx, skipped):
             tax = float(item.default_tax_percent or 0)
             lines.append((item, qty, price, tax))
         try:
-            pur = _make_purchase(ctx, supplier, lines, when, location.id,
+            pur = _make_purchase_with_retry(ctx, supplier, lines, when, location.id,
                                  notes=f"Auto-generated purchase {i+1}")
             purchases.append(pur)
+            db.session.commit()
         except PostingError as e:
+            db.session.rollback()
             skipped.append(("purchase", i, str(e)))
             continue
-    db.session.commit()
+        except (OperationalError, PendingRollbackError) as e:
+            db.session.rollback()
+            skipped.append(("purchase", i, str(e)))
+            continue
 
     # Convert a subset of Draft POs into Purchases via the real conversion path
     converted = 0
-    for po in convert_pool[:60]:
+    for po_i, po in enumerate(convert_pool[:60]):
+        keepalive_every(po_i, 5)
         if po.status != "Draft" or not po.line_items:
             continue
         lines = [(pi.item, pi.quantity, float(pi.purchase_price), float(pi.tax_percent))
                 for pi in po.line_items]
         try:
-            pur = _make_purchase(ctx, po.supplier, lines, po.order_date, default_loc.id,
+            pur = _make_purchase_with_retry(ctx, po.supplier, lines, po.order_date, default_loc.id,
                                  notes=f"Converted from PO #{po.id}")
         except PostingError as e:
+            db.session.rollback()
+            skipped.append(("po_convert", po.id, str(e)))
+            continue
+        except (OperationalError, PendingRollbackError) as e:
+            db.session.rollback()
             skipped.append(("po_convert", po.id, str(e)))
             continue
         po.status = "Received"
         po.converted_purchase_id = pur.id
         purchases.append(pur)
         converted += 1
-    db.session.commit()
+        db.session.commit()
 
     # Purchase Returns — ~25, against completed purchases with enough remaining stock
     returned = 0
-    candidates = [p for p in purchases if p.line_items]
+    # A plain list-comprehension form of this filter lazy-loads p.line_items for
+    # every one of the ~250-310 purchases in one uninterrupted burst with no
+    # keepalive point — confirmed as the exact failure site of a Neon connection
+    # drop (generate_test_data.py:601 in the traceback). Same filter, same
+    # result, just written as an explicit loop so keepalive() can run between
+    # lazy-loads the same way every other large loop in this file already does.
+    candidates = []
+    for p_i, p in enumerate(purchases):
+        keepalive_every(p_i, 5)
+        if p.line_items:
+            candidates.append(p)
     rng.shuffle(candidates)
-    for pur in candidates:
+    for ret_i, pur in enumerate(candidates):
+        keepalive_every(ret_i, 5)
         if returned >= 25:
             break
         pi = rng.choice(pur.line_items)
@@ -569,15 +714,16 @@ def stage4_purchasing(ctx, skipped):
             continue
         sync_supplier_purchase_return(pr)
         post_document("purchase_return", pr)
+        db.session.commit()
         ctx.stock_by_loc[(item.id, loc_id)] = ctx.stock_by_loc.get((item.id, loc_id), 0) - qty
         ctx.bump()
         returned += 1
-    db.session.commit()
 
     # Supplier Payments — ~200, mix of partial/full, leaving some outstanding
     paid = 0
     rng.shuffle(purchases)
-    for pur in purchases:
+    for i, pur in enumerate(purchases):
+        keepalive_every(i, 5)
         if paid >= 200:
             break
         total = _purchase_total(pur)
@@ -608,9 +754,9 @@ def stage4_purchasing(ctx, skipped):
         db.session.flush()
         sync_supplier_payment(payment)
         post_document("payment", payment)
+        db.session.commit()
         ctx.bump()
         paid += 1
-    db.session.commit()
 
     return purchases
 
@@ -624,10 +770,24 @@ def stage5_inventory_movement(ctx, skipped):
 
     confirmed = draft = cancelled = reversed_ = 0
     for i in range(40):
+        keepalive(i)
         dest = rng.choice(other_locs)
         n_lines = rng.randint(1, 3)
-        candidates = [it for it in ctx.items
-                     if ctx.stock_by_loc.get((it.id, default_loc.id), 0) >= 20]
+        # A plain list-comprehension form of this filter lazy-loads it.id for
+        # every one of the ~150 ctx.items in one uninterrupted burst, on every
+        # one of this loop's 40 iterations — confirmed as Attempt #12's exact
+        # failure site (generate_test_data.py:719 in the traceback) even
+        # though the outer loop already calls keepalive(i) once per
+        # iteration: the burst itself, not the gap between iterations, is
+        # what starved the connection. Same fix as the purchase-returns/
+        # sale-returns candidate filters and sellable_items(): an explicit
+        # loop with a keepalive between lazy-loads instead of one unbroken
+        # comprehension.
+        candidates = []
+        for cand_i, it in enumerate(ctx.items):
+            keepalive_every(cand_i, 5)
+            if ctx.stock_by_loc.get((it.id, default_loc.id), 0) >= 20:
+                candidates.append(it)
         if len(candidates) < n_lines:
             continue
         items = rng.sample(candidates, n_lines)
@@ -678,6 +838,7 @@ def stage5_inventory_movement(ctx, skipped):
 
     # Stock Adjustments — ~30, mix of in/out
     for i in range(30):
+        keepalive(i)
         item = rng.choice(ctx.items)
         loc = rng.choice(ctx.locations)
         direction_type = rng.choice(["Stock In", "Count Correction (Increase)",
@@ -716,8 +877,8 @@ def stage5_inventory_movement(ctx, skipped):
             skipped.append(("stock_adjustment", i, str(e)))
             continue
         post_document("stock_adjustment", adj)
+        db.session.commit()
         ctx.bump()
-    db.session.commit()
 
 
 # ─── Stage 6 — sales / POS ──────────────────────────────────────────────────
@@ -770,11 +931,34 @@ def stage6_sales(ctx, skipped):
     sales = []
 
     def sellable_items(location_id, min_qty=1):
-        return [it for it in ctx.items
-               if ctx.stock_by_loc.get((it.id, location_id), 0) >= min_qty]
+        # This is called on every iteration of the sale loops below (~850+
+        # calls total). It used to lazy-load it.id on every one of ~150
+        # ctx.items on every call, which is a real DB round-trip each time —
+        # expire_on_commit=True (SQLAlchemy's default, never overridden
+        # here) expires every Item in ctx.items on every db.session.commit(),
+        # and this loop's own callers commit once per sale, so `it.id` was
+        # being re-fetched from Postgres hundreds of times per sale for a
+        # value that never changes. Confirmed as the exact failure site of a
+        # Neon connection drop even with a keepalive every 5 items (the
+        # failure landed only 2 lazy-loads after the last successful ping —
+        # tightening the cadence further wasn't going to close that gap).
+        # ctx.item_ids is a plain-int cache built once, right when ctx.items
+        # was first populated and before anything could have committed — see
+        # its own comment on Ctx. Reading from it here touches no ORM state
+        # and needs no keepalive at all, because it never talks to the
+        # database. The Item object itself (still needed by callers for
+        # price/name/etc.) is preserved unchanged in the result.
+        result = []
+        for item_id, it in zip(ctx.item_ids, ctx.items):
+            if ctx.stock_by_loc.get((item_id, location_id), 0) >= min_qty:
+                result.append(it)
+        return result
 
-    # Standard sales — 400
+    # Standard sales — 400. Each iteration posts a full multi-line document
+    # (several flushes) plus a commit, so it needs a tighter keepalive
+    # cadence than the shared default — see keepalive_every()'s docstring.
     for i in range(400):
+        keepalive_every(i, 5)
         customer = rng.choice(ctx.customers)
         location = default_loc if rng.random() < 0.75 else rng.choice(ctx.locations)
         pool = sellable_items(location.id, 3)
@@ -800,15 +984,17 @@ def stage6_sales(ctx, skipped):
             sal = _make_sale(ctx, customer, lines, when, location.id,
                              notes=f"Auto-generated sale {i+1}")
             sales.append(sal)
+            db.session.commit()
         except PostingError as e:
+            db.session.rollback()
             skipped.append(("sale", i, str(e)))
             continue
-    db.session.commit()
 
     # POS sales — 300, each immediately paid (POS always collects payment)
     pos_admin = User.query.filter_by(email="admin@tradeflow.test").first()
     pos_sales = []
     for i in range(300):
+        keepalive_every(i, 5)
         customer = rng.choice(ctx.customers)
         pool = sellable_items(default_loc.id, 2)
         if not pool:
@@ -845,15 +1031,16 @@ def stage6_sales(ctx, skipped):
         db.session.flush()
         sync_customer_receipt(payment)
         post_document("receipt", payment)
+        db.session.commit()
         ctx.bump()
         sales.append(sal)
         pos_sales.append(sal)
-    db.session.commit()
 
     # Delivery Challans — against a subset of (non-POS) sales
     non_pos_sales = [s for s in sales if s not in pos_sales]
     rng.shuffle(non_pos_sales)
-    for sal in non_pos_sales[:150]:
+    for dc_i, sal in enumerate(non_pos_sales[:150]):
+        keepalive(dc_i)
         if DeliveryChallan.query.filter_by(sale_id=sal.id).first() is not None:
             continue
         db.session.add(DeliveryChallan(
@@ -861,14 +1048,23 @@ def stage6_sales(ctx, skipped):
             status=rng.choice(["Pending", "Dispatched", "Delivered"]),
             transport=rng.choice(["Own Vehicle", "TCS Courier", "Leopards Courier", "Local Rider"]),
         ))
+        db.session.commit()
         ctx.bump()
-    db.session.commit()
 
     # Sale Returns — ~60
     returned = 0
-    candidates = [s for s in sales if s.line_items]
+    # Same lazy-load-burst risk as stage4_purchasing's purchase-returns
+    # candidate filter (see the comment there) — same fix: explicit loop with
+    # keepalive() between lazy-loads instead of one unbroken comprehension
+    # over up to ~700 sales.
+    candidates = []
+    for s_i, s in enumerate(sales):
+        keepalive(s_i)
+        if s.line_items:
+            candidates.append(s)
     rng.shuffle(candidates)
-    for sal in candidates:
+    for sr_i, sal in enumerate(candidates):
+        keepalive(sr_i)
         if returned >= 60:
             break
         si = rng.choice(sal.line_items)
@@ -892,15 +1088,16 @@ def stage6_sales(ctx, skipped):
         ctx.stock_by_loc[(item.id, loc_id)] = ctx.stock_by_loc.get((item.id, loc_id), 0) + base_qty
         sync_customer_sale_return(sr)
         post_document("sale_return", sr)
+        db.session.commit()
         ctx.bump()
         returned += 1
-    db.session.commit()
 
     # Customer Receipts — additional receipts beyond the POS ones, ~200 more
     # (POS already wrote ~300 receipts above; standard sales still need theirs)
     paid = 0
     rng.shuffle(non_pos_sales)
-    for sal in non_pos_sales:
+    for i, sal in enumerate(non_pos_sales):
+        keepalive_every(i, 5)
         if paid >= 200:
             break
         total = _sale_total(sal)
@@ -931,9 +1128,9 @@ def stage6_sales(ctx, skipped):
         db.session.flush()
         sync_customer_receipt(payment)
         post_document("receipt", payment)
+        db.session.commit()
         ctx.bump()
         paid += 1
-    db.session.commit()
 
     # Quotations — 20-30, a few converted to sales
     for i in range(25):
@@ -1087,7 +1284,8 @@ def stage8_hr(ctx, skipped):
 
     all_days = working_days_in(2026, 7) + working_days_in(2026, 8)
     attendance_created = 0
-    for emp in ctx.employees:
+    for emp_i, emp in enumerate(ctx.employees):
+        keepalive(emp_i)
         for day in all_days:
             if Attendance.query.filter_by(employee_id=emp.id, date=day).first():
                 continue
@@ -1276,6 +1474,541 @@ def stage10_payroll_august(ctx, skipped):
     return period
 
 
+# ─── Stage 11 — medical store: batch-tracked medicines + FEFO ──────────────
+#
+# Everything above (stages 1-10) predates batch tracking and deliberately
+# never sets Item.batch_tracked — see the module docstring. This stage adds a
+# second item population (MEDICINES + NON_MEDICAL_ITEMS from
+# tools/_medical_catalog.py) on top of it, self-contained: its own items, its
+# own purchases/sales, using the real batch-aware primitives
+# (get_or_create_batch / item_add_stock_batched / item_remove_stock_batched /
+# resolve_sale_batch_allocations — salpurflask/models/models.py) the live
+# Purchase-Post and Sale-Post routes call, exactly replicating their bodies
+# the same way _make_purchase()/_make_sale() above replicate the non-batch
+# routes. See salpurflask/purchase/routes.py:post_purchase_route and
+# salpurflask/sales/routes.py:post_sale_route for the originals.
+#
+# Purchase Returns are skipped for these items on purpose: the live
+# purchase_return() route does not touch BatchStock/PurchaseItemBatch at all
+# (confirmed by reading it — a real, currently-unfixed gap), so a purchase
+# return here would desync BatchStock from ItemStock. Sale Returns ARE
+# included — sale_return() is batch-aware end-to-end.
+
+MEDICAL_CATEGORY_NAME = "Medical Store"
+
+# Batch/expiry shape per medicine purchase line: a mix of long-dated,
+# medium-dated and a controlled few near-expiry batches (NEAR_EXPIRY_WARNING_DAYS
+# = 60 in models.py), so the expiring-batches report and FEFO both have
+# something real to show. Never fully expired — the task asks for near-expiry,
+# not expired, stock.
+BATCH_EXPIRY_PROFILES = [
+    # (weight, days_from_purchase_to_expiry)
+    (0.15, 45),    # near-expiry: inside the 60-day warning window
+    (0.35, 180),   # medium
+    (0.35, 365),
+    (0.15, 730),   # long-dated
+]
+
+
+def _pick_expiry_offset(rng):
+    r = rng.random()
+    acc = 0
+    for weight, days in BATCH_EXPIRY_PROFILES:
+        acc += weight
+        if r <= acc:
+            return days
+    return BATCH_EXPIRY_PROFILES[-1][1]
+
+
+def _make_purchase_batched(ctx, supplier, lines, when, location_id, created_by_id, notes=None):
+    """lines = [(item, qty, unit_price, tax_percent, batch_no, expiry_date), ...].
+    Replicates salpurflask/purchase/routes.py's Draft-creation POST branch
+    plus post_purchase_route()'s batch-tracked-item branch, in one step (no
+    separate Draft/Post pause is needed here — nothing reads the Draft state
+    in between)."""
+    first = lines[0]
+    first_item, first_qty, first_price, first_tax = first[0], first[1], first[2], first[3]
+    gross = first_qty * float(first_price)
+    disc_amt, tax_amt, _ = calc_discount_tax(gross, "percent", 0, float(first_tax))
+    pur = Purchase(
+        supplier_id=supplier.id, item_id=first_item.id, quantity=first_qty,
+        purchase_price=float(first_price), discount_type="percent",
+        discount_value=0, discount_amount=disc_amt,
+        tax_percent=float(first_tax), tax_amount=tax_amt,
+        date=when, notes=notes, location_id=location_id,
+    )
+    db.session.add(pur)
+    db.session.flush()
+    for item, qty, price, tax_pct, batch_no, expiry_date in lines:
+        gross = qty * float(price)
+        disc_amt, tax_amt, net = calc_discount_tax(gross, "percent", 0, float(tax_pct))
+        cost_total = Decimal(str(net)) - Decimal(str(tax_amt))
+        pi = PurchaseItem(
+            purchase_id=pur.id, item_id=item.id, quantity=qty,
+            purchase_price=float(price), discount_type="percent", discount_value=0,
+            discount_amount=disc_amt, tax_percent=float(tax_pct), tax_amount=tax_amt,
+            amount=net, unit_name=None, unit_factor=1,
+            pending_batch_no=batch_no, pending_expiry_date=expiry_date,
+        )
+        db.session.add(pi)
+        db.session.flush()
+        unit_cost = (cost_total / Decimal(qty)) if qty else Decimal("0")
+        batch = get_or_create_batch(
+            item.id, batch_no, expiry_date, unit_cost,
+            source_type="purchase", source_id=pur.id, created_by_id=created_by_id)
+        item_add_stock_batched(
+            item, qty, cost_total, location_id=location_id, batch=batch,
+            movement_type="purchase", source_type="purchase", source_id=pur.id)
+        db.session.add(PurchaseItemBatch(purchase_item_id=pi.id, batch_id=batch.id, quantity=qty))
+        ctx.stock_by_loc[(item.id, location_id)] = ctx.stock_by_loc.get((item.id, location_id), 0) + qty
+    db.session.flush()
+    db.session.refresh(pur)
+    pur.invoice_no = allocate_document_number("purchase", pur.date)
+    sync_supplier_purchase(pur)
+    post_document("purchase", pur)
+    ctx.bump(1 + len(lines))
+    return pur
+
+
+def _make_sale_fefo(ctx, customer, lines, when, location_id, notes=None):
+    """lines = [(item, qty, unit_price, tax_percent), ...], all batch-tracked
+    items. Replicates salpurflask/sales/routes.py's Draft POST branch plus
+    post_sale_route()'s batch-tracked-item branch (automatic FEFO — no manual
+    allocation, matching what a demo Sale/POS screen defaults to)."""
+    first_item, first_qty, first_price, first_tax = lines[0]
+    gross = first_qty * float(first_price)
+    disc_amt, tax_amt, _ = calc_discount_tax(gross, "percent", 0, float(first_tax))
+    sal = Sale(
+        customer_id=customer.id, item_id=first_item.id, quantity=first_qty,
+        sale_price=float(first_price), cost_price=0.0, discount_type="percent",
+        discount_value=0, discount_amount=disc_amt, tax_percent=float(first_tax),
+        tax_amount=tax_amt, date=when, notes=notes, location_id=location_id,
+    )
+    db.session.add(sal)
+    db.session.flush()
+    for item, qty, price, tax_pct in lines:
+        gross = qty * float(price)
+        disc_amt, tax_amt, net = calc_discount_tax(gross, "percent", 0, float(tax_pct))
+        si = SaleItem(
+            sale_id=sal.id, item_id=item.id, quantity=qty, sale_price=float(price),
+            cost_price=0.0, discount_type="percent", discount_value=0,
+            discount_amount=disc_amt, tax_percent=float(tax_pct), tax_amount=tax_amt,
+            amount=net, unit_name=None, unit_factor=1,
+        )
+        db.session.add(si)
+        db.session.flush()
+        allocations = resolve_sale_batch_allocations(item.id, location_id, qty, None)
+        total_batch_cost = Decimal("0")
+        for batch, take in allocations:
+            cost = item_remove_stock_batched(
+                item, take, location_id=location_id, batch=batch,
+                cost_total=Decimal(str(batch.unit_cost)) * Decimal(take),
+                movement_type="sale", source_type="sale", source_id=sal.id)
+            db.session.add(SaleItemBatch(sale_item_id=si.id, batch_id=batch.id, quantity=take))
+            total_batch_cost += cost
+        si.cost_price = float((total_batch_cost / Decimal(qty)).quantize(MONEY)) if qty else 0.0
+        ctx.stock_by_loc[(item.id, location_id)] = ctx.stock_by_loc.get((item.id, location_id), 0) - qty
+    db.session.flush()
+    db.session.refresh(sal)
+    sal.invoice_no = allocate_document_number("sale", sal.date)
+    sync_customer_sale(sal)
+    post_document("sale", sal)
+    ctx.bump(1 + len(lines))
+    return sal
+
+
+def stage11_medical_batch_items(ctx, skipped):
+    rng = ctx.rng
+    default_loc = ctx.locations[0]
+    system_user = User.query.filter_by(email="admin@tradeflow.test").first()
+    created_by_id = system_user.id if system_user else None
+
+    medical_cat = BusinessCategory.query.filter_by(name=MEDICAL_CATEGORY_NAME).first()
+    if medical_cat is None:
+        raise RuntimeError(
+            f"Expected system-default BusinessCategory {MEDICAL_CATEGORY_NAME!r} is missing. "
+            "It should have been created by app.py's migrate_database() "
+            "(ensure_default_business_categories()) on import.")
+
+    # ── Medicines: 100+ items, batch_tracked=True ──────────────────────────
+    existing_skus = {i.sku for i in Item.query.filter(Item.sku.like("MED-%")).all()}
+    for idx, (name, generic, manufacturer, dosage_form, pack_size, pprice, sprice) in enumerate(MEDICINES, 1):
+        sku = f"MED-{idx:04d}"
+        if sku in existing_skus:
+            continue
+        purchase_price = Decimal(str(pprice))
+        sale_price = Decimal(str(sprice))
+        tax_percent = Decimal("0")  # medicines are commonly zero-rated/exempt in this demo
+        item = Item(
+            name=name, category_id=None, business_category_id=medical_cat.id,
+            unit="Pcs", item_type="STOCK", sku=sku, barcode=f"9{idx:011d}",
+            reorder_level=rng.choice([20, 30, 50, 80]),
+            purchase_price=purchase_price, sale_price=sale_price,
+            default_tax_percent=tax_percent, is_taxable=False,
+            batch_tracked=True,
+        )
+        db.session.add(item)
+        db.session.flush()
+        ctx.bump()
+        # Realistic custom-field values on the item's own "Medical Store"
+        # category page (ProductCategoryData) — cosmetic/display data, does
+        # not feed the real Batch/BatchStock tables, but a demo item detail
+        # page should not show empty required fields for its own category.
+        for field_name, value in (
+            ("generic_name", generic), ("brand", name.split()[0]),
+            ("manufacturer", manufacturer), ("dosage_form", dosage_form),
+            ("mrp", float(sale_price)),
+        ):
+            db.session.add(ProductCategoryData(
+                product_id=item.id, category_id=medical_cat.id,
+                field_name=field_name, field_value=value))
+    db.session.commit()
+
+    ctx.medical_items = (Item.query.filter(Item.sku.like("MED-%"))
+                         .order_by(Item.sku).all())
+
+    # ── Non-medical pharmacy items: substantial, NOT batch-tracked ─────────
+    non_med_cats = {c.name: c for c in BusinessCategory.query.filter(
+        BusinessCategory.name.in_({row[1] for row in NON_MEDICAL_ITEMS})).all()}
+    missing = {row[1] for row in NON_MEDICAL_ITEMS} - set(non_med_cats)
+    if missing:
+        raise RuntimeError(f"Expected system-default BusinessCategory rows are missing: {sorted(missing)}.")
+
+    existing_nm_skus = {i.sku for i in Item.query.filter(Item.sku.like("STORE-%")).all()}
+    non_medical_items = []
+    for idx, (name, cat_name, unit, pprice, sprice) in enumerate(NON_MEDICAL_ITEMS, 1):
+        sku = f"STORE-{idx:04d}"
+        if sku in existing_nm_skus:
+            continue
+        item = Item(
+            name=name, category_id=None, business_category_id=non_med_cats[cat_name].id,
+            unit=unit, item_type="STOCK", sku=sku, barcode=f"7{idx:011d}",
+            reorder_level=rng.choice([10, 20, 30]),
+            purchase_price=Decimal(str(pprice)), sale_price=Decimal(str(sprice)),
+            default_tax_percent=Decimal("17"), is_taxable=True,
+        )
+        db.session.add(item)
+        ctx.bump()
+    db.session.commit()
+    non_medical_items = (Item.query.filter(Item.sku.like("STORE-%")).order_by(Item.sku).all())
+
+    # Opening stock for the non-medical items (plain, non-batch path) so they
+    # have something to sell from immediately, same shape as stage3.
+    for item in non_medical_items:
+        if stock_at_location(item.id, default_loc.id):
+            continue
+        qty = rng.randint(60, 300)
+        cost_total = (item.purchase_price or Decimal("10")) * Decimal(qty)
+        item_add_stock(item, qty, cost_total, location_id=default_loc.id,
+                       movement_type="opening", source_type="opening", source_id=item.id)
+        ctx.stock_by_loc[(item.id, default_loc.id)] = qty
+        ctx.bump()
+    db.session.commit()
+
+    # ── Batch-tracked purchases: multiple batches per medicine, spread across
+    # warehouses and expiry dates (FEFO-relevant quantities) ───────────────
+    n_batch_purchases = 45
+    batch_purchases = []
+    for i in range(n_batch_purchases):
+        keepalive(i)
+        supplier = rng.choice(ctx.suppliers)
+        location = ctx.locations[0] if rng.random() < 0.6 else rng.choice(ctx.locations)
+        n_lines = rng.randint(2, 5)
+        items = rng.sample(ctx.medical_items, n_lines)
+        when = datetime(2026, rng.randint(1, 8), rng.randint(1, 28))
+        lines = []
+        for item in items:
+            qty = rng.randint(40, 200)
+            price = float(item.purchase_price or 50)
+            batch_no = f"B{when:%y%m}-{item.sku[-4:]}-{rng.randint(1, 999):03d}"
+            expiry_days = _pick_expiry_offset(rng)
+            expiry_date = (when + timedelta(days=expiry_days)).date()
+            lines.append((item, qty, price, 0, batch_no, expiry_date))
+        try:
+            pur = _make_purchase_batched(ctx, supplier, lines, when, location.id,
+                                         created_by_id, notes=f"Auto-generated medical purchase {i+1}")
+            batch_purchases.append(pur)
+        except PostingError as e:
+            skipped.append(("medical_purchase", i, str(e)))
+            continue
+    db.session.commit()
+
+    # A second batch (top-up, different batch number / expiry) for a subset of
+    # medicines, so FEFO has more than one candidate batch to choose from —
+    # the whole point of the exercise.
+    for i in range(25):
+        supplier = rng.choice(ctx.suppliers)
+        location = default_loc
+        item = rng.choice(ctx.medical_items)
+        when = datetime(2026, rng.randint(3, 8), rng.randint(1, 28))
+        qty = rng.randint(30, 120)
+        price = float(item.purchase_price or 50)
+        batch_no = f"B{when:%y%m}-{item.sku[-4:]}-{rng.randint(1, 999):03d}"
+        expiry_days = _pick_expiry_offset(rng)
+        expiry_date = (when + timedelta(days=expiry_days)).date()
+        try:
+            pur = _make_purchase_batched(
+                ctx, supplier, [(item, qty, price, 0, batch_no, expiry_date)],
+                when, location.id, created_by_id, notes=f"Auto-generated top-up purchase {i+1}")
+            batch_purchases.append(pur)
+        except PostingError as e:
+            skipped.append(("medical_purchase_topup", i, str(e)))
+            continue
+    db.session.commit()
+
+    # Supplier Payments against medical purchases — same partial/full mix as stage4.
+    paid = 0
+    rng.shuffle(batch_purchases)
+    for pur in batch_purchases:
+        if paid >= 40:
+            break
+        total = _purchase_total(pur)
+        if total <= 0:
+            continue
+        error = validate_supplier_payment(pur.supplier_id, total, pur.id)
+        if error:
+            continue
+        pay_full = rng.random() < 0.6
+        amount = round(total if pay_full else total * rng.uniform(0.3, 0.8), 2)
+        if amount <= 0:
+            continue
+        method_account = rng.choice([("Cash", ctx.cash_account), ("Bank", ctx.bank_account)])
+        payment = SupplierPayment(
+            supplier_id=pur.supplier_id, purchase_id=pur.id, amount=amount,
+            payment_date=pur.date + timedelta(days=rng.randint(1, 20)),
+            payment_method=method_account[0], account_id=method_account[1],
+            reference_no=f"SPAY-MED-{pur.id}",
+        )
+        db.session.add(payment)
+        db.session.flush()
+        sync_supplier_payment(payment)
+        post_document("payment", payment)
+        ctx.bump()
+        paid += 1
+    db.session.commit()
+
+    # ── FEFO sales — 130 sales against the default location's batch stock ──
+    # Same per-record document-post-plus-commit cost as stage6's sales loops,
+    # so it uses the same tighter cadence (see keepalive_every()'s docstring).
+    n_medical_sales = 130
+    medical_sales = []
+    for i in range(n_medical_sales):
+        keepalive_every(i, 5)
+        customer = rng.choice(ctx.customers)
+        n_lines = rng.randint(1, 3)
+        # Explicit loop with a keepalive between lazy-loads instead of a
+        # bare comprehension over ctx.medical_items — same fix as
+        # sellable_items() and the Stage 5 candidates loop above.
+        candidates = []
+        for cand_i, it in enumerate(ctx.medical_items):
+            keepalive_every(cand_i, 5)
+            if ctx.stock_by_loc.get((it.id, default_loc.id), 0) >= 5:
+                candidates.append(it)
+        if len(candidates) < n_lines:
+            continue
+        items = rng.sample(candidates, n_lines)
+        when = datetime(2026, rng.randint(2, 9), rng.randint(1, 28))
+        lines = []
+        for item in items:
+            available = ctx.stock_by_loc.get((item.id, default_loc.id), 0)
+            qty = rng.randint(1, max(1, min(10, available)))
+            price = float(item.sale_price or 80)
+            lines.append((item, qty, price, 0))
+        try:
+            sal = _make_sale_fefo(ctx, customer, lines, when, default_loc.id,
+                                  notes=f"Auto-generated medical sale {i+1}")
+            medical_sales.append(sal)
+            db.session.commit()
+        except PostingError as e:
+            db.session.rollback()
+            skipped.append(("medical_sale", i, str(e)))
+            continue
+
+    # Customer Payments against medical sales — same partial/full mix as stage6.
+    paid = 0
+    rng.shuffle(medical_sales)
+    for sal in medical_sales:
+        if paid >= 60:
+            break
+        total = _sale_total(sal)
+        if total <= 0:
+            continue
+        error = validate_customer_receipt(sal.customer_id, total, sal.id)
+        if error:
+            continue
+        pay_full = rng.random() < 0.55
+        amount = round(total if pay_full else total * rng.uniform(0.3, 0.8), 2)
+        if amount <= 0:
+            continue
+        method_account = rng.choice([("Cash", ctx.cash_account), ("Bank", ctx.bank_account)])
+        payment = CustomerPayment(
+            customer_id=sal.customer_id, sale_id=sal.id, amount=amount,
+            payment_date=sal.date + timedelta(days=rng.randint(1, 15)),
+            payment_method=method_account[0], account_id=method_account[1],
+            reference_no=f"CREC-MED-{sal.id}",
+        )
+        db.session.add(payment)
+        db.session.flush()
+        sync_customer_receipt(payment)
+        post_document("receipt", payment)
+        ctx.bump()
+        paid += 1
+    db.session.commit()
+
+    # ── Sale Returns — batch-aware (sale_return() correctly reverses stock to
+    # the originating batch, see salpurflask/sales/routes.py) ──────────────
+    returned = 0
+    rng.shuffle(medical_sales)
+    for sal in medical_sales:
+        if returned >= 15:
+            break
+        if not sal.line_items:
+            continue
+        si = rng.choice(sal.line_items)
+        already = int(get_sale_item_returned_qty(si.id))
+        base_qty = si.quantity * (si.unit_factor or 1)
+        max_returnable = base_qty - already
+        if max_returnable < 1:
+            continue
+        qty = rng.randint(1, int(max_returnable))
+        item = db.session.get(Item, si.item_id)
+        sr = SaleReturn(
+            sale_id=sal.id, customer_id=sal.customer_id, item_id=si.item_id,
+            quantity=qty, return_price=float(si.sale_price),
+            date=sal.date + timedelta(days=rng.randint(1, 10)),
+            reason="Customer changed mind / wrong item", unit_name=si.unit_name,
+            unit_factor=si.unit_factor or 1, sale_item_id=si.id,
+        )
+        db.session.add(sr)
+        db.session.flush()
+        try:
+            allocations = resolve_sale_return_batch_allocations(si, qty, already)
+            total_cost = Decimal("0")
+            for batch, take in allocations:
+                cost = item_add_stock_batched(
+                    item, take, Decimal(str(batch.unit_cost)) * Decimal(take),
+                    location_id=sal.location_id or default_loc.id, batch=batch,
+                    movement_type="sale_return", source_type="sale_return", source_id=sr.id)
+                total_cost += Decimal(str(batch.unit_cost)) * Decimal(take)
+            sr.cost_restored = total_cost
+        except PostingError as e:
+            db.session.rollback()
+            skipped.append(("medical_sale_return", sal.id, str(e)))
+            continue
+        sync_customer_sale_return(sr)
+        post_document("sale_return", sr)
+        ctx.stock_by_loc[(item.id, sal.location_id or default_loc.id)] = (
+            ctx.stock_by_loc.get((item.id, sal.location_id or default_loc.id), 0) + qty)
+        ctx.bump()
+        returned += 1
+    db.session.commit()
+
+    # ── A couple of quotations converted to Sale via the real conversion
+    # logic (salpurflask/app.py:convert_quotation_to_sale), for batch-tracked
+    # medicines — proves the quotation workflow and FEFO compose correctly. ─
+    converted_count = 0
+    for i in range(10):
+        customer = rng.choice(ctx.customers)
+        # Explicit loop with a keepalive between lazy-loads instead of a
+        # bare comprehension over ctx.medical_items — same fix as
+        # sellable_items() and the Stage 5 candidates loop above.
+        candidates = []
+        for cand_i, it in enumerate(ctx.medical_items):
+            keepalive_every(cand_i, 5)
+            if ctx.stock_by_loc.get((it.id, default_loc.id), 0) >= 5:
+                candidates.append(it)
+        if not candidates:
+            break
+        n_lines = rng.randint(1, 2)
+        items = rng.sample(candidates, min(n_lines, len(candidates)))
+        when = datetime(2026, rng.randint(4, 9), rng.randint(1, 28))
+        q = Quotation(customer_id=customer.id, quote_date=when,
+                     valid_until=when + timedelta(days=14),
+                     status="Draft", notes=f"Auto-generated medical quotation {i+1}")
+        db.session.add(q)
+        db.session.flush()
+        q_lines = []
+        for item in items:
+            available = ctx.stock_by_loc.get((item.id, default_loc.id), 0)
+            qty = rng.randint(1, max(1, min(5, available)))
+            price = float(item.sale_price or 80)
+            db.session.add(QuotationItem(
+                quotation_id=q.id, item_id=item.id, quantity=qty,
+                sale_price=price, discount_type="percent", discount_value=0,
+                tax_percent=0, unit_factor=1))
+            q_lines.append((item, qty, price))
+        db.session.flush()
+        ctx.bump(1 + len(q_lines))
+
+        if converted_count >= 4:
+            continue  # leave the rest as Draft quotations, not every one converted
+        # Replicates app.py:convert_quotation_to_sale()'s body exactly —
+        # batch-tracked lines go through the same FEFO allocation as any
+        # other sale, since it is still just a Sale once converted.
+        try:
+            first_qi = q.line_items[0]
+            first_gross = first_qi.quantity * float(first_qi.sale_price)
+            first_disc_amt, first_tax_amt, _ = calc_discount_tax(
+                first_gross, first_qi.discount_type, first_qi.discount_value, first_qi.tax_percent)
+            sal = Sale(
+                customer_id=q.customer_id, item_id=first_qi.item_id,
+                quantity=first_qi.quantity, sale_price=first_qi.sale_price, cost_price=0.0,
+                discount_type=first_qi.discount_type or "percent", discount_value=first_qi.discount_value,
+                discount_amount=first_disc_amt, tax_percent=first_qi.tax_percent,
+                tax_amount=first_tax_amt, date=when, notes=q.notes, location_id=default_loc.id,
+            )
+            db.session.add(sal)
+            db.session.flush()
+            for qi in q.line_items:
+                gross = qi.quantity * float(qi.sale_price)
+                disc_amt, tax_amt, net = calc_discount_tax(gross, qi.discount_type, qi.discount_value, qi.tax_percent)
+                item_obj = db.session.get(Item, qi.item_id)
+                si = SaleItem(
+                    sale_id=sal.id, item_id=qi.item_id, quantity=qi.quantity, sale_price=qi.sale_price,
+                    cost_price=0.0, discount_type=qi.discount_type, discount_value=qi.discount_value,
+                    discount_amount=disc_amt, tax_percent=qi.tax_percent, tax_amount=tax_amt, amount=net,
+                    unit_name=qi.unit_name, unit_factor=qi.unit_factor or 1,
+                )
+                db.session.add(si)
+                db.session.flush()
+                base_qty = qi.quantity * (qi.unit_factor or 1)
+                allocations = resolve_sale_batch_allocations(item_obj.id, default_loc.id, base_qty, None)
+                total_batch_cost = Decimal("0")
+                for batch, take in allocations:
+                    cost = item_remove_stock_batched(
+                        item_obj, take, location_id=default_loc.id, batch=batch,
+                        cost_total=Decimal(str(batch.unit_cost)) * Decimal(take),
+                        movement_type="sale", source_type="sale", source_id=sal.id)
+                    db.session.add(SaleItemBatch(sale_item_id=si.id, batch_id=batch.id, quantity=take))
+                    total_batch_cost += cost
+                si.cost_price = float((total_batch_cost / Decimal(base_qty)).quantize(MONEY)) if base_qty else 0.0
+                ctx.stock_by_loc[(item_obj.id, default_loc.id)] = (
+                    ctx.stock_by_loc.get((item_obj.id, default_loc.id), 0) - base_qty)
+            db.session.flush()
+            db.session.refresh(sal)
+            sal.invoice_no = allocate_document_number("sale", sal.date)
+            sync_customer_sale(sal)
+            post_document("sale", sal)
+            q.status = "Converted"
+            q.converted_sale_id = sal.id
+            ctx.bump(1 + len(q.line_items))
+            converted_count += 1
+        except PostingError as e:
+            db.session.rollback()
+            skipped.append(("medical_quotation_convert", q.id, str(e)))
+            continue
+    db.session.commit()
+
+    return {
+        "medicines": len(ctx.medical_items),
+        "non_medical": len(non_medical_items),
+        "batch_purchases": len(batch_purchases),
+        "medical_sales": len(medical_sales),
+        "sale_returns": returned,
+        "quotations_converted": converted_count,
+    }
+
+
 # ─── Verification snapshot (light — full checks live in verify_test_data.py) ─
 
 def quick_checks(july_period, august_period):
@@ -1294,6 +2027,11 @@ def quick_checks(july_period, august_period):
     negative_stock = db.session.execute(db.text(
         "SELECT COUNT(*) FROM item_stock WHERE quantity < 0")).scalar()
     results["Inventory"] = "PASS" if negative_stock == 0 else f"FAIL ({negative_stock} negative rows)"
+
+    negative_batch_stock = db.session.execute(db.text(
+        "SELECT COUNT(*) FROM batch_stock WHERE quantity < 0")).scalar()
+    results["Batch Stock"] = ("PASS" if negative_batch_stock == 0
+                              else f"FAIL ({negative_batch_stock} negative rows)")
 
     results["July 2026 Payroll"] = "PASS" if july_period and july_period.status == "Finalized" else "FAIL"
     results["August 2026 Payroll"] = "PASS" if august_period and august_period.status == "Finalized" else "FAIL"
@@ -1321,35 +2059,38 @@ def run(seed=None, force=False):
         ctx = Ctx(rng)
         skipped = []
 
-        log(1, 10, "Preparing system configuration...")
+        log(1, 11, "Preparing system configuration...")
         stage1_scaffolding(ctx)
 
-        log(2, 10, "Creating master data...")
+        log(2, 11, "Creating master data...")
         stage2_master_data(ctx)
 
-        log(3, 10, "Creating opening stock...")
+        log(3, 11, "Creating opening stock...")
         stage3_opening_stock(ctx)
 
-        log(4, 10, "Creating purchases...")
+        log(4, 11, "Creating purchases...")
         stage4_purchasing(ctx, skipped)
 
-        log(5, 10, "Creating inventory movements...")
+        log(5, 11, "Creating inventory movements...")
         stage5_inventory_movement(ctx, skipped)
 
-        log(6, 10, "Creating sales/POS...")
+        log(6, 11, "Creating sales/POS...")
         stage6_sales(ctx, skipped)
 
-        log(7, 10, "Creating accounting entries...")
+        log(7, 11, "Creating accounting entries...")
         stage7_journal_entries(ctx, skipped)
 
-        log(8, 10, "Creating HR/attendance/leave...")
+        log(8, 11, "Creating HR/attendance/leave...")
         stage8_hr(ctx, skipped)
 
-        log(9, 10, "Processing July 2026 payroll...")
+        log(9, 11, "Processing July 2026 payroll...")
         july_period = stage9_payroll_july(ctx, skipped)
 
-        log(10, 10, "Processing August 2026 payroll...")
+        log(10, 11, "Processing August 2026 payroll...")
         august_period = stage10_payroll_august(ctx, skipped)
+
+        log(11, 11, "Creating medical store (batch-tracked medicines, FEFO)...")
+        medical_summary = stage11_medical_batch_items(ctx, skipped)
 
         write_sentinel(seed)
 
@@ -1357,6 +2098,10 @@ def run(seed=None, force=False):
         print("TEST DATA GENERATION COMPLETE")
         print()
         print(f"Rows created: {ctx.rows_created}")
+        print()
+        print("Medical store:")
+        for label, count in medical_summary.items():
+            print(f"  {label}: {count}")
         print()
         checks = quick_checks(july_period, august_period)
         for label, result in checks.items():
@@ -1378,5 +2123,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate TradeFlow ERP test data")
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--force", action="store_true")
+    # The actual SQLite gate already ran above, from a raw sys.argv scan (has
+    # to, since it must happen before `import app`) — this declaration exists
+    # so --help documents the flag and so an unrecognized-argument error is
+    # never silently produced by a caller who only knows this entry point.
+    parser.add_argument("--allow-sqlite", action="store_true",
+                        help="Explicitly allow targeting the local SQLite database.")
     args = parser.parse_args()
     run(seed=args.seed, force=args.force)

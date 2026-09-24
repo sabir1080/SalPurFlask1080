@@ -14,6 +14,11 @@
     <h1><i class="bi bi-file-earmark-text"></i> Purchase Orders</h1>
     <p>Manage purchase orders and quotations</p>
   </div>
+  <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Purchase Orders', document.getElementById('tbl-purchase-orders'))">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
+  </div>
 </div>
 
 <!-- Search Card -->
@@ -107,15 +112,16 @@
 <div class="card border-0 shadow-sm">
     <div class="card-body p-0">
         <div class="table-responsive">
-        <table class="table table-bordered table-hover mb-0">
+        <table class="table table-bordered table-hover mb-0" id="tbl-purchase-orders">
             <thead class="table-dark">
                 <tr>
                     <th>PO #</th><th>Supplier</th><th>Order Date</th><th>Expected</th>
                     <th class="text-center">Items</th><th class="text-end">Total</th>
-                    <th class="text-center">Status</th><th>Action</th>
+                    <th class="text-center">Status</th><th class="no-print">Action</th>
                 </tr>
             </thead>
             <tbody>
+                {% set grand_ns = namespace(items=0, total=0) %}
                 {% for po in orders %}
                 <tr>
                     <td><strong>#{{ po.id }}</strong></td>
@@ -127,11 +133,13 @@
                         {% set ns = namespace(t=0) %}
                         {% for poi in po.line_items %}{% set ns.t = ns.t + poi.quantity * poi.purchase_price %}{% endfor %}
                         {{ ns.t | fmt_num }}
+                        {% set grand_ns.items = grand_ns.items + (po.line_items | length) %}
+                        {% set grand_ns.total = grand_ns.total + ns.t %}
                     </td>
                     <td class="text-center">
                         <span class="badge po-badge-{{ po.status }}">{{ po.status }}</span>
                     </td>
-                    <td>
+                    <td class="no-print">
                         <a href="{{ url_for('purchase_order_detail', id=po.id) }}" class="btn btn-outline-primary btn-sm">View</a>
                     </td>
                 </tr>
@@ -139,6 +147,16 @@
                 <tr><td colspan="8" class="text-center text-muted py-3">No purchase orders yet</td></tr>
                 {% endfor %}
             </tbody>
+            {% if orders %}
+            <tfoot class="table-light fw-semibold">
+                <tr>
+                    <td colspan="4">Total</td>
+                    <td class="text-center">{{ grand_ns.items }}</td>
+                    <td class="text-end">{{ grand_ns.total | fmt_num }}</td>
+                    <td colspan="2"></td>
+                </tr>
+            </tfoot>
+            {% endif %}
         </table>
         </div>
     </div>

@@ -10,6 +10,9 @@
     </p>
   </div>
   <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('{{ period.name }} — Payslips', document.getElementById('tbl-payroll-entries'))">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
     <a href="{{ url_for('payroll.index') }}" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Payroll</a>
   </div>
 </div>
@@ -197,6 +200,15 @@
           </tr>
           {% endfor %}
         </tbody>
+        {% if payment_rows %}
+        <tfoot class="table-light fw-semibold">
+          <tr>
+            <td colspan="3">Total</td>
+            <td class="text-end">{{ currency }} {{ payment_rows | sum(attribute='amount') | fmt_num }}</td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
+        {% endif %}
       </table>
     </div>
     {% endif %}
@@ -244,13 +256,13 @@
 <div class="card">
   <div class="card-body">
     <div class="table-wrapper table-responsive">
-      <table class="table table-striped table-hover align-middle">
+      <table class="table table-striped table-hover align-middle" id="tbl-payroll-entries">
         <thead>
           <tr>
             <th>Code</th><th>Employee</th>
             <th class="text-end">Days</th><th class="text-end">OT (h)</th>
             <th class="text-end">Gross</th><th class="text-end">Deductions</th>
-            <th class="text-end">Net</th><th class="text-center">Payslip</th>
+            <th class="text-end">Net</th><th class="text-center no-print">Payslip</th>
           </tr>
         </thead>
         <tbody>
@@ -263,7 +275,7 @@
             <td class="text-end">{{ currency }} {{ e.gross_salary | fmt_num }}</td>
             <td class="text-end">{{ currency }} {{ e.total_deductions | fmt_num }}</td>
             <td class="text-end"><strong>{{ currency }} {{ e.net_salary | fmt_num }}</strong></td>
-            <td class="text-center table-cell-center">
+            <td class="text-center table-cell-center no-print">
               <a href="{{ url_for('payroll.payslip', entry_id=e.id) }}"
                  class="btn btn-sm btn-outline-primary" title="Payslip"><i class="bi bi-receipt"></i></a>
             </td>
@@ -274,6 +286,19 @@
           </td></tr>
           {% endfor %}
         </tbody>
+        {% if entries %}
+        <tfoot class="table-light fw-semibold">
+          <tr>
+            <td colspan="2">Total</td>
+            <td class="text-end">{{ entries | sum(attribute='payable_days') | round(2) }}</td>
+            <td class="text-end">{{ entries | sum(attribute='overtime_hours') | round(2) }}</td>
+            <td class="text-end">{{ currency }} {{ totals.gross | fmt_num }}</td>
+            <td class="text-end">{{ currency }} {{ totals.deductions | fmt_num }}</td>
+            <td class="text-end">{{ currency }} {{ totals.net | fmt_num }}</td>
+            <td></td>
+          </tr>
+        </tfoot>
+        {% endif %}
       </table>
     </div>
   </div>

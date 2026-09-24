@@ -10,6 +10,9 @@
     <p>Resume or delete suspended POS transactions</p>
   </div>
   <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Held Bills', document.getElementById('tbl-held-bills'))">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
     <a href="{{ url_for('pos') }}" class="btn btn-secondary">
       <i class="bi bi-arrow-left"></i> Back to POS
     </a>
@@ -38,7 +41,7 @@
 
 {% if holds %}
 <div class="table-wrapper">
-  <table class="table table-striped table-hover">
+  <table class="table table-striped table-hover" id="tbl-held-bills">
       <tr>
         <th>Hold #</th>
         <th>Customer</th>
@@ -47,7 +50,7 @@
         <th>Total</th>
         <th>Cashier</th>
         <th>Notes</th>
-        <th class="text-end">Actions</th>
+        <th class="text-end no-print">Actions</th>
       </tr>
     </thead>
     <tbody>
@@ -60,7 +63,7 @@
         <td><strong>{{ "%.2f" % hold.total }}</strong></td>
         <td><small>{{ hold.user.name if hold.user else 'Unknown' }}</small></td>
         <td><small class="text-muted">{{ hold.notes[:30] if hold.notes else '—' }}</small></td>
-        <td class="text-end">
+        <td class="text-end no-print">
           <a href="{{ url_for('pos') }}?hold_id={{ hold.id }}" class="btn btn-sm btn-success" title="Resume this held bill">
             <i class="bi bi-play-fill"></i> Resume
           </a>
@@ -73,6 +76,16 @@
       </tr>
       {% endfor %}
     </tbody>
+    {% if holds %}
+    <tfoot class="table-light fw-semibold">
+      <tr>
+        <td colspan="3">Total</td>
+        <td>{{ holds | sum(attribute='item_count') }}</td>
+        <td>{{ "%.2f" % (holds | sum(attribute='total')) }}</td>
+        <td colspan="3"></td>
+      </tr>
+    </tfoot>
+    {% endif %}
   </table>
 </div>
 

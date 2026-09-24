@@ -441,6 +441,18 @@ h6, .h6 {
   color: var(--text-secondary);
 }
 
+/* The blanket `small` rule above forces --text-secondary (a dark gray in
+   light mode) onto every <small>, including one sitting inside a colored
+   header (.bg-primary/.bg-success/etc. + .text-white) where it should
+   inherit the white text color from its ancestor instead — otherwise it
+   renders as low-contrast dark text on a dark background (e.g. the Reports
+   page's P&L Summary header, "<small class="opacity-75">{{ start_date }}
+   to {{ end_date }}</small>" inside a .bg-primary.text-white header). */
+.text-white small,
+.text-white .text-small {
+  color: inherit;
+}
+
 .text-xs {
   font-size: var(--font-size-xs);
   color: var(--text-secondary);

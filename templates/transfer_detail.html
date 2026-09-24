@@ -7,6 +7,9 @@
     <p>{{ transfer.source_location.name }} &rarr; {{ transfer.destination_location.name }}</p>
   </div>
   <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Transfer {{ transfer.transfer_no or ('DRAFT-' ~ transfer.id) }}', document.getElementById('tbl-transfer-lines'), {meta: '{{ transfer.source_location.name }} to {{ transfer.destination_location.name }} — {{ transfer.date.strftime('%d %b %Y') }}'})">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
     <a href="{{ url_for('transfer_list') }}" class="btn btn-secondary">
       <i class="bi bi-arrow-left"></i> Back
     </a>
@@ -90,7 +93,7 @@
   <div class="card-header bg-light fw-semibold">Items</div>
   <div class="card-body p-0">
     <div class="table-responsive">
-    <table class="table table-bordered mb-0 align-middle">
+    <table class="table table-bordered mb-0 align-middle" id="tbl-transfer-lines">
       <thead class="table-dark">
         <tr><th>#</th><th>Item</th><th>Batch</th><th class="text-end">Quantity</th></tr>
       </thead>
@@ -104,6 +107,14 @@
         </tr>
         {% endfor %}
       </tbody>
+      {% if transfer.lines %}
+      <tfoot class="table-light fw-semibold">
+        <tr>
+          <td colspan="3">Total</td>
+          <td class="text-end">{{ transfer.lines | sum(attribute='quantity') | fmt_num }}</td>
+        </tr>
+      </tfoot>
+      {% endif %}
     </table>
     </div>
   </div>

@@ -15,6 +15,9 @@
     <p>Move stock between warehouses</p>
   </div>
   <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Warehouse Transfers', document.getElementById('tbl-transfers'))">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
     <a href="{{ url_for('transfer_new') }}" class="btn btn-primary">
       <i class="bi bi-plus-circle"></i> New Transfer
     </a>
@@ -61,11 +64,11 @@
 <div class="card border-0 shadow-sm">
   <div class="card-body p-0">
     <div class="table-responsive">
-    <table class="table table-bordered table-hover mb-0">
+    <table class="table table-bordered table-hover mb-0" id="tbl-transfers">
       <thead class="table-dark">
         <tr>
           <th>Transfer #</th><th>Date</th><th>From</th><th>To</th>
-          <th class="text-center">Items</th><th class="text-center">Status</th><th></th>
+          <th class="text-center">Items</th><th class="text-center">Status</th><th class="no-print"></th>
         </tr>
       </thead>
       <tbody>
@@ -79,7 +82,7 @@
           <td class="text-center">
             <span class="badge transfer-badge-{{ t.status }}">{{ t.status }}</span>
           </td>
-          <td>
+          <td class="no-print">
             <a href="{{ url_for('transfer_detail', id=t.id) }}" class="btn btn-outline-primary btn-sm">View</a>
           </td>
         </tr>

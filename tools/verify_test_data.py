@@ -1,18 +1,24 @@
-"""Verify the generated ERP test dataset in PostgreSQL.
+"""Verify the generated ERP test dataset — PostgreSQL by default, or the
+local SQLite dev database with --allow-sqlite.
 
 Run via the CLI, not directly:
-    python tools/test_data_cli.py verify [--verbose]
+    python tools/test_data_cli.py verify [--verbose] [--allow-sqlite]
 
-Every check is read-only. Exits non-zero if any check fails.
+Every check is read-only (this tool never writes). Exits non-zero if any
+check fails.
 """
 
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tools._data_common import require_postgres, describe_database_url
+if "--allow-sqlite" in sys.argv:
+    os.environ["TEST_DATA_ALLOW_SQLITE"] = "1"
 
-DATABASE_URL = require_postgres()
+from tools._data_common import require_database, describe_database_url
+
+ALLOW_SQLITE = os.environ.get("TEST_DATA_ALLOW_SQLITE") == "1"
+DATABASE_URL = require_database(allow_sqlite=ALLOW_SQLITE)
 
 from decimal import Decimal
 
@@ -30,11 +36,15 @@ class Result:
 
 
 def check_database(result, verbose):
-    info = describe_database_url(DATABASE_URL)
     from app import db
     dialect = db.engine.dialect.name
-    ok = dialect == "postgresql"
-    result.add("Database", ok, f"dialect={dialect} host={info['host']} db={info['database']}")
+    if dialect == "postgresql":
+        info = describe_database_url(DATABASE_URL)
+        detail = f"dialect={dialect} host={info['host']} db={info['database']}"
+    else:
+        detail = f"dialect={dialect} db=local SQLite (instance/database.db)"
+    ok = dialect in ("postgresql", "sqlite")
+    result.add("Database", ok, detail)
 
 
 def check_schema(result, verbose):
@@ -264,6 +274,41 @@ def check_inventory(result, verbose):
         for row in mismatch_rows[:10]:
             detail += f"\n    item#{row[0]}: Item.stock={row[1]} sum(ItemStock)={row[2]}"
     result.add("Inventory", ok, detail)
+
+
+def check_batch_tracking(result, verbose):
+    from app import db
+    negative_batch = db.session.execute(db.text(
+        "SELECT COUNT(*) FROM batch_stock WHERE quantity < 0")).scalar()
+
+    # Same reconciliation shape as check_inventory's item.stock == sum(item_stock)
+    # check, one level deeper: for a batch-tracked item, item_stock.quantity at
+    # a given location should equal the sum of that item's batches' BatchStock
+    # at the same location.
+    mismatch_rows = db.session.execute(db.text("""
+        SELECT s.item_id, s.location_id, s.quantity AS item_stock_qty,
+               COALESCE(SUM(bs.quantity), 0) AS batch_summed
+        FROM item_stock s
+        JOIN item i ON i.id = s.item_id AND i.batch_tracked = true
+        LEFT JOIN batch b ON b.item_id = s.item_id
+        LEFT JOIN batch_stock bs ON bs.batch_id = b.id AND bs.location_id = s.location_id
+        GROUP BY s.item_id, s.location_id, s.quantity
+        HAVING s.quantity <> COALESCE(SUM(bs.quantity), 0)
+    """)).fetchall()
+
+    n_batches = db.session.execute(db.text("SELECT COUNT(*) FROM batch")).scalar()
+    n_batch_tracked_items = db.session.execute(db.text(
+        "SELECT COUNT(*) FROM item WHERE batch_tracked = true")).scalar()
+
+    ok = negative_batch == 0 and len(mismatch_rows) == 0 and n_batches > 0
+    detail = (f"batch_tracked_items={n_batch_tracked_items} batches={n_batches} "
+             f"negative_batch_stock={negative_batch} "
+             f"item_stock_vs_batch_stock_mismatches={len(mismatch_rows)}")
+    if verbose and mismatch_rows:
+        for row in mismatch_rows[:10]:
+            detail += (f"\n    item#{row[0]} loc#{row[1]}: "
+                      f"ItemStock={row[2]} sum(BatchStock)={row[3]}")
+    result.add("Batch Tracking", ok, detail)
 
 
 def check_purchases(result, verbose):
@@ -511,6 +556,7 @@ def run(verbose=False):
         check_default_product_fields(result, verbose)
         check_master_data(result, verbose)
         check_inventory(result, verbose)
+        check_batch_tracking(result, verbose)
         check_purchases(result, verbose)
         check_sales(result, verbose)
         check_customer_ledger(result, verbose)

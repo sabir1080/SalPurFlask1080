@@ -144,6 +144,17 @@
         </tr>
         {% endfor %}
       </tbody>
+      {% if entries %}
+      <tfoot class="table-light fw-semibold">
+        <tr>
+          <td colspan="3">Total</td>
+          <td class="text-end">{{ entries | sum(attribute='debit') | fmt_num }}</td>
+          <td class="text-end">{{ entries | sum(attribute='credit') | fmt_num }}</td>
+          <td class="text-end">{{ balance | fmt_num }}</td>
+          <td class="no-print"></td>
+        </tr>
+      </tfoot>
+      {% endif %}
     </table>
   </div>
 </div>

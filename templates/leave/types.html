@@ -7,6 +7,9 @@
     <p>{{ rows | length }} type{{ '' if rows | length == 1 else 's' }}</p>
   </div>
   <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Leave Types', document.getElementById('tbl-leave-types'))">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
     <a href="{{ url_for('leave.index') }}" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Balances</a>
   </div>
 </div>
@@ -62,12 +65,12 @@
     <div class="card">
       <div class="card-body">
         <div class="table-wrapper table-responsive">
-          <table class="table table-striped table-hover align-middle">
+          <table class="table table-striped table-hover align-middle" id="tbl-leave-types">
             <thead>
               <tr><th>Code</th><th>Name</th><th class="text-center">Paid</th>
                   <th class="text-center">Allocation</th><th class="text-end">Max/yr</th>
                   <th class="text-center">Carry</th><th class="text-center">Status</th>
-                  <th class="text-center">Actions</th></tr>
+                  <th class="text-center no-print">Actions</th></tr>
             </thead>
             <tbody>
               {% for t in rows %}
@@ -88,7 +91,7 @@
                   {% if t.active %}<span class="badge bg-success">Active</span>
                   {% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}
                 </td>
-                <td class="text-center table-cell-center">
+                <td class="text-center table-cell-center no-print">
                   {% if has_permission('leave.configure') %}
                   <form method="POST" action="{{ url_for('leave.type_toggle', type_id=t.id) }}" class="d-inline">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

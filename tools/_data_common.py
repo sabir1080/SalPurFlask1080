@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(_BASE_DIR, ".env"))
 
-# ─── PostgreSQL-only safety gate ───────────────────────────────────────────
+# ─── Database safety gate ───────────────────────────────────────────────────
 # This must run before `import app` (which builds the SQLAlchemy engine from
 # DATABASE_URL at import time) — by the time app.py has an opinion, it is too
 # late to refuse.
@@ -33,22 +33,60 @@ def require_postgres():
     This is the one gate every tool in this package shares — a script that
     forgets to call it would silently generate or delete rows in whatever
     database app.py happens to fall back to, which for this app is the local
-    SQLite dev database. That file must never be touched by these tools.
+    SQLite dev database. That file must never be touched by these tools
+    UNLESS the caller has explicitly opted in via require_database(allow_sqlite=True)
+    below — this function itself never allows SQLite, by design, so any
+    existing caller of require_postgres() keeps its original, unchanged
+    behavior with zero risk of silently starting to target SQLite.
     """
+    return require_database(allow_sqlite=False)
+
+
+def require_database(allow_sqlite=False):
+    """Abort immediately unless DATABASE_URL points at a database this run is
+    explicitly allowed to touch.
+
+    PostgreSQL is always allowed (the tools' original, unchanged target).
+    SQLite is allowed ONLY when the caller passes allow_sqlite=True — which
+    every tool in this package only ever does in response to an explicit,
+    typed-out CLI flag (--allow-sqlite), never inferred from DATABASE_URL
+    alone. The default (allow_sqlite=False, i.e. require_postgres()) is
+    unchanged: a script that forgets to opt in still refuses SQLite exactly
+    as before, so nothing about this addition weakens the existing gate for
+    any caller that doesn't ask for it.
+
+    A caller opting into SQLite is choosing to point these (destructive:
+    wipe/regenerate) tools at the LOCAL dev database on purpose — for
+    validating a seed process locally before running it against Postgres —
+    not something that should ever happen by accident."""
     database_url = os.environ.get("DATABASE_URL", "").strip()
+    is_sqlite = database_url.startswith("sqlite") or not database_url
+    if is_sqlite and allow_sqlite:
+        # No DATABASE_URL at all also means "local SQLite" — app.py's own
+        # fallback (see app.py's DATABASE_URL handling) — so an empty value
+        # is accepted here too, exactly like app.py itself would resolve it.
+        return database_url or "sqlite:///instance/database.db (app.py default)"
     if not database_url:
         print("ERROR: DATABASE_URL is not configured.")
-        print("This test-data generator requires PostgreSQL.")
+        print("This test-data generator requires PostgreSQL "
+              "(or SQLite with --allow-sqlite).")
         sys.exit(1)
     if database_url.startswith("sqlite"):
-        print("ERROR: SQLite is not supported by this generator.")
+        print("ERROR: SQLite is not supported without --allow-sqlite.")
         print(f"DATABASE_URL is set to a SQLite path: {database_url}")
+        print("Pass --allow-sqlite to explicitly target the local SQLite "
+              "database (e.g. for local validation before running against "
+              "Postgres).")
         sys.exit(1)
     if not database_url.startswith("postgresql"):
-        print("ERROR: SQLite is not supported by this generator.")
+        print("ERROR: Only PostgreSQL (or SQLite with --allow-sqlite) is supported.")
         print(f"DATABASE_URL does not look like a PostgreSQL URL: {database_url}")
         sys.exit(1)
     return database_url
+
+
+def is_sqlite_url(database_url):
+    return database_url.startswith("sqlite") or "sqlite" in database_url
 
 
 def describe_database_url(database_url):

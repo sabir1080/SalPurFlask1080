@@ -7,6 +7,9 @@
     <p>Track system activity and user actions</p>
   </div>
   <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Audit Log', document.getElementById('tbl-audit-log'))">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
     <a href="{{ url_for('admin_users') }}" class="btn btn-outline-secondary">
       <i class="bi bi-arrow-left"></i> Back to Users
     </a>
@@ -34,7 +37,7 @@
 <!-- Activity Table -->
 <div class="card">
   <div class="table-wrapper">
-    <table class="table table-striped table-hover align-middle">
+    <table class="table table-striped table-hover align-middle" id="tbl-audit-log">
       <thead>
         <tr>
           <th>When</th>

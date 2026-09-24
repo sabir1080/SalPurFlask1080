@@ -87,13 +87,18 @@
       <div class="card-header bg-secondary-subtle">
         <div class="d-flex justify-content-between align-items-center">
           <h5 class="mb-0"><i class="bi bi-person"></i> {{ selected_customer.name }}</h5>
+          <div class="d-flex align-items-center gap-2">
           {% if selected_customer.contact %}
           <small class="text-tertiary">{{ selected_customer.contact }}</small>
           {% endif %}
+          <button type="button" class="btn btn-outline-primary btn-sm" onclick="printTablePDF('Customer Bulk Receipt — {{ selected_customer.name }}', document.getElementById('tbl-bulk-receipt-invoices'))">
+            <i class="bi bi-printer"></i> Print PDF
+          </button>
+          </div>
         </div>
       </div>
       <div class="table-wrapper">
-        <table class="table table-striped table-hover align-middle">
+        <table class="table table-striped table-hover align-middle" id="tbl-bulk-receipt-invoices">
           <thead>
             <tr>
               <th>SAL #</th>

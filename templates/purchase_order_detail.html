@@ -7,6 +7,9 @@
     <p>Supplier: {{ po.supplier.name }}</p>
   </div>
   <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Purchase Order #{{ po.id }}', document.getElementById('tbl-po-lines'), {meta: 'Supplier: {{ po.supplier.name }}'})">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
     <a href="{{ url_for('purchase_orders') }}" class="btn btn-secondary">
       <i class="bi bi-arrow-left"></i> Back
     </a>
@@ -93,7 +96,7 @@
     <div class="card-header bg-light fw-semibold">Line Items</div>
     <div class="card-body p-0">
         <div class="table-responsive">
-        <table class="table table-bordered mb-0 align-middle">
+        <table class="table table-bordered mb-0 align-middle" id="tbl-po-lines">
             <thead class="table-dark">
                 <tr>
                     <th>#</th><th>Item</th><th class="text-end">Qty</th>

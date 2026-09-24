@@ -820,11 +820,12 @@
 
     <footer class="main-footer mt-5 py-3 border-top text-center text-muted small">
         <div class="container">
-            <span>Designed &amp; Developed by <strong>{{ designed_developed }}</strong></span>
-            <span class="mx-1">&middot;</span>
-            <a href="mailto:sabir1212@yahoo.com"><i class="bi bi-envelope-at"></i> sabir1212@yahoo.com</a>
-            <span class="mx-1">&middot;</span>
-            <a href="https://wa.me/923453231545"><i class="bi bi-whatsapp"></i> +92 345 3231545</a>
+            <div>Designed and Developed by {{ designed_developed }}</div>
+            <div>
+                <a href="mailto:sabir1212@yahoo.com"><i class="bi bi-envelope-at"></i> sabir1212@yahoo.com</a>
+                <span class="mx-1">&middot;</span>
+                <a href="https://wa.me/923453231545"><i class="bi bi-whatsapp"></i> +92 345 3231545</a>
+            </div>
         </div>
     </footer>
 
@@ -832,6 +833,16 @@
     <script src="{{ url_for('static', filename='js/item_lookup.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/party_lookup.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/document_return_lookup.js') }}" defer></script>
+    <script>
+        // Company identity for the shared print utility below — set here (the
+        // one place company_name/company_tagline are already in scope as
+        // Jinja context-processor values) so print_report.js, a plain static
+        // file, can read them as globals instead of every page re-passing
+        // them through inline Jinja of its own.
+        window.APP_COMPANY_NAME = {{ company_name | tojson }};
+        window.APP_COMPANY_TAGLINE = {{ company_tagline | tojson }};
+    </script>
+    <script src="{{ url_for('static', filename='js/print_report.js') }}" defer></script>
     <script>
         /* ── Theme Switcher ── */
         (function() {
@@ -848,6 +859,16 @@
                     localStorage.setItem('theme', theme);
                     document.querySelectorAll('.theme-btn').forEach(function(b) { b.classList.remove('active'); });
                     this.classList.add('active');
+                    // The browser's own 'storage' event never fires in the tab
+                    // that made the change (only in OTHER open tabs), so a
+                    // page like the dashboard that listens for 'storage' to
+                    // rebuild its charts with the new theme's colors never
+                    // hears about a same-tab toggle — charts kept their old
+                    // (now wrong-contrast) axis/label colors until the page
+                    // was next navigated to fresh. This custom event fires
+                    // right here, in the same tab, so listeners can react
+                    // immediately without needing a reload.
+                    window.dispatchEvent(new CustomEvent('themechange', { detail: { theme: theme } }));
                 });
             });
         })();

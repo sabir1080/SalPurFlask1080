@@ -7,6 +7,9 @@
     <p>{{ rows | length }} record{{ '' if rows | length == 1 else 's' }}</p>
   </div>
   <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Departments', document.getElementById('tbl-departments'))">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
     <a href="{{ url_for('hr.employees') }}" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Employees</a>
   </div>
 </div>
@@ -38,9 +41,9 @@
     <div class="card">
       <div class="card-body">
         <div class="table-wrapper">
-          <table class="table table-striped table-hover align-middle">
+          <table class="table table-striped table-hover align-middle" id="tbl-departments">
             <thead>
-              <tr><th>Name</th><th>Description</th><th class="text-center">Employees</th><th class="text-center">Actions</th></tr>
+              <tr><th>Name</th><th>Description</th><th class="text-center">Employees</th><th class="text-center no-print">Actions</th></tr>
             </thead>
             <tbody>
               {% for r in rows %}
@@ -48,7 +51,7 @@
                 <td><strong>{{ r.name }}</strong></td>
                 <td class="text-muted small">{{ r.description or '—' }}</td>
                 <td class="text-center">{{ r.employees | length }}</td>
-                <td class="text-center table-cell-center">
+                <td class="text-center table-cell-center no-print">
                   {% if has_permission('hr.delete') %}
                   <form method="POST" action="{{ url_for('hr.department_delete', row_id=r.id) }}" class="d-inline"
                         onsubmit="return confirm('Delete {{ r.name }}?');">

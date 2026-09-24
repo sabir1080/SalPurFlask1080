@@ -19,6 +19,9 @@
     <p>What happened to an item, at which warehouse, and why</p>
   </div>
   <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Stock Movements', document.getElementById('tbl-stock-movements'))">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
     <a href="{{ url_for('report_stock') }}" class="btn btn-outline-secondary">
       <i class="bi bi-arrow-left"></i> Back to Stock Report
     </a>
@@ -67,7 +70,7 @@
 <div class="card border-0 shadow-sm">
   <div class="card-body p-0">
     <div class="table-responsive">
-    <table class="table table-striped table-hover mb-0">
+    <table class="table table-striped table-hover mb-0" id="tbl-stock-movements">
       <thead class="table-dark">
         <tr>
           <th>When</th><th>Item</th><th>Warehouse</th><th>Type</th><th>Batch</th>

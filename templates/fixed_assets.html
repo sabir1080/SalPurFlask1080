@@ -7,6 +7,9 @@
     <p>Manage fixed assets and depreciation</p>
   </div>
   <div class="page-header-actions">
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Fixed Asset Register', document.getElementById('tbl-fixed-assets'))">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
     <a href="{{ url_for('fixed_asset_new') }}" class="btn btn-primary">
       <i class="bi bi-plus-lg"></i> New Asset
     </a>
@@ -73,14 +76,14 @@
 <div class="card border-0 shadow-sm">
     <div class="card-body p-0">
         <div class="table-responsive">
-        <table class="table table-hover mb-0 align-middle">
+        <table class="table table-hover mb-0 align-middle" id="tbl-fixed-assets">
             <thead class="table-dark">
                 <tr>
                     <th>Asset</th><th>Acquired</th><th>Method</th>
                     <th class="text-end">Cost</th>
                     <th class="text-end">Accum. Dep.</th>
                     <th class="text-end">Net Book Value</th>
-                    <th>Status</th><th></th>
+                    <th>Status</th><th class="no-print"></th>
                 </tr>
             </thead>
             <tbody>
@@ -105,7 +108,7 @@
                         {% set c = {'Active':'success','Fully Depreciated':'warning','Disposed':'secondary'} %}
                         <span class="badge bg-{{ c.get(a.status, 'secondary') }}">{{ a.status }}</span>
                     </td>
-                    <td class="text-end">
+                    <td class="text-end no-print">
                         <a href="{{ url_for('fixed_asset_view', id=a.id) }}"
                            class="btn btn-sm btn-outline-primary" title="View"><i class="bi bi-eye"></i></a>
                     </td>
@@ -114,6 +117,17 @@
                 <tr><td colspan="8" class="text-center text-muted py-4">No fixed assets yet.</td></tr>
                 {% endfor %}
             </tbody>
+            {% if assets %}
+            <tfoot class="table-light fw-semibold">
+                <tr>
+                    <td colspan="3">Total</td>
+                    <td class="text-end">{{ assets | sum(attribute='cost') | fmt_num }}</td>
+                    <td class="text-end">{{ assets | sum(attribute='accumulated') | fmt_num }}</td>
+                    <td class="text-end">{{ assets | sum(attribute='net_book_value') | fmt_num }}</td>
+                    <td colspan="2"></td>
+                </tr>
+            </tfoot>
+            {% endif %}
         </table>
         </div>
     </div>

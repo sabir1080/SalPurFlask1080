@@ -397,22 +397,41 @@ def stock_movements():
 
 @manager_required
 def expiring_batches():
-    """Company-wide (permission-scoped) view of batch stock by expiry status —
+    """Company-wide (permission-scoped) view of items by expiry status —
     the report gap Phase F closes: NEAR_EXPIRY_WARNING_DAYS previously only
     ever surfaced inside the POS batch picker's JSON response for a single
-    item, never as a standalone list. Read-only; never mutates Batch or
-    BatchStock.
+    item, never as a standalone list. Read-only; never mutates Batch,
+    BatchStock, or ProductCategoryData.
 
-    Only BatchStock.quantity > 0 rows are shown — a batch that's been fully
-    consumed/transferred out is not "expiring stock" anymore. A NULL
-    expiry_date is a real, valid state (see Batch's own docstring on Unknown
-    Batch / undated receipts) and is classified as its own "no_expiry"
-    bucket, never silently folded into "expired" or "near_expiry".
+    Two sources feed the same list:
+      1. Batch-tracked items — one row per Batch, via BatchStock. Only
+         BatchStock.quantity > 0 rows are shown — a batch that's been fully
+         consumed/transferred out is not "expiring stock" anymore. A NULL
+         expiry_date is a real, valid state (see Batch's own docstring on
+         Unknown Batch / undated receipts) and is its own "no_expiry"
+         bucket, never folded into "expired" or "near_expiry".
+      2. Any item with a custom date field whose name or label reads as an
+         expiry/warranty field (ProductField.field_type == 'date', name or
+         label matching "expiry"/"warranty") — not hardcoded to Electronics'
+         warranty_expiry_date or Medical Store's expiry_date specifically:
+         whichever category a user adds such a field to next is picked up
+         here automatically, the same way ensure_default_product_fields()
+         seeds new categories without this route needing to know their
+         names. These rows have no batch/location, so location_name is
+         "—" and quantity/value fall back to the item's own stock and
+         inventory_value (not a batch-scoped figure — there's no batch to
+         scope it to).
 
-    Location-scoped exactly like report_stock()/stock_movements(): an
-    explicit location_id the user isn't authorized for is refused, and the
-    unfiltered view is scoped to only the locations they may see."""
+    Location-scoped exactly like report_stock()/stock_movements() for the
+    batch source: an explicit location_id the user isn't authorized for is
+    refused, and the unfiltered view is scoped to only the locations they
+    may see. The custom-field source is not location-scoped (it isn't tied
+    to a warehouse), so it's excluded outright whenever a location filter is
+    active — showing it under one arbitrarily-chosen location would be
+    misleading."""
+    from datetime import date
     from salpurflask.models import Location, Batch, BatchStock, NEAR_EXPIRY_WARNING_DAYS
+    from salpurflask.models.business_config import BusinessCategory, ProductField, ProductCategoryData
     from salpurflask.services.location_permissions import (
         accessible_location_ids, require_location_access)
 
@@ -420,6 +439,7 @@ def expiring_batches():
     today = now_local().date()
 
     location_id = request.args.get("location_id", "").strip()
+    category_id = request.args.get("category_id", "").strip()
     status_filter = request.args.get("status", "").strip()
     try:
         threshold_days = int(request.args.get("days", "").strip() or NEAR_EXPIRY_WARNING_DAYS)
@@ -437,6 +457,9 @@ def expiring_batches():
         query = query.filter(BatchStock.location_id == int(location_id))
     elif accessible_ids is not None:
         query = query.filter(BatchStock.location_id.in_(accessible_ids))
+
+    if category_id.isdigit():
+        query = query.filter(Item.business_category_id == int(category_id))
 
     query = query.order_by(Batch.expiry_date.is_(None), Batch.expiry_date.asc(), Batch.id.asc())
 
@@ -463,6 +486,53 @@ def expiring_batches():
             "status": status,
         })
 
+    # Custom-field source (2. above) — skipped entirely when a location
+    # filter is active, since these rows aren't warehouse-scoped.
+    if not location_id.isdigit():
+        field_query = (
+            db.session.query(Item, ProductCategoryData.field_value)
+            .join(ProductCategoryData, ProductCategoryData.product_id == Item.id)
+            .join(ProductField, db.and_(
+                ProductField.category_id == ProductCategoryData.category_id,
+                ProductField.field_name == ProductCategoryData.field_name))
+            .filter(ProductField.field_type == 'date',
+                    ProductField.field_name.ilike('%expiry%') |
+                    ProductField.field_name.ilike('%warranty%') |
+                    ProductField.field_label.ilike('%expiry%') |
+                    ProductField.field_label.ilike('%warranty%'))
+        )
+        if category_id.isdigit():
+            field_query = field_query.filter(Item.business_category_id == int(category_id))
+
+        for item, raw_value in field_query.all():
+            try:
+                field_expiry = date.fromisoformat(str(raw_value))
+            except (TypeError, ValueError):
+                continue  # not a parseable date — skip rather than guess
+            days_to_expiry = (field_expiry - today).days
+            if field_expiry < today:
+                status = "expired"
+            elif field_expiry == today:
+                status = "today"
+            elif days_to_expiry <= threshold_days:
+                status = "near_expiry"
+            else:
+                status = "ok"
+            qty = item.stock or 0
+            rows.append({
+                "item_name": item.name, "batch_no": "—",
+                "location_name": "—", "quantity": qty,
+                "expiry_date": field_expiry, "days_to_expiry": days_to_expiry,
+                "unit_cost": Decimal(str(item.purchase_price or 0)),
+                "value": Decimal(str(item.inventory_value or 0)).quantize(MONEY),
+                "status": status,
+            })
+
+    # Re-sort now that custom-field rows have been appended after the
+    # batch rows (which came pre-sorted from SQL) — same ordering intent,
+    # done in Python since the two sources can no longer share one query.
+    rows.sort(key=lambda r: (r["expiry_date"] is None, r["expiry_date"] or date.max))
+
     if status_filter in ("expired", "today", "near_expiry", "ok", "no_expiry"):
         rows = [r for r in rows if r["status"] == status_filter]
 
@@ -471,13 +541,52 @@ def expiring_batches():
         locations_query = locations_query.filter(Location.id.in_(accessible_ids))
     locations = locations_query.order_by(Location.name).all()
 
+    # Only categories that actually have a batch-tracked item OR an item
+    # with a populated expiry/warranty custom field somewhere — same
+    # reasoning as the dashboard's Top Items filter: an enabled but
+    # otherwise-unused category would just be a dropdown entry that always
+    # empties the list. Kept as two separate subqueries unioned rather than
+    # one bigger join so adding a category via either path (a new batch-
+    # tracked category, or a new category with a custom expiry/warranty
+    # field) is picked up without touching this query again.
+    batch_category_ids = (
+        db.session.query(Item.business_category_id)
+        .join(Batch, Batch.item_id == Item.id)
+        .filter(Item.business_category_id.isnot(None))
+        .distinct()
+    )
+    field_category_ids = (
+        db.session.query(Item.business_category_id)
+        .join(ProductCategoryData, ProductCategoryData.product_id == Item.id)
+        .join(ProductField, db.and_(
+            ProductField.category_id == ProductCategoryData.category_id,
+            ProductField.field_name == ProductCategoryData.field_name))
+        .filter(ProductField.field_type == 'date',
+                ProductField.field_name.ilike('%expiry%') |
+                ProductField.field_name.ilike('%warranty%') |
+                ProductField.field_label.ilike('%expiry%') |
+                ProductField.field_label.ilike('%warranty%'),
+                Item.business_category_id.isnot(None))
+        .distinct()
+    )
+    categories = (
+        BusinessCategory.query
+        .filter(BusinessCategory.is_enabled.is_(True))
+        .filter(db.or_(
+            BusinessCategory.id.in_(batch_category_ids),
+            BusinessCategory.id.in_(field_category_ids)))
+        .order_by(BusinessCategory.priority)
+        .all()
+    )
+
     return render_template(
         "expiring_batches.html",
         rows=rows,
         locations=locations,
+        categories=categories,
         threshold_days=threshold_days,
         default_threshold=NEAR_EXPIRY_WARNING_DAYS,
-        filters={"location_id": location_id, "status": status_filter, "days": str(threshold_days)},
+        filters={"location_id": location_id, "category_id": category_id, "status": status_filter, "days": str(threshold_days)},
         total_value=sum((r["value"] for r in rows), Decimal("0")),
         as_of=now_local().strftime("%d %B %Y"),
     )

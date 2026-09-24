@@ -15,6 +15,9 @@
       <i class="bi bi-percent"></i> Tax Codes
     </a>
     {% endif %}
+    <button type="button" class="btn btn-outline-primary" onclick="printTablePDF('Chart of Accounts', document.getElementById('tbl-chart-of-accounts'), {meta: 'Balances as of {{ as_of.strftime('%Y-%m-%d') }}'})">
+      <i class="bi bi-printer"></i> Print PDF
+    </button>
     <a href="{{ url_for('dashboard.dashboard') }}" class="btn btn-outline-secondary">
       <i class="bi bi-arrow-left"></i> Dashboard
     </a>
@@ -45,7 +48,7 @@
 <!-- Accounts Table -->
 <div class="card">
   <div class="table-wrapper">
-    <table class="table table-hover align-middle">
+    <table class="table table-hover align-middle" id="tbl-chart-of-accounts">
       <thead>
         <tr>
           <th>Code</th>
@@ -53,7 +56,7 @@
           <th>Type</th>
           <th>Flags</th>
           <th class="text-end">Balance</th>
-          {% if current_user.is_admin %}<th class="table-cell-center">Actions</th>{% endif %}
+          {% if current_user.is_admin %}<th class="table-cell-center no-print">Actions</th>{% endif %}
         </tr>
       </thead>
       <tbody>
@@ -78,7 +81,7 @@
             {% if balance %}{{ balance | fmt_num }}{% else %}<span class="text-muted">—</span>{% endif %}
           </td>
           {% if current_user.is_admin %}
-          <td class="table-cell-center">
+          <td class="table-cell-center no-print">
             <a href="{{ url_for('edit_gl_account', id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit">
               <i class="bi bi-pencil"></i>
             </a>

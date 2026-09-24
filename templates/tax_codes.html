@@ -22,13 +22,18 @@
   <div class="card mb-6">
         <div class="card-header bg-light fw-semibold d-flex justify-content-between align-items-center">
             <span><i class="bi bi-tag"></i> {{ code.name }}</span>
-            <span class="badge bg-{{ 'success' if code.is_active else 'secondary' }}">
-                total {{ '%.2f' | format(code.total_rate) }}%
-            </span>
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-{{ 'success' if code.is_active else 'secondary' }}">
+                    total {{ '%.2f' | format(code.total_rate) }}%
+                </span>
+                <button type="button" class="btn btn-outline-primary btn-sm" onclick="printTablePDF('Tax Code — {{ code.name }}', document.getElementById('tbl-tax-code-{{ code.id }}'), {meta: 'Total rate {{ '%.2f' | format(code.total_rate) }}%'})">
+                    <i class="bi bi-printer"></i> Print PDF
+                </button>
+            </div>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
-            <table class="table table-sm mb-0 align-middle">
+            <table class="table table-sm mb-0 align-middle" id="tbl-tax-code-{{ code.id }}">
                 <thead class="table-light">
                     <tr><th>Component</th><th style="width:160px">Rate %</th><th>Input Account</th><th>Output Account</th></tr>
                 </thead>

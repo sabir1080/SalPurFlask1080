@@ -598,6 +598,7 @@ DEFAULT_PRODUCT_FIELDS = {
         {"field_name": "warranty", "field_label": "Warranty", "field_type": "text", "is_required": True, "tab_name": "General", "position": 2},
         {"field_name": "serial_number", "field_label": "Serial Number", "field_type": "text", "tab_name": "General", "position": 3},
         {"field_name": "voltage", "field_label": "Voltage", "field_type": "text", "tab_name": "Specification", "position": 4},
+        {"field_name": "warranty_expiry_date", "field_label": "Warranty Expiry Date", "field_type": "date", "tab_name": "General", "position": 5},
     ],
     "mobile-accessories": [
         {"field_name": "brand", "field_label": "Brand", "field_type": "text", "tab_name": "General", "position": 0},

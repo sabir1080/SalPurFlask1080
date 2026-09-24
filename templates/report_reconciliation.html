@@ -83,6 +83,15 @@
             </tr>
             {% endfor %}
           </tbody>
+          {% if customers %}
+          <tfoot class="table-light fw-semibold">
+            <tr>
+              <td>Total</td>
+              <td class="text-end">{{ customers | map(attribute=1) | sum | fmt_num }}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+          {% endif %}
         </table>
       </div>
     </div>
@@ -109,6 +118,15 @@
             </tr>
             {% endfor %}
           </tbody>
+          {% if suppliers %}
+          <tfoot class="table-light fw-semibold">
+            <tr>
+              <td>Total</td>
+              <td class="text-end">{{ suppliers | map(attribute=1) | sum | fmt_num }}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+          {% endif %}
         </table>
       </div>
     </div>
