@@ -920,11 +920,26 @@
             // attribute) fired before the user ever reached the real link
             // inside — e.g. tapping "Parties" closed the whole sidebar
             // instead of revealing "Suppliers"/"Customers" underneath.
+            // window.screen.width, not window.innerWidth: innerWidth is the
+            // CSS layout viewport, which Chrome's page zoom (desktop Ctrl+/-
+            // or Android's Settings > Accessibility > Page Zoom) rescales in
+            // CSS pixels -- zooming out on a phone can push it past 768 even
+            // though the device itself never changed, flipping this mobile-
+            // only overlay into the desktop always-visible sidebar (or
+            // racing the tap that just opened it via the resize handler
+            // below). screen.width is the device's own resolution and does
+            // not move when the page is zoomed, so the mobile/desktop
+            // decision here now tracks the device, not the current zoom
+            // level. The @media (max-width: 768px) breakpoint that actually
+            // draws the overlay is untouched -- these two checks are only
+            // used to decide "should this same tap/resize also affect the
+            // overlay," so a real desktop window resized narrow still gets
+            // the CSS overlay layout exactly as before.
             document.querySelectorAll('.navbar-nav .nav-link, .navbar-nav .dropdown-item').forEach(function(link) {
                 if (link.getAttribute('data-bs-toggle') === 'dropdown') return;
                 link.addEventListener('click', function() {
                     var href = link.getAttribute('href');
-                    if (window.innerWidth <= 768 && href && href !== '#') {
+                    if (window.screen.width <= 768 && href && href !== '#') {
                         closeNav();
                     }
                 });
@@ -934,7 +949,7 @@
             // landscape, or a desktop dev-tools resize) should not leave the
             // sidebar stuck mid-slide-in from a stale mobile state.
             window.addEventListener('resize', function() {
-                if (window.innerWidth > 768) closeNav();
+                if (window.screen.width > 768) closeNav();
             });
         })();
 
