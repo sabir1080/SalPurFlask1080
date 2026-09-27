@@ -595,15 +595,6 @@
     {% block extra_head %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}" style="overflow-x: hidden;">
-    {# This button must be a sibling of <nav>, not a descendant of it: <nav> gets
-       a CSS transform on mobile to slide off-screen, and a transform on an
-       ancestor makes it the containing block for any position:fixed descendant
-       — so a fixed-position button left inside <nav> would inherit that same
-       off-screen offset instead of staying fixed to the viewport. Markup,
-       classes, attributes and behavior are otherwise unchanged from before. #}
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation" style="display: none;">
-        <span class="navbar-toggler-icon"></span>
-    </button>
     <nav class="navbar navbar-expand-lg {% block navbar_class %}navbar-light bg-light{% endblock %}" style="position: fixed; top: 0; left: 0; min-height: 100vh; width: 250px; z-index: 1000; flex-direction: column; padding: 0; overflow: visible;">
         <div class="{% block nav_container_class %}container-fluid{% endblock %}" style="flex-direction: column; padding: 1rem; width: 100%;">
             <a class="navbar-brand" href="{{ url_for('dashboard.index') }}">
