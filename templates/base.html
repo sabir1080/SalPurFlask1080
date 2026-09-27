@@ -1076,5 +1076,47 @@
             });
         }
     </script>
+    <script>
+        // ── TEMPORARY DIAGNOSTIC — mobile sidebar zoom investigation. Remove
+        // after the root cause is confirmed. Only runs when the URL has
+        // ?navdebug=1 (e.g. https://.../dashboard?navdebug=1) -- does nothing
+        // on any normal page load. Read-only: never calls openNav()/closeNav()
+        // or touches .nav-open itself, only reads and displays existing state.
+        if (new URLSearchParams(window.location.search).get('navdebug') === '1') {
+            (function() {
+                var box = document.createElement('div');
+                box.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999999;' +
+                    'background:#000;color:#0f0;font:11px monospace;padding:6px 8px;' +
+                    'white-space:pre-wrap;pointer-events:none;line-height:1.5;';
+                document.body.appendChild(box);
+
+                function update() {
+                    var nav = document.querySelector('nav.navbar[style*="width: 250px"]');
+                    var cs = nav ? getComputedStyle(nav) : null;
+                    box.textContent = [
+                        'innerWidth: ' + window.innerWidth,
+                        'screen.width: ' + window.screen.width,
+                        'clientWidth: ' + document.documentElement.clientWidth,
+                        'visualViewport.width: ' + (window.visualViewport ? window.visualViewport.width : 'n/a'),
+                        'devicePixelRatio: ' + window.devicePixelRatio,
+                        'matchMedia(max-width:768px): ' + window.matchMedia('(max-width: 768px)').matches,
+                        'body .nav-open: ' + document.body.classList.contains('nav-open'),
+                        nav ? ('nav transform: ' + cs.transform) : 'nav element not found',
+                        nav ? ('nav position: ' + cs.position) : '',
+                        nav ? ('nav width: ' + cs.width) : ''
+                    ].join('  |  ');
+                }
+
+                update();
+                window.addEventListener('resize', update);
+                if (window.visualViewport) {
+                    window.visualViewport.addEventListener('resize', update);
+                }
+                // Some zoom changes don't reliably fire 'resize' on every mobile
+                // browser -- a cheap poll keeps the box honest either way.
+                setInterval(update, 500);
+            })();
+        }
+    </script>
 </body>
 </html>
