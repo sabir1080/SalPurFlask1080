@@ -29,6 +29,7 @@ def current_employee():
     an admin running payroll has no employee record of their own.
     """
     from salpurflask.models.hr import Employee
+    from salpurflask.extensions import db
 
     try:
         if not current_user or not current_user.is_authenticated:
@@ -38,8 +39,16 @@ def current_employee():
         return None
     if uid is None:
         return None
-    # One indexed lookup by user_id -- never a scan over all employees.
-    return Employee.query.filter_by(user_id=uid).first()
+    try:
+        # One indexed lookup by user_id -- never a scan over all employees.
+        return Employee.query.filter_by(user_id=uid).first()
+    except Exception:
+        # This runs on every page (see inject_form_defaults' context
+        # processor) -- an unrelated failed query earlier in the same
+        # request must not be left aborted for the rest of it. Same
+        # pattern as app.py's get_standard_tax_rate()/load_user().
+        db.session.rollback()
+        return None
 
 
 def owns(record, employee=None):

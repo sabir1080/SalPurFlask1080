@@ -484,16 +484,28 @@ def dashboard():
         # reason as total_sale_revenue above: the row stays for audit but
         # must stop counting as active revenue. A Draft Sale (Phase 2) is
         # excluded the same way: it has no revenue effect until it is Posted.
+        #
+        # month_expr is built ONCE and reused (not called again per clause):
+        # each call to sql_date_fmt() builds its own to_char(...) expression
+        # with its own bound parameter for the format string, so calling it
+        # separately for SELECT/GROUP BY/ORDER BY previously gave Postgres
+        # three parameterized expressions it could not prove were identical
+        # -- "column sale.date must appear in the GROUP BY clause or be used
+        # in an aggregate function" (GroupingError), on every request,
+        # regardless of data. Reusing the same expression object makes all
+        # three clauses reference the exact same bind parameter, so Postgres
+        # sees one structurally identical expression.
+        month_expr = sql_date_fmt(Sale.date)
         monthly_data = db.session.query(
-            sql_date_fmt(Sale.date).label('month'),
+            month_expr.label('month'),
             func.sum(SaleItem.amount).label('sale_amt'),
             func.sum(SaleItem.amount - (SaleItem.quantity * SaleItem.cost_price)).label('profit_amt')
         ).join(SaleItem, Sale.id == SaleItem.sale_id).filter(
             Sale.is_reversed.is_(False), Sale.status == STATUS_POSTED
         ).group_by(
-            sql_date_fmt(Sale.date)
+            month_expr
         ).order_by(
-            sql_date_fmt(Sale.date)
+            month_expr
         ).all()
 
         context['monthly_sales'] = [
