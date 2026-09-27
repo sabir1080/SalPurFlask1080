@@ -771,15 +771,24 @@ def business_insights():
     # main dashboard's.
     try:
         from app import sql_date_fmt
+        # month_expr is built ONCE and reused (not called again per clause):
+        # each call to sql_date_fmt() builds its own to_char(...) expression
+        # with its own bound parameter, so calling it separately for
+        # SELECT/GROUP BY/ORDER BY gives Postgres three parameterized
+        # expressions it cannot prove are identical -- "column sale.date
+        # must appear in the GROUP BY clause or be used in an aggregate
+        # function" (GroupingError), on every request, regardless of data.
+        # Same fix as dashboard()'s own monthly_sales query.
+        month_expr = sql_date_fmt(Sale.date)
         monthly_rows = (
             db.session.query(
-                sql_date_fmt(Sale.date).label('month'),
+                month_expr.label('month'),
                 db.func.sum(SaleItem.amount).label('total')
             )
             .join(SaleItem, Sale.id == SaleItem.sale_id)
             .filter(Sale.is_reversed.is_(False), Sale.status == STATUS_POSTED)
-            .group_by(sql_date_fmt(Sale.date))
-            .order_by(sql_date_fmt(Sale.date))
+            .group_by(month_expr)
+            .order_by(month_expr)
             .all()
         )
         # sql_date_fmt gives "YYYY-MM" (needed as the GROUP BY/ORDER BY key
@@ -846,16 +855,24 @@ def business_insights():
 
     # 3. Today vs Yesterday vs Last Week Same Day — active sale revenue only.
     try:
+        from app import sql_date
         today = date.today()
         yesterday = today - timedelta(days=1)
         last_week = today - timedelta(days=7)
 
         def _day_sales(d):
+            # sql_date(Sale.date) == d, not db.func.date(Sale.date) ==
+            # d.isoformat(): comparing Postgres's DATE-typed result to a
+            # plain Python str binds it as VARCHAR, and Postgres has no
+            # date = varchar operator -- "operator does not exist: date =
+            # character varying". Comparing to the date object itself lets
+            # SQLAlchemy bind it with the correct DATE type, same pattern
+            # _home_overview() above already uses for "Today's Sales".
             val = (
                 db.session.query(db.func.sum(SaleItem.amount))
                 .join(Sale, Sale.id == SaleItem.sale_id)
                 .filter(Sale.is_reversed.is_(False), Sale.status == STATUS_POSTED,
-                        db.func.date(Sale.date) == d.isoformat())
+                        sql_date(Sale.date) == d)
                 .scalar()
             )
             return float(val or 0)
