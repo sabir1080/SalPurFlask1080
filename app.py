@@ -2510,8 +2510,8 @@ def reports():
                 total_sale_amt      = totals.total_sale_amt or 0.0
                 total_profit_amt    = totals.total_profit_amt or 0.0
                 total_purchase_cost = totals.total_purchase_cost or 0.0
-                total_purchase_return_amt = sum(r.quantity * r.return_price for r in purchase_return_report)
-                total_sale_return_amt     = sum(r.quantity * r.return_price for r in sale_return_report)
+                total_purchase_return_amt = float(sum(r.quantity * r.return_price for r in purchase_return_report))
+                total_sale_return_amt     = float(sum(r.quantity * r.return_price for r in sale_return_report))
                 net_sale_amt        = total_sale_amt - total_sale_return_amt
                 net_purchase_cost   = total_purchase_cost - total_purchase_return_amt
                 gross_profit        = total_profit_amt
