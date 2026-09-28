@@ -24,7 +24,7 @@
       <i class="bi bi-download"></i> Excel
     </a>
     <button type="button" class="btn btn-secondary" title="Print ledger as PDF"
-            onclick="printTablePDF('Customer Ledger — {{ customer.name }}', document.getElementById('tbl-customer-ledger'), { meta: '{{ start_date }}{% if start_date or end_date %} to {% endif %}{{ end_date }}' })">
+            onclick="printTablePDF('Customer Ledger', document.getElementById('tbl-customer-ledger'), { meta: '{{ customer.name }}{% if start_date or end_date %} &middot; {{ start_date }} to {{ end_date }}{% endif %}' })">
       <i class="bi bi-printer"></i> Print PDF
     </button>
     <a href="{{ url_for('customer') }}" class="btn btn-outline-secondary" title="Back to customers">
