@@ -2507,9 +2507,9 @@ def reports():
                     .filter(Sale.date.between(start_date, end_date))
                     .first()
                 )
-                total_sale_amt      = totals.total_sale_amt or 0.0
-                total_profit_amt    = totals.total_profit_amt or 0.0
-                total_purchase_cost = totals.total_purchase_cost or 0.0
+                total_sale_amt      = float(totals.total_sale_amt or 0.0)
+                total_profit_amt    = float(totals.total_profit_amt or 0.0)
+                total_purchase_cost = float(totals.total_purchase_cost or 0.0)
                 total_purchase_return_amt = float(sum(r.quantity * r.return_price for r in purchase_return_report))
                 total_sale_return_amt     = float(sum(r.quantity * r.return_price for r in sale_return_report))
                 net_sale_amt        = total_sale_amt - total_sale_return_amt
