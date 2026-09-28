@@ -23,7 +23,15 @@ def supplier():
     from app import record_audit, sync_supplier_opening, post_supplier_opening, get_supplier_balance
 
     search = request.args.get("search", "")
-    query = Supplier.query.filter(Supplier.name.ilike(f"%{search}%")) if search else Supplier.query
+    if search:
+        pattern = f"%{search}%"
+        query = Supplier.query.filter(
+            Supplier.name.ilike(pattern)
+            | Supplier.contact.ilike(pattern)
+            | Supplier.address.ilike(pattern)
+        )
+    else:
+        query = Supplier.query
     suppliers, pagination = get_paginated_results(query)
     if request.method == "POST":
         if current_user.role not in ("admin", "manager"):

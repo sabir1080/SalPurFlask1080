@@ -23,7 +23,15 @@ def customer():
     from app import record_audit, sync_customer_opening, post_customer_opening, get_customer_balance
 
     search = request.args.get("search", "")
-    query = Customer.query.filter(Customer.name.ilike(f"%{search}%")) if search else Customer.query
+    if search:
+        pattern = f"%{search}%"
+        query = Customer.query.filter(
+            Customer.name.ilike(pattern)
+            | Customer.contact.ilike(pattern)
+            | Customer.address.ilike(pattern)
+        )
+    else:
+        query = Customer.query
     customers, pagination = get_paginated_results(query)
     if request.method == "POST":
         if current_user.role not in ("admin", "manager"):
