@@ -1729,6 +1729,13 @@ body {
     color: #fff;
     margin-bottom: 1.5rem;
     box-shadow: 0 12px 32px rgba(99, 102, 241, 0.45);
+    overflow: hidden;
+}
+
+.auth-logo img {
+    width: 80%;
+    height: 80%;
+    object-fit: contain;
 }
 
 .auth-brand-content h1 {
@@ -3220,4 +3227,21 @@ body:not(.page-home) .navbar-dark .dropdown-menu .dropdown-item.active {
 [data-theme="dark"] body:not(.page-home) .navbar-dark .dropdown-menu .dropdown-item.active {
     background-color: #0d6efd !important;
     color: #ffffff !important;
+}
+
+
+.navbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+    white-space: normal;
+}
+
+.navbar-brand .company-name {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: normal;
+    word-break: normal;
+    line-height: 1.15;
 }

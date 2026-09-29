@@ -38,7 +38,7 @@ function printTablePDF(title, tableEl, opts) {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>${title} — ${companyName}</title>
+<title>${companyName}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, sans-serif; font-size: 12px; color: #111; background: #fff; }
@@ -53,6 +53,8 @@ function printTablePDF(title, tableEl, opts) {
   .report-block .rmeta  { font-size: 10px; color: #555; margin-top: 3px; }
   .print-footer { margin-top: 20px; border-top: 1px solid #ccc; padding-top: 8px;
                   display: flex; justify-content: space-between; font-size: 10px; color: #888; }
+  .print-footer-lines { font-size: 9px; line-height: 1.4; }
+  .print-footer-lines .footer-logo { height: 14px; width: 14px; vertical-align: middle; margin-right: 4px; }
 
   table { width: 100%; border-collapse: collapse; margin-top: 4px; }
   th { background: #1e3a5f; color: white; padding: 6px 8px; text-align: left; font-size: 11px; }
@@ -73,7 +75,7 @@ function printTablePDF(title, tableEl, opts) {
 <body>
 <div class="print-header">
   <div class="company-block">
-    <div class="cname">&#9633; ${companyName}</div>
+    <div class="cname">${companyName}</div>
     <div class="ctag">${companyTagline}</div>
   </div>
   <div class="report-block">
@@ -86,8 +88,7 @@ ${clone.outerHTML}
 
 <div class="print-footer">
   <div class="print-footer-lines">
-    <div>TradeFlow-ERP / Inventory, Sales, Purchase, Accounts &amp; HR Managements System</div>
-    <div>Designed and Developed by Sabir Shah, sabir1212@yahoo.com &middot; whatsapp +92 345 3231545</div>
+    <div><img src="${window.location.origin}/static/icons/logo-transparent.png" alt="" class="footer-logo"><strong>TradeFlow-ERP</strong>: <em>Designed and Developed by Sabir Shah, sabir1212@yahoo.com &middot; whatsapp +92 345 3231545</em></div>
   </div>
   <span>Printed: ${new Date().toLocaleDateString('en-GB', {day:'2-digit',month:'short',year:'numeric'})}</span>
 </div>

@@ -40,7 +40,8 @@ if not os.path.exists(env_path):
     print("   Create .env from .env.example or .env.local")
     print("   Running with defaults — this may cause issues!")
 
-load_dotenv(env_path)
+#load_dotenv(env_path)
+load_dotenv(env_path, override=True)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -134,6 +135,9 @@ app.config["MAIL_PASSWORD"] = os.getenv("MAIL_PASSWORD", "").replace(" ", "")
 #   DESIGNED_DEVELOPED— the developer credit ("Designed & Developed by ...")
 app.config["APP_NAME"] = os.getenv("APP_NAME", "TradeFlow").strip()
 app.config["COMPANY_NAME"] = os.getenv("COMPANY_NAME", app.config["APP_NAME"]).strip()
+
+#print("COMPANY NAME =", app.config["COMPANY_NAME"])
+
 app.config["COMPANY_TAGLINE"] = os.getenv("COMPANY_TAGLINE", "Inventory & Accounts Management").strip()
 app.config["DESIGNED_DEVELOPED"] = os.getenv("DESIGNED_DEVELOPED", "Sabir Shah").strip()
 
