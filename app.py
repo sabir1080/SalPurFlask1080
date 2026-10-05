@@ -2628,6 +2628,12 @@ def export_customer_receivable():
 @manager_required
 def export_stock_report():
     items = Item.query.outerjoin(Category, Item.category_id == Category.id).order_by(Category.name, Item.name).all()
+    category_filter = request.args.get("category_id", "").strip()
+    item_filter = request.args.get("item_id", "").strip()
+    if category_filter.isdigit():
+        items = [i for i in items if i.business_category_id == int(category_filter)]
+    if item_filter.isdigit():
+        items = [i for i in items if i.id == int(item_filter)]
     col_headers = ["Item", "Category", "Stock", "Reorder Level", "Avg Cost", "Sale Price", "Stock Value", "Status"]
     rows = []
     for item in items:

@@ -265,8 +265,21 @@ def report_stock():
 
     accessible_ids = accessible_location_ids()
 
-    items = (Item.query.outerjoin(Category, Item.category_id == Category.id)
-             .order_by(Category.name, Item.name).all())
+    all_items = (Item.query.outerjoin(Category, Item.category_id == Category.id)
+                 .order_by(Category.name, Item.name).all())
+    from salpurflask.models import BusinessCategory
+    categories = BusinessCategory.query.order_by(BusinessCategory.name).all()
+
+    # Item / Category filters narrow the rows (and so the totals) shown below;
+    # the dropdowns themselves always list everything so the user can switch.
+    item_filter = request.args.get("item_id", "").strip()
+    category_filter = request.args.get("category_id", "").strip()
+    items = all_items
+    if category_filter.isdigit():
+        items = [i for i in items if i.business_category_id == int(category_filter)]
+    if item_filter.isdigit():
+        items = [i for i in items if i.id == int(item_filter)]
+
     locations_query = Location.query.filter_by(active=True)
     if accessible_ids is not None:
         locations_query = locations_query.filter(Location.id.in_(accessible_ids))
@@ -335,6 +348,13 @@ def report_stock():
         reorder_report=[i for i in items if stock_lookup.get(i.id, 0) <= i.reorder_level],
         as_of=now_local().strftime("%d %B %Y"),
         batch_breakdown=batch_breakdown,
+        all_items=all_items,
+        categories=categories,
+        category_item_counts={
+            c.id: sum(1 for i in all_items if i.business_category_id == c.id)
+            for c in categories},
+        selected_item_id=int(item_filter) if item_filter.isdigit() else None,
+        selected_category_id=int(category_filter) if category_filter.isdigit() else None,
     )
 
 
