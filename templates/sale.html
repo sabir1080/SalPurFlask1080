@@ -46,22 +46,24 @@
         <div class="col-md-4">
           <div class="form-group">
             <label class="form-label required">Customer</label>
-            <input type="hidden" id="customer_id" name="customer_id" required>
+            <input type="hidden" id="customer_id" name="customer_id" required value="{{ form_data.customer_id if form_data else '' }}">
             <button type="button" class="btn btn-outline-secondary w-100 text-start" onclick="openCustomerLookup()">
-              <i class="bi bi-search"></i> <span id="customer_id_label" class="text-muted">Select Customer</span>
+              <i class="bi bi-search"></i>
+              {% if form_data and form_data.customer_name %}<span id="customer_id_label">{{ form_data.customer_name }}</span>
+              {% else %}<span id="customer_id_label" class="text-muted">Select Customer</span>{% endif %}
             </button>
           </div>
         </div>
         <div class="col-md-3">
           <div class="form-group">
             <label class="form-label required">Date</label>
-            <input type="date" class="form-control" name="date" required value="{{ today }}">
+            <input type="date" class="form-control" name="date" required value="{{ form_data.date if form_data and form_data.date else today }}">
           </div>
         </div>
         <div class="col-md-5">
           <div class="form-group">
             <label class="form-label">Notes</label>
-            <input type="text" class="form-control" name="notes" placeholder="Optional invoice notes">
+            <input type="text" class="form-control" name="notes" placeholder="Optional invoice notes" value="{{ form_data.notes if form_data else '' }}">
           </div>
         </div>
         {% if locations|length > 1 %}
@@ -70,7 +72,7 @@
             <label class="form-label required">Warehouse</label>
             <select class="form-select" name="location_id" required>
               {% for loc in locations %}
-              <option value="{{ loc.id }}" {% if loc.id == default_location.id %}selected{% endif %}>{{ loc.name }}</option>
+              <option value="{{ loc.id }}" {% if (form_data and loc.id|string == form_data.location_id) or (not form_data and loc.id == default_location.id) %}selected{% endif %}>{{ loc.name }}</option>
               {% endfor %}
             </select>
           </div>
@@ -97,32 +99,42 @@
             </tr>
           </thead>
         <tbody id="itemsBody">
+            {# After a failed save, form_data holds every submitted row (in order) and each
+               is rendered back as filled in; otherwise a single blank row, as before. #}
+            {% for r in (form_data.rows if form_data and form_data.rows else [None]) %}
             <tr class="item-row">
                 <td>
-                    <input type="hidden" class="item-select" name="item_id[]" required>
+                    <input type="hidden" class="item-select" name="item_id[]" required value="{{ r.item_id if r else '' }}">
                     <button type="button" class="btn btn-outline-secondary btn-sm w-100 text-start item-picker-btn" onclick="openRowItemLookup(this)">
-                        <i class="bi bi-search"></i> <span class="item-picker-label text-muted">Select Item…</span>
+                        <i class="bi bi-search"></i>
+                        {% if r and r.item_name %}<span class="item-picker-label">{{ r.item_name }}</span>
+                        {% else %}<span class="item-picker-label text-muted">Select Item…</span>{% endif %}
                     </button>
                 </td>
-                <td><select class="form-select form-select-sm unit-select" name="unit_id[]" onchange="onUnitChange(this)"></select></td>
-                <td><input type="number" class="form-control form-control-sm qty-input" name="quantity[]" min="1" placeholder="0" oninput="calcRow(this)" required></td>
-                <td><input type="number" step="0.01" class="form-control form-control-sm price-input" name="sale_price[]" min="0" placeholder="0.00" oninput="calcRow(this)"></td>
-                <td class="text-muted small stock-display">—</td>
+                <td><select class="form-select form-select-sm unit-select" name="unit_id[]" onchange="onUnitChange(this)">
+                    {% if r %}{% for u in r.units %}
+                    <option value="{{ u.key }}" data-factor="{{ u.factor }}"{% if u.sale_price is not none %} data-price="{{ u.sale_price }}"{% endif %}{% if u.key|string == r.unit_id %} selected{% endif %}>{{ u.name }}</option>
+                    {% endfor %}{% endif %}
+                </select></td>
+                <td><input type="number" class="form-control form-control-sm qty-input" name="quantity[]" min="1" placeholder="0" oninput="calcRow(this)" required value="{{ r.quantity if r else '' }}"></td>
+                <td><input type="number" step="0.01" class="form-control form-control-sm price-input" name="sale_price[]" min="0" placeholder="0.00" oninput="calcRow(this)" value="{{ r.sale_price if r else '' }}"></td>
+                <td class="text-muted small stock-display">{% if r and r.stock %}Stock: {{ r.stock }}{% else %}—{% endif %}</td>
                 <td>
                     <div class="input-group input-group-sm">
                         <select class="form-select form-select-sm disc-type" name="discount_type[]" onchange="calcRow(this)">
-                            <option value="percent">%</option>
-                            <option value="fixed">Fixed</option>
+                            <option value="percent"{% if r and r.discount_type == 'percent' %} selected{% endif %}>%</option>
+                            <option value="fixed"{% if r and r.discount_type == 'fixed' %} selected{% endif %}>Fixed</option>
                         </select>
-                        <input type="number" step="0.01" class="form-control form-control-sm disc-val" name="discount_value[]" value="0" min="0" oninput="calcRow(this)">
+                        <input type="number" step="0.01" class="form-control form-control-sm disc-val" name="discount_value[]" value="{{ r.discount_value if r else '0' }}" min="0" oninput="calcRow(this)">
                     </div>
                 </td>
-                <td><input type="number" step="0.01" class="form-control form-control-sm tax-input" name="tax_percent[]" value="{{ '%.2f' | format(default_tax_rate) }}" min="0" oninput="calcRow(this)"></td>
+                <td><input type="number" step="0.01" class="form-control form-control-sm tax-input" name="tax_percent[]" value="{{ r.tax_percent if r else '%.2f' | format(default_tax_rate) }}" min="0" oninput="calcRow(this)"></td>
                 <td class="text-end fw-semibold row-total text-success">—</td>
                 <td class="text-center">
                     <button type="button" class="btn btn-danger btn-sm remove-row" onclick="removeRow(this)" title="Remove this row">×</button>
                 </td>
             </tr>
+            {% endfor %}
           </tbody>
           <tfoot>
             <tr>
@@ -376,6 +388,12 @@ function addRow() {
         <td class="text-center"><button type="button" class="btn btn-danger btn-sm remove-row" onclick="removeRow(this)" title="Remove row">×</button></td>`;
     tbody.appendChild(newRow);
 }
+
+// Rows restored after a failed save arrive already filled in: recompute the
+// line totals and grand total without touching any value the user entered.
+document.querySelectorAll('#itemsBody .item-row .qty-input').forEach(function (el) {
+    if (el.value) calcRow(el);
+});
 
 function removeRow(btn) {
     const rows = document.querySelectorAll('#itemsBody .item-row');

@@ -49,6 +49,82 @@ def sale_total(sale):
                  .scalar() or 0.0)
 
 
+def _sale_stock_shortfalls(rows, location_id):
+    """Every STOCK item in the submitted sale rows that the warehouse can't cover.
+
+    Quantities are summed per item in base units first, so the same item entered
+    on two rows is checked against its combined total, not each row on its own.
+    Items are fetched with a row lock (get_item_locked), held until the caller
+    commits or rolls back, so the stock can't change between this check and the
+    save. Returns a list of messages, empty when everything is covered.
+    """
+    from salpurflask.models import stock_at_location
+
+    # Lock in ascending id order so two sales with the same items in a different
+    # row order can't each hold one lock and wait on the other (PostgreSQL).
+    locked = {iid: get_item_locked(iid) for iid in sorted({int(r[0]) for r in rows})}
+    needed = {}
+    for iid, qty, price, d_type, d_val, tax, unit_key in rows:
+        item_obj = locked[int(iid)]
+        if item_obj and item_obj.item_type == "STOCK":
+            _, factor = resolve_item_unit(item_obj, unit_key)
+            entry = needed.setdefault(item_obj.id, [item_obj, 0])
+            entry[1] += int(qty) * factor
+    errors = []
+    for item_obj, base_qty in needed.values():
+        available = stock_at_location(item_obj.id, location_id)
+        if available < base_qty:
+            errors.append(
+                f"{item_obj.name}: need {base_qty} {item_obj.unit}, only {available} "
+                f"available at this warehouse")
+    return errors
+
+
+def _sale_form_data(form, location_id):
+    """The submitted new-sale form as a plain dict, so a failed save can render
+    the form back exactly as the user filled it in (every row, in order)."""
+    from salpurflask.models.models import item_unit_choices
+
+    def col(name):
+        return form.getlist(name)
+
+    def at(values, i, default=""):
+        return values[i].strip() if i < len(values) else default
+
+    item_ids, quantities, prices = col("item_id[]"), col("quantity[]"), col("sale_price[]")
+    disc_types, disc_values = col("discount_type[]"), col("discount_value[]")
+    tax_pcts, unit_ids = col("tax_percent[]"), col("unit_id[]")
+
+    customer_id = form.get("customer_id", "").strip()
+    customer = db.session.get(Customer, int(customer_id)) if customer_id.isdigit() else None
+
+    rows = []
+    for i in range(max(len(item_ids), len(quantities), len(prices))):
+        iid = at(item_ids, i)
+        item = db.session.get(Item, int(iid)) if iid.isdigit() else None
+        rows.append({
+            "item_id": iid,
+            "units": [{"key": c["key"], "name": c["name"], "factor": c["factor"],
+                       "sale_price": c["sale_price"]} for c in item_unit_choices(item)] if item else [],
+            "item_name": item.name if item else "",
+            "stock": f"{item.stock} {item.unit or 'Pcs'}" if item else "",
+            "unit_id": at(unit_ids, i),
+            "quantity": at(quantities, i),
+            "sale_price": at(prices, i),
+            "discount_type": at(disc_types, i, "percent"),
+            "discount_value": at(disc_values, i, "0"),
+            "tax_percent": at(tax_pcts, i, "0"),
+        })
+    return {
+        "customer_id": customer_id,
+        "customer_name": customer.name if customer else "",
+        "date": form.get("date", "").strip(),
+        "notes": form.get("notes", "").strip(),
+        "location_id": str(location_id),
+        "rows": rows,
+    }
+
+
 # ─── SALE CRUD ROUTES ──────────────────────────────────────────────────────
 
 
@@ -58,14 +134,14 @@ def sale():
     """Display sales and allow creation of new sales."""
     from app import validate_line_rows, sale_total as app_sale_total
     from app import record_audit, item_add_stock
-    from salpurflask.models import (Location, resolve_location_id, stock_at_location,
+    from salpurflask.models import (Location, resolve_location_id,
                                     get_or_create_default_location)
     from salpurflask.services.location_permissions import (
         accessible_location_ids, require_location_access)
 
     accessible_ids = accessible_location_ids()
 
-    search = request.args.get("search", "").strip()
+    search =request.args.get("search", "").strip()
     query = Sale.query
     if search:
         query = query.join(Customer).filter(Customer.name.ilike(f"%{search}%"))
@@ -80,6 +156,7 @@ def sale():
     # silently hand-in a location_id they aren't authorized for.
     template_default_location = locations[0] if (accessible_ids is not None and locations) \
         else get_or_create_default_location()
+    form_data = None   # set on a failed POST so the form is shown back as filled in
     if request.method == "POST":
         if current_user.role not in ("admin", "manager"):
             flash("Access denied. Only managers and admins can add sales.", "danger")
@@ -90,6 +167,7 @@ def sale():
             flash(str(e), "danger")
             return redirect(url_for("sale"))
         require_location_access(location_id)
+        form_data = _sale_form_data(request.form, location_id)
         customer_id = request.form.get("customer_id", "").strip()
         date_str    = request.form.get("date", "").strip()
         notes       = request.form.get("notes", "").strip()
@@ -122,17 +200,12 @@ def sale():
         else:
             try:
                 sale_date = datetime.strptime(date_str, "%Y-%m-%d")
-                stock_errors = []
-                for iid, qty, price, d_type, d_val, tax, unit_key in rows:
-                    item_obj = db.session.get(Item, int(iid))
-                    if item_obj and item_obj.item_type == "STOCK":
-                        _, factor = resolve_item_unit(item_obj, unit_key)
-                        available = stock_at_location(item_obj.id, location_id)
-                        if available < int(qty) * factor:
-                            stock_errors.append(
-                                f"{item_obj.name}: only {available} {item_obj.unit} "
-                                f"available at this warehouse")
+                stock_errors = _sale_stock_shortfalls(rows, location_id)
                 if stock_errors:
+                    # Nothing has been written yet, so there is nothing to roll back
+                    # (the row locks from the check are released when the request's
+                    # session ends). The form is re-rendered below with everything
+                    # the user entered.
                     flash("Insufficient stock — " + "; ".join(stock_errors), "danger")
                 else:
                     first_iid, first_qty, first_price, first_d_type, first_d_val, first_tax = rows[0][0], rows[0][1], rows[0][2], rows[0][3], rows[0][4], rows[0][5]
@@ -163,17 +236,8 @@ def sale():
                         item_obj = get_item_locked(int(iid)) or abort(404)
                         qty_i = int(qty); price_f = float(price)
                         unit_name, unit_factor = resolve_item_unit(item_obj, unit_key)
-                        base_qty = qty_i * unit_factor
-                        # Validation only -- a Draft does not reduce stock, so this just
-                        # warns early that the line may not be postable later.
-                        if item_obj.item_type == "STOCK":
-                            available = stock_at_location(item_obj.id, location_id)
-                            if available < base_qty:
-                                db.session.rollback()
-                                flash(f"Insufficient stock for {item_obj.name}: only {available} "
-                                      "available at this warehouse now (it changed while saving). "
-                                      "Please try again.", "danger")
-                                return redirect(url_for("sale"))
+                        # Stock was already validated for every row above, under row
+                        # locks held until this commit -- a Draft doesn't reduce stock.
                         d_val_f = float(d_val or 0); tax_f = float(tax or 0)
                         gross = qty_i * price_f
                         disc_amt, tax_amt, net = calc_discount_tax(gross, d_type or "percent", d_val_f, tax_f)
@@ -212,6 +276,7 @@ def sale():
         default_tax_rate=default_tax,
         locations=locations,
         default_location=template_default_location,
+        form_data=form_data,
     )
 
 
