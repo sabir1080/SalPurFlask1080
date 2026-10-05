@@ -124,7 +124,7 @@
         {% for e in entries %}
         <tr>
           <td class="text-tertiary">{{ e.entry_date.strftime('%Y-%m-%d') }}</td>
-          <td><span class="badge">{{ e.entry_type }}</span></td>
+          <td><span class="badge bg-light text-dark border">{{ e.entry_type }}</span></td>
           <td>{{ e.description }}</td>
           <td class="text-end">{% if e.debit %}{{ e.debit | fmt_num }}{% else %}—{% endif %}</td>
           <td class="text-end">{% if e.credit %}{{ e.credit | fmt_num }}{% else %}—{% endif %}</td>

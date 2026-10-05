@@ -45,7 +45,7 @@
         <tr {% if e.is_reversed %}class="opacity-75"{% elif e.is_reversal %}class="opacity-75"{% endif %}>
           <td class="text-tertiary fw-semibold">{{ e.id }}</td>
           <td class="text-nowrap text-tertiary">{{ e.entry_date | bizdate }}</td>
-          <td><span class="badge">{{ e.source_type }}</span></td>
+          <td><span class="badge bg-light text-dark border">{{ e.source_type }}</span></td>
           <td class="text-nowrap">{{ e.reference or '—' }}</td>
           <td>
             {{ e.description }}
