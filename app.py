@@ -2194,8 +2194,12 @@ def money_filter(value):
 
 @app.context_processor
 def inject_form_defaults():
+    from salpurflask.utils.form_restore import build_form_restore
     ctx = {
         "form_data": {},
+        # What was submitted, when a POST failed and this page is the re-render
+        # (None otherwise) -- see salpurflask/utils/form_restore.py.
+        "form_restore": build_form_restore(),
         "payment_methods": PAYMENT_METHODS,
         "financial_accounts": active_accounts,
         "item_units": ITEM_UNITS,

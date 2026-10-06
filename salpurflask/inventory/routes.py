@@ -1345,6 +1345,18 @@ def stock_adjustment():
     if accessible_ids is not None:
         locations_query = locations_query.filter(Location.id.in_(accessible_ids))
     locations = locations_query.order_by(Location.name).all()
+
+    def _render_form():
+        """Same page again after a failed save (a redirect would drop what was
+        typed); the submitted values are put back by the generic form restore."""
+        return render_template("stock_adjustment.html",
+            adjustments=adjustments, items=items, pagination=pagination,
+            search=search, adj_types=ADJUSTMENT_TYPES,
+            today=now_local().strftime("%Y-%m-%d"),
+            locations=locations,
+            default_location=(locations[0] if (accessible_ids is not None and locations)
+                              else get_or_create_default_location()))
+
     if request.method == "POST":
         item_id  = request.form.get("item_id", "").strip()
         adj_type = request.form.get("adj_type", "").strip()
@@ -1413,7 +1425,7 @@ def stock_adjustment():
                             batch = db.session.get(Batch, int(batch_id_raw)) if batch_id_raw.isdigit() else None
                             if batch is None or batch.item_id != item_obj.id:
                                 flash("Selected batch does not exist or does not belong to this item.", "danger")
-                                return redirect(url_for("stock_adjustment"))
+                                return _render_form()
                         else:
                             # direction == "in" with no batch selected: create
                             # or top up a named batch, or route into the
@@ -1470,7 +1482,7 @@ def stock_adjustment():
                 except PostingError as e:
                     db.session.rollback()
                     flash(str(e), "danger")
-                    return redirect(url_for("stock_adjustment"))
+                    return _render_form()
                 db.session.flush()
                 post_document("stock_adjustment", adj)
                 db.session.commit()

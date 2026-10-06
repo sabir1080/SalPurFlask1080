@@ -271,7 +271,14 @@ def purchase():
                 flash(f"Draft Purchase #{pur.id} saved.", "success")
                 return redirect(url_for("purchase"))
             except ValueError as e:
+                # A line can fail after the header was already flushed (e.g. a
+                # malformed expiry date): don't leave that half-built Purchase behind.
+                db.session.rollback()
                 flash(f"Invalid data: {e}", "danger")
+                # The rollback also discards a default location created earlier in
+                # this request (first run only); look it up again for the form.
+                template_default_location = (locations[0] if (accessible_ids is not None and locations)
+                                             else get_or_create_default_location())
     return render_template(
         "purchase.html",
         purchases=purchases,
@@ -557,6 +564,14 @@ def correct_purchase_route(id):
     active_payments = [p for p in pur.supplier_payments if not p.is_reversed]
     paid = get_purchase_paid(pur.id)
 
+    def _rerender():
+        """A failed correction shows the same page again, not a redirect to a fresh
+        GET -- a redirect would drop everything the admin had just edited. The
+        submitted values are put back by the generic form restore (base.html)."""
+        return render_template(
+            "correct_purchase.html", purchase=pur,
+            old_total=old_total, paid=paid, active_payments=active_payments)
+
     if request.method == "POST":
         supplier_id = request.form.get("supplier_id", "").strip()
         notes       = request.form.get("notes", "").strip()
@@ -592,23 +607,23 @@ def correct_purchase_route(id):
 
         if not supplier_id:
             flash("Supplier is required!", "danger")
-            return redirect(url_for("correct_purchase_route", id=pur.id))
+            return _rerender()
         if not rows:
             flash("At least one item is required!", "danger")
-            return redirect(url_for("correct_purchase_route", id=pur.id))
+            return _rerender()
         if row_error:
             flash(row_error, "danger")
-            return redirect(url_for("correct_purchase_route", id=pur.id))
+            return _rerender()
         if not reason:
             flash("A reason for this correction is required.", "danger")
-            return redirect(url_for("correct_purchase_route", id=pur.id))
+            return _rerender()
         if supplier_changing and active_payments:
             flash("This Purchase has active payment(s) recorded against the current "
                   "supplier. The supplier cannot be changed while those payments exist — "
                   "doing so would leave a payment attached to the wrong supplier's ledger. "
                   "Reconcile or reassign the payments first, or leave the supplier "
                   "unchanged.", "danger")
-            return redirect(url_for("correct_purchase_route", id=pur.id))
+            return _rerender()
         if active_payments and not confirmed:
             flash(
                 f"This Purchase has {len(active_payments)} active payment(s) totalling "
@@ -616,7 +631,7 @@ def correct_purchase_route(id):
                 "exactly as recorded. If the corrected total ends up lower than the amount "
                 "already paid, the difference becomes a supplier credit; it is not "
                 "refunded or reversed automatically. Confirm to continue.", "warning")
-            return redirect(url_for("correct_purchase_route", id=pur.id))
+            return _rerender()
 
         try:
             # A Purchase's OLD lines *added* stock, so undoing them (step 1 below)
@@ -651,7 +666,7 @@ def correct_purchase_route(id):
             if stock_errors:
                 flash("Cannot correct — insufficient stock to undo the original receipt: "
                       + "; ".join(stock_errors), "danger")
-                return redirect(url_for("correct_purchase_route", id=pur.id))
+                return _rerender()
 
             # Step 1: undo the old Purchase's GL effect -- same primitives
             # reverse_document() uses, minus the terminal is_reversed flag.
@@ -839,7 +854,7 @@ def correct_purchase_route(id):
         except PostingError as e:
             db.session.rollback()
             flash(str(e), "danger")
-            return redirect(url_for("correct_purchase_route", id=id))
+            return _rerender()
         except Exception:
             db.session.rollback()
             raise

@@ -1177,6 +1177,13 @@
             }
         });
     </script>
+    {# A failed POST re-rendered this page: refill the form from what was submitted.
+       (form_data above is flat -- one value per name -- so it cannot carry line-item rows;
+       this can. Forms that already fill themselves from form_data just get the same values.) #}
+    {% if form_restore %}
+    <script id="form-restore-data" type="application/json">{{ form_restore|tojson }}</script>
+    <script src="{{ url_for('static', filename='js/form_restore.js') }}"></script>
+    {% endif %}
     <script>
         // Register PWA service worker so Chrome/Android treats the app as
         // installable (Add to Home Screen shows an app icon, not a bookmark).

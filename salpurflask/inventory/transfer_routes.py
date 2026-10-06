@@ -134,13 +134,20 @@ def transfer_new():
         locations_query = locations_query.filter(Location.id.in_(accessible_ids))
     locations = locations_query.order_by(Location.name).all()
 
+    def _rerender():
+        """A failed create shows the form again, not a redirect to an empty one;
+        the submitted rows are put back by the generic form restore (base.html)."""
+        return render_template("transfer_form.html", items=items, locations=locations,
+                               default_location=get_or_create_default_location(),
+                               today=datetime.utcnow().strftime("%Y-%m-%d"))
+
     if request.method == "POST":
         try:
             source_id = resolve_location_id(request.form.get("source_location_id"))
             destination_id = resolve_location_id(request.form.get("destination_location_id"))
         except ValueError as e:
             flash(str(e), "danger")
-            return redirect(url_for("transfer_new"))
+            return _rerender()
         require_transfer_access(source_id, destination_id)
 
         item_ids = request.form.getlist("item_id[]")
@@ -162,7 +169,7 @@ def transfer_new():
             if iid.strip() and qty.strip():
                 if not qty.strip().lstrip("-").isdigit():
                     flash(f"Quantity must be a whole number (got '{qty}').", "danger")
-                    return redirect(url_for("transfer_new"))
+                    return _rerender()
                 batch_id_raw = batch_ids[i].strip() if i < len(batch_ids) else ""
                 batch_id = int(batch_id_raw) if batch_id_raw.isdigit() else None
                 lines.append((int(iid), int(qty), batch_id))
@@ -171,7 +178,7 @@ def transfer_new():
             transfer_date = datetime.strptime(date_str, "%Y-%m-%d") if date_str else datetime.utcnow()
         except ValueError:
             flash("Invalid date format! Use YYYY-MM-DD.", "danger")
-            return redirect(url_for("transfer_new"))
+            return _rerender()
 
         from app import PostingError
 
@@ -184,11 +191,11 @@ def transfer_new():
         except PostingError as e:
             db.session.rollback()
             flash(f"Transfer was not created: {e}", "danger")
-            return redirect(url_for("transfer_new"))
+            return _rerender()
         except Exception:
             db.session.rollback()
             flash("Transfer was not created — nothing was changed.", "danger")
-            return redirect(url_for("transfer_new"))
+            return _rerender()
 
         _audit("create", "transfer", transfer.id,
               f"Draft transfer {transfer.source_location.name} -> {transfer.destination_location.name}")
