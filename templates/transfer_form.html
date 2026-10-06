@@ -71,6 +71,8 @@
                     <option value="{{ it.id }}" data-batch-tracked="{{ 'true' if it.batch_tracked else 'false' }}">{{ it.name }}</option>
                     {% endfor %}
                   </select>
+                  {# Source warehouse's stock for the picked item, with every warehouse's (item_lookup.js) #}
+                  <div class="stock-display small text-muted"></div>
                 </td>
                 <td><input type="number" min="1" class="form-control form-control-sm" name="quantity[]" required placeholder="Qty"></td>
                 <td class="batch-col d-none">
@@ -95,6 +97,7 @@ function addRow() {
     const first = tbody.querySelector('tr');
     const clone = first.cloneNode(true);
     clone.querySelectorAll('input').forEach(i => i.value = '');
+    clone.querySelectorAll('.stock-display').forEach(e => e.textContent = '');
     clone.querySelectorAll('select').forEach(s => s.selectedIndex = 0);
     const batchSel = clone.querySelector('.batch-select');
     if (batchSel) batchSel.innerHTML = '<option value="">Auto / not batch-tracked</option>';

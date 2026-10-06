@@ -30,12 +30,14 @@
         <form method="POST" class="row g-3" id="adjustmentForm">
             <div class="col-md-3">
                 <label class="form-label fw-semibold">Item <span class="text-danger">*</span></label>
-                <select class="form-select" name="item_id" id="adjItemSelect" required onchange="onAdjItemOrTypeChange()">
+                <select class="form-select item-select" name="item_id" id="adjItemSelect" required onchange="onAdjItemOrTypeChange()">
                     <option value="">— Select Item —</option>
                     {% for item in items %}
-                    <option value="{{ item.id }}" data-batch-tracked="{{ 'true' if item.batch_tracked else 'false' }}">{{ item.name }} (Stock: {{ item.stock }})</option>
+                    <option value="{{ item.id }}" data-batch-tracked="{{ 'true' if item.batch_tracked else 'false' }}">{{ item.name }}</option>
                     {% endfor %}
                 </select>
+                {# Selected warehouse's stock for this item, with every warehouse's (item_lookup.js) #}
+                <div class="stock-display small text-muted mt-1"></div>
             </div>
             <div class="col-md-2">
                 <label class="form-label fw-semibold">Type <span class="text-danger">*</span></label>

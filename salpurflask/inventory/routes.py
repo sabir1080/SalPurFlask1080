@@ -26,6 +26,8 @@ from salpurflask.models.business_config import BusinessCategory
 from salpurflask.auth import verified_required, manager_required, admin_required
 from salpurflask.utils import now_local, barcode_taken, sku_taken, get_paginated_results, line_base_qty, csv_response, excel_response, parse_import_file, get_item_locked
 from salpurflask.services.lookup_service import search_items, get_item_filter_fields
+from salpurflask.services.location_stock import stock_by_location, picker_stock_fields
+from salpurflask.services.location_permissions import accessible_location_ids
 
 # Item identifiers that are real Item columns, never a per-category ProductField —
 # an admin-defined field with one of these names would silently collide with (or be
@@ -1714,15 +1716,50 @@ def api_item_lookup():
     rows, total, page, per_page = search_items(
         q=q, category_id=category_id, filters=filters, page=page, per_page=per_page)
 
+    # The form's selected warehouse (optional): `stock` becomes that warehouse's
+    # quantity instead of the company total, and every row carries the
+    # warehouse-wise breakdown -- see services/location_stock.py.
+    location_id = _picker_location_id()
+    breakdown = stock_by_location(rows, accessible_location_ids())
+
     return {
         "results": [{
             "id": it.id, "name": it.name, "sku": it.sku or "", "barcode": it.barcode or "",
             "category": it.business_category.name if it.business_category else None,
-            "unit": it.unit or "Pcs", "stock": it.stock,
+            "unit": it.unit or "Pcs",
             "sale_price": float(it.sale_price or 0),
+            **picker_stock_fields(it, location_id, breakdown[it.id]),
         } for it in rows],
         "total": total, "page": page, "per_page": per_page,
     }
+
+
+def _picker_location_id():
+    """The ?location_id= the picker was opened for; None when the form has no
+    warehouse selected -- or when the user may not see that warehouse. It is
+    ignored then rather than refused: nothing about it is returned (the breakdown
+    only ever lists warehouses the user can see), and a picker on a page whose
+    warehouse the user has no access to must still search, not fail to load."""
+    from salpurflask.services.location_permissions import can_access_location
+
+    location_id = request.args.get("location_id", type=int)
+    if location_id is not None and not can_access_location(location_id):
+        return None
+    return location_id
+
+
+@verified_required
+def api_item_stock():
+    """Current stock for a few already-picked items (?ids=1,2,3), same fields the
+    lookup returns -- so a form can refresh the stock hint of rows it already holds
+    when the warehouse changes, or when an edit page loads."""
+    ids = [int(x) for x in request.args.get("ids", "").split(",")[:200] if x.strip().isdigit()]
+    items = Item.query.filter(Item.id.in_(ids)).all() if ids else []
+    location_id = _picker_location_id()
+    breakdown = stock_by_location(items, accessible_location_ids())
+    return {"items": {str(it.id): {"unit": it.unit or "Pcs",
+                                   **picker_stock_fields(it, location_id, breakdown[it.id])}
+                      for it in items}}
 
 
 @verified_required

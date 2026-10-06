@@ -13,7 +13,7 @@
     <h5 class="mb-0">Sale Invoice Details</h5>
   </div>
   <div class="card-body">
-<form method="POST">
+<form method="POST" data-stock-location="{{ sale.location_id or '' }}">
     <div class="row g-3 mb-3">
         <div class="col-md-4">
             <label class="form-label fw-semibold">Customer <span class="text-danger">*</span></label>
@@ -144,8 +144,8 @@ function applyItemToRow(row, item) {
     row.querySelector('.item-select').value = item.id;
     row.querySelector('.item-picker-label').textContent = item.name;
     row.querySelector('.item-picker-label').classList.remove('text-muted');
-    row.querySelector('.stock-display').textContent =
-        item.stock !== undefined ? 'Stock: ' + item.stock + ' ' + (item.unit || 'Pcs') : '—';
+    // Selected warehouse's stock + the warehouse-wise breakdown (static/js/item_lookup.js).
+    ItemLookup.renderStock(row.querySelector('.stock-display'), item);
     fetchUnitsAndPopulate(row, item.id, undefined, item.sale_price);
 }
 

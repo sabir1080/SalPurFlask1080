@@ -303,8 +303,8 @@ function applyItemToRow(row, item) {
     row.querySelector('.item-select').value = item.id;
     row.querySelector('.item-picker-label').textContent = item.name;
     row.querySelector('.item-picker-label').classList.remove('text-muted');
-    row.querySelector('.stock-display').textContent =
-        item.stock !== undefined ? 'Stock: ' + item.stock + ' ' + (item.unit || 'Pcs') : '—';
+    // Selected warehouse's stock + the warehouse-wise breakdown (static/js/item_lookup.js).
+    ItemLookup.renderStock(row.querySelector('.stock-display'), item);
     fetch("/api/items/" + encodeURIComponent(item.id) + "/units")
         .then(r => r.json())
         .then(data => populateUnits(row, data.units || [], item.sale_price))

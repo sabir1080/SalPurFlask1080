@@ -66,7 +66,7 @@
                       '<th class="d-none d-md-table-cell">SKU</th>' +
                       '<th class="d-none d-md-table-cell">Barcode</th>' +
                       '<th class="d-none d-sm-table-cell">Category</th>' +
-                      '<th class="text-end">Stock</th>' +
+                      '<th class="text-end" id="ilkStockHead">Stock</th>' +
                       '<th class="text-end">Price</th>' +
                     '</tr>' +
                   '</thead>' +
@@ -98,6 +98,7 @@
       pageInfo: document.getElementById("ilkPageInfo"),
       prev: document.getElementById("ilkPrev"),
       next: document.getElementById("ilkNext"),
+      stockHead: document.getElementById("ilkStockHead"),
     };
     bsModal = new bootstrap.Modal(els.modalEl);
 
@@ -236,6 +237,7 @@
     params.set("page", String(state.page));
     params.set("per_page", String(PAGE_SIZE));
     if (state.categoryId) params.set("category_id", state.categoryId);
+    if (state.locationId) params.set("location_id", state.locationId);
     Object.keys(state.filterValues).forEach(function (name) {
       var v = state.filterValues[name];
       if (v) params.set("filter_" + name, v);
@@ -285,10 +287,13 @@
       tr.appendChild(cell(item.sku || "—", "d-none d-md-table-cell"));
       tr.appendChild(cell(item.barcode || "—", "d-none d-md-table-cell"));
       tr.appendChild(cell(item.category || "—", "d-none d-sm-table-cell"));
-      tr.appendChild(cell(String(item.stock != null ? item.stock : "—"), "text-end"));
+      tr.appendChild(stockCell(item));
       tr.appendChild(cell((item.sale_price || 0).toFixed(2), "text-end"));
       els.results.appendChild(tr);
     });
+    var first = state.rows[0];
+    els.stockHead.textContent = first && first.location_name
+      ? "Stock @ " + first.location_name : "Stock";
     var from = (state.page - 1) * PAGE_SIZE + 1;
     var to = Math.min(state.page * PAGE_SIZE, state.total);
     els.pageInfo.textContent = "Showing " + from + "–" + to + " of " + state.total + " results";
@@ -296,6 +301,119 @@
     els.next.disabled = state.page >= state.totalPages;
     renderHighlight();
   }
+
+  // ── Warehouse-wise stock ────────────────────────────────────────────────
+  // The server sends `stock` = the selected warehouse's quantity (when the form has
+  // one selected) and `stock_by_location` = every warehouse's quantity. Showing
+  // the company total next to a form that moves stock at ONE warehouse made the
+  // picker say "63" for a warehouse that holds 0.
+
+  /** The warehouse the calling form is working with, '' when it has none:
+   *  an explicit option, a [data-stock-location] holder (edit/correct pages, whose
+   *  warehouse is fixed), or the form's own warehouse field. */
+  function currentLocationId(explicit) {
+    if (explicit) return String(explicit);
+    var holder = document.querySelector("[data-stock-location]");
+    if (holder) return holder.getAttribute("data-stock-location") || "";
+    var field = document.querySelector(
+      'form [name="location_id"], form [name="source_location_id"]');
+    return field ? (field.value || "") : "";
+  }
+
+  /** "Main: 0 | South: 63 | North: 18" with the selected warehouse in bold. */
+  function breakdownNode(by, selectedId) {
+    var wrap = document.createElement("span");
+    by.forEach(function (b, i) {
+      if (i) wrap.appendChild(document.createTextNode(" | "));
+      var part = document.createElement("span");
+      part.textContent = b.name + ": " + b.qty;
+      if (b.id === selectedId) part.className = "fw-bold text-body";
+      wrap.appendChild(part);
+    });
+    return wrap;
+  }
+
+  function stockCell(item) {
+    var td = document.createElement("td");
+    td.className = "text-end";
+    var main = document.createElement("div");
+    main.textContent = String(item.stock != null ? item.stock : "—");
+    td.appendChild(main);
+    if ((item.stock_by_location || []).length > 1) {
+      var small = document.createElement("div");
+      small.className = "small text-muted";
+      small.appendChild(breakdownNode(item.stock_by_location, item.location_id));
+      td.appendChild(small);
+    }
+    return td;
+  }
+
+  /** Fill a row's `.stock-display` element for one picked/refreshed item. Replaces
+   *  only its own "Stock: …" content, so other text the page keeps there (a batch
+   *  note on the correction page) survives. */
+  function renderStock(el, item) {
+    if (!el) return;
+    var box = null;
+    Array.prototype.forEach.call(el.children, function (c) {
+      if (c.classList.contains("ilk-stock")) box = c;
+    });
+    if (!box) {
+      Array.prototype.slice.call(el.childNodes).forEach(function (n) {
+        if (n.nodeType === 3) el.removeChild(n);   // the page's old "Stock: N" text
+      });
+      box = document.createElement("div");
+      box.className = "ilk-stock";
+      el.insertBefore(box, el.firstChild);
+    }
+    box.textContent = "";
+    if (!item || item.stock === undefined) { box.textContent = "—"; return; }
+    var by = item.stock_by_location || [];
+    var line = document.createElement("div");
+    line.textContent = "Stock: " + item.stock + " " + (item.unit || "Pcs") +
+      (by.length > 1 && item.location_name ? " @ " + item.location_name : "");
+    box.appendChild(line);
+    if (by.length > 1) box.appendChild(breakdownNode(by, item.location_id));
+  }
+
+  /** Re-read the stock of the items already on a form (edit/correct pages render
+   *  the saved total; a changed warehouse changes every row). One request. */
+  function refreshStockHints(scope) {
+    var hints = Array.prototype.slice.call((scope || document).querySelectorAll(".stock-display"));
+    var byId = {};
+    hints.forEach(function (el) {
+      var row = el.closest("tr") || el.closest("form");
+      var idEl = row && row.querySelector(".item-select");
+      if (idEl && idEl.value) (byId[idEl.value] = byId[idEl.value] || []).push(el);
+      else if (idEl && el.querySelector(".ilk-stock")) el.textContent = "";   // item cleared
+    });
+    var ids = Object.keys(byId);
+    if (!ids.length) return;
+    var url = "/api/items/stock?ids=" + ids.join(",");
+    var loc = currentLocationId();
+    if (loc) url += "&location_id=" + encodeURIComponent(loc);
+    fetch(url)
+      .then(function (r) { return r.ok ? r.json() : { items: {} }; })
+      .then(function (data) {
+        ids.forEach(function (id) {
+          if (data.items && data.items[id]) byId[id].forEach(function (el) { renderStock(el, data.items[id]); });
+        });
+      })
+      .catch(function () { /* a stale hint is not worth an error */ });
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    refreshStockHints();
+  });
+  document.addEventListener("change", function (e) {
+    var t = e.target;
+    if (!t || !t.matches) return;
+    if (t.matches('[name="location_id"], [name="source_location_id"]')) {
+      refreshStockHints();
+    } else if (t.matches("select.item-select")) {
+      // A native item <select> (transfer, stock adjustment): refresh its own hint.
+      refreshStockHints(t.closest("tr") || t.closest("form"));
+    }
+  });
 
   function cell(text, cls) {
     var td = document.createElement("td");
@@ -358,6 +476,7 @@
       rows: [], highlighted: -1,
       categoryId: options.categoryId || null,
       filterValues: {},
+      locationId: currentLocationId(options.locationId),
     };
     els.search.value = "";
     els.filters.innerHTML = "";
@@ -376,5 +495,5 @@
     runSearch();
   }
 
-  window.ItemLookup = { open: open };
+  window.ItemLookup = { open: open, renderStock: renderStock, currentLocationId: currentLocationId };
 })();

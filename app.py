@@ -316,7 +316,7 @@ from salpurflask.inventory.routes import (
     labels, labels_assign, send_low_stock_alert,
     get_product_category_data, stock_movements, expiring_batches,
     enable_item_batch_tracking,
-    api_item_lookup, api_item_filter_fields, api_item_units,
+    api_item_lookup, api_item_stock, api_item_filter_fields, api_item_units,
 )
 from salpurflask.inventory.transfer_routes import (
     transfer_list, transfer_new, transfer_detail,
@@ -389,6 +389,7 @@ app.add_url_rule("/item/<int:id>/ledger/export", "export_item_ledger", export_it
 app.add_url_rule("/item/<int:id>/ledger/export/excel", "export_item_ledger_excel", export_item_ledger_excel)
 app.add_url_rule("/api/product-category-data/<int:product_id>/<int:category_id>", "get_product_category_data", get_product_category_data, methods=["GET"])
 app.add_url_rule("/api/items/lookup", "api_item_lookup", api_item_lookup, methods=["GET"])
+app.add_url_rule("/api/items/stock", "api_item_stock", api_item_stock, methods=["GET"])
 app.add_url_rule("/api/items/filter-fields/<int:category_id>", "api_item_filter_fields", api_item_filter_fields, methods=["GET"])
 app.add_url_rule("/api/items/<int:id>/units", "api_item_units", api_item_units, methods=["GET"])
 app.add_url_rule("/import", "bulk_import", bulk_import, methods=["GET"])

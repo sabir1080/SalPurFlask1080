@@ -1175,10 +1175,23 @@ def pos_lookup():
                    .filter(Item.business_category_id != None)
                    .order_by(Item.name).limit(20).all())
     from app import get_standard_tax_rate
+    from salpurflask.models import resolve_location_id
+    from salpurflask.services.location_permissions import accessible_location_ids
+    from salpurflask.services.location_stock import stock_by_location, picker_stock_fields
     std_tax = get_standard_tax_rate()
+    # The warehouse POS will actually sell from -- resolved exactly as
+    # pos_checkout() resolves it (a blank location_id means the default
+    # warehouse) -- so "in stock" here is that warehouse's stock, not the
+    # company total the checkout would then reject.
+    try:
+        location_id = resolve_location_id(request.args.get("location_id"))
+    except ValueError:
+        location_id = None
+    breakdown = stock_by_location(matches, accessible_location_ids())
     return {"items": [{
         "id": it.id, "name": it.name, "barcode": it.barcode or "",
-        "price": float(it.sale_price or 0), "stock": it.stock,
+        "price": float(it.sale_price or 0),
+        **picker_stock_fields(it, location_id, breakdown[it.id]),
         "unit": it.unit or "Pcs",
         "item_type": it.item_type or "STOCK",
         "default_tax_percent": float(it.default_tax_percent or std_tax or 0),

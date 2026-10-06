@@ -707,6 +707,16 @@
         '<div class="meta">' + (it.barcode ? it.barcode + ' · ' : '') + money(it.price) + '</div></div>' +
         '<div class="' + (it.stock > 0 ? 'meta' : 'oos') + '">' +
         (it.stock > 0 ? (it.stock + ' in stock') : 'Out of stock') + '</div>';
+      // it.stock is the warehouse this sale is rung from; show where the rest is.
+      const by = it.stock_by_location || [];
+      if (by.length > 1) {
+        const bd = document.createElement('div');
+        bd.className = 'meta';
+        bd.style.fontSize = '11px';
+        bd.textContent = (it.location_name ? '@ ' + it.location_name + ' — ' : '') +
+          by.map(b => b.name + ': ' + b.qty).join(' | ');
+        d.lastElementChild.appendChild(bd);
+      }
       d.addEventListener('click', () => addItem(it));
       results.appendChild(d);
     });
