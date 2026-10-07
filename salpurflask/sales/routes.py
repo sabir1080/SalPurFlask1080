@@ -438,7 +438,8 @@ def correct_sale_route(id):
         from app import get_standard_tax_rate
         return render_template(
             "correct_sale.html", sale=sal, default_tax_rate=get_standard_tax_rate() or 0,
-            old_total=old_total, received=received, active_payments=active_payments)
+            old_total=old_total, received=received, active_payments=active_payments,
+            stock_location_id=stock_check_location_id)
 
     if request.method == "POST":
         customer_id = request.form.get("customer_id", "").strip()
@@ -672,6 +673,7 @@ def correct_sale_route(id):
     return render_template(
         "correct_sale.html", sale=sal, default_tax_rate=default_tax,
         old_total=old_total, received=received, active_payments=active_payments,
+        stock_location_id=stock_check_location_id,
     )
 
 
@@ -818,7 +820,8 @@ def edit_sale(id):
                 flash(f"Invalid data: {e}", "danger")
     from app import get_standard_tax_rate
     default_tax = get_standard_tax_rate() or 0
-    return render_template("edit_sale.html", sale=sal, default_tax_rate=default_tax)
+    return render_template("edit_sale.html", sale=sal, default_tax_rate=default_tax,
+                           stock_location_id=location_id)
 
 
 @sales_bp.route('/sale/<int:id>/delete', methods=['POST'])

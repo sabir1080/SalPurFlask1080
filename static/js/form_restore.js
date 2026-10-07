@@ -185,7 +185,8 @@
             setLabel(el, meta.name);
             var row = el.closest('tr');
             var stock = row && row.querySelector('.stock-display');
-            if (stock && (changed[i] || /^[\s—-]*$/.test(stock.textContent))) stock.textContent = 'Stock: ' + meta.stock;
+            if (stock && stock.getAttribute('data-stock-style') !== 'breakdown' &&
+                (changed[i] || /^[\s—-]*$/.test(stock.textContent))) stock.textContent = 'Stock: ' + meta.stock;
             if (row && meta.batch_tracked) row.classList.add('batch-tracked-row');
         });
         if (typeof window.updateBatchColumnVisibility === 'function') window.updateBatchColumnVisibility();

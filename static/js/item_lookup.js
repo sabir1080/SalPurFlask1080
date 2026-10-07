@@ -320,15 +320,16 @@
     return field ? (field.value || "") : "";
   }
 
-  /** "Main: 0 | South: 63 | North: 18" with the selected warehouse in bold. */
+  /** One warehouse per line ("Main: 0" / "South: 63" / ...), the selected one in
+   *  bold. Lines wrap on their own, so it stays readable in a narrow column. */
   function breakdownNode(by, selectedId) {
-    var wrap = document.createElement("span");
-    by.forEach(function (b, i) {
-      if (i) wrap.appendChild(document.createTextNode(" | "));
-      var part = document.createElement("span");
-      part.textContent = b.name + ": " + b.qty;
-      if (b.id === selectedId) part.className = "fw-bold text-body";
-      wrap.appendChild(part);
+    var wrap = document.createElement("div");
+    wrap.className = "ilk-breakdown";
+    by.forEach(function (b) {
+      var line = document.createElement("div");
+      line.textContent = b.name + ": " + b.qty;
+      if (b.id === selectedId) line.className = "fw-bold text-body";
+      wrap.appendChild(line);
     });
     return wrap;
   }
@@ -368,6 +369,12 @@
     box.textContent = "";
     if (!item || item.stock === undefined) { box.textContent = "—"; return; }
     var by = item.stock_by_location || [];
+    // Sale form lines (data-stock-style="breakdown"): only "Warehouse: qty" lines,
+    // the selected one bold -- no "Stock: N Pcs @ ..." headline.
+    if (el.getAttribute("data-stock-style") === "breakdown" && by.length) {
+      box.appendChild(breakdownNode(by, item.location_id));
+      return;
+    }
     var line = document.createElement("div");
     line.textContent = "Stock: " + item.stock + " " + (item.unit || "Pcs") +
       (by.length > 1 && item.location_name ? " @ " + item.location_name : "");

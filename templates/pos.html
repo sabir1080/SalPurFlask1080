@@ -710,11 +710,16 @@
       // it.stock is the warehouse this sale is rung from; show where the rest is.
       const by = it.stock_by_location || [];
       if (by.length > 1) {
+        // One warehouse per line; the one this sale is rung from in bold.
         const bd = document.createElement('div');
         bd.className = 'meta';
         bd.style.fontSize = '11px';
-        bd.textContent = (it.location_name ? '@ ' + it.location_name + ' — ' : '') +
-          by.map(b => b.name + ': ' + b.qty).join(' | ');
+        by.forEach(b => {
+          const line = document.createElement('div');
+          line.textContent = b.name + ': ' + b.qty;
+          if (b.id === it.location_id) line.style.fontWeight = '700';
+          bd.appendChild(line);
+        });
         d.lastElementChild.appendChild(bd);
       }
       d.addEventListener('click', () => addItem(it));
