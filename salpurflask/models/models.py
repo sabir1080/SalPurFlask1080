@@ -38,14 +38,14 @@ class User(db.Model, UserMixin):
 class Supplier(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
     name                = db.Column(db.String(100), nullable=False, index=True)
-    contact             = db.Column(db.String(15), nullable=False)
+    contact             = db.Column(db.String(30), nullable=False)
     address             = db.Column(db.String(200), nullable=False)
     opening_balance     = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
 
 class Customer(db.Model):
     id                  = db.Column(db.Integer, primary_key=True)
     name                = db.Column(db.String(100), nullable=False, index=True)
-    contact             = db.Column(db.String(15), nullable=False)
+    contact             = db.Column(db.String(30), nullable=False)
     address             = db.Column(db.String(200), nullable=False)
     opening_balance     = db.Column(db.Numeric(14, 4), nullable=False, default=0.0)
 
@@ -1403,7 +1403,7 @@ class DocumentSequence(db.Model):
     __tablename__ = "document_sequence"
     __table_args__ = (db.UniqueConstraint("doc_type", "year", name="uq_docseq_type_year"),)
     id          = db.Column(db.Integer, primary_key=True)
-    doc_type    = db.Column(db.String(20), nullable=False)     # purchase / sale
+    doc_type    = db.Column(db.String(40), nullable=False)     # purchase / sale / inventory_reconciliation
     year        = db.Column(db.String(40), nullable=False)     # fiscal year name, e.g. "2026"
     prefix      = db.Column(db.String(10), nullable=False)     # PUR / INV
     next_number = db.Column(db.Integer, nullable=False, default=1)
@@ -2871,7 +2871,7 @@ class JournalEntry(db.Model):
                                default=lambda: now_local(), index=True)
     reference      = db.Column(db.String(50), nullable=True)
     description    = db.Column(db.String(300), nullable=False)
-    source_type    = db.Column(db.String(20), nullable=False, default="manual")
+    source_type    = db.Column(db.String(40), nullable=False, default="manual")
     source_id      = db.Column(db.Integer, nullable=True)
     period_id      = db.Column(db.Integer, db.ForeignKey("accounting_period.id"), nullable=True)
     reversal_of_id = db.Column(db.Integer, db.ForeignKey("journal_entry.id"), nullable=True)

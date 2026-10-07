@@ -8,10 +8,13 @@ from salpurflask.config import APP_TIMEZONE
 
 # Phone number validation
 _PHONE_PUNCTUATION = set("+-() ./")
+_PHONE_MAX_LENGTH = 30       # width of supplier.contact / customer.contact
 
 def valid_phone(raw):
     """Validate phone number format."""
     if not raw or len(raw) < 7:
+        return False
+    if len(raw) > _PHONE_MAX_LENGTH:      # supplier/customer.contact is varchar(30): refuse, don't 500
         return False
     digits = ''.join(c for c in raw if c.isdigit())
     if len(digits) < 7 or len(digits) > 15:

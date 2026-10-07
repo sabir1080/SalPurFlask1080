@@ -4,7 +4,7 @@ from datetime import datetime
 import pytest
 
 from app import (
-    db, Sale, DocumentSequence, PostingError,
+    db, Sale, Customer, Item, DocumentSequence, PostingError,
     allocate_document_number, assert_not_numbered, backfill_document_numbers,
     seed_chart_of_accounts, seed_fixed_asset_accounts, seed_fiscal_year,
 )
@@ -76,9 +76,17 @@ def test_a_numbered_invoice_cannot_be_deleted(appctx):
 
 def test_backfill_numbers_old_documents_oldest_first(appctx):
     _years(2026)
-    older = Sale(customer_id=1, item_id=1, quantity=1, sale_price=1,
+    # PostgreSQL enforces the foreign keys, so the sales need a real customer and item
+    # (the tables are empty here); the old hard-coded ids 1/1 only worked on SQLite.
+    customer = Customer(name="C", contact="0300123456", address="X", opening_balance=0)
+    db.session.add(customer)
+    db.session.flush()
+    item = Item(name="I", purchase_price=1, sale_price=1)
+    db.session.add(item)
+    db.session.flush()
+    older = Sale(customer_id=customer.id, item_id=item.id, quantity=1, sale_price=1,
                  date=datetime(2026, 1, 10))
-    newer = Sale(customer_id=1, item_id=1, quantity=1, sale_price=1,
+    newer = Sale(customer_id=customer.id, item_id=item.id, quantity=1, sale_price=1,
                  date=datetime(2026, 4, 20))
     db.session.add_all([newer, older])        # added out of order on purpose
     db.session.commit()

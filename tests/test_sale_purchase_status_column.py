@@ -190,7 +190,12 @@ def test_migrate_database_backfills_status_on_a_database_missing_the_column():
     import subprocess
     import sys
 
-    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    # The one test allowed its own throwaway SQLite database: it has to rebuild a pre-migration
+    # schema, which means destructive DDL it cannot run against the normal PostgreSQL test
+    # database. The name must match the approved tradeflow_test_*.db pattern, and each
+    # subprocess must be started with TRADEFLOW_ISOLATED_SQLITE=1 (salpurflask/test_db_guard.py);
+    # the normal pytest process never sets it.
+    tmp = tempfile.NamedTemporaryFile(prefix="tradeflow_test_", suffix=".db", delete=False)
     tmp.close()
     try:
         # Build the real schema (via create_all, same as any first boot) in a
@@ -199,6 +204,7 @@ def test_migrate_database_backfills_status_on_a_database_missing_the_column():
         setup_uri = "sqlite:///" + tmp.name.replace("\\", "/")
         setup_env = dict(os.environ)
         setup_env["DATABASE_URL"] = setup_uri
+        setup_env["TRADEFLOW_ISOLATED_SQLITE"] = "1"
         subprocess.run(
             [sys.executable, "-c",
              "from app import app, db\n"
@@ -223,8 +229,8 @@ def test_migrate_database_backfills_status_on_a_database_missing_the_column():
         conn.execute(
             "INSERT INTO item (id, name, unit, item_type, opening_stock, stock, "
             "reorder_level, inventory_value, default_tax_percent, is_taxable, "
-            "purchase_price, sale_price) "
-            "VALUES (1, 'I', 'Pcs', 'STOCK', 5, 5, 0, 50, 0, 1, 10, 20)")
+            "purchase_price, sale_price, batch_tracked) "
+            "VALUES (1, 'I', 'Pcs', 'STOCK', 5, 5, 0, 50, 0, 1, 10, 20, 0)")
         conn.execute("INSERT INTO customer (id, name, contact, address, opening_balance) "
                      "VALUES (1, 'C', 'x', 'x', 0)")
         conn.execute("INSERT INTO purchase (id, supplier_id, item_id, quantity, purchase_price, date) "
@@ -238,6 +244,7 @@ def test_migrate_database_backfills_status_on_a_database_missing_the_column():
 
         migrate_env = dict(os.environ)
         migrate_env["DATABASE_URL"] = setup_uri
+        migrate_env["TRADEFLOW_ISOLATED_SQLITE"] = "1"
         result = subprocess.run(
             [sys.executable, "-c",
              "from app import app, migrate_database\n"

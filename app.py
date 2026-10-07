@@ -40,10 +40,21 @@ if not os.path.exists(env_path):
     print("   Create .env from .env.example or .env.local")
     print("   Running with defaults — this may cause issues!")
 
+# A test run must never be pointed at a real database. Under tests, .env must NOT override
+# the environment (it used to, silently replacing the test database that tests/conftest.py
+# had set with whatever DATABASE_URL .env named), and the database must be the approved one:
+# local PostgreSQL `tradeflow_test` (127.0.0.1/localhost:5432), whose URL comes only from
+# TRADEFLOW_TEST_DATABASE_URL -- checked here, before anything touches a database.
+# (The single isolated-SQLite exception is described in salpurflask/test_db_guard.py.)
+from salpurflask.test_db_guard import under_test, require_approved_test_database
+_UNDER_TEST = under_test()
+
 #load_dotenv(env_path)
-load_dotenv(env_path, override=True)
+load_dotenv(env_path, override=not _UNDER_TEST)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
+if _UNDER_TEST:
+    require_approved_test_database(DATABASE_URL)
 
 if DATABASE_URL:
     # Render / PostgreSQL — Render deta hai "postgres://" lekin SQLAlchemy 1.4+ ko "postgresql://" chahiye
@@ -606,7 +617,7 @@ def verify_token(token, expiration=3600):
 
 def _load_mail_config():
     if not app.config.get("MAIL_USERNAME") or not app.config.get("MAIL_PASSWORD"):
-        load_dotenv(os.path.join(BASE_DIR, ".env"), override=True)
+        load_dotenv(os.path.join(BASE_DIR, ".env"), override=not _UNDER_TEST)
         app.config["MAIL_USERNAME"] = os.getenv("MAIL_USERNAME", "").strip()
         app.config["MAIL_PASSWORD"] = os.getenv("MAIL_PASSWORD", "").replace(" ", "")
 
@@ -1768,6 +1779,42 @@ def migrate_database():
                         )
                         migration_blocked = True
                         break
+
+    # Widen varchar columns whose models were made longer. SQLite ignores lengths; PostgreSQL
+    # enforces them, so a longer value failed there with "value too long for type character
+    # varying(N)":
+    #   * document_sequence.doc_type / journal_entry.source_type  20 -> 40  ("inventory_reconciliation"
+    #     is 24 characters, written when a stock reconciliation is posted)
+    #   * supplier.contact / customer.contact                    15 -> 30  (a formatted international
+    #     number such as "+44 20 7946 0958" is 16 characters)
+    # create_all() never alters an existing table, hence this step. Idempotent (a column already
+    # at least as wide is skipped) and best-effort like the money-column migration above: growing
+    # a varchar is catalog-only in PostgreSQL (no table rewrite) but still wants a brief lock, so a
+    # short lock_timeout makes it fail fast instead of hanging a zero-downtime deploy; a column
+    # skipped here is retried on the next startup. Each column is attempted independently.
+    if is_postgres:
+        for _table, _column, _wide in (("document_sequence", "doc_type", 40),
+                                       ("journal_entry", "source_type", 40),
+                                       ("supplier", "contact", 30),
+                                       ("customer", "contact", 30)):
+            try:
+                with db.engine.connect() as _conn:
+                    _length = _conn.execute(text(
+                        "SELECT character_maximum_length FROM information_schema.columns "
+                        "WHERE table_schema = current_schema() "
+                        "AND table_name = :t AND column_name = :c"
+                    ), {"t": _table, "c": _column}).scalar()
+                if _length is None or _length >= _wide:
+                    continue            # table/column missing, not a varchar, or already wide enough
+                with db.engine.begin() as _conn:
+                    _conn.execute(text("SET LOCAL lock_timeout = '4s'"))
+                    _conn.execute(text(
+                        f'ALTER TABLE "{_table}" ALTER COLUMN "{_column}" TYPE VARCHAR({int(_wide)})'))
+                app.logger.info("Widened %s.%s from varchar(%s) to varchar(%s)", _table, _column, _length, _wide)
+            except Exception as e:
+                app.logger.warning(
+                    "Deferring varchar widening (lock busy or ALTER failed at %s.%s); "
+                    "will retry on next startup: %s", _table, _column, e)
 
     # Tag money movements with the cash/bank account they hit. Nullable and no
     # backfill: existing rows stay NULL and keep being matched by payment_method
