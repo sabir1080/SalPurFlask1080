@@ -272,6 +272,11 @@
 <div class="pos-grid">
   <!-- LEFT: scan / search -->
   <div class="pos-card">
+    <div class="mb-3" id="posWarehouseBar">
+      <label class="form-label fw-semibold mb-1" for="posWarehouse"><i class="bi bi-building"></i> Warehouse</label>
+      <select id="posWarehouse" class="form-select"></select>
+      <div class="form-text" id="posWarehouseHint"></div>
+    </div>
     <label class="form-label fw-semibold mb-3">Scan barcode / QR, or type an item name</label>
     <input id="scan" class="form-control pos-scan" autocomplete="off" autofocus placeholder="Scan or search…">
     <div class="form-text">A USB barcode/QR reader types the code and adds the item automatically.</div>
@@ -377,6 +382,17 @@
   let holdVersion = null;  // For optimistic locking
   let userEditedPaid = false;  // Track if user manually edited the paid field
 
+  // The warehouse this cart is pinned to. It is chosen when a sale starts (the company
+  // default, read fresh from the server) and may be changed for THIS sale only: it is sent
+  // with every lookup / batch lookup / hold / checkout, and the server re-validates it
+  // each time (exists, active, this user allowed). null = none chosen / none available.
+  const warehouseEl = document.getElementById('posWarehouse');
+  const warehouseHint = document.getElementById('posWarehouseHint');
+  const INITIAL_WAREHOUSES = {{ pos_warehouses|tojson }};
+  const INITIAL_DEFAULT_WAREHOUSE = {{ pos_default_warehouse_id|tojson }};
+  let posWarehouses = [];
+  let posLocationId = null;
+
   // Check if resuming a held bill
   const params = new URLSearchParams(window.location.search);
   const holdIdParam = params.get('hold_id');
@@ -410,6 +426,21 @@
           document.getElementById('paid').value = data.amount_paid || 0;
           userEditedPaid = false;  // Reset edit tracking for resumed bill
           render();
+          if (data.location_id != null) {
+            if (posWarehouses.some(w => w.id === data.location_id)) {
+              renderWarehouses(data.location_id);
+            } else {
+              renderWarehouses(null);
+              flash('This held bill was pinned to warehouse "' + (data.location_name || '') +
+                    '", which is no longer available to you. Choose a warehouse to continue.', true);
+            }
+          } else {
+            // Held before the POS had a warehouse selector: no warehouse was saved.
+            const cur = posWarehouses.find(w => w.id === posLocationId);
+            flash('This held bill has no saved warehouse; it will be sold from ' +
+                  (cur ? cur.name : 'the selected warehouse') + '.', false);
+          }
+          refreshCartStock();   // the stock saved with the bill is not this warehouse's
         } else {
           flash('Failed to load held bill: ' + (data.error || 'Unknown error'), true);
         }
@@ -641,6 +672,7 @@
     const amountPaid = parseFloat(paidEl.value || 0);
 
     const canCheckout =
+      posLocationId !== null &&    // A warehouse is selected (and available)
       cart.length > 0 &&           // At least one item
       grandTotal > 0 &&             // Grand total is positive
       amountPaid > 0;               // Some amount received
@@ -649,8 +681,99 @@
   }
 
   function updateHoldButtonState() {
-    holdBtn.disabled = cart.length === 0;
+    holdBtn.disabled = cart.length === 0 || posLocationId === null;
   }
+
+  // ── Warehouse selector ────────────────────────────────────────────────
+  function renderWarehouses(selectedId) {
+    warehouseEl.innerHTML = '';
+    const available = posWarehouses.length > 0;
+    const selected = available && posWarehouses.some(w => w.id === selectedId) ? selectedId : null;
+    if (!available) {
+      const o = document.createElement('option');
+      o.value = '';
+      o.textContent = 'No warehouse available';
+      warehouseEl.appendChild(o);
+    } else {
+      if (selected === null) {
+        const o = document.createElement('option');
+        o.value = '';
+        o.textContent = '— select a warehouse —';
+        warehouseEl.appendChild(o);
+      }
+      posWarehouses.forEach(w => {
+        const o = document.createElement('option');
+        o.value = String(w.id);
+        o.textContent = w.name;
+        warehouseEl.appendChild(o);
+      });
+    }
+    warehouseEl.value = selected === null ? '' : String(selected);
+    posLocationId = selected;
+    // With a single warehouse the control stays visible (so the counter always shows where
+    // it is selling from) but cannot be changed.
+    warehouseEl.disabled = posWarehouses.length <= 1;
+    warehouseHint.textContent = !available
+      ? 'You have no active warehouse available. Ask an admin to give you access to one.'
+      : (posWarehouses.length === 1
+          ? 'Selling from your only available warehouse.'
+          : 'This sale is made from the selected warehouse. Changing it affects this sale only.');
+    warehouseHint.className = 'form-text' + (!available ? ' text-danger' : '');
+    updateCheckoutButtonState();
+    updateHoldButtonState();
+  }
+
+  // Re-read the list and the company default from the server. keepId = keep this sale's
+  // warehouse if it is still available; null = start of a NEW sale -> the current default.
+  async function loadWarehouses(keepId) {
+    try {
+      const r = await fetch("{{ url_for('pos_warehouses') }}");
+      const d = await r.json();
+      if (!d.ok) return;
+      posWarehouses = d.warehouses || [];
+      renderWarehouses(keepId === null ? d.default_id : keepId);
+    } catch (err) { /* keep what is on screen; the server re-validates at checkout anyway */ }
+  }
+
+  function startNewSale() { return loadWarehouses(null); }
+
+  // A rejected warehouse (inactive / access revoked / gone): refresh the list so the
+  // selector shows what is really available; the cart itself is left untouched.
+  function onWarehouseRejected(data) {
+    if (data && data.code === 'warehouse') loadWarehouses(posLocationId);
+  }
+
+  // Stock figures on the cart lines belong to the warehouse they were looked up in.
+  async function refreshCartStock() {
+    if (!cart.length || posLocationId === null) return;
+    try {
+      const ids = Array.from(new Set(cart.map(l => l.id))).join(',');
+      const r = await fetch('/api/items/stock?ids=' + ids + '&location_id=' + posLocationId);
+      const d = await r.json();
+      let short = false;
+      cart.forEach(l => {
+        const info = d.items && d.items[String(l.id)];
+        if (info) { l.stock = info.stock; if (l.item_type === 'STOCK' && l.qty > l.stock) short = true; }
+      });
+      render();
+      if (short) flash('Some lines exceed the stock in this warehouse — adjust them before completing the sale.', true);
+    } catch (err) { /* checkout re-validates stock server-side */ }
+  }
+
+  warehouseEl.addEventListener('change', async function () {
+    const next = parseInt(warehouseEl.value, 10) || null;
+    if (next === posLocationId) return;
+    if (cart.length && !confirm('Change the warehouse for this sale?\n\nStock figures will be refreshed and any manual batch selections cleared.')) {
+      warehouseEl.value = posLocationId === null ? '' : String(posLocationId);
+      return;
+    }
+    posLocationId = next;
+    cart.forEach(l => { l.manual_batch = null; });   // batch ids belong to the old warehouse
+    renderWarehouses(posLocationId);
+    await refreshCartStock();
+    results.innerHTML = '';
+    refocus();
+  });
 
   function addItem(it) {
     // Stock validation only for STOCK items, not SERVICE
@@ -728,8 +851,11 @@
   }
 
   async function lookup(q, autoAdd) {
-    const r = await fetch("{{ url_for('pos_lookup') }}?q=" + encodeURIComponent(q));
+    if (posLocationId === null) { flash('Select a warehouse first.', true); return; }
+    const r = await fetch("{{ url_for('pos_lookup') }}?q=" + encodeURIComponent(q) +
+                          "&location_id=" + posLocationId);
     const data = await r.json();
+    if (data.ok === false) { flash(data.error || 'Search failed.', true); onWarehouseRejected(data); return; }
     // A scanner sends the whole code then Enter: if exactly one item comes back, ring it.
     if (autoAdd && data.items.length === 1) { addItem(data.items[0]); return; }
     showResults(data.items);
@@ -800,12 +926,13 @@
     if (!line) return;
     let data;
     try {
-      const r = await fetch("/pos/item-batches/" + line.item_id);
+      const r = await fetch("/pos/item-batches/" + line.item_id + "?location_id=" + posLocationId);
       data = await r.json();
     } catch (err) {
       flash('Could not load batches.', true);
       return;
     }
+    if (data.ok === false) { flash(data.error || 'Could not load batches.', true); onWarehouseRejected(data); return; }
     if (!data.ok || !data.batches.length) {
       flash('No batch stock available for ' + line.name + ' at this warehouse.', true);
       return;
@@ -980,6 +1107,7 @@
         })),
         hold_id: resumedHoldId,
         client_version: holdVersion,
+        location_id: posLocationId,       // the warehouse this cart is pinned to
       };
 
       console.log('Checkout payload:', JSON.stringify(payload, null, 2));
@@ -991,9 +1119,16 @@
       });
       const data = await r.json();
       console.log('Checkout response:', data);
-      if (!data.ok) { flash(data.error || 'Sale failed.', true); checkoutBtn.disabled = false; return; }
+      if (!data.ok) {
+        // The cart is left exactly as it was so the cashier can correct and retry.
+        flash(data.error || 'Sale failed.', true);
+        checkoutBtn.disabled = false;
+        onWarehouseRejected(data);
+        return;
+      }
       // Sold. Clear the counter and open the slip.
       cart = []; paidEl.value = ''; render();
+      startNewSale();       // next sale starts on the company default as it is NOW
       flash('Sale ' + data.invoice_no + ' done. Change ' + CURR + ' ' + money(data.change), false);
       window.open(data.receipt_url, '_blank');
       refocus();
@@ -1026,6 +1161,7 @@
           })),
           hold_id: resumedHoldId,
           client_version: holdVersion,  // For optimistic locking conflict detection
+          location_id: posLocationId,   // saved with the bill; restored on resume
         }),
       });
       const data = await r.json();
@@ -1036,10 +1172,12 @@
         } else {
           flash(data.error || 'Failed to hold bill.', true);
           holdBtn.disabled = false;
+          onWarehouseRejected(data);
         }
         return;
       }
       cart = []; paidEl.value = ''; holdVersion = null; render();
+      startNewSale();
       flash('Bill held successfully.', false);
       refocus();
     } catch (err) {
@@ -1051,6 +1189,7 @@
   clearCartBtn.addEventListener('click', function () {
     if (cart.length && confirm('Clear cart?')) {
       cart = []; paidEl.value = ''; userEditedPaid = false; render(); refocus();
+      startNewSale();
     }
   });
 
@@ -1058,6 +1197,8 @@
   document.addEventListener('click', function (e) {
     if (!e.target.closest('input') && !e.target.closest('select') && !e.target.closest('button')) refocus();
   });
+  posWarehouses = INITIAL_WAREHOUSES;
+  renderWarehouses(INITIAL_DEFAULT_WAREHOUSE);
   render();
 })();
 </script>

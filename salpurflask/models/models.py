@@ -1053,6 +1053,9 @@ class PosHold(db.Model):
     customer_id         = db.Column(db.Integer, db.ForeignKey("customer.id"), nullable=False)
     user_id             = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     cart_data           = db.Column(db.Text, nullable=False)
+    # The warehouse the cart was pinned to when it was held. NULL for bills held before the
+    # POS had a warehouse selector (resumed on the then-current default warehouse).
+    location_id         = db.Column(db.Integer, db.ForeignKey("location.id"), nullable=True)
     hold_time           = db.Column(db.DateTime, default=lambda: now_local(), nullable=False, index=True)
     last_modified       = db.Column(db.DateTime, default=lambda: now_local(), onupdate=lambda: now_local(), nullable=False)
     version             = db.Column(db.Integer, default=1, nullable=False)  # Optimistic locking

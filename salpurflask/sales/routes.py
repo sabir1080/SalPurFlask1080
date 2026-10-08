@@ -1145,18 +1145,97 @@ def get_walkin_customer():
     return c
 
 
+def _pos_warehouses():
+    """The ACTIVE warehouses the current user may sell from at the POS: the same
+    filter sale() uses for its warehouse picker (active + user's allowed set)."""
+    from salpurflask.models import Location, get_or_create_default_location
+    from salpurflask.services.location_permissions import accessible_location_ids
+
+    # A database with no Location rows yet is not "no warehouse": the default warehouse is
+    # created lazily (the POS did this through resolve_location_id(None) before it had a
+    # selector). Without this a fresh database would be refused as having no warehouse.
+    get_or_create_default_location()
+    query = Location.query.filter_by(active=True)
+    allowed = accessible_location_ids()
+    if allowed is not None:
+        query = query.filter(Location.id.in_(allowed))
+    return query.order_by(Location.name).all()
+
+
+def _pos_default_warehouse_id(warehouses):
+    """The warehouse a NEW POS sale starts on: the company default if this user may
+    use it, else their first allowed one (None when they have none). Read fresh on
+    every call -- never remembered -- so a default an admin changed a minute ago is
+    what the next new sale gets."""
+    from salpurflask.models import get_or_create_default_location
+
+    default = get_or_create_default_location()
+    if any(w.id == default.id for w in warehouses):
+        return default.id
+    return warehouses[0].id if warehouses else None
+
+
+def _pos_resolve_warehouse(raw):
+    """Validate the warehouse a POS request names. Returns (location_id, None) or
+    (None, (json_body, status)).
+
+    The client's value is never trusted: it must be a real, ACTIVE warehouse the
+    current user may use. A blank value means "a new sale": the default above (this is
+    what requests from before the POS had a selector send). Errors are JSON -- the POS
+    JS parses every response as JSON, so abort(403)'s HTML page would only surface as
+    "Network error" -- and carry code "warehouse" so the page can refresh its list."""
+    from salpurflask.models import Location
+    from salpurflask.services.location_permissions import can_access_location
+
+    def refuse(message, status):
+        return None, ({"ok": False, "error": message, "code": "warehouse"}, status)
+
+    warehouses = _pos_warehouses()
+    if not warehouses:
+        return refuse("You have no active warehouse available for the POS. "
+                      "Ask an admin to give you access to one.", 403)
+    raw = "" if raw is None else str(raw).strip()
+    if not raw:
+        return _pos_default_warehouse_id(warehouses), None
+    if not raw.isdigit():
+        return refuse("That is not a valid warehouse.", 400)
+    location = db.session.get(Location, int(raw))
+    if location is None:
+        return refuse("That warehouse does not exist.", 400)
+    if not location.active:
+        return refuse(f'Warehouse "{location.name}" is inactive. Choose another warehouse.', 400)
+    if not can_access_location(location.id):
+        return refuse(f'You do not have access to warehouse "{location.name}".', 403)
+    return location.id, None
+
+
 @sales_bp.route('/pos', methods=['GET', 'POST'])
 @manager_required
 def pos():
     """POS main screen."""
     from app import active_accounts, Item
 
+    warehouses = _pos_warehouses()
     return render_template(
         "pos.html",
         accounts=active_accounts(),
         walkin=get_walkin_customer(),
         today=now_local().strftime("%Y-%m-%d"),
+        pos_warehouses=[{"id": w.id, "name": w.name} for w in warehouses],
+        pos_default_warehouse_id=_pos_default_warehouse_id(warehouses),
     )
+
+
+@sales_bp.route('/pos/warehouses', methods=['GET'])
+@manager_required
+def pos_warehouses():
+    """The warehouses this user may sell from right now, and the one a new sale should
+    start on. The POS page reads this when a new sale begins, so it never starts from
+    a default (or a list) that was current only when the page first loaded."""
+    warehouses = _pos_warehouses()
+    return {"ok": True,
+            "warehouses": [{"id": w.id, "name": w.name} for w in warehouses],
+            "default_id": _pos_default_warehouse_id(warehouses)}
 
 
 @sales_bp.route('/pos/lookup', methods=['GET', 'POST'])
@@ -1168,6 +1247,9 @@ def pos_lookup():
     q = (request.args.get("q") or "").strip()
     if not q:
         return {"items": []}
+    location_id, refusal = _pos_resolve_warehouse(request.args.get("location_id"))
+    if refusal:
+        return refusal
     # Only show items with business_category_id (new configurable system)
     exact = Item.query.filter(Item.barcode == q, Item.business_category_id != None).first()
     if exact:
@@ -1178,18 +1260,12 @@ def pos_lookup():
                    .filter(Item.business_category_id != None)
                    .order_by(Item.name).limit(20).all())
     from app import get_standard_tax_rate
-    from salpurflask.models import resolve_location_id
     from salpurflask.services.location_permissions import accessible_location_ids
     from salpurflask.services.location_stock import stock_by_location, picker_stock_fields
     std_tax = get_standard_tax_rate()
-    # The warehouse POS will actually sell from -- resolved exactly as
-    # pos_checkout() resolves it (a blank location_id means the default
-    # warehouse) -- so "in stock" here is that warehouse's stock, not the
-    # company total the checkout would then reject.
-    try:
-        location_id = resolve_location_id(request.args.get("location_id"))
-    except ValueError:
-        location_id = None
+    # location_id is the warehouse this cart is pinned to (validated above), so
+    # "in stock" here is that warehouse's stock, not the company total the checkout
+    # would then reject.
     breakdown = stock_by_location(matches, accessible_location_ids())
     return {"items": [{
         "id": it.id, "name": it.name, "barcode": it.barcode or "",
@@ -1218,16 +1294,13 @@ def pos_item_batches(item_id):
     itself applies, so what the cashier sees matches what automatic
     allocation would choose first. Read-only; never mutates anything."""
     from datetime import timedelta
-    from salpurflask.models import resolve_location_id, get_or_create_default_location
     from salpurflask.models.inventory_location import BatchStock
     from salpurflask.models.models import Batch
 
     item = db.session.get(Item, item_id) or abort(404)
-    try:
-        location_id = resolve_location_id(request.args.get("location_id")) \
-            if request.args.get("location_id") else get_or_create_default_location().id
-    except ValueError as e:
-        return {"ok": False, "error": str(e)}, 400
+    location_id, refusal = _pos_resolve_warehouse(request.args.get("location_id"))
+    if refusal:
+        return refusal
 
     today = now_local().date()
     rows = (db.session.query(Batch, BatchStock.quantity)
@@ -1256,7 +1329,7 @@ def pos_checkout():
     from app import item_remove_stock, sync_customer_sale
     from app import sync_customer_receipt, post_document, record_audit
     from app import parse_account_id, PAYMENT_METHODS, PostingError
-    from salpurflask.models import resolve_location_id, stock_at_location
+    from salpurflask.models import stock_at_location
 
     data = request.get_json(silent=True) or {}
     lines = data.get("items") or []
@@ -1271,10 +1344,13 @@ def pos_checkout():
     # absent/empty falls through to automatic FEFO.
     allow_expired_sale = bool(data.get("allow_expired_sale"))
 
-    try:
-        location_id = resolve_location_id(data.get("location_id"))
-    except ValueError as e:
-        return {"ok": False, "error": str(e)}, 400
+    # The warehouse the cart was pinned to -- re-validated here on every checkout
+    # (exists, still active, user still allowed). It is never replaced by whatever the
+    # company default is now; only a request with no location at all (a pre-selector
+    # client) falls back to the default.
+    location_id, refusal = _pos_resolve_warehouse(data.get("location_id"))
+    if refusal:
+        return refusal
 
     customer_id = data.get("customer_id") or get_walkin_customer().id
     try:
@@ -1524,6 +1600,11 @@ def pos_hold():
         if not account:
             account_id = None
 
+    # The warehouse the cart is pinned to travels with the held bill.
+    location_id, refusal = _pos_resolve_warehouse(data.get("location_id"))
+    if refusal:
+        return refusal
+
     try:
         # Enrich cart data with complete unit metadata before saving
         enriched_lines = []
@@ -1572,6 +1653,7 @@ def pos_hold():
 
                 # Update existing hold with version increment
                 hold.customer_id = int(customer_id)
+                hold.location_id = location_id
                 hold.cart_data = json.dumps(enriched_lines)
                 hold.notes = data.get("notes", "").strip() or None
                 hold.account_id = account_id if account_id else None
@@ -1582,6 +1664,7 @@ def pos_hold():
                 hold = PosHold(
                     customer_id=int(customer_id),
                     user_id=current_user.id,
+                    location_id=location_id,
                     cart_data=json.dumps(enriched_lines),
                     notes=data.get("notes", "").strip() or None,
                     account_id=account_id if account_id else None,
@@ -1593,6 +1676,7 @@ def pos_hold():
             hold = PosHold(
                 customer_id=int(customer_id),
                 user_id=current_user.id,
+                location_id=location_id,
                 cart_data=json.dumps(enriched_lines),
                 notes=data.get("notes", "").strip() or None,
                 account_id=account_id if account_id else None,
@@ -1674,9 +1758,15 @@ def get_pos_hold(id):
         # <option> — resuming a hold has to be told the name explicitly to
         # show the right label instead of a stale/blank one.
         customer = db.session.get(Customer, hold.customer_id) if hold.customer_id else None
+        # The warehouse the bill was pinned to. NULL for a bill held before the POS had
+        # a warehouse selector: the page then starts it on the current default (and says so).
+        from salpurflask.models import Location
+        location = db.session.get(Location, hold.location_id) if hold.location_id else None
         return {
             "ok": True,
             "hold_id": hold.id,
+            "location_id": hold.location_id,
+            "location_name": location.name if location else None,
             "hold_no": f"HOLD-{hold.id:05d}",
             "customer_id": hold.customer_id,
             "customer_name": customer.name if customer else "",

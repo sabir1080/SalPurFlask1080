@@ -356,7 +356,7 @@ from salpurflask.purchase.routes import (
 from salpurflask.sales.routes import (
     sale, edit_sale, delete_sale, post_sale_route, correct_sale_route,
     sale_return, delete_sale_return, sale_invoice,
-    pos, pos_lookup, pos_checkout, pos_receipt,
+    pos, pos_lookup, pos_checkout, pos_receipt, pos_warehouses,
     pos_hold, list_pos_holds, get_pos_hold, delete_pos_hold,
     delivery_challans, create_delivery_challan, update_delivery_challan,
     export_sale_report, export_date_sale_report, export_item_sale_report,
@@ -462,6 +462,7 @@ app.add_url_rule("/sale_return/delete/<int:id>", "delete_sale_return", delete_sa
 app.add_url_rule("/sale/<int:id>/invoice", "sale_invoice", sale_invoice, methods=["GET"])
 app.add_url_rule("/pos", "pos", pos, methods=["GET"])
 app.add_url_rule("/pos/lookup", "pos_lookup", pos_lookup, methods=["GET"])
+app.add_url_rule("/pos/warehouses", "pos_warehouses", pos_warehouses, methods=["GET"])
 app.add_url_rule("/pos/checkout", "pos_checkout", pos_checkout, methods=["POST"])
 app.add_url_rule("/pos/receipt/<int:id>", "pos_receipt", pos_receipt, methods=["GET"])
 app.add_url_rule("/pos/hold", "pos_hold", pos_hold, methods=["POST"])
@@ -1857,6 +1858,12 @@ def migrate_database():
         if "version" not in cols:
             with db.engine.begin() as conn:
                 conn.execute(text("ALTER TABLE pos_hold ADD COLUMN version INTEGER NOT NULL DEFAULT 1"))
+        # The warehouse a held bill was pinned to. Nullable, no backfill: a bill held before
+        # the POS had a warehouse selector stays NULL and resumes on the current default.
+        # Adding a nullable column takes no table rewrite on either engine.
+        if "location_id" not in cols:
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE pos_hold ADD COLUMN location_id INTEGER REFERENCES location(id)"))
 
     # Weighted-average costing: what the stock on hand actually cost.
     if "item" in inspector.get_table_names():
