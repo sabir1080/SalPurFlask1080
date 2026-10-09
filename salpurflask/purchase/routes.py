@@ -22,6 +22,7 @@ from salpurflask.models.models import (
     PurchaseItemBatch,
     Batch,
     get_or_create_batch,
+    get_or_create_unknown_batch,
     item_add_stock_batched,
     item_remove_stock_batched,
 )
@@ -29,6 +30,13 @@ from salpurflask.auth import verified_required, manager_required, admin_required
 from salpurflask.utils import (
     now_local, get_paginated_results, csv_response, excel_response, get_item_locked
 )
+
+
+def _stock_expiry_allowed(item_obj):
+    """Does this item's Business Category track stock expiry? (Warranty Expiry is another field.)
+    An item with no category keeps the old behavior (allowed)."""
+    category = getattr(item_obj, "business_category", None)
+    return category is None or category.stock_expiry_enabled
 
 
 # ─── HELPER FUNCTIONS (PURCHASE-SPECIFIC) ──────────────────────────────────
@@ -236,6 +244,10 @@ def purchase():
                     if item_obj.batch_tracked:
                         pending_batch_no = (batch_no_raw or "").strip() or None
                         expiry_raw = (expiry_raw or "").strip()
+                        if expiry_raw and not _stock_expiry_allowed(item_obj):
+                            raise ValueError(
+                                f"stock expiry is not enabled for the category of {item_obj.name}, "
+                                "so no expiry date can be entered")
                         if expiry_raw:
                             try:
                                 pending_expiry_date = datetime.strptime(expiry_raw, "%Y-%m-%d").date()
@@ -698,10 +710,24 @@ def correct_purchase_route(id):
                 # item_add_stock(), so it must be removed the same way here.
                 if item_obj.batch_tracked and pi.id not in historical_pi_ids:
                     continue
-                item_remove_stock(item_obj, line_base_qty(pi),
-                                  cost_total=Decimal(str(pi.amount)) - Decimal(str(pi.tax_amount or 0)),
-                                  location_id=pur.location_id,
-                                  movement_type="purchase", source_type="purchase", source_id=pur.id)
+                cost_removed = Decimal(str(pi.amount)) - Decimal(str(pi.tax_amount or 0))
+                if item_obj.batch_tracked:
+                    # Historical line: enable_batch_tracking() folded all the stock that existed
+                    # then -- this line's units included -- into the item's Unknown Batch. Taking
+                    # the units out through the batched wrapper removes them from Item.stock /
+                    # ItemStock exactly once (it calls item_remove_stock() itself) AND from the
+                    # Unknown Batch, so BatchStock cannot be left above the item's stock. If the
+                    # Unknown Batch no longer holds that many here, the wrapper raises a
+                    # PostingError and the whole correction is rolled back.
+                    item_remove_stock_batched(
+                        item_obj, line_base_qty(pi), pur.location_id,
+                        get_or_create_unknown_batch(item_obj.id), cost_total=cost_removed,
+                        movement_type="purchase", source_type="purchase", source_id=pur.id)
+                else:
+                    item_remove_stock(item_obj, line_base_qty(pi),
+                                      cost_total=cost_removed,
+                                      location_id=pur.location_id,
+                                      movement_type="purchase", source_type="purchase", source_id=pur.id)
             remove_supplier_ledger_entry("purchase", pur.id)
             db.session.flush()
 
@@ -770,6 +796,10 @@ def correct_purchase_route(id):
                 if item_obj.batch_tracked:
                     pending_batch_no = (batch_no_raw or "").strip() or None
                     expiry_raw = (expiry_raw or "").strip()
+                    if expiry_raw and not _stock_expiry_allowed(item_obj):
+                        raise ValueError(
+                            f"stock expiry is not enabled for the category of {item_obj.name}, "
+                            "so no expiry date can be entered")
                     if expiry_raw:
                         try:
                             pending_expiry_date = datetime.strptime(expiry_raw, "%Y-%m-%d").date()
@@ -973,6 +1003,10 @@ def edit_purchase(id):
                     if item_obj.batch_tracked:
                         pending_batch_no = (batch_no_raw or "").strip() or None
                         expiry_raw = (expiry_raw or "").strip()
+                        if expiry_raw and not _stock_expiry_allowed(item_obj):
+                            raise ValueError(
+                                f"stock expiry is not enabled for the category of {item_obj.name}, "
+                                "so no expiry date can be entered")
                         if expiry_raw:
                             try:
                                 pending_expiry_date = datetime.strptime(expiry_raw, "%Y-%m-%d").date()
@@ -1447,19 +1481,39 @@ def convert_po_to_purchase(id):
     for poi in po.line_items:
         gross = poi.quantity * poi.purchase_price
         amount = gross - (poi.discount_amount or 0) + (poi.tax_amount or 0)
-        db.session.add(PurchaseItem(
+        pi = PurchaseItem(
             purchase_id=pur.id, item_id=poi.item_id,
             quantity=poi.quantity, purchase_price=poi.purchase_price,
             discount_type=poi.discount_type, discount_value=poi.discount_value or 0,
             discount_amount=poi.discount_amount or 0, tax_percent=poi.tax_percent or 0,
             tax_amount=poi.tax_amount or 0, amount=amount,
             unit_name=poi.unit_name, unit_factor=poi.unit_factor or 1,
-        ))
+        )
+        db.session.add(pi)
         item_obj = db.session.get(Item, poi.item_id)
         if item_obj:
-            item_add_stock(item_obj, poi.quantity * (poi.unit_factor or 1), amount,
-                           location_id=location_id,
-                           movement_type="purchase", source_type="purchase", source_id=pur.id)
+            # Stock is valued at the goods cost, without tax: post_document("purchase") books the
+            # tax to Tax Input (1300), not to Inventory, so adding `amount` (which includes tax)
+            # would leave the stock valuation above account 1200. Same basis as post_purchase_route.
+            base_qty = poi.quantity * (poi.unit_factor or 1)
+            cost_total = amount - (poi.tax_amount or 0)
+            if item_obj.batch_tracked:
+                # A PO line carries no batch number or expiry, so a batch-tracked item is received into its
+                # Unknown Batch -- the same thing post_purchase_route() does for a blank Batch No. Without
+                # this the units reached Item.stock / ItemStock but no BatchStock, and FEFO could never
+                # sell them. The PurchaseItemBatch row keeps a later reversal / correction consistent.
+                db.session.flush()                         # pi.id
+                batch = get_or_create_batch(
+                    item_obj.id, None, None,
+                    (cost_total / base_qty) if base_qty else Decimal("0"),
+                    source_type="purchase", source_id=pur.id, created_by_id=current_user.id)
+                item_add_stock_batched(item_obj, base_qty, cost_total, location_id=location_id, batch=batch,
+                                       movement_type="purchase", source_type="purchase", source_id=pur.id)
+                db.session.add(PurchaseItemBatch(purchase_item_id=pi.id, batch_id=batch.id, quantity=base_qty))
+            else:
+                item_add_stock(item_obj, base_qty, cost_total,
+                               location_id=location_id,
+                               movement_type="purchase", source_type="purchase", source_id=pur.id)
     db.session.flush()
     db.session.refresh(pur)
     pur.invoice_no = allocate_document_number("purchase", pur.date)

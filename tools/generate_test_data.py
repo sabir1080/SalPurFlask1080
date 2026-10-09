@@ -68,7 +68,7 @@ from salpurflask.models import (
 from salpurflask.models.models import (
     get_or_create_batch, item_add_stock_batched, item_remove_stock_batched,
     resolve_sale_batch_allocations, resolve_sale_return_batch_allocations,
-    PurchaseItemBatch, SaleItemBatch, MONEY,
+    PurchaseItemBatch, SaleItemBatch, MONEY, post_item_opening,
 )
 from salpurflask.models.inventory_location import (
     get_or_create_default_location, stock_at_location,
@@ -481,6 +481,23 @@ def stage2_master_data(ctx):
 
 # ─── Stage 3 — opening stock ────────────────────────────────────────────────
 
+def _open_item_stock(item, qty, location_id):
+    """Opening stock the way the Add Item screen records it: the stock itself AND its GL entry.
+
+    item_add_stock() only moves Item.stock / ItemStock / inventory_value; on its own it leaves
+    the books without the Dr Inventory / Cr Opening Equity that post_item_opening() posts, so
+    Inventory (1200) falls short of the stock valuation by exactly the opening stock. Setting
+    item.opening_stock is what post_item_opening() values (opening_stock x purchase_price), so
+    the stock is added at that same price. Call only for an item that has no stock yet."""
+    if not item.purchase_price:
+        item.purchase_price = Decimal("10")      # the generator's default cost, made explicit
+    item.opening_stock = qty
+    cost_total = Decimal(str(item.purchase_price)) * Decimal(qty)
+    item_add_stock(item, qty, cost_total, location_id=location_id,
+                   movement_type="opening", source_type="opening", source_id=item.id)
+    post_item_opening(item)
+
+
 def stage3_opening_stock(ctx):
     rng = ctx.rng
     default_loc = ctx.locations[0]
@@ -491,9 +508,7 @@ def stage3_opening_stock(ctx):
             ctx.stock_by_loc[(item.id, default_loc.id)] = existing
             continue
         qty = rng.randint(80, 400)
-        cost_total = (item.purchase_price or Decimal("10")) * Decimal(qty)
-        item_add_stock(item, qty, cost_total, location_id=default_loc.id,
-                       movement_type="opening", source_type="opening", source_id=item.id)
+        _open_item_stock(item, qty, default_loc.id)
         ctx.stock_by_loc[(item.id, default_loc.id)] = qty
         ctx.bump()
     for loc in ctx.locations[1:]:
@@ -1698,9 +1713,7 @@ def stage11_medical_batch_items(ctx, skipped):
         if stock_at_location(item.id, default_loc.id):
             continue
         qty = rng.randint(60, 300)
-        cost_total = (item.purchase_price or Decimal("10")) * Decimal(qty)
-        item_add_stock(item, qty, cost_total, location_id=default_loc.id,
-                       movement_type="opening", source_type="opening", source_id=item.id)
+        _open_item_stock(item, qty, default_loc.id)
         ctx.stock_by_loc[(item.id, default_loc.id)] = qty
         ctx.bump()
     db.session.commit()

@@ -80,7 +80,7 @@ try {
             <select class="form-select" id="business_category_id" name="business_category_id" required>
               <option value="">Select Category</option>
               {% for category in business_categories %}
-              <option value="{{ category.id }}" data-category-name="{{ category.name }}" {% if form_data.get('business_category_id', '')|string == category.id|string %}selected{% endif %}>
+              <option value="{{ category.id }}" data-category-name="{{ category.name }}" data-batch-tracking="{{ 1 if category.batch_tracking_enabled else 0 }}" data-stock-expiry="{{ 1 if category.stock_expiry_enabled else 0 }}" {% if form_data.get('business_category_id', '')|string == category.id|string %}selected{% endif %}>
                 {{ category.name }}
               </option>
               {% endfor %}
@@ -125,11 +125,75 @@ try {
         </div>
       </div>
 
+      <!-- BATCH-WISE OPENING STOCK (batch-tracked items) -->
+      <div class="mb-4" id="batch_tracking_group">
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" id="batch_tracked" name="batch_tracked" value="1"
+                 onchange="toggleBatchOpening()" {% if form_data.get('batch_tracked') %}checked{% endif %}>
+          <label class="form-check-label fw-semibold" for="batch_tracked">Batch tracked (medicines / items with expiry)</label>
+          <small class="form-text d-block">Enter the opening stock batch by batch. Leave Batch No blank for stock with no batch number (Unknown batch).</small>
+        </div>
+        <div class="card" id="batchOpeningCard" style="display: none;">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">Opening stock by batch</h6>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addBatchRow()">
+              <i class="bi bi-plus-circle"></i> Add Batch
+            </button>
+          </div>
+          <div class="card-body">
+            <div class="table-wrapper">
+              <table class="table table-sm mb-0" id="batchOpeningTable">
+                <thead>
+                  <tr>
+                    <th style="min-width: 160px">Batch No</th>
+                    <th style="min-width: 160px" class="batch-expiry-cell">Expiry Date</th>
+                    <th style="min-width: 110px">Qty</th>
+                    <th style="min-width: 130px">Purchase Rate</th>
+                    <th style="min-width: 120px" class="text-end">Amount</th>
+                    <th style="width: 40px"></th>
+                  </tr>
+                </thead>
+                <tbody id="batchOpeningBody">
+                  {# After a failed save, the rows the user entered come back from the submission. #}
+                  {% set b_nos = request.form.getlist('opening_batch_no[]') if request.method == 'POST' else [] %}
+                  {% set b_exp = request.form.getlist('opening_batch_expiry[]') if request.method == 'POST' else [] %}
+                  {% set b_qty = request.form.getlist('opening_batch_qty[]') if request.method == 'POST' else [] %}
+                  {% set b_rate = request.form.getlist('opening_batch_rate[]') if request.method == 'POST' else [] %}
+                  {% for i in range([b_nos|length, b_exp|length, b_qty|length, b_rate|length, 1]|max) %}
+                  <tr class="batch-open-row">
+                    <td><input type="text" class="form-control form-control-sm" name="opening_batch_no[]" maxlength="60" placeholder="Blank = Unknown batch" value="{{ b_nos[i] if i < b_nos|length else '' }}"></td>
+                    <td class="batch-expiry-cell"><input type="date" class="form-control form-control-sm" name="opening_batch_expiry[]" value="{{ b_exp[i] if i < b_exp|length else '' }}"></td>
+                    <td><input type="number" min="1" step="1" class="form-control form-control-sm" name="opening_batch_qty[]" oninput="recalcBatchTotal()" value="{{ b_qty[i] if i < b_qty|length else '' }}"></td>
+                    <td><input type="number" min="0.01" step="0.01" class="form-control form-control-sm" name="opening_batch_rate[]" oninput="recalcBatchTotal()" value="{{ b_rate[i] if i < b_rate|length else '' }}"></td>
+                    <td class="text-end batch-row-amount">0.00</td>
+                    <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeBatchRow(this)" title="Remove this batch row">&times;</button></td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colspan="2" class="text-end fw-bold">Total opening quantity</td>
+                    <td class="fw-bold" id="batchOpeningTotal">0</td>
+                    <td colspan="3"></td>
+                  </tr>
+                  <tr>
+                    <td colspan="4" class="text-end fw-bold">Total opening value</td>
+                    <td class="fw-bold text-end" id="batchOpeningValue">0.00</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="row g-3 mb-4">
         <div class="col-md-4">
           <div class="form-group">
             <label class="form-label">Purchase Price (per unit)</label>
             <input type="number" step="0.01" class="form-control" id="purchase_price" name="purchase_price" value="{{ form_data.get('purchase_price', '') }}">
+            <small class="form-text d-none" id="purchasePriceAvgHint">Auto-calculated from opening batch rates (Weighted Average). You can edit this value if needed.</small>
           </div>
         </div>
         <div class="col-md-4">
@@ -238,6 +302,132 @@ function toggleStockFields() {
     openingStockInput.setAttribute('required', 'required');
     reorderLevelInput.setAttribute('required', 'required');
   }
+  toggleBatchOpening();
+}
+
+// BATCH-WISE OPENING STOCK
+function batchRows() { return document.querySelectorAll('#batchOpeningBody .batch-open-row'); }
+
+// Item-level Purchase Price = weighted average of the batch rates, pre-filled and live-updated
+// while the user has not typed their own. It is only the item's general price: batch valuation
+// always uses each batch's own rate (server side), never this field.
+var purchasePriceTouched = false, purchasePriceAuto = null, purchasePriceSynced = false;
+document.getElementById('purchase_price').addEventListener('input', function () { purchasePriceTouched = true; });
+
+function syncAveragePurchasePrice(total, value) {
+  const field = document.getElementById('purchase_price');
+  const hint = document.getElementById('purchasePriceAvgHint');
+  const on = document.getElementById('batch_tracked').checked;
+  if (!on) {
+    // back to a plain item: drop a value this logic filled in, keep anything the user typed
+    if (purchasePriceAuto !== null && field.value === purchasePriceAuto && !purchasePriceTouched) field.value = '';
+    purchasePriceAuto = null;
+    hint.classList.add('d-none');
+    return;
+  }
+  const avg = (total > 0 && value > 0) ? (value / total).toFixed(2) : null;
+  hint.classList.toggle('d-none', avg === null);
+  if (!purchasePriceSynced) {
+    // first pass (page load / re-render after an error): a different value already in the field was typed by the user
+    purchasePriceSynced = true;
+    if (field.value !== '' && avg !== null && field.value !== avg) purchasePriceTouched = true;
+  }
+  if (avg !== null && !purchasePriceTouched) { field.value = avg; purchasePriceAuto = avg; }
+}
+
+function recalcBatchTotal() {
+  let total = 0, value = 0;
+  const fmt = function (n) { return n.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
+  batchRows().forEach(function (row) {
+    const n = parseInt(row.querySelector('input[name="opening_batch_qty[]"]').value, 10);
+    const r = parseFloat(row.querySelector('input[name="opening_batch_rate[]"]').value);
+    const q = n > 0 ? n : 0;
+    const amount = q * (r > 0 ? r : 0);
+    total += q;
+    value += amount;
+    row.querySelector('.batch-row-amount').textContent = fmt(amount);
+  });
+  document.getElementById('batchOpeningTotal').textContent = total;
+  document.getElementById('batchOpeningValue').textContent = fmt(value);
+  syncAveragePurchasePrice(total, value);
+  if (document.getElementById('batch_tracked').checked) {
+    document.getElementById('opening_stock').value = total;     // shown, never typed
+  }
+}
+
+function addBatchRow() {
+  const body = document.getElementById('batchOpeningBody');
+  const row = batchRows()[0].cloneNode(true);
+  row.querySelectorAll('input').forEach(function (el) { el.value = ''; });
+  body.appendChild(row);
+  recalcBatchTotal();
+}
+
+function removeBatchRow(btn) {
+  const rows = batchRows();
+  if (rows.length === 1) {
+    rows[0].querySelectorAll('input').forEach(function (el) { el.value = ''; });
+  } else {
+    btn.closest('tr').remove();
+  }
+  recalcBatchTotal();
+}
+
+// A batch-tracked item keeps batch no / expiry per batch (the rows above), so the category's own
+// item-level Batch No / Expiry Date inputs are hidden and disabled (disabled = not submitted).
+// Re-run after every category redraw and every checkbox toggle.
+// What the selected category allows (an admin setting, rendered onto each <option>). Batch tracking and
+// stock expiry are independent. Warranty / Warranty Expiry Date are other fields and never involved.
+function categoryTracking() {
+  const opt = document.getElementById('business_category_id').selectedOptions[0];
+  const chosen = !!(opt && opt.value);
+  return {batch: chosen && opt.dataset.batchTracking === '1',
+          expiry: chosen && opt.dataset.stockExpiry === '1'};
+}
+
+function applyBatchTrackedCategoryFields() {
+  const batchOn = document.getElementById('batch_tracked').checked &&
+             document.getElementById('item_type').value === 'STOCK';
+  const allowed = categoryTracking();
+  // hidden = this item's batches carry it (rows above) OR the category does not track it
+  const hide = {batch_no: batchOn || !allowed.batch, expiry_date: batchOn || !allowed.expiry};
+  ['batch_no', 'expiry_date'].forEach(function (name) {
+    const on = hide[name];
+    document.querySelectorAll('#categoryFieldsBody [name="' + name + '"]').forEach(function (el) {
+      el.disabled = on;
+      if (on) { if (el.hasAttribute('required')) el.dataset.wasRequired = '1'; el.removeAttribute('required'); }
+      else if (el.dataset.wasRequired === '1') el.setAttribute('required', 'required');
+      const group = el.closest('.form-group, .mb-3, .col-md-6, .col-md-4') || el.parentElement;
+      if (group) group.style.display = on ? 'none' : '';
+    });
+  });
+  // Nothing left to show on a tab whose fields are all hidden: hide its pane's button too.
+  document.querySelectorAll('#categoryFieldsBody .tab-pane').forEach(function (pane) {
+    const inputs = Array.from(pane.querySelectorAll('input, select, textarea'));
+    const visible = inputs.some(function (el) { return !el.disabled; });
+    const btn = document.getElementById(pane.id + '-tab');
+    if (btn && btn.parentElement) btn.parentElement.style.display = (inputs.length && !visible) ? 'none' : '';
+  });
+}
+
+function toggleBatchOpening() {
+  const allowed = categoryTracking();
+  const box = document.getElementById('batch_tracked');
+  if (!allowed.batch && box.checked) box.checked = false;     // a category without batches cannot keep it ticked
+  const isStock = document.getElementById('item_type').value === 'STOCK';
+  const show = isStock && allowed.batch;
+  const on = show && box.checked;
+  document.getElementById('batch_tracking_group').style.display = show ? 'block' : 'none';
+  const card = document.getElementById('batchOpeningCard');
+  card.style.display = on ? 'block' : 'none';
+  card.querySelectorAll('.batch-expiry-cell').forEach(function (el) { el.style.display = allowed.expiry ? '' : 'none'; });
+  // Rows that are hidden are not submitted; the opening total is read-only while they rule.
+  card.querySelectorAll('input').forEach(function (el) {
+    el.disabled = !on || (!allowed.expiry && el.name === 'opening_batch_expiry[]');
+  });
+  document.getElementById('opening_stock').readOnly = on;
+  if (on) recalcBatchTotal(); else syncAveragePurchasePrice(0, 0);
+  applyBatchTrackedCategoryFields();
 }
 
 // Save form data whenever user types
@@ -293,6 +483,7 @@ document.querySelector('form[method="POST"]').addEventListener('submit', functio
 
 // DYNAMIC CATEGORY FIELDS
 async function loadCategoryFields() {
+  toggleBatchOpening();      // the category's batch / expiry settings apply at once, before its fields arrive
   const categoryId = document.getElementById('business_category_id').value;
   const container = document.getElementById('categoryFieldsContainer');
   const body = document.getElementById('categoryFieldsBody');
@@ -363,6 +554,7 @@ async function loadCategoryFields() {
     // Initialize Bootstrap tabs
     const tabs = body.querySelectorAll('[data-bs-toggle="tab"]');
     tabs.forEach(tab => new bootstrap.Tab(tab));
+    applyBatchTrackedCategoryFields();
 
   } catch (error) {
     console.error('Error loading category fields:', error);

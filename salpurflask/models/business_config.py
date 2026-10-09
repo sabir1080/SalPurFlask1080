@@ -27,6 +27,60 @@ class BusinessCategory(db.Model):
     reports = db.relationship('CategoryReport', backref='category', cascade='all, delete-orphan')
     validations = db.relationship('CategoryValidation', backref='category', cascade='all, delete-orphan')
 
+    # Stock tracking settings. Stored in config_data (an existing JSON column), so no schema change and
+    # no data is rewritten: a category that has never been configured has no key and falls back to what
+    # its own field set already says -- a category with a Batch No. field tracks batches, one with a
+    # (stock) Expiry Date field tracks expiry. Warranty Expiry Date is a different field name and is
+    # deliberately not matched. An explicit True/False saved by an admin always wins.
+    def _has_active_field(self, name):
+        return any(f.field_name == name and f.is_active for f in self.fields)
+
+    def _tracking_setting(self, key, field_name, in_use):
+        value = (self.config_data or {}).get(key)
+        if value is not None:
+            return bool(value)
+        # Not configured: on if the category's own fields say so, or if it is already being used that way
+        # (so a category whose items are batch-tracked today keeps working after this setting existed).
+        return self._has_active_field(field_name) or in_use()
+
+    @property
+    def batch_tracking_enabled(self):
+        """May items of this category be batch-tracked (Batch No / opening batches)?"""
+        from salpurflask.models.models import Item
+        return self._tracking_setting(
+            "batch_tracking", "batch_no",
+            lambda: self.id is not None and db.session.query(Item.id).filter(
+                Item.business_category_id == self.id, Item.batch_tracked.is_(True)).first() is not None)
+
+    @property
+    def stock_expiry_enabled(self):
+        """Do stock batches of this category carry an expiry date?"""
+        from salpurflask.models.models import Item, Batch
+        # A category whose items are already batch-tracked keeps expiry available too (expiry lives on the
+        # batch), so existing batch users see no change; only a category with neither is "off" by default.
+        return self._tracking_setting(
+            "stock_expiry", "expiry_date",
+            lambda: self.id is not None and (
+                db.session.query(Batch.id).join(Item, Item.id == Batch.item_id).filter(
+                    Item.business_category_id == self.id, Batch.expiry_date.isnot(None)).first() is not None
+                or self.batch_tracking_enabled_in_use()))
+
+    def batch_tracking_enabled_in_use(self):
+        """True when at least one item of this category is already batch-tracked."""
+        from salpurflask.models.models import Item
+        return self.id is not None and db.session.query(Item.id).filter(
+            Item.business_category_id == self.id, Item.batch_tracked.is_(True)).first() is not None
+
+    @property
+    def disabled_stock_field_names(self):
+        """Category field names that are switched off: neither validated nor saved for this category."""
+        names = []
+        if not self.batch_tracking_enabled:
+            names.append("batch_no")
+        if not self.stock_expiry_enabled:
+            names.append("expiry_date")
+        return tuple(names)
+
     def to_dict(self):
         return {
             'id': self.id,

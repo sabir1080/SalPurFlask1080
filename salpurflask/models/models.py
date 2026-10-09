@@ -2356,6 +2356,21 @@ def _unwind_stock_and_subledger(kind, doc):
                     allocations = list(pi.batch_allocations)
                     allocated_qty = sum(a.quantity for a in allocations)
                     expected_qty = line_base_qty(pi)
+                    if not allocations:
+                        # Historical line: posted BEFORE batch tracking was enabled for this item
+                        # (enable_batch_tracking() never rewrites old documents), so it has no
+                        # allocation at all. That stock was folded into the item's Unknown Batch,
+                        # so it comes back out of there -- through the batched wrapper, which also
+                        # lowers Item.stock / ItemStock exactly once. If the Unknown Batch no
+                        # longer holds that many here, the wrapper raises a PostingError and the
+                        # caller's rollback undoes the whole reversal (journal entry included).
+                        # A PARTIAL allocation (below) is still refused.
+                        item_remove_stock_batched(
+                            item, expected_qty, location_id=doc.location_id,
+                            batch=get_or_create_unknown_batch(item.id),
+                            cost_total=Decimal(str(pi.amount)) - Decimal(str(pi.tax_amount or 0)),
+                            movement_type="purchase", source_type="purchase", source_id=doc.id)
+                        continue
                     if allocated_qty != expected_qty:
                         raise PostingError(
                             f"Purchase #{doc.id} line for {item.name}: batch "
@@ -2786,6 +2801,25 @@ def post_account_opening(fin_acct):
     return _repost_opening("account_opening", fin_acct.id, _opening_date(),
                            f"Opening balance — {fin_acct.name}", lines)
 
+def _batch_opening_value(item):
+    """Sum of qty x the batch's own unit_cost over this item's batch-wise opening movements
+    (Add Item with Batch Tracked ON); None when the item has none, so the single-rate
+    qty x purchase_price rule below still applies to every other item."""
+    from salpurflask.models.inventory_location import StockMovement
+    moves = (StockMovement.query
+             .filter(StockMovement.item_id == item.id, StockMovement.movement_type == "opening",
+                     StockMovement.source_type == "item", StockMovement.source_id == item.id,
+                     StockMovement.batch_id.isnot(None))
+             .all())
+    if not moves:
+        return None
+    total = Decimal("0")
+    for m in moves:
+        batch = db.session.get(Batch, m.batch_id)
+        total += Decimal(abs(m.quantity)) * Decimal(str(batch.unit_cost or 0))
+    return total.quantize(MONEY)
+
+
 def post_item_opening(item):
     """Stock on hand before the system existed, valued at the item's cost. This is
     the one place `purchase_price` legitimately values inventory: there is no
@@ -2793,6 +2827,9 @@ def post_item_opening(item):
     qty = Decimal(str(item.opening_stock or 0))
     cost = Decimal(str(item.purchase_price or 0))
     value = (qty * cost).quantize(MONEY)
+    batch_value = _batch_opening_value(item)
+    if batch_value is not None:
+        value = batch_value        # each opening batch carries its own rate
     lines = []
     if value > 0:
         lines = [{"code": ACC_INVENTORY, "debit": value, "credit": 0, "memo": item.name},

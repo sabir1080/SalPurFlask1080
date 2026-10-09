@@ -22,7 +22,7 @@
           <select class="form-select" id="business_category_id" name="business_category_id" required>
             <option value="">Select Category</option>
             {% for category in business_categories %}
-            <option value="{{ category.id }}" data-category-name="{{ category.name }}" {% if item.business_category_id == category.id %}selected{% endif %}>
+            <option value="{{ category.id }}" data-category-name="{{ category.name }}" data-batch-tracking="{{ 1 if category.batch_tracking_enabled else 0 }}" data-stock-expiry="{{ 1 if category.stock_expiry_enabled else 0 }}" {% if item.business_category_id == category.id %}selected{% endif %}>
               {{ category.name }}
             </option>
             {% endfor %}
@@ -207,6 +207,33 @@ function restoreEditItemFormData() {
   // Auto-restore disabled - form loads from server
 }
 
+// The selected category decides whether its Batch No. / Expiry Date fields exist at all (an admin setting;
+// Warranty Expiry Date is a different field and is never touched). Disabled inputs are not submitted, and
+// the server skips these fields for such a category anyway.
+function applyCategoryStockFields() {
+    const opt = document.getElementById('business_category_id').selectedOptions[0];
+    const off = {
+        batch_no: !(opt && opt.dataset.batchTracking === '1'),
+        expiry_date: !(opt && opt.dataset.stockExpiry === '1')
+    };
+    Object.keys(off).forEach(function (name) {
+        document.querySelectorAll('#categoryFieldsBody [name="' + name + '"]').forEach(function (el) {
+            el.disabled = off[name];
+            if (off[name]) { if (el.hasAttribute('required')) el.dataset.wasRequired = '1'; el.removeAttribute('required'); }
+            else if (el.dataset.wasRequired === '1') el.setAttribute('required', 'required');
+            const group = el.closest('.form-group, .mb-3') || el.parentElement;
+            if (group) group.style.display = off[name] ? 'none' : '';
+        });
+    });
+    document.querySelectorAll('#categoryFieldsBody .tab-pane').forEach(function (pane) {
+        const inputs = Array.from(pane.querySelectorAll('input, select, textarea'));
+        const btn = document.getElementById(pane.id + '-tab');
+        if (btn && btn.parentElement) {
+            btn.parentElement.style.display = (inputs.length && !inputs.some(function (el) { return !el.disabled; })) ? 'none' : '';
+        }
+    });
+}
+
 // DYNAMIC CATEGORY FIELDS
 async function loadCategoryFields() {
   const categoryId = document.getElementById('business_category_id').value;
@@ -284,6 +311,7 @@ async function loadCategoryFields() {
     // Initialize Bootstrap tabs
     const tabs = body.querySelectorAll('[data-bs-toggle="tab"]');
     tabs.forEach(tab => new bootstrap.Tab(tab));
+    applyCategoryStockFields();
 
   } catch (error) {
     console.error('Error loading category fields:', error);
@@ -335,22 +363,26 @@ function renderField(field, currentValue = '') {
       break;
     case 'select':
       const options = field.options && Array.isArray(field.options) ? field.options : [];
+      // The saved value is selected. If it is no longer one of the field's options (the list was edited
+      // after the item was saved) it is kept as an extra option rather than silently dropped on save.
+      const saved = currentValue === null || currentValue === undefined ? '' : String(currentValue);
+      const choices = saved && !options.some(opt => String(opt) === saved) ? options.concat([saved]) : options;
       inputHtml = `
         <select class="form-select" id="${fieldId}" name="${fieldName}" ${required}>
           <option value="">Select ${fieldLabel}...</option>
-          ${options.map(opt => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`).join('')}
+          ${choices.map(opt => `<option value="${escapeHtml(opt)}" ${String(opt) === saved ? 'selected' : ''}>${escapeHtml(opt)}</option>`).join('')}
         </select>`;
       break;
     case 'boolean':
       inputHtml = `
         <div class="form-check">
-          <input type="checkbox" class="form-check-input" id="${fieldId}" name="${fieldName}" value="true">
+          <input type="checkbox" class="form-check-input" id="${fieldId}" name="${fieldName}" value="true" ${currentValue ? 'checked' : ''}>
           <label class="form-check-label" for="${fieldId}">${helpText}</label>
         </div>`;
       break;
     case 'textarea':
       inputHtml = `<textarea class="form-control" id="${fieldId}" name="${fieldName}"
-                              placeholder="${placeholder}" ${required}></textarea>`;
+                              placeholder="${placeholder}" ${required}>${value}</textarea>`;
       break;
     default:
       inputHtml = `<input type="text" class="form-control" id="${fieldId}" name="${fieldName}" ${required}>`;

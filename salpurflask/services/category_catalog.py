@@ -17,6 +17,53 @@ name (see PROTECTED_FIELD_NAMES below and RESERVED_ITEM_FIELD_NAMES in
 inventory/routes.py).
 """
 
+# Footwear's category fields. ONE definition, used by the older 21-category catalog below (CATEGORIES, fresh
+# databases / `flask seed-categories`) and by ensure_default_product_fields() (every boot, for a database whose
+# Footwear category exists but has no such fields yet). A ProductField belongs to one category and is unique on
+# (category_id, field_name), and the values are stored per (item, category, field_name), so Footwear's Size /
+# Color / Gender do not touch Garments' own fields of the same name.
+FOOTWEAR_SIZES = [f"UK {n / 2:g}" for n in range(2, 27)]          # UK 1, 1.5, 2 ... 13
+FOOTWEAR_FIELDS = [
+    {"field_name": "size", "field_label": "Size", "field_type": "select", "is_required": True,
+     "tab_name": "Variant", "position": 0, "is_searchable": True, "is_filterable": True,
+     "options": FOOTWEAR_SIZES},
+    {"field_name": "color", "field_label": "Color", "field_type": "select",
+     "tab_name": "Variant", "position": 1, "is_searchable": True, "is_filterable": True,
+     "options": ["Black", "White", "Brown", "Tan", "Blue", "Navy Blue", "Red", "Green", "Grey", "Beige",
+                 "Pink", "Yellow", "Orange", "Purple", "Gold", "Silver", "Multicolor", "Other"]},
+    {"field_name": "brand", "field_label": "Brand", "field_type": "text",
+     "tab_name": "General", "position": 2, "is_searchable": True, "is_filterable": True},
+    {"field_name": "gender", "field_label": "Gender", "field_type": "select",
+     "tab_name": "Variant", "position": 3, "is_filterable": True,
+     "options": ["Men", "Women", "Kids", "Unisex"]},
+    {"field_name": "material", "field_label": "Material", "field_type": "select",
+     "tab_name": "Variant", "position": 4, "is_filterable": True,
+     "options": ["Leather", "Synthetic", "Canvas", "Textile", "Rubber", "Other"]},
+    {"field_name": "style", "field_label": "Style", "field_type": "select",
+     "tab_name": "Variant", "position": 5, "is_filterable": True,
+     "options": ["Formal", "Casual", "Sports", "Sandals", "Slippers", "Boots", "Other"]},
+]
+
+# Fields that used to be free text and are now dropdowns by default. A field listed here that still is the
+# plain text version -- type "text" with no options -- is upgraded IN PLACE when defaults are ensured: same row,
+# so its saved values, label and required flag are kept (a saved value that is not one of the new options
+# still shows on Edit Item). It also moves to the default's tab and position (Variant, after Material), where
+# a hand-made Style field used to sit on General. Anything an admin has already changed (another type, or any
+# options) is left alone.
+#
+# A hand-made row can also be in the state an EARLIER version of this upgrade left it: already a dropdown with
+# exactly the default options, but still on General at position 0 (the tab/position were not moved then). That
+# leftover state is moved too. The upgraded row is then marked is_system_default, which is what stops this from
+# running again, so an admin who later moves or edits it is never overridden. Footwear is the only category with a Style field; Garments' "Style No." is a code and stays
+# text, and Fabrics' "Pattern" is a free design name.
+#
+# Each entry says how: "relocate" also moves the row to the default's tab/position (Style, which used to sit on
+# General); "once" upgrades a plain text field a single time and records that in AppConfiguration, so an admin
+# who later changes the field (e.g. back to text) is never upgraded again. Color keeps its tab, position, label
+# and required flag -- only its type and options change.
+TEXT_TO_SELECT_UPGRADES = {("footwear", "style"): {"relocate": True},
+                           ("footwear", "color"): {"once": True}}
+
 CATEGORIES = [
     {
         "name": "General / Other", "slug": "general", "icon": "bi-box-seam", "priority": 0,
@@ -119,21 +166,7 @@ CATEGORIES = [
     {
         "name": "Footwear", "slug": "footwear", "icon": "bi-boot", "priority": 5,
         "description": "Shoes and footwear",
-        "fields": [
-            {"field_name": "brand", "field_label": "Brand", "field_type": "text", "tab_name": "General",
-             "is_searchable": True, "is_filterable": True, "position": 0},
-            {"field_name": "size", "field_label": "Size", "field_type": "select", "tab_name": "Variant",
-             "is_searchable": True, "is_filterable": True, "position": 1,
-             "options": ["XS", "S", "M", "L", "XL", "XXL", "Free Size"]},
-            {"field_name": "color", "field_label": "Color", "field_type": "text", "tab_name": "Variant",
-             "is_searchable": True, "is_filterable": True, "position": 2},
-            {"field_name": "material", "field_label": "Material", "field_type": "text", "tab_name": "Variant",
-             "is_filterable": True, "position": 3},
-            {"field_name": "gender", "field_label": "Gender", "field_type": "select", "tab_name": "Variant",
-             "is_filterable": True, "position": 4, "options": ["Men", "Women", "Unisex", "Kids"]},
-            {"field_name": "style", "field_label": "Style", "field_type": "text", "tab_name": "General",
-             "position": 5},
-        ],
+        "fields": FOOTWEAR_FIELDS,
     },
     {
         "name": "Electronics", "slug": "electronics", "icon": "bi-lightning-charge", "priority": 6,
@@ -702,17 +735,41 @@ def ensure_default_product_fields():
     this). Returns the count of fields created.
     """
     from salpurflask.extensions import db
+    from salpurflask.models import AppConfiguration
     from salpurflask.models.business_config import BusinessCategory, ProductField
 
     created = 0
-    for slug, field_specs in DEFAULT_PRODUCT_FIELDS.items():
+    # Footwear belongs to the older catalog, not the 26 defaults, so it is listed here explicitly: its fields
+    # are filled in when that category already exists, never creating the category itself.
+    for slug, field_specs in {**DEFAULT_PRODUCT_FIELDS, "footwear": FOOTWEAR_FIELDS}.items():
         cat = BusinessCategory.query.filter_by(slug=slug).first()
         if cat is None:
             continue
-        existing_names = {f.field_name for f in
-                          ProductField.query.filter_by(category_id=cat.id).all()}
+        existing = {f.field_name: f for f in ProductField.query.filter_by(category_id=cat.id).all()}
+        existing_names = set(existing)
         for spec in field_specs:
             if spec["field_name"] in existing_names:
+                row = existing[spec["field_name"]]
+                upgrade = TEXT_TO_SELECT_UPGRADES.get((slug, spec["field_name"]))
+                if upgrade and spec["field_type"] == "select":
+                    plain_text = row.field_type == "text" and not row.options
+                    if upgrade.get("relocate") and not row.is_system_default:
+                        leftover = (row.field_type == "select" and list(row.options or []) == list(spec["options"])
+                                    and (row.tab_name, row.position) == ("General", 0))
+                        if plain_text or leftover:
+                            row.field_type = "select"
+                            row.options = list(spec["options"])
+                            row.tab_name = spec.get("tab_name", row.tab_name)
+                            row.position = spec.get("position", row.position)
+                            row.is_system_default = True       # upgraded once; never touched by this again
+                    elif upgrade.get("once"):
+                        ledger = f"field_upgrade:{slug}:{spec['field_name']}"
+                        if AppConfiguration.get_value(ledger) is None:
+                            if plain_text:                     # untouched default; anything else is the admin's
+                                row.field_type = "select"
+                                row.options = list(spec["options"])
+                            AppConfiguration.set_value(ledger, "done", category="system",
+                                                       description="Default field upgraded to a dropdown")
                 continue
             if spec["field_name"] in PROTECTED_FIELD_NAMES:
                 continue

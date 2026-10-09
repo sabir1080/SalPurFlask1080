@@ -147,9 +147,12 @@ class ConfigurationService:
         return False
 
     @staticmethod
-    def save_product_category_data(product_id, category_id, field_data):
-        """Save category-specific product data (does not commit - caller handles that)"""
+    def save_product_category_data(product_id, category_id, field_data, skip_fields=()):
+        """Save category-specific product data (does not commit - caller handles that).
+        skip_fields: field names that are not saved (batch-tracked items keep batch/expiry per Batch)."""
         for field_name, field_value in field_data.items():
+            if field_name in skip_fields:
+                continue
             if field_value is None or field_value == '':
                 continue
 
@@ -184,12 +187,15 @@ class ConfigurationService:
         return result
 
     @staticmethod
-    def validate_product_data(category_slug, form_data):
-        """Validate product data against category rules"""
+    def validate_product_data(category_slug, form_data, skip_fields=()):
+        """Validate product data against category rules.
+        skip_fields: field names not validated at all (not even required)."""
         errors = {}
         fields = ConfigurationService.get_category_fields(category_slug)
 
         for field in fields:
+            if field.field_name in skip_fields:
+                continue
             value = form_data.get(field.field_name)
 
             # Check required

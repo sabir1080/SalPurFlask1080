@@ -190,6 +190,7 @@ function fetchUnitsAndPopulate(row, itemId, keepUnitName, preserveBatchFields) {
         .then(data => {
             populateUnits(row, data.units || [], keepUnitName);
             setRowBatchTracked(row, !!data.batch_tracked, !preserveBatchFields);
+            setRowStockExpiry(row, data.stock_expiry !== false);
         })
         .catch(() => {
             populateUnits(row, [{ key: "", name: "Pcs", factor: 1, purchase_price: null }], keepUnitName);
@@ -208,6 +209,17 @@ function setRowBatchTracked(row, tracked, clearFields) {
         if (expiryInput) expiryInput.value = '';
     }
     updateBatchColumnVisibility();
+}
+
+// Stock expiry is a Business Category setting (not Warranty Expiry): where it is off, this row's Expiry
+// input is hidden and disabled, so nothing is submitted. Client-side convenience only -- the server
+// refuses an expiry for such a category regardless.
+function setRowStockExpiry(row, on) {
+    const input = row.querySelector('.expiry-date-input');
+    if (!input) return;
+    input.classList.toggle('d-none', !on);
+    input.disabled = !on;
+    if (!on) input.value = '';
 }
 
 function updateBatchColumnVisibility() {

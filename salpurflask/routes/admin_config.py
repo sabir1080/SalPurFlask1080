@@ -236,6 +236,33 @@ def toggle_category(category_id):
     return jsonify({'error': 'Category not found'}), 404
 
 
+@config_bp.route('/category/<int:category_id>/stock-tracking', methods=['POST'])
+@login_required
+def set_stock_tracking(category_id):
+    """Set a category's Batch Tracking / Stock Expiry switches. Independent of each other; saved in
+    config_data (no schema change). Only the keys sent are changed, and only those two keys."""
+    if current_user.role != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+    cat = db.session.get(BusinessCategory, category_id)
+    if not cat:
+        return jsonify({'error': 'Category not found'}), 404
+    data = request.get_json(silent=True) or {}
+    changes = {}
+    for key in ('batch_tracking', 'stock_expiry'):
+        if key in data:
+            if not isinstance(data[key], bool):
+                return jsonify({'error': f'{key} must be true or false'}), 400
+            changes[key] = data[key]
+    if not changes:
+        return jsonify({'error': 'Nothing to change'}), 400
+    cfg = dict(cat.config_data or {})      # a new dict, so the JSON column registers the change
+    cfg.update(changes)
+    cat.config_data = cfg
+    db.session.commit()
+    return jsonify({'success': True, 'batch_tracking': cat.batch_tracking_enabled,
+                    'stock_expiry': cat.stock_expiry_enabled})
+
+
 @config_bp.route('/field/add/<int:category_id>', methods=['POST'])
 @login_required
 def add_field(category_id):

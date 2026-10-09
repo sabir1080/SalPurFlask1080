@@ -56,7 +56,8 @@ def _books():
 
 
 def _item(name="Medicine", stock=0, batch_tracked=False):
-    bcat = BusinessCategory(name="Cat-" + name, slug="cat-" + name.lower(), is_enabled=True)
+    bcat = BusinessCategory(name="Cat-" + name, slug="cat-" + name.lower(), is_enabled=True,
+                            config_data={"batch_tracking": True})   # a category that tracks batches
     db.session.add(bcat); db.session.flush()
     it = Item(name=name, business_category_id=bcat.id, unit="Pcs",
              purchase_price=Decimal("10"), sale_price=Decimal("20"),

@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from flask import abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user
@@ -614,6 +614,69 @@ def expiring_batches():
     )
 
 
+# Category fields that a batch-tracked item keeps per Batch (the opening-batch rows), never once
+# on the item.
+BATCH_LEVEL_CATEGORY_FIELDS = ("batch_no", "expiry_date")
+
+
+def _parse_opening_batches(form, allow_expiry=True):
+    """The batch-wise opening stock rows of the Add Item form -> (rows, None) or ([], error).
+
+    Each row: Batch No, Expiry Date, Qty, Purchase Rate. A blank Batch No (or the word "unknown") is the item's
+    single Unknown Batch (batch_no NULL), which never has an expiry. The total opening quantity is
+    whatever the rows add up to -- nothing else the user typed decides it. A row left completely
+    empty is ignored (the form always shows one)."""
+    numbers = form.getlist("opening_batch_no[]")
+    expiries = form.getlist("opening_batch_expiry[]")
+    quantities = form.getlist("opening_batch_qty[]")
+    rates = form.getlist("opening_batch_rate[]")
+
+    def cell(values, i):
+        return values[i].strip() if i < len(values) else ""
+
+    rows, named, unknown_seen = [], set(), False
+    for i in range(max(len(numbers), len(expiries), len(quantities), len(rates))):
+        number, expiry_raw, qty_raw = cell(numbers, i), cell(expiries, i), cell(quantities, i)
+        rate_raw = cell(rates, i)
+        if not (number or expiry_raw or qty_raw or rate_raw):
+            continue
+        label = f"Batch row {i + 1}"
+        if not qty_raw.isdecimal() or int(qty_raw) <= 0:
+            return [], f"{label}: quantity must be a positive whole number."
+        try:
+            rate = Decimal(rate_raw).quantize(MONEY)
+        except (InvalidOperation, ValueError):
+            rate = Decimal("0")
+        if not rate_raw or rate <= 0:
+            return [], f"{label}: Purchase Rate must be greater than 0."
+        expiry = None
+        if expiry_raw and not allow_expiry:
+            return [], f"{label}: stock expiry is not enabled for this category, so no expiry date can be entered."
+        if expiry_raw:
+            try:
+                expiry = datetime.strptime(expiry_raw, "%Y-%m-%d").date()
+            except ValueError:
+                return [], f"{label}: invalid expiry date {expiry_raw!r} (use YYYY-MM-DD)."
+        if not number or number.lower() == "unknown":
+            if unknown_seen:
+                return [], "Only one Unknown (blank Batch No) row is allowed."
+            if expiry is not None:
+                return [], (f"{label}: the Unknown batch has no expiry date. "
+                            "Give the stock a Batch No to record an expiry.")
+            unknown_seen = True
+            number = None
+        else:
+            if len(number) > 60:
+                return [], f"{label}: Batch No is too long (60 characters at most)."
+            if number.lower() in named:
+                return [], f"Batch No {number!r} is entered more than once."
+            named.add(number.lower())
+        rows.append({"batch_no": number, "expiry": expiry, "qty": int(qty_raw), "rate": rate})
+    if not rows:
+        return [], "Add at least one batch row with a quantity for a batch-tracked item."
+    return rows, None
+
+
 @verified_required
 def item():
     """Display items with filters and handle item creation."""
@@ -651,9 +714,36 @@ def item():
         sku = request.form.get("sku", "").strip() or None
         if unit not in ITEM_UNITS:
             unit = "Pcs"
+        # Batch-tracked item: opening stock is entered batch by batch, and the total is the sum
+        # of those rows (never a separately typed number).
+        opening_batches, batch_error = [], None
         resolved_category = ConfigurationService.resolve_enabled_category(business_category_id)
+        batch_tracked_form = item_type == "STOCK" and request.form.get("batch_tracked") == "1"
+        # The category decides whether batches / stock expiry exist at all (an admin setting), and the
+        # server enforces it: the form hiding them is only a convenience.
+        tracking_error = None
+        if batch_tracked_form and resolved_category is not None \
+                and not resolved_category.batch_tracking_enabled:
+            tracking_error = (f"Batch tracking is not enabled for the '{resolved_category.name}' category. "
+                              "Untick Batch tracked, or enable it for the category in Admin Settings.")
+        skip_category_fields = set(resolved_category.disabled_stock_field_names) if resolved_category else set()
+        if batch_tracked_form:
+            skip_category_fields |= set(BATCH_LEVEL_CATEGORY_FIELDS)
+        if batch_tracked_form and not tracking_error:
+            opening_batches, batch_error = _parse_opening_batches(
+                request.form,
+                allow_expiry=resolved_category is None or resolved_category.stock_expiry_enabled)
+            if not batch_error:
+                opening_stock = str(sum(r["qty"] for r in opening_batches))
+                if not purchase_price:
+                    # The form pre-fills the weighted average of the batch rates; if it arrives
+                    # blank, derive it here (what the user typed is kept as typed). It is only the
+                    # item's general price: batches are valued at their own rates.
+                    value = sum(r["qty"] * r["rate"] for r in opening_batches)
+                    purchase_price = str((value / Decimal(opening_stock)).quantize(MONEY))
         category_field_errors = (
-            ConfigurationService.validate_product_data(resolved_category.slug, request.form)
+            ConfigurationService.validate_product_data(
+                resolved_category.slug, request.form, skip_fields=skip_category_fields)
             if resolved_category else {})
         if not business_categories:
             flash("No business categories are enabled. Please enable categories in Admin Settings before adding items!", "danger")
@@ -666,13 +756,17 @@ def item():
             # an enabled, valid BusinessCategory is mandatory for every Item,
             # never optional and never satisfied by the legacy Category table.
             flash("An enabled Business Category is required to create an item. Please select a valid category!", "danger")
+        elif tracking_error:
+            flash(tracking_error, "danger")
+        elif batch_error:
+            flash(batch_error, "danger")
         elif not opening_stock.lstrip("-").isdigit() or (reorder_level and not reorder_level.isdigit()):
             flash("Opening Stock and Reorder Level must be numbers!", "danger")
         elif purchase_price and (not purchase_price.replace(".", "", 1).isdigit() or float(purchase_price) < 0):
             flash("Purchase price must be a non-negative number!", "danger")
         elif sale_price and (not sale_price.replace(".", "", 1).isdigit() or float(sale_price) < 0):
             flash("Sale price must be a non-negative number!", "danger")
-        elif int(opening_stock) > 0 and (not purchase_price or float(purchase_price or 0) == 0):
+        elif int(opening_stock) > 0 and not opening_batches and (not purchase_price or float(purchase_price or 0) == 0):
             flash("Opening stock requires a purchase price greater than 0!", "danger")
         elif barcode_taken(barcode):
             flash(f"Barcode '{barcode}' is already used by another item. "
@@ -699,7 +793,11 @@ def item():
                 item_type=item_type,
                 unit=unit,
                 opening_stock=os_val,
-                stock=os_val,
+                # Batch-wise opening: Item.stock, ItemStock and inventory_value are built up
+                # batch by batch below (item_add_stock_batched), so the item starts empty and
+                # nothing is counted twice.
+                stock=0 if opening_batches else os_val,
+                batch_tracked=bool(opening_batches),
                 reorder_level=reorder_val,
                 purchase_price=float(purchase_price) if purchase_price else None,
                 sale_price=float(sale_price) if sale_price else None,
@@ -709,9 +807,39 @@ def item():
             db.session.add(item_obj)
             item_obj.inventory_value = (Decimal(str(item_obj.opening_stock or 0))
                                         * Decimal(str(item_obj.purchase_price or 0))).quantize(MONEY)
+            if opening_batches:
+                item_obj.inventory_value = Decimal("0")
             db.session.flush()
 
-            if item_obj.item_type == "STOCK":
+            if opening_batches:
+                # One real Batch + BatchStock + "opening" StockMovement per row, through the same
+                # two helpers Purchase-Post and Stock Adjustment use. Every batch is received at
+                # its own Purchase Rate (the item's general purchase_price is left alone), and
+                # post_item_opening() values the GL entry from those same batch rates.
+                from salpurflask.models.inventory_location import get_or_create_default_location
+                default_location = get_or_create_default_location()
+                try:
+                    for row in opening_batches:
+                        unit_cost = row["rate"]
+                        batch = get_or_create_batch(
+                            item_obj.id, row["batch_no"], row["expiry"], unit_cost,
+                            source_type="opening", source_id=item_obj.id,
+                            created_by_id=getattr(current_user, "id", None))
+                        if row["batch_no"] is None:
+                            batch.unit_cost = unit_cost   # a new Unknown Batch starts at cost 0
+                        item_add_stock_batched(
+                            item_obj, row["qty"], unit_cost * row["qty"],
+                            location_id=default_location.id, batch=batch,
+                            movement_type="opening", source_type="item", source_id=item_obj.id)
+                except PostingError as e:
+                    db.session.rollback()
+                    flash(str(e), "danger")
+                    return render_template("item.html", items=items, categories=categories,
+                                           business_categories=business_categories,
+                                           pagination=pagination, search=search,
+                                           category_filter=category_filter,
+                                           form_data=request.form)
+            elif item_obj.item_type == "STOCK":
                 from salpurflask.models.inventory_location import (
                     get_or_create_default_location, ItemStock, record_stock_movement)
                 default_location = get_or_create_default_location()
@@ -746,7 +874,9 @@ def item():
                         category_field_data[key] = value
 
                 if category_field_data:
-                    ConfigurationService.save_product_category_data(item_obj.id, int(business_category_id), category_field_data)
+                    ConfigurationService.save_product_category_data(
+                        item_obj.id, int(business_category_id), category_field_data,
+                        skip_fields=skip_category_fields)
 
             unit_error = save_item_units(item_obj)
             if unit_error:
@@ -801,7 +931,8 @@ def edit_item(id):
             unit = "Pcs"
         resolved_category = ConfigurationService.resolve_enabled_category(business_category_id)
         category_field_errors = (
-            ConfigurationService.validate_product_data(resolved_category.slug, request.form)
+            ConfigurationService.validate_product_data(
+                resolved_category.slug, request.form, skip_fields=resolved_category.disabled_stock_field_names)
             if resolved_category else {})
         if not business_categories:
             flash("No business categories are enabled. Please enable categories in Admin Settings!", "danger")
@@ -836,6 +967,14 @@ def edit_item(id):
         else:
             new_os = int(opening_stock)
             stock_adjustment = new_os - item.opening_stock
+            # A batch-tracked item's stock is held per batch (BatchStock); the plain
+            # item_add_stock()/item_remove_stock() below would change ItemStock without it.
+            if stock_adjustment != 0 and item.batch_tracked:
+                flash("This item is batch-tracked: its stock is held batch by batch, so Opening "
+                      "Stock cannot be changed here. Use a Stock Adjustment to change batch "
+                      "quantities.", "danger")
+                return render_template("edit_item.html", item=item, categories=categories,
+                                       business_categories=business_categories)
             # Guard: Cannot edit opening stock after transactions exist (accounting period integrity)
             if stock_adjustment != 0 and (item.purchases or item.sales):
                 flash("Cannot edit opening stock after transactions have been recorded! "
@@ -889,7 +1028,9 @@ def edit_item(id):
                         category_field_data[key] = value
 
                 if category_field_data:
-                    ConfigurationService.save_product_category_data(item.id, int(business_category_id), category_field_data)
+                    ConfigurationService.save_product_category_data(
+                        item.id, int(business_category_id), category_field_data,
+                        skip_fields=resolved_category.disabled_stock_field_names if resolved_category else ())
 
             post_item_opening(item)
             db.session.commit()
@@ -1592,6 +1733,11 @@ def enable_item_batch_tracking(id):
     if item.batch_tracked:
         flash(f"Batch tracking is already enabled for '{item.name}'.", "info")
         return redirect(url_for("edit_item", id=item.id))
+    category = item.business_category if getattr(item, "business_category", None) else None
+    if category is not None and not category.batch_tracking_enabled:
+        flash(f"Batch tracking is not enabled for the '{category.name}' category, so it cannot be "
+              f"turned on for '{item.name}'. Enable it for the category in Admin Settings first.", "danger")
+        return redirect(url_for("edit_item", id=item.id))
     try:
         enable_batch_tracking(item.id, created_by_id=current_user.id)
         db.session.commit()
@@ -1788,4 +1934,7 @@ def api_item_units(id):
             # Batch No / Expiry Date fields for the item actually picked --
             # a client-side convenience only; the server re-checks this same
             # flag independently before saving (see purchase()'s own gating).
-            "batch_tracked": bool(item.batch_tracked)}
+            "batch_tracked": bool(item.batch_tracked),
+            # Stock expiry (not Warranty Expiry) of the item's category -- hides the row's Expiry
+            # input; purchase()/edit/correction enforce it again server-side.
+            "stock_expiry": item.business_category is None or item.business_category.stock_expiry_enabled}

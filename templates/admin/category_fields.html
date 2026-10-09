@@ -17,6 +17,25 @@
   </div>
 </div>
 
+<!-- Stock tracking -->
+<div class="card mb-6">
+  <div class="card-header bg-light"><h5 class="mb-0">Stock tracking</h5></div>
+  <div class="card-body">
+    <div class="form-check form-switch mb-2">
+      <input class="form-check-input" type="checkbox" id="trackBatch" {% if category.batch_tracking_enabled %}checked{% endif %}
+             onchange="saveStockTracking()">
+      <label class="form-check-label" for="trackBatch">Batch tracking &mdash; items can be tracked batch by batch</label>
+    </div>
+    <div class="form-check form-switch mb-2">
+      <input class="form-check-input" type="checkbox" id="trackExpiry" {% if category.stock_expiry_enabled %}checked{% endif %}
+             onchange="saveStockTracking()">
+      <label class="form-check-label" for="trackExpiry">Stock expiry &mdash; stock carries an expiry date</label>
+    </div>
+    <small class="text-muted d-block">Independent settings. Warranty and Warranty Expiry Date are separate product fields and are not affected. Existing items, batches and stock are never changed by these switches.</small>
+    <small class="text-muted d-block" id="stockTrackingStatus"></small>
+  </div>
+</div>
+
 <!-- Fields List -->
 <div class="card mb-6">
     <div class="card-header bg-light d-flex justify-content-between align-items-center">
@@ -139,6 +158,26 @@
 </div>
 
 <script>
+async function saveStockTracking() {
+  const status = document.getElementById('stockTrackingStatus');
+  try {
+    const response = await fetch('/admin/config/category/{{ category.id }}/stock-tracking', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+      },
+      body: JSON.stringify({
+        batch_tracking: document.getElementById('trackBatch').checked,
+        stock_expiry: document.getElementById('trackExpiry').checked
+      })
+    });
+    status.textContent = response.ok ? 'Saved.' : 'Could not save.';
+  } catch (error) {
+    status.textContent = 'Could not save.';
+  }
+}
+
 function showAddFieldModal() {
   const modal = new bootstrap.Modal(document.getElementById('addFieldModal'));
   modal.show();
