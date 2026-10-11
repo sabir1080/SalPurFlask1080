@@ -153,6 +153,18 @@
         </tr>
         {% endfor %}
       </tbody>
+      {% if is_last_page %}
+      <tfoot class="table-light fw-bold">
+        <tr style="border-top: 2px solid var(--border);">
+          <td colspan="4">TOTAL SUPPLIERS ({{ total_suppliers_count }})</td>
+          <td class="table-cell-right">{{ total_opening | fmt_num }}</td>
+          <td class="table-cell-right">{{ total_purchase | fmt_num }}</td>
+          <td class="table-cell-right">{{ total_payment | fmt_num }}</td>
+          <td class="table-cell-right">{{ total_balance | fmt_num }}</td>
+          <td class="no-print"></td>
+        </tr>
+      </tfoot>
+      {% endif %}
     </table>
   </div>
 </div>

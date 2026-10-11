@@ -21,7 +21,10 @@ from salpurflask.services.lookup_service import search_customers
 @verified_required
 def customer():
     """Display customers and allow creation of new customers."""
-    from app import record_audit, sync_customer_opening, post_customer_opening, get_customer_balance
+    from app import (
+        record_audit, sync_customer_opening, post_customer_opening,
+        get_customer_balance, get_customer_receivable, get_customer_received,
+    )
 
     search = request.args.get("search", "")
     if search:
@@ -40,6 +43,17 @@ def customer():
     current_sort, current_dir = resolve_sort(sort_columns, "name")
     query = apply_sort(query, sort_columns, current_sort, current_dir, Customer.id)
     customers, pagination = get_paginated_results(query)
+    # Totals row (last page only): computed over the full filtered dataset,
+    # with the same per-customer helpers the row-level columns already use,
+    # so the totals always agree with what's visible across every page.
+    total_pages = (pagination.total + pagination.per_page - 1) // pagination.per_page
+    is_last_page = pagination.page >= total_pages
+    filtered_customers = query.all()
+    total_customers_count = len(filtered_customers)
+    total_opening = sum(float(c.opening_balance or 0) for c in filtered_customers)
+    total_sale = sum(get_customer_receivable(c.id) for c in filtered_customers)
+    total_receive = sum(get_customer_received(c.id) for c in filtered_customers)
+    total_balance = sum(get_customer_balance(c.id) for c in filtered_customers)
     if request.method == "POST":
         if current_user.role not in ("admin", "manager"):
             flash("You do not have permission to add customers.", "danger")
@@ -53,7 +67,10 @@ def customer():
             if not opening_str.replace("-", "", 1).replace(".", "", 1).isdigit():
                 flash("Opening balance must be a valid number!", "danger")
                 return render_template("customer.html", customers=customers, pagination=pagination, search=search,
-                                       current_sort=current_sort, current_dir=current_dir)
+                                       current_sort=current_sort, current_dir=current_dir,
+                                       is_last_page=is_last_page, total_customers_count=total_customers_count,
+                                       total_opening=total_opening, total_sale=total_sale,
+                                       total_receive=total_receive, total_balance=total_balance)
             opening_balance = float(opening_str)
         if not name or not contact or not address:
             flash("All fields are required!", "danger")
@@ -73,7 +90,10 @@ def customer():
             flash("Customer added successfully!", "success")
             return redirect(url_for("customer"))
     return render_template("customer.html", customers=customers, pagination=pagination, search=search,
-                           current_sort=current_sort, current_dir=current_dir)
+                           current_sort=current_sort, current_dir=current_dir,
+                           is_last_page=is_last_page, total_customers_count=total_customers_count,
+                           total_opening=total_opening, total_sale=total_sale,
+                           total_receive=total_receive, total_balance=total_balance)
 
 
 @manager_required

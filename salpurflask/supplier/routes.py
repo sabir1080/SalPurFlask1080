@@ -21,7 +21,10 @@ from salpurflask.services.lookup_service import search_suppliers
 @verified_required
 def supplier():
     """Display suppliers and allow creation of new suppliers."""
-    from app import record_audit, sync_supplier_opening, post_supplier_opening, get_supplier_balance
+    from app import (
+        record_audit, sync_supplier_opening, post_supplier_opening,
+        get_supplier_balance, get_supplier_payable, get_supplier_paid,
+    )
 
     search = request.args.get("search", "")
     if search:
@@ -40,6 +43,17 @@ def supplier():
     current_sort, current_dir = resolve_sort(sort_columns, "name")
     query = apply_sort(query, sort_columns, current_sort, current_dir, Supplier.id)
     suppliers, pagination = get_paginated_results(query)
+    # Totals row (last page only): computed over the full filtered dataset,
+    # with the same per-supplier helpers the row-level columns already use,
+    # so the totals always agree with what's visible across every page.
+    total_pages = (pagination.total + pagination.per_page - 1) // pagination.per_page
+    is_last_page = pagination.page >= total_pages
+    filtered_suppliers = query.all()
+    total_suppliers_count = len(filtered_suppliers)
+    total_opening = sum(float(s.opening_balance or 0) for s in filtered_suppliers)
+    total_purchase = sum(get_supplier_payable(s.id) for s in filtered_suppliers)
+    total_payment = sum(get_supplier_paid(s.id) for s in filtered_suppliers)
+    total_balance = sum(get_supplier_balance(s.id) for s in filtered_suppliers)
     if request.method == "POST":
         if current_user.role not in ("admin", "manager"):
             flash("You do not have permission to add suppliers.", "danger")
@@ -53,7 +67,10 @@ def supplier():
             if not opening_str.replace("-", "", 1).replace(".", "", 1).isdigit():
                 flash("Opening balance must be a valid number!", "danger")
                 return render_template("supplier.html", suppliers=suppliers, pagination=pagination, search=search,
-                                       current_sort=current_sort, current_dir=current_dir)
+                                       current_sort=current_sort, current_dir=current_dir,
+                                       is_last_page=is_last_page, total_suppliers_count=total_suppliers_count,
+                                       total_opening=total_opening, total_purchase=total_purchase,
+                                       total_payment=total_payment, total_balance=total_balance)
             opening_balance = float(opening_str)
         if not name or not contact or not address:
             flash("All fields are required!", "danger")
@@ -73,7 +90,10 @@ def supplier():
             flash("Supplier added successfully!", "success")
             return redirect(url_for("supplier"))
     return render_template("supplier.html", suppliers=suppliers, pagination=pagination, search=search,
-                           current_sort=current_sort, current_dir=current_dir)
+                           current_sort=current_sort, current_dir=current_dir,
+                           is_last_page=is_last_page, total_suppliers_count=total_suppliers_count,
+                           total_opening=total_opening, total_purchase=total_purchase,
+                           total_payment=total_payment, total_balance=total_balance)
 
 
 @manager_required
