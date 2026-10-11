@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from '_sort_header.html' import sort_th %}
 {% block content %}
 <script>
 try {
@@ -695,19 +696,20 @@ function addUnitRow() {
 <div class="card">
   <div class="table-wrapper">
     <table class="table table-striped table-hover" id="tbl-items-list">
+      {% set item_sort_args = {'search': search, 'business_category_id': request.args.get('business_category_id', '')} %}
       <thead>
         <tr>
-          <th>ID</th>
-          <th>Name</th>
-          <th>Category</th>
-          <th>Unit</th>
-          <th>Barcode</th>
-          <th>SKU</th>
-          <th class="text-end">Opening</th>
-          <th class="text-end">Current Stock</th>
-          <th class="text-end">Reorder Level</th>
-          <th class="text-end">Buy Price</th>
-          <th class="text-end">Sell Price</th>
+          {{ sort_th('ID', 'id', current_sort, current_dir, 'item', item_sort_args) }}
+          {{ sort_th('Name', 'name', current_sort, current_dir, 'item', item_sort_args) }}
+          {{ sort_th('Category', 'category', current_sort, current_dir, 'item', item_sort_args) }}
+          {{ sort_th('Unit', 'unit', current_sort, current_dir, 'item', item_sort_args) }}
+          {{ sort_th('Barcode', 'barcode', current_sort, current_dir, 'item', item_sort_args) }}
+          {{ sort_th('SKU', 'sku', current_sort, current_dir, 'item', item_sort_args) }}
+          {{ sort_th('Opening', 'opening_stock', current_sort, current_dir, 'item', item_sort_args, 'text-end') }}
+          {{ sort_th('Current Stock', 'stock', current_sort, current_dir, 'item', item_sort_args, 'text-end') }}
+          {{ sort_th('Reorder Level', 'reorder_level', current_sort, current_dir, 'item', item_sort_args, 'text-end') }}
+          {{ sort_th('Buy Price', 'purchase_price', current_sort, current_dir, 'item', item_sort_args, 'text-end') }}
+          {{ sort_th('Sell Price', 'sale_price', current_sort, current_dir, 'item', item_sort_args, 'text-end') }}
           <th class="table-cell-center no-print">Actions</th>
         </tr>
       </thead>

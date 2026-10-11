@@ -9,7 +9,8 @@ from salpurflask.extensions import db
 from salpurflask.models import Customer, CustomerLedgerEntry, CustomerPayment, Sale, STATUS_POSTED
 from salpurflask.auth import verified_required, manager_required, admin_required
 from salpurflask.utils import (
-    get_paginated_results, csv_response, excel_response, valid_phone, now_local
+    get_paginated_results, csv_response, excel_response, valid_phone, now_local,
+    resolve_sort, apply_sort,
 )
 from salpurflask.services.lookup_service import search_customers
 
@@ -32,6 +33,12 @@ def customer():
         )
     else:
         query = Customer.query
+    sort_columns = {
+        "id": Customer.id, "name": Customer.name, "contact": Customer.contact,
+        "address": Customer.address, "opening_balance": Customer.opening_balance,
+    }
+    current_sort, current_dir = resolve_sort(sort_columns, "name")
+    query = apply_sort(query, sort_columns, current_sort, current_dir, Customer.id)
     customers, pagination = get_paginated_results(query)
     if request.method == "POST":
         if current_user.role not in ("admin", "manager"):
@@ -45,7 +52,8 @@ def customer():
         if opening_str:
             if not opening_str.replace("-", "", 1).replace(".", "", 1).isdigit():
                 flash("Opening balance must be a valid number!", "danger")
-                return render_template("customer.html", customers=customers, pagination=pagination, search=search)
+                return render_template("customer.html", customers=customers, pagination=pagination, search=search,
+                                       current_sort=current_sort, current_dir=current_dir)
             opening_balance = float(opening_str)
         if not name or not contact or not address:
             flash("All fields are required!", "danger")
@@ -64,7 +72,8 @@ def customer():
             record_audit("create", "Customer", customer.id, f"Customer '{customer.name}' added")
             flash("Customer added successfully!", "success")
             return redirect(url_for("customer"))
-    return render_template("customer.html", customers=customers, pagination=pagination, search=search)
+    return render_template("customer.html", customers=customers, pagination=pagination, search=search,
+                           current_sort=current_sort, current_dir=current_dir)
 
 
 @manager_required

@@ -24,7 +24,7 @@ from salpurflask.models import (
 )
 from salpurflask.models.business_config import BusinessCategory
 from salpurflask.auth import verified_required, manager_required, admin_required
-from salpurflask.utils import now_local, barcode_taken, sku_taken, get_paginated_results, line_base_qty, csv_response, excel_response, parse_import_file, get_item_locked
+from salpurflask.utils import now_local, barcode_taken, sku_taken, get_paginated_results, line_base_qty, csv_response, excel_response, parse_import_file, get_item_locked, resolve_sort, apply_sort
 from salpurflask.services.lookup_service import search_items, get_item_filter_fields
 from salpurflask.services.location_stock import stock_by_location, picker_stock_fields
 from salpurflask.services.location_permissions import accessible_location_ids
@@ -695,6 +695,15 @@ def item():
         )
     if business_category_filter.isdigit():
         query = query.filter(Item.business_category_id == int(business_category_filter))
+    sort_columns = {
+        "id": Item.id, "name": Item.name, "category": BusinessCategory.name,
+        "unit": Item.unit, "barcode": Item.barcode, "sku": Item.sku,
+        "opening_stock": Item.opening_stock, "stock": Item.stock,
+        "reorder_level": Item.reorder_level, "purchase_price": Item.purchase_price,
+        "sale_price": Item.sale_price,
+    }
+    current_sort, current_dir = resolve_sort(sort_columns, "name")
+    query = apply_sort(query, sort_columns, current_sort, current_dir, Item.id)
     items, pagination = get_paginated_results(query)
     categories = Category.query.order_by(Category.name).all()
     business_categories = ConfigurationService.get_enabled_categories()
@@ -781,6 +790,7 @@ def item():
                                    pagination=pagination, search=search,
                                    category_filter=category_filter,
                                    form_data=request.form,
+                                   current_sort=current_sort, current_dir=current_dir,
                                    error_tab_name=_first_error_tab_name(
                                        resolved_category.slug, category_field_errors))
         else:
@@ -886,7 +896,8 @@ def item():
                                        business_categories=business_categories,
                                        pagination=pagination, search=search,
                                        category_filter=category_filter,
-                                       form_data=request.form)
+                                       form_data=request.form,
+                                       current_sort=current_sort, current_dir=current_dir)
             post_item_opening(item_obj)
             db.session.commit()
             # Import record_audit locally to avoid circular imports
@@ -903,6 +914,8 @@ def item():
         search=search,
         category_filter=category_filter,
         form_data=request.form if request.method == "POST" else {},
+        current_sort=current_sort,
+        current_dir=current_dir,
     )
 
 
