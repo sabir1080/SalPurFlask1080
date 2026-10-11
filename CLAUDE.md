@@ -41,7 +41,14 @@ Copy `.env.example` to `.env` and fill in:
 All application logic lives in `app.py` (~2490 lines). There is no blueprints/module split. Models, routes, helpers, and CLI commands are all in this one file. `models.py` exists in the repo but is unused — `app.py` defines all models directly.
 
 ### Database
-SQLite at `instance/database.db`. Schema migrations run automatically on startup via `migrate_database()` (called inside `with app.app_context()`). This function uses SQLAlchemy `inspect` to add missing columns with raw `ALTER TABLE` — no Alembic is used at runtime (the `migrations/` folder is present but not wired to the app).
+SQLite at `instance/database.db` is only a local fallback, used when `DATABASE_URL` is unset (see `app.py` lines ~45-63). It is legacy/unused now — the app runs on PostgreSQL. `instance/database.db` itself and any backup of it are not needed. Schema migrations run automatically on startup via `migrate_database()` (called inside `with app.app_context()`). This function uses SQLAlchemy `inspect` to add missing columns with raw `ALTER TABLE` — no Alembic is used at runtime (the `migrations/` folder is present but not wired to the app).
+
+### Deployment / database hosting
+Two separate Render services are deployed from this repo, each with its own `DATABASE_URL` set in the Render dashboard (`sync: false` in `render.yaml`, so the value is never stored in the repo):
+- **development** service → Neon Postgres database named `development`
+- **production** service → Neon Postgres database named `production`
+
+`tradeflow_test` (a local Postgres database, referenced via `DATABASE_URL` in the local `.env`) is used only for running Python tests in this environment — it is not one of the app's real dev/prod databases and holds no real data.
 
 ### Models
 - `User` — authentication only; `verified` bool gates access
