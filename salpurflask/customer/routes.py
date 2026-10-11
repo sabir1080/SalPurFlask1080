@@ -23,7 +23,7 @@ def customer():
     """Display customers and allow creation of new customers."""
     from app import (
         record_audit, sync_customer_opening, post_customer_opening,
-        get_customer_balance, get_customer_receivable, get_customer_received,
+        get_customer_balance, get_customer_net_sale, get_customer_received,
     )
 
     search = request.args.get("search", "")
@@ -51,7 +51,11 @@ def customer():
     filtered_customers = query.all()
     total_customers_count = len(filtered_customers)
     total_opening = sum(float(c.opening_balance or 0) for c in filtered_customers)
-    total_sale = sum(get_customer_receivable(c.id) for c in filtered_customers)
+    # Net Sales = gross sales minus eligible Sale Returns (get_customer_net_sale);
+    # computed once per customer here so the row figures (looked up by id in the
+    # template) and the TOTAL row always agree with each other by construction.
+    customer_net_sales = {c.id: get_customer_net_sale(c.id) for c in filtered_customers}
+    total_sale = sum(customer_net_sales.values())
     total_receive = sum(get_customer_received(c.id) for c in filtered_customers)
     total_balance = sum(get_customer_balance(c.id) for c in filtered_customers)
     if request.method == "POST":
@@ -70,7 +74,8 @@ def customer():
                                        current_sort=current_sort, current_dir=current_dir,
                                        is_last_page=is_last_page, total_customers_count=total_customers_count,
                                        total_opening=total_opening, total_sale=total_sale,
-                                       total_receive=total_receive, total_balance=total_balance)
+                                       total_receive=total_receive, total_balance=total_balance,
+                                       customer_net_sales=customer_net_sales)
             opening_balance = float(opening_str)
         if not name or not contact or not address:
             flash("All fields are required!", "danger")
@@ -93,7 +98,8 @@ def customer():
                            current_sort=current_sort, current_dir=current_dir,
                            is_last_page=is_last_page, total_customers_count=total_customers_count,
                            total_opening=total_opening, total_sale=total_sale,
-                           total_receive=total_receive, total_balance=total_balance)
+                           total_receive=total_receive, total_balance=total_balance,
+                           customer_net_sales=customer_net_sales)
 
 
 @manager_required

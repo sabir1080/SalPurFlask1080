@@ -124,7 +124,7 @@
           <td>{{ customer.contact }}</td>
           <td>{{ customer.address }}</td>
           <td class="table-cell-right">{{ customer.opening_balance | fmt_num }}</td>
-          <td class="table-cell-right">{{ get_customer_receivable(customer.id) | fmt_num }}</td>
+          <td class="table-cell-right">{{ customer_net_sales[customer.id] | fmt_num }}</td>
           <td class="table-cell-right">{{ get_customer_received(customer.id) | fmt_num }}</td>
           <td class="table-cell-right">
             {% set bal = get_customer_balance(customer.id) %}

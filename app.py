@@ -824,6 +824,27 @@ def get_customer_receivable(customer_id):
     sales = Sale.query.filter_by(customer_id=customer_id, is_reversed=False).all()
     return sum(sale_total(s) for s in sales)
 
+def get_customer_net_sale(customer_id):
+    """Customer List "Sales" figure: get_customer_receivable() minus eligible
+    Sale Returns against this customer. A return counts only when both it and
+    its parent Sale are still active (is_reversed=False on each) — a return
+    against a Sale that has itself since been reversed is already excluded
+    from get_customer_receivable()'s sum, so subtracting it again would
+    double-count the reversal. Does not touch get_customer_receivable() or
+    any other module's gross-sales figure."""
+    returns = (
+        SaleReturn.query
+        .join(Sale, SaleReturn.sale_id == Sale.id)
+        .filter(
+            SaleReturn.customer_id == customer_id,
+            SaleReturn.is_reversed.is_(False),
+            Sale.is_reversed.is_(False),
+        )
+        .all()
+    )
+    returned_total = sum(float(r.quantity * r.return_price) for r in returns)
+    return get_customer_receivable(customer_id) - returned_total
+
 def get_customer_received(customer_id, exclude_payment_id=None):
     query = (db.session.query(func.sum(CustomerPayment.amount))
              .filter(CustomerPayment.customer_id == customer_id,
