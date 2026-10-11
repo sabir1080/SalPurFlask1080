@@ -404,8 +404,8 @@
         <table class="table table-striped" id="tbl-low-stock">
             <thead>
                 <tr>
-                    <th>Item Name</th>
-                    <th>Category</th>
+                    <th class="sortable-col" data-sort-col="0" onclick="sortLowStockTable(0)" style="cursor: pointer;">Item Name <i class="bi bi-arrow-down-up sort-icon" style="font-size: 0.7em;"></i></th>
+                    <th class="sortable-col" data-sort-col="1" onclick="sortLowStockTable(1)" style="cursor: pointer;">Category <i class="bi bi-arrow-down-up sort-icon" style="font-size: 0.7em;"></i></th>
                     <th class="table-cell-right">Current Stock</th>
                     <th class="table-cell-right">Reorder Level</th>
                     <th class="table-cell-center">Status</th>
@@ -478,6 +478,38 @@
 
 <!-- Chart.js Configuration -->
 <script>
+let lowStockSortState = { col: null, asc: true };
+
+function sortLowStockTable(colIndex) {
+    const tbl = document.getElementById('tbl-low-stock');
+    const tbody = tbl.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    if (!rows.length) return;
+
+    lowStockSortState.asc = (lowStockSortState.col === colIndex) ? !lowStockSortState.asc : true;
+    lowStockSortState.col = colIndex;
+
+    rows.sort((a, b) => {
+        const aText = a.querySelectorAll('td')[colIndex].textContent.trim().toLowerCase();
+        const bText = b.querySelectorAll('td')[colIndex].textContent.trim().toLowerCase();
+        if (aText < bText) return lowStockSortState.asc ? -1 : 1;
+        if (aText > bText) return lowStockSortState.asc ? 1 : -1;
+        return 0;
+    });
+
+    rows.forEach(row => tbody.appendChild(row));
+
+    tbl.querySelectorAll('th.sortable-col .sort-icon').forEach(icon => {
+        icon.className = 'bi bi-arrow-down-up sort-icon';
+        icon.style.fontSize = '0.7em';
+    });
+    const activeIcon = tbl.querySelector(`th[data-sort-col="${colIndex}"] .sort-icon`);
+    if (activeIcon) {
+        activeIcon.className = lowStockSortState.asc ? 'bi bi-arrow-up sort-icon' : 'bi bi-arrow-down sort-icon';
+        activeIcon.style.fontSize = '0.7em';
+    }
+}
+
 // Print PDF for the Low Stock Items table — same clone-table-into-a-
 // formatted-print-window technique as reports.html's printReport(), kept
 // as its own small function here (rather than sharing that one) since this
