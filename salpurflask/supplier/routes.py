@@ -9,7 +9,8 @@ from salpurflask.extensions import db
 from salpurflask.models import Supplier, SupplierLedgerEntry, SupplierPayment, Purchase, STATUS_POSTED
 from salpurflask.auth import verified_required, manager_required, admin_required
 from salpurflask.utils import (
-    get_paginated_results, csv_response, excel_response, valid_phone, now_local
+    get_paginated_results, csv_response, excel_response, valid_phone, now_local,
+    resolve_sort, apply_sort,
 )
 from salpurflask.services.lookup_service import search_suppliers
 
@@ -24,6 +25,12 @@ def supplier():
 
     search = request.args.get("search", "")
     query = Supplier.query.filter(Supplier.name.ilike(f"%{search}%")) if search else Supplier.query
+    sort_columns = {
+        "id": Supplier.id, "name": Supplier.name, "contact": Supplier.contact,
+        "address": Supplier.address, "opening_balance": Supplier.opening_balance,
+    }
+    current_sort, current_dir = resolve_sort(sort_columns, "name")
+    query = apply_sort(query, sort_columns, current_sort, current_dir, Supplier.id)
     suppliers, pagination = get_paginated_results(query)
     if request.method == "POST":
         if current_user.role not in ("admin", "manager"):
@@ -37,7 +44,8 @@ def supplier():
         if opening_str:
             if not opening_str.replace("-", "", 1).replace(".", "", 1).isdigit():
                 flash("Opening balance must be a valid number!", "danger")
-                return render_template("supplier.html", suppliers=suppliers, pagination=pagination, search=search)
+                return render_template("supplier.html", suppliers=suppliers, pagination=pagination, search=search,
+                                       current_sort=current_sort, current_dir=current_dir)
             opening_balance = float(opening_str)
         if not name or not contact or not address:
             flash("All fields are required!", "danger")
@@ -56,7 +64,8 @@ def supplier():
             record_audit("create", "Supplier", supplier.id, f"Supplier '{supplier.name}' added")
             flash("Supplier added successfully!", "success")
             return redirect(url_for("supplier"))
-    return render_template("supplier.html", suppliers=suppliers, pagination=pagination, search=search)
+    return render_template("supplier.html", suppliers=suppliers, pagination=pagination, search=search,
+                           current_sort=current_sort, current_dir=current_dir)
 
 
 @manager_required

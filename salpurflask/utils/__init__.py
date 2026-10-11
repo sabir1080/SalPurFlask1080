@@ -16,6 +16,12 @@ from salpurflask.utils.pagination import (
     get_paginated_results,
 )
 
+# Listing column-sort utilities
+from salpurflask.utils.sorting import (
+    resolve_sort,
+    apply_sort,
+)
+
 # Export utilities
 from salpurflask.utils.export_utils import (
     csv_response,
@@ -55,6 +61,9 @@ __all__ = [
     'get_item_locked',
     # From pagination
     'get_paginated_results',
+    # From sorting
+    'resolve_sort',
+    'apply_sort',
     # From export
     'csv_response',
     'excel_response',

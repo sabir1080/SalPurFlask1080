@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from '_sort_header.html' import sort_th %}
 {% block extra_head %}
 <style>
 @media print {
@@ -104,11 +105,11 @@
     <table class="table table-striped table-hover">
       <thead>
         <tr>
-          <th>ID</th>
-          <th>Name</th>
-          <th>Contact</th>
-          <th>Address</th>
-          <th class="table-cell-right">Opening</th>
+          {{ sort_th('ID', 'id', current_sort, current_dir, 'supplier', {'search': search}) }}
+          {{ sort_th('Name', 'name', current_sort, current_dir, 'supplier', {'search': search}) }}
+          {{ sort_th('Contact', 'contact', current_sort, current_dir, 'supplier', {'search': search}) }}
+          {{ sort_th('Address', 'address', current_sort, current_dir, 'supplier', {'search': search}) }}
+          {{ sort_th('Opening', 'opening_balance', current_sort, current_dir, 'supplier', {'search': search}, 'table-cell-right') }}
           <th class="table-cell-right">Bills</th>
           <th class="table-cell-right">Paid</th>
           <th class="table-cell-right">Balance</th>
