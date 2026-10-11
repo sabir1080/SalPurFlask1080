@@ -107,6 +107,28 @@ function sortPurchaseList(colIndex) {
     }
 }
 
+// Default view: sorted by Category, then Item Name within each category —
+// column headers stay clickable on top of this for an ad-hoc re-sort.
+(function defaultSortPurchaseList() {
+    const tbl = document.getElementById('tbl-purchase-list');
+    if (!tbl) return;
+    const tbody = tbl.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr[data-row]'));
+    if (!rows.length) return;
+
+    rows.sort((a, b) => {
+        const aCells = a.querySelectorAll('td');
+        const bCells = b.querySelectorAll('td');
+        const aCat = aCells[2].textContent.trim().toLowerCase();
+        const bCat = bCells[2].textContent.trim().toLowerCase();
+        if (aCat !== bCat) return aCat < bCat ? -1 : 1;
+        const aName = aCells[0].textContent.trim().toLowerCase();
+        const bName = bCells[0].textContent.trim().toLowerCase();
+        return aName < bName ? -1 : (aName > bName ? 1 : 0);
+    });
+    rows.forEach(row => tbody.appendChild(row));
+})();
+
 function printPurchaseList() {
     const tbl = document.getElementById('tbl-purchase-list');
     if (!tbl) { alert('No data to print.'); return; }

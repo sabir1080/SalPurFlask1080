@@ -510,6 +510,28 @@ function sortLowStockTable(colIndex) {
     }
 }
 
+// Default view: sorted by Category, then Item Name within each category —
+// column headers stay clickable on top of this for an ad-hoc re-sort.
+(function defaultSortLowStockTable() {
+    const tbl = document.getElementById('tbl-low-stock');
+    if (!tbl) return;
+    const tbody = tbl.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    if (!rows.length) return;
+
+    rows.sort((a, b) => {
+        const aCells = a.querySelectorAll('td');
+        const bCells = b.querySelectorAll('td');
+        const aCat = aCells[1].textContent.trim().toLowerCase();
+        const bCat = bCells[1].textContent.trim().toLowerCase();
+        if (aCat !== bCat) return aCat < bCat ? -1 : 1;
+        const aName = aCells[0].textContent.trim().toLowerCase();
+        const bName = bCells[0].textContent.trim().toLowerCase();
+        return aName < bName ? -1 : (aName > bName ? 1 : 0);
+    });
+    rows.forEach(row => tbody.appendChild(row));
+})();
+
 // Print PDF for the Low Stock Items table — same clone-table-into-a-
 // formatted-print-window technique as reports.html's printReport(), kept
 // as its own small function here (rather than sharing that one) since this
