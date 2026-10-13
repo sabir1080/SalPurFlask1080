@@ -98,9 +98,11 @@
     <div class="ab-hero-icon"><i class="bi bi-boxes"></i></div>
     <h1>{{ app_name }}</h1>
     <p class="lead">
-      A complete trading and accounting system — stock, invoicing, receivables and payables,
-      cash and bank, fixed assets — all posting to <strong>one double-entry general ledger</strong>,
-      so every report is drawn from the same set of books.
+      A trading and accounting system for retail and trading businesses such as departmental
+      stores and pharmacies: stock in one or more warehouses, purchases and sales, point of
+      sale, customers and suppliers, cash and bank, fixed assets and, as optional modules, HR
+      and payroll. Everything posts to <strong>one double-entry general ledger</strong>, so every
+      report is drawn from the same set of books.
     </p>
     <a href="{{ url_for('dashboard.manual') }}" class="btn btn-light">
       <i class="bi bi-book"></i> Read the User Manual
@@ -141,18 +143,22 @@
 
   <div class="row g-3 mb-5">
     {% set features_en = [
-      ("bi-people",         "Suppliers &amp; Customers", "Opening balances, running ledgers, statements, ageing, and payments that can be applied to a specific bill."),
-      ("bi-box-seam",       "Inventory",                 "Items, categories, reorder alerts, stock adjustments, stock valued at weighted-average cost, and alternate units for multi-unit items."),
-      ("bi-cart",           "Purchases &amp; Sales",     "Multi-line invoices with per-line discount and tax, returns both ways, quotations, purchase orders and delivery challans."),
-      ("bi-cash-coin",      "Cash &amp; Bank",           "Any number of cash and bank accounts. Every payment, receipt and expense belongs to one, and its balance comes straight from the ledger."),
-      ("bi-journal-text",   "General Ledger",            "Chart of accounts, manual journal entries, accounting periods, fiscal years, and year-end closing into Retained Earnings."),
-      ("bi-building",       "Fixed Assets",              "An asset register with straight-line and reducing-balance depreciation, posted monthly, asset disposal with automatic gain or loss calculation, and depreciation reports."),
-      ("bi-bar-chart-line", "Financial Reports",         "Balance Sheet, Profit &amp; Loss, Trial Balance, Cash Flow Statement, Stock Valuation, AP/AR Ageing, Cash Book, Tax Summary, Reconciliation."),
-      ("bi-shop",           "Point of Sale",             "A counter POS system for cash sales with item lookup, quantity management, suspended sales (hold) feature for later resumption, and receipt printing."),
-      ("bi-qr-code",        "Barcodes &amp; QR Codes",   "Generate barcodes and QR codes for items, print labels for inventory tracking, and barcode scanning at the POS counter."),
-      ("bi-shield-check",   "Controls",                  "Roles and permissions, a complete audit log of every change with user and timestamp, rate-limited sign-in, and posted documents that cannot be edited or deleted."),
-      ("bi-hdd",            "Backup &amp; Restore",      "One portable file holding every table, restorable on either database engine — plus two levels of reset for handing the system over."),
-      ("bi-arrow-clockwise", "System Refresh",           "Delete transactions or all data to start fresh. Keep master data for a new period, or hand over to someone new with a clean slate."),
+      ("bi-people",         "Suppliers &amp; Customers", "Opening balances, running ledgers with manual adjustments, CSV and Excel export, payments and receipts that can be applied to a specific bill or spread across several bills, and an ageing report."),
+      ("bi-box-seam",       "Inventory",                 "Stock and service items, alternate units, reorder levels with a low-stock email, stock adjustments, a stock-movement log, bulk import, and stock valued at weighted-average cost."),
+      ("bi-building",       "Warehouses",                "Any number of warehouses. Purchases, sales, POS, adjustments, transfers and counts each name a warehouse; stock is reported per warehouse, and a user can be limited to chosen warehouses."),
+      ("bi-capsule",        "Batches &amp; Expiry",      "Batch-tracked items with expiry dates, selling the earliest-expiry batch first, and an Expiring / Expired Batches report. Switched on per business category."),
+      ("bi-truck",          "Transfers &amp; Stock Counts", "Warehouse-to-warehouse transfers (draft, confirm, reverse) and physical-count reconciliation with a second-person approval before variances are posted."),
+      ("bi-cart",           "Purchases &amp; Sales",     "Draft then post. Multi-line invoices with per-line discount and tax, returns both ways, quotations, purchase orders, delivery challans, and admin correction of posted documents with a recorded reason."),
+      ("bi-shop",           "Point of Sale",             "A counter screen with barcode or name lookup, a choice of cash or bank account, change calculation, held bills, batch choice for batch-tracked items, and 80 mm receipts."),
+      ("bi-cash-coin",      "Cash &amp; Bank",           "Any number of cash and bank accounts, optionally grouped under control accounts. Every payment, receipt and expense belongs to one, and its balance comes straight from the ledger."),
+      ("bi-journal-text",   "General Ledger",            "Chart of accounts, manual journal entries, tax codes, accounting periods, fiscal years, and year-end closing into Retained Earnings."),
+      ("bi-building-gear",  "Fixed Assets",              "An asset register with straight-line and reducing-balance depreciation posted monthly, and asset disposal with automatic gain or loss."),
+      ("bi-bar-chart-line", "Financial &amp; Business Reports", "Balance Sheet, Profit &amp; Loss, Trial Balance, Cash Flow Statement, Stock Valuation, AP/AR Ageing, Cash Book, Tax Summary and Reconciliation, plus sales, profit, purchase, return and party-balance reports with CSV and Excel export."),
+      ("bi-qr-code",        "Barcodes &amp; Labels",     "Barcodes and QR codes for items, label printing, and barcode scanning into the POS search box."),
+      ("bi-tags",           "Business Categories",       "A starter list of built-in business categories (for example Grocery / FMCG, Medical / Pharmacy, Garments, Electronics and Hardware) that an admin can switch on or off, with extra product fields per category."),
+      ("bi-people-fill",    "HR &amp; Payroll (optional)", "Employees, departments, designations, daily attendance, leave types, allocations and approvals, payroll periods with payslips posted to the ledger, salary payments and employee advances. Employees can see their own attendance, leave and payslips. These modules are off until technical staff switch them on."),
+      ("bi-shield-check",   "Controls",                  "Staff, Manager and Admin roles, email-verified accounts with password reset, a complete audit log of changes, rate-limited sign-in, in-app notifications, and posted documents that cannot be edited or deleted."),
+      ("bi-hdd",            "Backup &amp; Restore",      "One portable file holding every table, restorable on either database engine, plus two levels of reset (delete transactions, or delete everything) for handing the system over."),
     ] %}
     {% for icon, title, text in features_en %}
     <div class="col-md-6 col-lg-4">
@@ -171,10 +177,11 @@
       <p class="ab-sub">An accounting system earns its keep by what it refuses to do.</p>
 
       <div class="ab-rule">
-        <strong>A posted document is never edited or deleted — it is reversed.</strong>
+        <strong>A posted document is never edited or deleted — it is reversed or corrected.</strong>
         <span>The original stays, marked reversed, with a cancelling journal entry beside it.
         Reversed invoices print with a REVERSED watermark, so a cancelled invoice can never be
-        handed over as a live one.</span>
+        handed over as a live one. An admin can also correct a posted sale or purchase, and the
+        reason is recorded.</span>
       </div>
       <div class="ab-rule">
         <strong>Invoice numbers have no gaps.</strong>
@@ -240,7 +247,7 @@
   <div class="ab-note mb-4">
     <h6 class="fw-bold mb-3"><i class="bi bi-info-circle"></i> Worth knowing before you start</h6>
     <div class="row g-4 small">
-      <div class="col-md-4">
+      <div class="col-md-3">
         <strong>Stock is valued at weighted average.</strong>
         <p class="mb-0">
           Buy the same item at 100 and again at 140, and from then on every unit is costed at 120.
@@ -248,14 +255,22 @@
           the stock report and the balance sheet always agree.
         </p>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
+        <strong>Draft first, then post.</strong>
+        <p class="mb-0">
+          A purchase or sale is saved as a draft with no effect on stock or accounts. It takes
+          effect when it is posted, and from then on it can only be reversed or corrected by an
+          admin. POS sales, payments, receipts, returns and expenses take effect when saved.
+        </p>
+      </div>
+      <div class="col-md-3">
         <strong>One company, one currency.</strong>
         <p class="mb-0">
           The books of a single business, in a single currency. Multi-company and multi-currency
           are not supported.
         </p>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
         <strong>Take backups.</strong>
         <p class="mb-0">
           <em>Admin → Backup &amp; Restore → Download Backup</em> writes every table to one file. It is the only
@@ -274,8 +289,10 @@
     <div class="ab-hero-icon"><i class="bi bi-boxes"></i></div>
     <h1>{{ app_name }}</h1>
     <p class="lead">
-      Ek mukammal karobari aur accounting system — stock, invoicing, lena-dena, cash aur bank,
-      fixed assets — aur ye sab <strong>ek hi double-entry general ledger</strong> mein post hota
+      Khudra aur tijarati karobar, maslan departmental store aur pharmacy, ke liye karobari aur
+      accounting system: aik ya zyada warehouses ka stock, kharidari aur farokht, point of sale,
+      customers aur suppliers, cash aur bank, fixed assets aur, optional modules ki surat mein,
+      HR aur payroll. Ye sab <strong>ek hi double-entry general ledger</strong> mein post hota
       hai, taake har report ek hi kitab se nikle.
     </p>
     <a href="{{ url_for('dashboard.manual') }}" class="btn btn-light">
@@ -317,18 +334,22 @@
 
   <div class="row g-3 mb-5">
     {% set features_ur = [
-      ("bi-people",         "Suppliers aur Customers", "Opening balances, chalte hue ledgers, statements, ageing, aur aisi payments jo kisi khaas bill par lagai ja sakein."),
-      ("bi-box-seam",       "Inventory",               "Items, categories, reorder alerts, stock adjustments, weighted-average cost par stock ki value, aur multi-unit items ke liye alternate units."),
-      ("bi-cart",           "Kharid aur Farokht",      "Multi-line invoices, har line par discount aur tax, dono taraf ke returns, quotations, purchase orders aur delivery challans."),
-      ("bi-cash-coin",      "Cash aur Bank",           "Jitne chahein cash aur bank accounts. Har payment, receipt aur expense kisi ek se juda hota hai, aur uska balance seedha ledger se aata hai."),
-      ("bi-journal-text",   "General Ledger",          "Chart of accounts, manual journal entries, accounting periods, fiscal years, aur saal ke ikhtitam par Retained Earnings mein closing."),
-      ("bi-building",       "Fixed Assets",            "Asset register, straight-line aur reducing-balance depreciation jo har mahine post hoti hai, disposal par automatic nafa ya nuqsan calculation, aur depreciation reports."),
-      ("bi-bar-chart-line", "Financial Reports",       "Balance Sheet, Profit &amp; Loss, Trial Balance, Cash Flow Statement, Stock Valuation, AP/AR Ageing, Cash Book, Tax Summary, Reconciliation."),
-      ("bi-shop",           "Point of Sale",           "Kauntir POS system naqdaar bikrī ke liye, item lookup, quantity manage, suspended sales feature (hold) jo baad mein resume ho sakein, aur receipt print."),
-      ("bi-qr-code",        "Barcodes aur QR Codes",   "Items ke liye barcodes aur QR codes banayein, inventory tracking ke liye stickers print karein, aur POS par barcode scanning karein."),
-      ("bi-shield-check",   "Controls",                "Roles aur permissions, har tabdeeli ka complete audit log user aur time ke saath, sign-in par rate limit, aur posted documents jo na edit hote hain na delete."),
-      ("bi-hdd",            "Backup aur Restore",      "Ek hi file mein poora database, dono database engines par restore ho sakti hai — aur system aage dene ke liye do darje ka reset."),
-      ("bi-arrow-clockwise", "System Refresh",         "Transactions delete karein ya sara data saaf karein naye sireh se shuru karne ke liye. Master data rakhein naye period ke liye, ya kisi naye shakhs ko saf slate dein."),
+      ("bi-people",         "Suppliers aur Customers",   "Opening balances, manual adjustments ke saath chalte ledgers, CSV aur Excel export, aisi payments aur receipts jo kisi khaas bill par ya kai bills par taqseem ki ja sakein, aur ageing report."),
+      ("bi-box-seam",       "Inventory",                 "Stock aur service items, alternate units, reorder level aur kam stock ki email, stock adjustments, stock movements ka log, bulk import, aur weighted-average cost par stock ki value."),
+      ("bi-building",       "Warehouses",                "Jitne chahein warehouses. Purchases, sales, POS, adjustments, transfers aur ginti sab warehouse ka naam lete hain; stock har warehouse ke hisaab se report hota hai, aur user ko chune hue warehouses tak mehdood kiya ja sakta hai."),
+      ("bi-capsule",        "Batches aur Expiry",        "Expiry dates wale batch-tracked items, sab se pehle expire hone wali batch pehle bechna, aur Expiring / Expired Batches report. Business category ke hisaab se on hota hai."),
+      ("bi-truck",          "Transfers aur Stock Ginti", "Warehouse se warehouse transfers (draft, confirm, reverse) aur asli ginti ka muqabla jis mein farq post hone se pehle doosre shakhs ki manzoori zaroori hai."),
+      ("bi-cart",           "Kharid aur Farokht",        "Pehle draft, phir post. Har line par discount aur tax wale multi-line invoices, dono taraf returns, quotations, purchase orders, delivery challans, aur post shuda documents ki admin ke zariye wajah ke saath durusti."),
+      ("bi-shop",           "Point of Sale",             "Counter screen jis mein barcode ya naam se talash, cash ya bank account ka intikhab, baqi paise ka hisaab, held bills, batch-tracked items ke liye batch ka intikhab, aur 80 mm receipts hain."),
+      ("bi-cash-coin",      "Cash aur Bank",             "Jitne chahein cash aur bank accounts, chaahein to control accounts ke neeche. Har payment, receipt aur expense kisi ek se juda hota hai, aur uska balance seedha ledger se aata hai."),
+      ("bi-journal-text",   "General Ledger",            "Chart of accounts, manual journal entries, tax codes, accounting periods, fiscal years, aur saal ke ikhtitam par Retained Earnings mein closing."),
+      ("bi-building-gear",  "Fixed Assets",              "Asset register, straight-line aur reducing-balance depreciation jo har mahine post hoti hai, aur disposal par automatic nafa ya nuqsan."),
+      ("bi-bar-chart-line", "Maali aur Karobari Reports", "Balance Sheet, Profit &amp; Loss, Trial Balance, Cash Flow Statement, Stock Valuation, AP/AR Ageing, Cash Book, Tax Summary aur Reconciliation, saath sales, profit, purchase, return aur party-balance reports, CSV aur Excel export ke saath."),
+      ("bi-qr-code",        "Barcodes aur Labels",       "Items ke liye barcodes aur QR codes, label print, aur POS ke search box mein barcode scan."),
+      ("bi-tags",           "Business Categories",       "Pehle se maujood business categories ki shuruati list (maslan Grocery / FMCG, Medical / Pharmacy, Garments, Electronics aur Hardware) jinhein admin on ya off kar sakta hai, har category ke ekstra product fields ke saath."),
+      ("bi-people-fill",    "HR aur Payroll (optional)", "Employees, departments, designations, rozana attendance, leave types, allocations aur manzooriyan, payroll periods jin ki payslips ledger mein post hoti hain, salary payments aur employee advances. Employees apni attendance, leave aur payslips dekh sakte hain. Ye modules tab tak off rehte hain jab tak technical staff on na kare."),
+      ("bi-shield-check",   "Controls",                  "Staff, Manager aur Admin roles, email se verify shuda accounts aur password reset, tabdeeliyon ka mukammal audit log, sign-in par rate limit, in-app notifications, aur posted documents jo na edit hote hain na delete."),
+      ("bi-hdd",            "Backup aur Restore",        "Ek hi file mein poora database, dono database engines par restore ho sakti hai, aur system aage dene ke liye do darje ka reset (transactions delete, ya sab kuch delete)."),
     ] %}
     {% for icon, title, text in features_ur %}
     <div class="col-md-6 col-lg-4">
@@ -350,11 +371,12 @@
       </p>
 
       <div class="ab-rule">
-        <strong>Posted document na edit hota hai na delete — reverse hota hai.</strong>
+        <strong>Posted document na edit hota hai na delete — reverse ya correct hota hai.</strong>
         <span>Asal document apni jagah rehta hai, uspar "reversed" ka nishaan lag jaata hai, aur
         saath ek ulti journal entry hoti hai. Reversed invoice par print mein
         <em>REVERSED</em> ka watermark aata hai — taake cancelled invoice kabhi asli bana kar na
-        di ja sake.</span>
+        di ja sake. Admin post shuda sale ya purchase durust bhi kar sakta hai, aur wajah record
+        hoti hai.</span>
       </div>
       <div class="ab-rule">
         <strong>Invoice numbers mein koi gap nahi.</strong>
@@ -423,7 +445,7 @@
   <div class="ab-note mb-4">
     <h6 class="fw-bold mb-3"><i class="bi bi-info-circle"></i> Shuru karne se pehle ye jaan lein</h6>
     <div class="row g-4 small">
-      <div class="col-md-4">
+      <div class="col-md-3">
         <strong>Stock ki value weighted average par hai.</strong>
         <p class="mb-0">
           Ek hi item 100 ka khareedein aur phir 140 ka — ab har unit 120 par ginega. Ye FIFO nahi,
@@ -431,14 +453,23 @@
           stock report aur Balance Sheet hamesha milte hain.
         </p>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
+        <strong>Pehle draft, phir post.</strong>
+        <p class="mb-0">
+          Purchase ya sale pehle draft ki surat mein save hoti hai jis ka stock ya accounts par
+          koi asar nahi hota. Post karne par asar hota hai, aur uske baad sirf admin use reverse
+          ya correct kar sakta hai. POS sales, payments, receipts, returns aur expenses save
+          hote hi asar karte hain.
+        </p>
+      </div>
+      <div class="col-md-3">
         <strong>Ek company, ek currency.</strong>
         <p class="mb-0">
           Ye ek hi karobar ki kitaben ek hi currency mein rakhta hai. Multi-company aur
           multi-currency mein kaam nahi karta.
         </p>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-3">
         <strong>Backup lete rahein.</strong>
         <p class="mb-0">
           <em>Admin → Backup &amp; Restore → Download Backup</em> poore database ki har table ek file mein likh
