@@ -14,6 +14,7 @@ through the payroll engine, which reads approved leave when it calculates.
 """
 
 from datetime import date, datetime
+from salpurflask.utils.timeutil import utcnow
 
 from flask import (Blueprint, render_template, request, redirect, url_for,
                    flash, abort)
@@ -510,7 +511,7 @@ def request_approve(row_id):
 
     row.status = "Approved"
     row.decided_by_id = getattr(current_user, "id", None)
-    row.decided_at = datetime.utcnow()
+    row.decided_at = utcnow()
     row.decision_note = (request.form.get("note") or "").strip() or None
     db.session.commit()
     _audit("approve", "leave_request", row.id,
@@ -538,7 +539,7 @@ def request_reject(row_id):
         return redirect(url_for("leave.requests_list"))
     row.status = "Rejected"
     row.decided_by_id = getattr(current_user, "id", None)
-    row.decided_at = datetime.utcnow()
+    row.decided_at = utcnow()
     row.decision_note = (request.form.get("note") or "").strip() or None
     db.session.commit()
     _audit("reject", "leave_request", row.id, row.employee.code)
@@ -575,7 +576,7 @@ def request_cancel(row_id):
 
     row.status = "Cancelled"
     row.decided_by_id = getattr(current_user, "id", None)
-    row.decided_at = datetime.utcnow()
+    row.decided_at = utcnow()
     db.session.commit()
     # No balance to restore by hand: `used_days` counts approved requests only,
     # so the days come back the moment the status changes.

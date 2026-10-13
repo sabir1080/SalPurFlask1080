@@ -275,7 +275,7 @@ def test_original_payment_entry_remains_in_history_after_reversal(appctx):
     c.post(f"/payroll/payments/{payment.id}/reverse", follow_redirects=True)
 
     # never deleted
-    assert JournalEntry.query.get(original_id) is not None
+    assert db.session.get(JournalEntry, original_id) is not None
     entries_for_payment = JournalEntry.query.filter_by(
         source_type=acct.PAYMENT_SOURCE_TYPE, source_id=payment.id).count()
     assert entries_for_payment == 2          # original + reversal

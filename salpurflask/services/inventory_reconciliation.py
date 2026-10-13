@@ -35,6 +35,7 @@ the same belt-and-braces pairing every other poster in this app already uses.
 """
 
 from datetime import datetime
+from salpurflask.utils.timeutil import utcnow
 
 from salpurflask.extensions import db
 from salpurflask.models.inventory_location import (
@@ -81,7 +82,7 @@ def create_reconciliation(*, location_id, item_ids, date=None, notes=None,
     reconciliation = InventoryReconciliation(
         location_id=location.id,
         status="Draft",
-        date=date or datetime.utcnow(),
+        date=date or utcnow(),
         notes=notes or None,
         created_by_id=created_by_id,
     )
@@ -163,7 +164,7 @@ def finalize_count(reconciliation, *, counted_by_id=None):
         line.variance = line.physical_quantity - system_qty
 
     reconciliation.status = "Counted"
-    reconciliation.counted_at = datetime.utcnow()
+    reconciliation.counted_at = utcnow()
     reconciliation.counted_by_id = counted_by_id
     return reconciliation
 
@@ -209,7 +210,7 @@ def approve_reconciliation(reconciliation, *, approved_by_id=None):
             "Ask another admin to review it.")
 
     reconciliation.status = "Approved"
-    reconciliation.approved_at = datetime.utcnow()
+    reconciliation.approved_at = utcnow()
     reconciliation.approved_by_id = approved_by_id
     return reconciliation
 
@@ -327,7 +328,7 @@ def post_reconciliation(reconciliation, *, posted_by_id=None):
         reconciliation.reference = allocate_document_number(
             "inventory_reconciliation", reconciliation.date)
     reconciliation.status = "Posted"
-    reconciliation.posted_at = datetime.utcnow()
+    reconciliation.posted_at = utcnow()
     reconciliation.posted_by_id = posted_by_id
 
     net_value = net_value.quantize(MONEY)

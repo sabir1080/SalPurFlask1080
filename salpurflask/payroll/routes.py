@@ -11,6 +11,7 @@ write to the general ledger.
 
 import calendar
 from datetime import datetime, date
+from salpurflask.utils.timeutil import utcnow
 
 from flask import (Blueprint, render_template, request, redirect, url_for,
                    flash, abort)
@@ -331,7 +332,7 @@ def period_finalize(period_id):
     try:
         engine.recover_advances(period)
         period.status = "Finalized"
-        period.finalized_at = datetime.utcnow()
+        period.finalized_at = utcnow()
         try:
             period.finalized_by = current_user.id
         except Exception:
@@ -556,7 +557,7 @@ def payment_reverse(payment_id):
         reversal = accounting.reverse_payroll_payment(
             payment, created_by_id=getattr(current_user, "id", None))
         payment.is_reversed = True
-        payment.reversed_at = datetime.utcnow()
+        payment.reversed_at = utcnow()
         db.session.commit()
     except PostingError as e:
         db.session.rollback()

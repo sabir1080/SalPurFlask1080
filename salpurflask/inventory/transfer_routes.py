@@ -13,6 +13,7 @@ undoing costs more trust than doing.
 """
 
 from datetime import datetime
+from salpurflask.utils.timeutil import utcnow
 
 from flask import abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user
@@ -139,7 +140,7 @@ def transfer_new():
         the submitted rows are put back by the generic form restore (base.html)."""
         return render_template("transfer_form.html", items=items, locations=locations,
                                default_location=get_or_create_default_location(),
-                               today=datetime.utcnow().strftime("%Y-%m-%d"))
+                               today=utcnow().strftime("%Y-%m-%d"))
 
     if request.method == "POST":
         try:
@@ -175,7 +176,7 @@ def transfer_new():
                 lines.append((int(iid), int(qty), batch_id))
 
         try:
-            transfer_date = datetime.strptime(date_str, "%Y-%m-%d") if date_str else datetime.utcnow()
+            transfer_date = datetime.strptime(date_str, "%Y-%m-%d") if date_str else utcnow()
         except ValueError:
             flash("Invalid date format! Use YYYY-MM-DD.", "danger")
             return _rerender()
@@ -204,7 +205,7 @@ def transfer_new():
 
     return render_template("transfer_form.html", items=items, locations=locations,
                           default_location=get_or_create_default_location(),
-                          today=datetime.utcnow().strftime("%Y-%m-%d"))
+                          today=utcnow().strftime("%Y-%m-%d"))
 
 
 @manager_required

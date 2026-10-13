@@ -20,6 +20,7 @@ exactly the same way every other document in this app inherits it.
 """
 
 from datetime import datetime
+from salpurflask.utils.timeutil import utcnow
 
 from salpurflask.extensions import db
 from salpurflask.models.inventory_location import (
@@ -89,7 +90,7 @@ def create_transfer(*, source_location_id, destination_location_id, lines,
         source_location_id=source.id,
         destination_location_id=destination.id,
         status="Draft",
-        date=date or datetime.utcnow(),
+        date=date or utcnow(),
         notes=notes or None,
         created_by_id=created_by_id,
     )
@@ -193,7 +194,7 @@ def confirm_transfer(transfer, *, confirmed_by_id=None):
     if not transfer.transfer_no:
         transfer.transfer_no = allocate_document_number("transfer", transfer.date)
     transfer.status = "Confirmed"
-    transfer.confirmed_at = datetime.utcnow()
+    transfer.confirmed_at = utcnow()
     transfer.confirmed_by_id = confirmed_by_id
     return transfer
 
@@ -294,6 +295,6 @@ def reverse_transfer(transfer, *, reversed_by_id=None):
 
     transfer.status = "Reversed"
     transfer.is_reversed = True
-    transfer.reversed_at = datetime.utcnow()
+    transfer.reversed_at = utcnow()
     transfer.reversed_by_id = reversed_by_id
     return transfer

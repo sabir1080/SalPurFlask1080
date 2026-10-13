@@ -16,6 +16,7 @@ posts to the ledger, and no accounting table is touched.
 """
 
 from datetime import datetime
+from salpurflask.utils.timeutil import utcnow
 from decimal import Decimal
 
 from salpurflask.extensions import db
@@ -75,9 +76,9 @@ class SalaryComponent(db.Model):
     taxable  = db.Column(db.Boolean, nullable=False, default=True)
     active   = db.Column(db.Boolean, nullable=False, default=True, index=True)
 
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow,
-                           onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=utcnow,
+                           onupdate=utcnow)
 
     @property
     def is_earning(self):
@@ -108,9 +109,9 @@ class SalaryStructure(db.Model):
     active         = db.Column(db.Boolean, nullable=False, default=True, index=True)
     notes          = db.Column(db.String(255), nullable=True)
 
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow,
-                           onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=utcnow,
+                           onupdate=utcnow)
 
     employee = db.relationship("Employee",
                                backref=db.backref("salary_structures",
@@ -148,9 +149,9 @@ class SalaryStructureLine(db.Model):
                              nullable=False, index=True)
     amount       = db.Column(db.Numeric(14, 4), nullable=False, default=0)
 
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow,
-                           onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=utcnow,
+                           onupdate=utcnow)
 
     structure = db.relationship("SalaryStructure", back_populates="lines")
     component = db.relationship("SalaryComponent", lazy="joined")
@@ -181,9 +182,9 @@ class PayrollPeriod(db.Model):
     finalized_at = db.Column(db.DateTime, nullable=True)
     finalized_by = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
 
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow,
-                           onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=utcnow,
+                           onupdate=utcnow)
 
     entries = db.relationship("PayrollEntry", back_populates="period",
                               cascade="all, delete-orphan", lazy="dynamic")
@@ -240,9 +241,9 @@ class PayrollEntry(db.Model):
     payable_days   = db.Column(db.Numeric(9, 2), nullable=False, default=0)
 
     remarks    = db.Column(db.String(255), nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow,
-                           onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=utcnow,
+                           onupdate=utcnow)
 
     period   = db.relationship("PayrollPeriod", back_populates="entries")
     employee = db.relationship("Employee", lazy="joined",
@@ -284,7 +285,7 @@ class PayrollItem(db.Model):
     sort_order     = db.Column(db.Integer, nullable=False, default=100)
     note           = db.Column(db.String(255), nullable=True)
 
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
 
     entry     = db.relationship("PayrollEntry", back_populates="items")
     component = db.relationship("SalaryComponent", lazy="joined")
@@ -315,9 +316,9 @@ class EmployeeAdvance(db.Model):
     status  = db.Column(db.String(20), nullable=False, default="Active", index=True)
     remarks = db.Column(db.String(255), nullable=True)
 
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow,
-                           onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=utcnow,
+                           onupdate=utcnow)
 
     employee = db.relationship("Employee", lazy="joined",
                                backref=db.backref("advances", lazy="dynamic",

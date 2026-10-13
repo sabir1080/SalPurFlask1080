@@ -16,6 +16,7 @@ that punch, so an import can be reconciled without another table.
 """
 
 from datetime import datetime, date, time
+from salpurflask.utils.timeutil import utcnow
 
 from salpurflask.extensions import db
 
@@ -68,9 +69,9 @@ class Attendance(db.Model):
     source     = db.Column(db.String(20), nullable=False, default="manual")
     device_ref = db.Column(db.String(64), nullable=True)
 
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow,
-                           onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=utcnow,
+                           onupdate=utcnow)
 
     employee = db.relationship("Employee",
                                backref=db.backref("attendance_records",

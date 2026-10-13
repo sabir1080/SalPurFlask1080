@@ -2,6 +2,7 @@
 
 from salpurflask.extensions import db
 from datetime import datetime
+from salpurflask.utils.timeutil import utcnow
 import json
 
 
@@ -18,8 +19,8 @@ class BusinessCategory(db.Model):
     priority = db.Column(db.Integer, default=0)
     color = db.Column(db.String(20), default='primary')
     config_data = db.Column(db.JSON, default=dict)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
 
     # Relations
     fields = db.relationship('ProductField', backref='category', cascade='all, delete-orphan', lazy='joined')
@@ -129,7 +130,7 @@ class ProductField(db.Model):
     # default category is explicitly False, so "is this field mine or the
     # system's" is always a direct, stored fact rather than a derived guess.
     is_system_default = db.Column(db.Boolean, default=False, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
 
     __table_args__ = (db.UniqueConstraint('category_id', 'field_name'),)
 
@@ -160,8 +161,8 @@ class ProductCategoryData(db.Model):
     category_id = db.Column(db.Integer, db.ForeignKey('business_category.id'), nullable=False)
     field_name = db.Column(db.String(100), nullable=False)
     field_value = db.Column(db.JSON)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
 
     __table_args__ = (db.UniqueConstraint('product_id', 'category_id', 'field_name'),)
 
@@ -217,7 +218,7 @@ class ConfigurationSnapshot(db.Model):
     __tablename__ = 'configuration_snapshot'
 
     id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, default=utcnow)
     enabled_categories = db.Column(db.JSON)
     configuration_hash = db.Column(db.String(64))
     changed_by = db.Column(db.Integer, db.ForeignKey('user.id'))

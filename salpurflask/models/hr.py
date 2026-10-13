@@ -13,6 +13,7 @@ file stays the employee record only.
 """
 
 from datetime import datetime
+from salpurflask.utils.timeutil import utcnow
 
 from salpurflask.extensions import db
 
@@ -73,9 +74,9 @@ class Department(db.Model):
     name        = db.Column(db.String(100), unique=True, nullable=False, index=True)
     description = db.Column(db.String(255), nullable=True)
     active      = db.Column(db.Boolean, nullable=False, default=True)
-    created_at  = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at  = db.Column(db.DateTime, nullable=False, default=datetime.utcnow,
-                            onupdate=datetime.utcnow)
+    created_at  = db.Column(db.DateTime, nullable=False, default=utcnow)
+    updated_at  = db.Column(db.DateTime, nullable=False, default=utcnow,
+                            onupdate=utcnow)
 
     def __repr__(self):
         return f"<Department {self.name}>"
@@ -89,9 +90,9 @@ class Designation(db.Model):
     name        = db.Column(db.String(100), unique=True, nullable=False, index=True)
     description = db.Column(db.String(255), nullable=True)
     active      = db.Column(db.Boolean, nullable=False, default=True)
-    created_at  = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at  = db.Column(db.DateTime, nullable=False, default=datetime.utcnow,
-                            onupdate=datetime.utcnow)
+    created_at  = db.Column(db.DateTime, nullable=False, default=utcnow)
+    updated_at  = db.Column(db.DateTime, nullable=False, default=utcnow,
+                            onupdate=utcnow)
 
     def __repr__(self):
         return f"<Designation {self.name}>"
@@ -140,9 +141,9 @@ class Employee(db.Model):
     documents = db.Column(db.Text, nullable=True)   # free-text list of held documents
 
     active     = db.Column(db.Boolean, nullable=False, default=True, index=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow,
-                           onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=utcnow,
+                           onupdate=utcnow)
 
     department  = db.relationship("Department", backref="employees", lazy="joined")
     designation = db.relationship("Designation", backref="employees", lazy="joined")

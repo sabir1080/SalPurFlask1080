@@ -245,7 +245,7 @@ def test_delete_found_stock_adjustment_refused_when_location_drained(appctx):
     # Only 5 left, deleting a 20-unit "found" adjustment would need to remove
     # 20 — must be refused, stock must not go negative.
     assert stock_at_location(item.id, loc.id) == 5
-    assert StockAdjustment.query.get(adj.id) is not None  # not deleted either
+    assert db.session.get(StockAdjustment, adj.id) is not None  # not deleted either
 
 
 # ── 7. single-warehouse (location_id=None) case behaves as before ──────────

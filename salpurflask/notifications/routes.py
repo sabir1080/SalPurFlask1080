@@ -14,6 +14,7 @@ from salpurflask.extensions import db
 from salpurflask.models.notification import Notification
 from salpurflask.services.notifications import source_url
 from datetime import datetime
+from salpurflask.utils.timeutil import utcnow
 
 notifications_bp = Blueprint("notifications", __name__, url_prefix="/notifications")
 
@@ -43,7 +44,7 @@ def mark_read(row_id):
     row = _own_or_404(row_id)
     if not row.is_read:
         row.is_read = True
-        row.read_at = datetime.utcnow()
+        row.read_at = utcnow()
         db.session.commit()
     return redirect(url_for("notifications.list_notifications"))
 
@@ -51,7 +52,7 @@ def mark_read(row_id):
 @notifications_bp.route("/read-all", methods=["POST"])
 @login_required
 def mark_all_read():
-    now = datetime.utcnow()
+    now = utcnow()
     (Notification.query
      .filter_by(recipient_id=current_user.id, is_read=False)
      .update({"is_read": True, "read_at": now}))

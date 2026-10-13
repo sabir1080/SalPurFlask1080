@@ -2,6 +2,7 @@
 
 from salpurflask.extensions import db
 from datetime import datetime
+from salpurflask.utils.timeutil import utcnow
 
 
 class AppConfiguration(db.Model):
@@ -16,8 +17,8 @@ class AppConfiguration(db.Model):
     category = db.Column(db.String(50))  # app, company, system, email
     editable = db.Column(db.Boolean, default=True)
     requires_restart = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
     updated_by = db.Column(db.String(100))  # username
 
     def __repr__(self):
@@ -54,7 +55,7 @@ class AppConfiguration(db.Model):
             db.session.add(config)
 
         config.value = str(value)
-        config.updated_at = datetime.utcnow()
+        config.updated_at = utcnow()
         config.updated_by = updated_by
         db.session.commit()
         return config

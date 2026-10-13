@@ -20,6 +20,7 @@ owns the payroll posting, so there is exactly one place payroll meets the ledger
 """
 
 from datetime import datetime
+from salpurflask.utils.timeutil import utcnow
 from decimal import Decimal
 
 from salpurflask.extensions import db
@@ -59,9 +60,9 @@ class PayrollPayment(db.Model):
     reversed_at = db.Column(db.DateTime, nullable=True)
 
     created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
-    created_at    = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at    = db.Column(db.DateTime, nullable=False, default=datetime.utcnow,
-                              onupdate=datetime.utcnow)
+    created_at    = db.Column(db.DateTime, nullable=False, default=utcnow)
+    updated_at    = db.Column(db.DateTime, nullable=False, default=utcnow,
+                              onupdate=utcnow)
 
     period  = db.relationship("PayrollPeriod",
                               backref=db.backref("payments", lazy="dynamic",

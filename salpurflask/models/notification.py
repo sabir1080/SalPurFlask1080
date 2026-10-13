@@ -7,6 +7,7 @@ already used for the HR/attendance/payroll/leave models.
 """
 
 from datetime import datetime
+from salpurflask.utils.timeutil import utcnow
 
 from salpurflask.extensions import db
 
@@ -31,7 +32,7 @@ class Notification(db.Model):
     source_id     = db.Column(db.Integer, nullable=True)
     severity      = db.Column(db.String(20), nullable=False, default="info")
     is_read       = db.Column(db.Boolean, nullable=False, default=False)
-    created_at    = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at    = db.Column(db.DateTime, nullable=False, default=utcnow)
     read_at       = db.Column(db.DateTime, nullable=True)
 
     recipient     = db.relationship("User", foreign_keys=[recipient_id])

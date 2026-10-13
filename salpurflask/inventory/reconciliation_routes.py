@@ -16,6 +16,7 @@ applies to undoing a confirmed transfer.
 """
 
 from datetime import datetime
+from salpurflask.utils.timeutil import utcnow
 
 from flask import abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user
@@ -110,7 +111,7 @@ def reconciliation_new():
         date_str = request.form.get("date", "").strip()
         notes = request.form.get("notes", "").strip()
         try:
-            recon_date = datetime.strptime(date_str, "%Y-%m-%d") if date_str else datetime.utcnow()
+            recon_date = datetime.strptime(date_str, "%Y-%m-%d") if date_str else utcnow()
         except ValueError:
             flash("Invalid date format! Use YYYY-MM-DD.", "danger")
             return redirect(url_for("reconciliation_new"))
@@ -139,7 +140,7 @@ def reconciliation_new():
     return render_template(
         "inventory_reconciliation_form.html", items=items, locations=locations,
         default_location=template_default_location,
-        today=datetime.utcnow().strftime("%Y-%m-%d"))
+        today=utcnow().strftime("%Y-%m-%d"))
 
 
 def _get_reconciliation_or_403(id):

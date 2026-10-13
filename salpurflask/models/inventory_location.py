@@ -18,6 +18,7 @@ Phase 2). This phase only makes the data model ready for a second warehouse.
 """
 
 from datetime import datetime
+from salpurflask.utils.timeutil import utcnow
 
 from salpurflask.extensions import db
 
@@ -141,7 +142,7 @@ class UserLocationAccess(db.Model):
     id            = db.Column(db.Integer, primary_key=True)
     user_id       = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     location_id   = db.Column(db.Integer, db.ForeignKey("location.id"), nullable=False)
-    created_at    = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at    = db.Column(db.DateTime, nullable=False, default=utcnow)
     granted_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
 
     user          = db.relationship("User", foreign_keys=[user_id])
@@ -189,9 +190,9 @@ class Transfer(db.Model):
     date                   = db.Column(db.DateTime, nullable=False)
     notes                  = db.Column(db.String(300), nullable=True)
     created_by_id          = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
-    created_at             = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at             = db.Column(db.DateTime, nullable=False, default=datetime.utcnow,
-                                       onupdate=datetime.utcnow)
+    created_at             = db.Column(db.DateTime, nullable=False, default=utcnow)
+    updated_at             = db.Column(db.DateTime, nullable=False, default=utcnow,
+                                       onupdate=utcnow)
     confirmed_at           = db.Column(db.DateTime, nullable=True)
     confirmed_by_id        = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     is_reversed            = db.Column(db.Boolean, nullable=False, default=False)
@@ -264,7 +265,7 @@ class InventoryReconciliation(db.Model):
     notes           = db.Column(db.String(300), nullable=True)
 
     created_by_id   = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
-    created_at      = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at      = db.Column(db.DateTime, nullable=False, default=utcnow)
     counted_at      = db.Column(db.DateTime, nullable=True)
     counted_by_id   = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     approved_at     = db.Column(db.DateTime, nullable=True)
@@ -347,7 +348,7 @@ class StockMovement(db.Model):
     quantity      = db.Column(db.Integer, nullable=False)        # signed: +in, -out
     source_type   = db.Column(db.String(30), nullable=True)
     source_id     = db.Column(db.Integer, nullable=True)
-    created_at    = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at    = db.Column(db.DateTime, nullable=False, default=utcnow)
     created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     # Batch/Lot tracking Phase A: which batch this movement affected, when the
     # item is batch-tracked. NULL for every row written before this column

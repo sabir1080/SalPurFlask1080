@@ -178,7 +178,7 @@ def test_mark_read_refuses_another_users_notification(appctx):
     c = _client(intruder)
     r = c.post(f"/notifications/{n.id}/read", follow_redirects=False)
     assert r.status_code == 404
-    assert Notification.query.get(n.id).is_read is False
+    assert db.session.get(Notification, n.id).is_read is False
 
 
 def test_owner_can_mark_their_own_notification_read(appctx):
@@ -187,7 +187,7 @@ def test_owner_can_mark_their_own_notification_read(appctx):
     db.session.commit()
     c = _client(owner)
     c.post(f"/notifications/{n.id}/read", follow_redirects=True)
-    assert Notification.query.get(n.id).is_read is True
+    assert db.session.get(Notification, n.id).is_read is True
 
 
 def test_list_page_only_shows_own_notifications(appctx):
@@ -212,7 +212,7 @@ def test_mark_all_read_only_touches_own_rows(appctx):
     c = _client(a)
     c.post("/notifications/read-all", follow_redirects=True)
     assert unread_count(a.id) == 0
-    assert Notification.query.get(other.id).is_read is False
+    assert db.session.get(Notification, other.id).is_read is False
 
 
 # ── producer: low stock ─────────────────────────────────────────────────────
@@ -348,7 +348,7 @@ def test_leave_request_without_a_linked_user_does_not_crash_on_decision(appctx):
     c = _client(admin)
     resp = c.post(f"/leave/requests/{r.id}/approve", follow_redirects=True)
     assert resp.status_code == 200
-    assert LeaveRequest.query.get(r.id).status == "Approved"
+    assert db.session.get(LeaveRequest, r.id).status == "Approved"
 
 
 # ── producer: payroll ────────────────────────────────────────────────────────

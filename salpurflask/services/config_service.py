@@ -125,7 +125,7 @@ class ConfigurationService:
     @staticmethod
     def update_product_field(field_id, field_data):
         """Update product field"""
-        field = ProductField.query.get(field_id)
+        field = db.session.get(ProductField, field_id)
         if field:
             field.field_label = field_data.get('field_label', field.field_label)
             field.is_required = field_data.get('is_required', field.is_required)
@@ -139,7 +139,7 @@ class ConfigurationService:
     @staticmethod
     def delete_product_field(field_id):
         """Delete product field"""
-        field = ProductField.query.get(field_id)
+        field = db.session.get(ProductField, field_id)
         if field:
             db.session.delete(field)
             db.session.commit()

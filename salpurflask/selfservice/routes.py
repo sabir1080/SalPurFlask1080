@@ -19,6 +19,7 @@ do not hold — so an employee cannot approve their own leave however they arriv
 
 import calendar
 from datetime import date, datetime
+from salpurflask.utils.timeutil import utcnow
 
 from flask import (Blueprint, render_template, request, redirect, url_for,
                    flash, abort)
@@ -199,7 +200,7 @@ def leave_cancel(row_id):
         return redirect(url_for("selfservice.leaves"))
 
     row.status = "Cancelled"
-    row.decided_at = datetime.utcnow()
+    row.decided_at = utcnow()
     db.session.commit()
     _audit("cancel", "leave_request", row.id, f"self-service {row.employee.code}")
     flash("Leave request withdrawn.", "success")

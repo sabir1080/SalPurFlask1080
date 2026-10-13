@@ -146,7 +146,7 @@ def edit_category(category_id):
     if current_user.role != 'admin':
         return jsonify({'error': 'Unauthorized'}), 403
 
-    cat = BusinessCategory.query.get(category_id)
+    cat = db.session.get(BusinessCategory, category_id)
     if not cat:
         return jsonify({'error': 'Category not found'}), 404
 
@@ -190,7 +190,7 @@ def manage_category(category_id):
     if current_user.role != 'admin':
         return jsonify({'error': 'Unauthorized'}), 403
 
-    cat = BusinessCategory.query.get(category_id)
+    cat = db.session.get(BusinessCategory, category_id)
     if not cat:
         return jsonify({'error': 'Category not found'}), 404
 
@@ -216,7 +216,7 @@ def toggle_category(category_id):
     if current_user.role != 'admin':
         return jsonify({'error': 'Unauthorized'}), 403
 
-    cat = BusinessCategory.query.get(category_id)
+    cat = db.session.get(BusinessCategory, category_id)
     if cat:
         cat.is_enabled = not cat.is_enabled
         db.session.commit()
@@ -285,7 +285,7 @@ def manage_field(field_id):
     if current_user.role != 'admin':
         return jsonify({'error': 'Unauthorized'}), 403
 
-    field = ProductField.query.get(field_id)
+    field = db.session.get(ProductField, field_id)
     if not field:
         return jsonify({'error': 'Field not found'}), 404
 
@@ -293,7 +293,7 @@ def manage_field(field_id):
         data = request.json
         try:
             ConfigurationService.update_product_field(field_id, data)
-            field = ProductField.query.get(field_id)
+            field = db.session.get(ProductField, field_id)
             return jsonify({'success': True, 'field': field.to_dict()})
         except Exception as e:
             return jsonify({'error': str(e)}), 400
