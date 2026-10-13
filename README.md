@@ -1,363 +1,251 @@
 # TradeFlow ERP
 
-> **One Software. Complete Business Management.**
-> Inventory, Point of Sale, Purchasing, Double-Entry Accounting, and HR/Payroll — in a single Flask application.
+> Inventory, point of sale, purchasing, double-entry accounting and optional HR/payroll for retail and trading businesses, in one Flask application.
 
 ---
 
-## 🎯 Overview
+## Overview
 
-TradeFlow ERP is a full business-management platform for small and medium businesses: inventory and multi-warehouse stock, purchasing and sales (including POS), supplier/customer ledgers, double-entry accounting with GL posting and reconciliation, and an HR suite covering employees, attendance, leave, and payroll.
+TradeFlow is a trading and accounting system for retail and trading businesses such as departmental stores and pharmacies. It covers stock in one or more warehouses, purchases and sales, a counter POS, customers and suppliers, cash and bank accounts, a double-entry general ledger, fixed assets, and (as optional modules) HR, attendance, leave and payroll. Every posted document writes a journal entry, and the financial statements are summed from the general ledger only.
 
-### Why TradeFlow ERP?
+What it is, and is not:
 
-**For Business Owners**
-- One system for inventory, purchases, sales, accounts, and staff — no juggling separate tools
-- Real-time profit & loss, balance sheet, and cash flow, always tied back to actual GL postings
-- Multi-warehouse stock with per-user location access control
-- Optional HR/Attendance/Leave/Payroll modules — enable only what your business needs
-
-**For Enterprise Clients**
-- Bank-grade security: Argon2 password hashing, CSRF protection, audit logging, role-based access
-- PostgreSQL-backed for production scale and reliability
-- JSON database backup/restore for disaster recovery
-- A dedicated Developer panel for diagnostics, schema inspection, and module control — separately access-gated from the business app
-
-**For Developers**
-- An automated pytest test suite covering the core modules, run in CI on every push
-- Feature-flagged modules so new functionality ships dark and is switched on deliberately
-- Ranked search/lookup service shared across every item/supplier/customer picker in the app
+- **One company and one currency per installation.** It is **not** a multi-tenant SaaS: there is no tenant isolation, and multi-company and multi-currency are not supported.
+- **Server-rendered Flask app** (Jinja templates, Bootstrap 5), backed by PostgreSQL.
+- **English interface**; the in-app [User Manual](#documentation) and About page also have a Roman Urdu switch.
 
 ---
 
-## ✨ Key Features
+## Features
 
-### 📦 Inventory & Multi-Warehouse
-- Item & Category CRUD with SKU, barcode/QR generation, and per-category custom fields
-- Preconfigured business-category catalog (grocery, medical store, garments, electronics, and more) to bootstrap a new company fast
-- Stock adjustments, stock report, item ledger, low-stock alerts, bulk import/export
-- **Warehouses**: create/deactivate locations, transfer stock between warehouses (with confirm/cancel/reverse), physical stock reconciliation (count → finalize → approve → post)
-- **Location Access control**: restrict a manager/staff account to specific warehouses; unrestricted by default
+Everything below is implemented in the code; menu names are the ones shown in the application.
 
-### 🛒 Purchasing
-- Purchase Orders with conversion to confirmed Purchases
-- Purchases, Purchase Returns, Purchase Invoices
-- Supplier Ledger with aging analysis, statement export, single & bulk Supplier Payments
+### Inventory and multi-warehouse stock
+- Items (stock or service), categories, SKU and barcode, alternate units (for example box and strip), reorder levels and a low-stock email alert.
+- Stock adjustments, a stock-movement log, an item ledger with CSV/Excel export, bulk import of items, customers and suppliers from CSV, Excel or JSON, and Stock Valuation at weighted-average cost.
+- **Warehouses**: any number; purchases, sales, POS, adjustments, transfers and counts each name a warehouse, and stock is reported per warehouse.
+- **Warehouse transfers**: Draft, Confirm, Cancel, Reverse. Transfers move quantity only and post no journal entry.
+- **Inventory reconciliation** (physical count): Draft, Counted, Approved, Posted. The approver must be a different admin from the counter, and posting writes one netted journal entry.
+- **Location access**: an admin can restrict a manager or staff user to chosen warehouses. A user with no grants is unrestricted.
+- **Labels**: assign codes automatically and print Code128 barcode or QR labels.
 
-### 🏪 Sales & POS
-- Point of Sale with barcode scan, cart, held bills/resume, and receipt printing
-- Standard Sales, Sale Returns, Delivery Challans, Quotations
-- Customer Ledger with aging/receivables tracking, single & bulk Customer Receipts
+### Batches and expiry
+- Batch tracking and expiry are switched on per business category and per item.
+- Purchases carry Batch No and Expiry Date; sales take stock from the batch that expires first (expired batches are skipped), and the POS lets a manager pick batches.
+- An *Expiring / Expired Batches* report and Dashboard shortcuts.
+- Known gap: purchase returns do not reverse batch quantities.
 
-### 🔎 Universal Search & Lookup
-- Shared ranked search (exact barcode → exact SKU → exact name → starts-with → contains) powering every item/supplier/customer picker across Sales, Purchases, POS, and Quotations
+### Business categories, garments and footwear
+- A built-in catalog of business categories (for example Grocery / FMCG, Medical / Pharmacy, Garments / Apparel, Footwear, Electronics, Hardware). An admin can enable or disable categories and add product fields under **Admin → Business Configuration**; an item must belong to an enabled category.
+- Garments and footwear categories ship with fields such as Size, Color, Brand, Gender, Material and Style (footwear) and Style No., Fabric, Season and Pattern/Design (garments). These are category fields on the item, not a separate variant/SKU matrix.
 
-### 💼 Double-Entry Accounting
-- General Ledger, Journal Entries (with reversal), Chart of Accounts
-- Trial Balance, Balance Sheet, Profit & Loss, Cash Flow Statement, GL Reconciliation Report
-- Fixed Assets with depreciation and disposal
-- Fiscal Year management with period close
-- Tax codes and GST/sales-tax tracking
-- Hierarchical cash/bank Financial Accounts, each backed by its own GL leaf
+### Sales and POS
+- Sales are saved as **Draft** and then **Posted** (stock, invoice number, ledger and journal entry happen at post). Returns, quotations (convertible to sales), delivery challans, single and bulk customer receipts.
+- **POS** (managers and admins): barcode or name lookup, choice of cash or bank account, change calculation, held bills, Walk-in Customer, and immediate posting. Receipts print on 80 mm paper.
+- An admin can correct a posted sale or purchase with a recorded reason, or reverse it.
 
-### 👥 HR, Attendance, Leave & Payroll *(optional modules — see below)*
-- **HR**: employee records linked to user accounts, departments, designations
-- **Attendance**: daily marking, edits, monthly summary
-- **Leave**: leave types, allocations, requests with submit/approve/reject/cancel (approval restricted to manager/admin)
-- **Payroll**: per-employee salary structures, payroll periods (process → finalize → pay), salary advances, payslips, GL-posted payroll runs (finalize/post is admin-only)
-- **Self-Service**: employees view their own profile, attendance, leave requests, and payslips
+### Purchasing and suppliers
+- Purchase orders (convertible to posted purchases), purchases (Draft then Posted), purchase returns, single and bulk supplier payments, supplier ledger with manual adjustments and exports.
 
-### 🔒 Modular & Feature-Flagged
-HR, Attendance, Leave, and Payroll ship **off by default** and are switched on per-deployment from the Developer panel's Modules page — a business that only needs inventory and accounting never sees the extra menus. Attendance, Leave, and Payroll each require HR to be enabled first.
+### Customers, accounts, ledgers and reports
+- Customer and supplier ledgers; the Customer list shows sales **net of sale returns**.
+- Chart of accounts, manual journal entries (with reversal), fiscal years and periods (close and reopen), year-end close into Retained Earnings, tax codes, fixed assets with monthly depreciation and disposal, and hierarchical cash and bank accounts whose balances come straight from the ledger.
+- Reports: Balance Sheet, Profit & Loss, Trial Balance, Cash Flow Statement, Stock Valuation, AP/AR Aging, Cash Book, Tax Summary, Subledger Reconciliation, and a Sales & Inventory page (gross and net sales, profit, purchases, returns, party balances).
+- CSV and Excel export on the party lists, ledgers, stock report and Sales & Inventory tables (not on every report).
 
-### 🔐 Security & Access Control
-- Role-Based Access Control: **Admin**, **Manager**, **Staff**
-- Fine-grained permission checks on top of roles for HR/Payroll actions (e.g. only admins post payroll to the GL, only managers/admins approve leave)
-- Per-warehouse location access restriction
-- Argon2 password hashing, email verification, CSRF protection (Flask-WTF), audit logging, secure session cookies
-- A separate password-protected **Developer panel** (database inspection, schema sync, environment viewer, logs, module toggles) with environment-specific access levels between local development and deployed environments
+### HR, attendance, leave and payroll (optional modules)
+Employees, departments, designations; daily attendance and monthly summary; leave types, allocations and approvals; payroll periods with salary structures, payslips, salary payments and employee advances, posted to the ledger; and an employee self-service **My Work** menu. These modules are **off by default** and are switched on from the Developer Tasks panel (HR first; the others depend on it).
 
-### 📊 Reporting
-- Aging Report (AP/AR), GST Report, Stock Valuation Report, Supplier Payables, Customer Receivables, GL Reconciliation
-- CSV & Excel export on every report and subledger
+### Users, roles and administration
+- Three roles: **Staff**, **Manager**, **Admin**; HR and payroll use an additional permission map (for example only admins finalize and pay payroll).
+- User management, warehouses, financial accounts, business configuration, tax codes, audit log, in-app notifications, JSON backup and restore, and two reset levels (delete transactions, delete everything), each requiring a typed confirmation phrase.
+- Email-verified accounts with password reset, Argon2 password hashing (via passlib), CSRF protection, rate-limited sign-in, and an audit log of changes.
+- A password-protected **Developer Tasks** panel (diagnostics, logs, environment view, optional modules) that is off unless enabled, and by default local-only.
 
-### 📋 Administration
-- User management with role assignment
-- Business Configuration: category catalog, custom product fields
-- Financial Account management (hierarchical cash/bank structure)
-- Database Backup/Restore (JSON export/import)
-- Audit Log viewer
-- Notifications (in-app, mark read/unread)
+### Printing and output
+- **Print PDF** buttons use the browser's print dialog (print or "Save as PDF"). The application does not generate PDF files itself.
+- Sale and purchase invoices open as printable pages (reversed documents show a REVERSED watermark); POS receipts use an 80 mm layout.
 
 ---
 
-## 🎬 Live Demo
+## Documentation
 
-Experience TradeFlow ERP online: **https://TradeFlow-Demo.onrender.com**
+- **User Manual** (one box per facility, English and Roman Urdu): `/manual` in a running installation; source in [`templates/manual.html`](templates/manual.html).
+- **About page**: `/about`; source in [`templates/about2.html`](templates/about2.html).
+- **Developer guidance** and verified architecture notes: [CLAUDE.md](CLAUDE.md).
+- Deployment and environment notes: [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) and [ENV_FILE_GUIDE.md](ENV_FILE_GUIDE.md).
 
-- **Email**: `demo@demo.com`
-- **Password**: `demo1234`
-- First load can take ~40 seconds — the free-tier server sleeps when idle.
+Both public pages are reachable without signing in.
 
 ---
 
-## 🏗️ Architecture
+## Live demo
 
-TradeFlow runs as a Flask application with `app.py` as the entry point, alongside a growing `salpurflask/` package of feature modules:
+A public demo has been hosted on Render at <https://tradeflow-demo.onrender.com>. It runs on a free tier that sleeps when idle, so the first load can take a while, and its availability and login details were **not re-verified** for this README. Demo login details are not published here; ask the maintainer.
+
+---
+
+## Technology stack
+
+- **Python** with **Flask 3**, Flask-SQLAlchemy (SQLAlchemy 2), Flask-Login, Flask-WTF (CSRF), Flask-Compress, Flask-Paginate
+- **PostgreSQL** (drivers `psycopg` and `psycopg2-binary` are installed; the plain `postgresql://` URL uses psycopg2). SQLite is only a local fallback when `DATABASE_URL` is unset.
+- Jinja2 templates, Bootstrap 5, plain JavaScript; `openpyxl` (Excel), `python-barcode` and `qrcode` (labels and QR)
+- `passlib[argon2]` / `argon2-cffi` and `bcrypt`, `itsdangerous` tokens, optional `sentry-sdk`
+- `gunicorn` for production; pytest for tests
+- Deployed with Render (`render.yaml`, `Procfile`); a GitHub Actions workflow for Azure also exists in the repo. The Render build pins Python 3.11; development here also runs on newer Python.
+
+---
+
+## Architecture
+
+`app.py` is the application hub; feature code lives in the `salpurflask/` package.
 
 ```
-app.py                    Application bootstrap, config, CLI commands,
-                           and a set of core routes (admin/users, financial
-                           accounts, reports, exports, health check)
+app.py                     Flask app, configuration, blueprint registration,
+                           many route registrations (app.add_url_rule), ledger
+                           helpers, migrate_database(), CLI commands, reports,
+                           expenses, quotations, admin users/accounts/backup
 
 salpurflask/
-├── auth.py                Access-control decorators (verified_required,
-│                           role_required, admin_required, manager_required)
-├── extensions/             Flask extension instances (db, login_manager, csrf...)
-├── config/                 App configuration
-├── forms/                  WTForms definitions
-├── models/                 SQLAlchemy models, split by domain
-│                           (models, hr, attendance, leave, payroll,
-│                            inventory_location, notification, business_config...)
-│
-├── inventory/              Items, categories, stock, warehouses, transfers,
-│                           location access, stock reconciliation
-├── purchase/               Purchase Orders, Purchases, Purchase Returns
-├── sales/                  Sales, POS, Sale Returns, Delivery Challans
-├── supplier/               Supplier CRUD, Payments, Ledger
-├── customer/               Customer CRUD, Receipts, Ledger
-├── accounting/             GL, Journal Entries, Fixed Assets, Financial
-│                           Statements, Fiscal Years, Chart of Accounts
-│
-├── hr/                     Employees, Departments, Designations
-├── attendance/              Daily attendance & monthly summary
-├── leave/                  Leave types, allocations, requests/approvals
-├── payroll/                Salary structures, payroll runs, payslips
-├── selfservice/            Employee self-service portal
-├── notifications/          In-app notifications
-│
-├── routes/                 Auth, Dashboard, Admin Config, Developer panel
-└── services/               Shared business logic: category catalog,
-                             universal lookup/search, feature flags,
-                             location permissions, payroll engine &
-                             accounting, HR permissions, transfers
+├── auth.py                access decorators (verified/role/admin/manager)
+├── models/                SQLAlchemy models by domain
+├── routes/                auth, dashboard, admin_config, developer panel
+├── inventory/ purchase/ sales/ supplier/ customer/ accounting/
+├── hr/ attendance/ leave/ payroll/ selfservice/ notifications/
+├── services/              business rules (transfers, reconciliation, payroll,
+│                          feature flags, permissions, lookup, category catalog)
+├── utils/                 helpers, import/export, time helpers
+└── test_db_guard.py       test-database safety guard
+
+templates/                 Jinja templates (flat folder, plus hr/, leave/,
+                           payroll/, attendance/, selfservice/, admin/ ...)
+static/                    css/, js/, icons, service worker; exported CSV/Excel
+                           files are written here under fixed names
+tests/                     pytest suite
+migrations/                Alembic scaffold (not wired to startup)
 ```
 
-Newer functionality (HR/Attendance/Leave/Payroll, Self-Service, Notifications, Admin Config, Developer panel, Auth, Dashboard) is wired as proper Flask blueprints. The core ERP domains (inventory, purchase, sales, supplier, customer, accounting) live in their own `salpurflask/` submodules but are attached to the app directly to preserve existing route/endpoint names. `app.py` itself still owns app bootstrap, all Flask CLI commands, and a handful of admin/report/export routes.
-
-### Design Principles
-- **Ledger integrity**: every Purchase, Sale, SupplierPayment, and CustomerPayment write is followed by a matching subledger sync and a full ledger recalculation — balances are never trusted to stay correct on their own
-- **Feature flags for new modules**: HR/Attendance/Leave/Payroll are built and tested but ship disabled, so existing deployments are unaffected until a business opts in
-- **Non-blocking schema migrations**: startup migrations only ever add nullable columns — no blocking DDL that could hang a zero-downtime deploy
+Design points: documents are posted to a general ledger and reversed rather than deleted; invoice numbering is gapless per fiscal year; startup migrations only add nullable columns (no blocking DDL during zero-downtime deploys). See [CLAUDE.md](CLAUDE.md) for details.
 
 ---
 
-## 📂 Project Structure
+## Local installation
 
-```
-TradeFlow ERP/
-│
-├── app.py                          # Application entry point, config, CLI commands
-├── requirements.txt                # Python dependencies
-├── render.yaml                     # Render deployment config
-├── Procfile                        # gunicorn app:app
-├── CLAUDE.md                       # Developer/AI-assistant guidance
-│
-├── salpurflask/                    # Feature modules (see Architecture above)
-│
-├── templates/                      # Jinja2 templates (Bootstrap 5)
-│   ├── base.html                   # Master layout, role-aware navigation
-│   ├── inventory/ purchase/ sales/
-│   ├── supplier/ customer/ accounting/
-│   ├── hr/ attendance/ leave/ payroll/ selfservice/
-│   └── auth/ admin/ developer/
-│
-├── static/
-│   ├── css/                        # Stylesheets (design tokens, layout, components)
-│   ├── js/                         # JavaScript utilities
-│   └── exports/                    # Generated CSV/Excel files
-│
-├── tests/                          # Automated pytest test suite
-│   └── conftest.py                 # Shared fixtures
-│
-├── migrations/                     # Alembic scaffold (present, not wired to runtime boot —
-│                                    # schema changes are applied by migrate_database() in
-│                                    # app.py at startup instead, see below)
-└── instance/                       # Local runtime/config artifacts
-```
+**Prerequisites:** Python 3, PostgreSQL, Git.
 
----
-
-## 🚀 Installation
-
-### Prerequisites
-- **Python 3.9+**
-- **PostgreSQL 12+**
-- **Git**
-- **Virtual Environment** (recommended)
-
-### Quick Start
-
-**1. Clone the repository:**
 ```bash
 git clone https://github.com/sabir1080/SalPurFlask1080.git
 cd SalPurFlask1080
-```
 
-**2. Create and activate virtual environment:**
-```bash
 # Windows
 python -m venv venv
 venv\Scripts\activate
-
-# macOS/Linux
+# macOS / Linux
 python3 -m venv venv
 source venv/bin/activate
-```
 
-**3. Install dependencies:**
-```bash
 pip install -r requirements.txt
 ```
 
-**4. Configure environment variables:**
+Create a `.env` file in the project root (there is no `.env.example` in the repository) with at least:
 
-Create a `.env` file with your settings:
 ```env
-# Flask
-SECRET_KEY=your-secret-key-here
-SECURITY_PASSWORD_SALT=your-salt-here
-
-# Database (PostgreSQL)
-DATABASE_URL=postgresql://user:pass@localhost/tradeflow
-
-# Email (Gmail + App Password) — required for verification & password reset
-MAIL_USERNAME=your-email@gmail.com
-MAIL_PASSWORD=your-app-password
-
-# Feature Flags
-ALLOW_SIGNUP=false
+SECRET_KEY=<random string>
+SECURITY_PASSWORD_SALT=<random string>
+DATABASE_URL=postgresql://<user>:<password>@localhost:5432/<database>
 ```
 
-**5. Create the first admin user:**
+Add the mail settings if you want email verification and password reset to work, and `ALLOW_SIGNUP=true` only if you want web self-registration. Never commit `.env` files.
 
-Self-registration is disabled by default. Create the first user via CLI:
+Create the first user (self-registration is off by default) and start the server:
+
 ```bash
-flask create-user
+flask create-admin        # or: flask create-user
+python app.py             # or: flask run --port 5172 --debug
 ```
 
-**6. Run the development server:**
-```bash
-python app.py
-# Or with Flask CLI:
-flask run --port 5172 --debug
-```
+Open <http://localhost:5172>. On first boot the app creates its tables and runs `migrate_database()`.
 
-**7. Access the application:**
-```
-http://localhost:5172
-```
+### Environment variables
 
----
+| Variable | Purpose |
+|---|---|
+| `SECRET_KEY`, `SECURITY_PASSWORD_SALT` | Session secret and token salt (required) |
+| `DATABASE_URL` | PostgreSQL URL; if unset the app falls back to a local SQLite file |
+| `MAIL_SERVER`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD` | Outgoing email (verification, reset, low-stock alert) |
+| `ALLOW_SIGNUP` | Web self-registration (default `false`) |
+| `APP_NAME`, `COMPANY_NAME`, `COMPANY_TAGLINE`, `DESIGNED_DEVELOPED` | Display text |
+| `CURRENCY`, `APP_TIMEZONE`, `FISCAL_YEAR_START_MONTH` | Business settings; decide before entering data (changing the fiscal-year start later does not move existing fiscal years) |
+| `ENABLE_DEVELOPER_PANEL`, `DEVELOPER_LOCALHOST_ONLY`, `DEVELOPER_PASSWORD_HASH`, `DEVELOPER_SESSION_TIMEOUT`, `DEVELOPER_READ_ONLY_MODE`, `DEVELOPER_SELECTIVE_MODE` | Developer Tasks panel |
+| `SENTRY_DSN`, `LOG_LEVEL`, `FLASK_DEBUG`, `PORT`, `DEMO_MODE` | Operations and demo behaviour |
+| `ANTHROPIC_API_KEY` | Read by the configuration module; no feature in the application currently uses it |
+| `TRADEFLOW_TEST_DATABASE_URL` | Tests only (see below) |
 
-## ⚙️ Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `SECRET_KEY` | Yes | Flask session secret |
-| `SECURITY_PASSWORD_SALT` | Yes | Password reset / email-verification token salt |
-| `DATABASE_URL` | Yes | PostgreSQL connection string |
-| `MAIL_USERNAME` | For email features | Gmail account used to send verification/reset emails |
-| `MAIL_PASSWORD` | For email features | Gmail App Password |
-| `APP_TIMEZONE` | No | Business timezone (e.g. `Asia/Karachi`) |
-| `ALLOW_SIGNUP` | No | Enable web-based self-registration (default `false`) |
-| `COMPANY_NAME` | No | Display name shown in the app |
-| `CURRENCY` | No | Currency symbol |
-
----
-
-## 🛠️ Flask CLI Commands
+### Flask CLI commands
 
 | Command | Purpose |
 |---|---|
-| `flask create-user` | Create the first/any user account |
-| `flask create-admin` | Create a user with the admin role |
-| `flask seed-accounting` | Seed the Chart of Accounts and fixed-asset GL accounts |
-| `flask seed-categories` | Import the built-in business-category catalog |
-| `flask seed-data` | Wipe non-user data and build a realistic demo company (`--yes`, `--demo-user`) |
-| `flask reset-db` | Drop and recreate all tables — destructive |
-| `flask clear-transactions` | Clear transactional data while keeping users/settings/masters |
-| `flask backup-db` | Export the database to a backup file |
-| `flask fix-sequences` | Repair PostgreSQL sequence drift after manual data loads |
-| `flask setup-production` | One-shot production bootstrap (accounts, categories, admin) |
+| `flask create-user` / `flask create-admin` | Create a user / an admin |
+| `flask seed-accounting`, `flask seed-categories` | Seed the chart of accounts / the business-category catalog |
+| `flask setup-production` | One-shot production bootstrap |
+| `flask backup-db` | Export a backup |
+| `flask fix-sequences` | Repair PostgreSQL sequences after manual data loads |
+| `flask seed-data` | Replace data with a demo company (**destructive**) |
+| `flask clear-transactions`, `flask reset-db` | Remove transactions / drop all tables (**destructive**) |
+
+The destructive commands only check that `DATABASE_URL` is set, **not which database it points to**. Check the host name before running them.
 
 ---
 
-## ✅ Testing
+## Testing
 
-```bash
-# Run the full suite
-pytest
+The suite **deletes every row of every table** in the database it runs against, so it is guarded. `salpurflask/test_db_guard.py` refuses to run unless the database is local PostgreSQL named `tradeflow_test` on `127.0.0.1`/`localhost`, port 5432. The URL comes only from the `TRADEFLOW_TEST_DATABASE_URL` environment variable (never from `.env`), and the guard also checks the live connection before deleting anything. Do not bypass it.
 
-# Run one file
-pytest tests/test_accounting.py
-
-# Run one test
-pytest tests/test_accounting.py::test_balance_sheet_totals
-
-# Verbose
-pytest -v
+```powershell
+# PowerShell, one session
+$env:TRADEFLOW_TEST_DATABASE_URL = "postgresql://<user>:<password>@127.0.0.1:5432/tradeflow_test"
+pytest -q                                   # full suite (about 15 minutes)
+pytest -q tests/test_accounting.py          # one file
 ```
 
-The project has an automated test suite covering accounting/ledger integrity, inventory & multi-warehouse transfers/reconciliation, POS, HR/Attendance/Leave/Payroll/Self-Service, authorization, audit logging, backup/restore, internationalization, and page-level regressions. Tests run in CI (GitHub Actions) on every push and pull request to `main`.
+- Use the plain `postgresql://` scheme. `postgresql+psycopg://` selects the psycopg3 driver, which currently fails a number of tests that compare string parameters with integer or date columns.
+- Save output as UTF-8 if you redirect it (Windows PowerShell 5.1 `>` writes UTF-16).
+- The last full run on the plain URL: 1532 passed, 1 warning (a third-party passlib/argon2 deprecation).
+- A GitHub Actions workflow (`.github/workflows/ci.yml`) runs `pytest -q`; it does not set the test-database variable, so with the guard in place it will stop at start-up until it is given a local-style test database.
 
 ---
 
-## 🚀 Deployment
+## Deployment notes
 
-### Render (demo environment)
-- `render.yaml` defines the service (`gunicorn app:app`) and environment variables
-- Deploys automatically on push to `main`
-- Backed by managed PostgreSQL
-
-### Microsoft Azure (previously deployed / future option)
-- TradeFlow has previously been successfully deployed and tested on Microsoft Azure — see `AZURE_DEPLOYMENT.md` / `AZURE_FIX.md` for the environment-specific notes from that deployment
-- A GitHub Actions workflow (`.github/workflows/main_tradeflow.yml`) for deploying to Azure exists in the repo, but the Azure subscription used for it is currently expired/inactive — Azure is not the current running production target
-
-### Production Checklist
-- [ ] PostgreSQL provisioned and `DATABASE_URL` set
-- [ ] Strong, unique `SECRET_KEY` and `SECURITY_PASSWORD_SALT`
-- [ ] HTTPS/SSL enabled
-- [ ] `ALLOW_SIGNUP=false` unless self-registration is intended
-- [ ] Regular `flask backup-db` scheduled
-- [ ] Developer panel access reviewed for the target environment
+- `render.yaml` defines a web service running `gunicorn app:app`; `DATABASE_URL`, mail and API settings are set in the Render dashboard, never in the repo. The demo service tracks `main` in the Render dashboard, so **pushing to `main` can start a deployment**.
+- `.github/workflows/main_tradeflow.yml` can deploy `main` to an Azure Web App; the Azure subscription noted in earlier documentation is described as inactive.
+- Before production: provision PostgreSQL, set strong unique secrets, use HTTPS, keep `ALLOW_SIGNUP=false` unless intended, schedule backups (**Admin → Backup & Restore** or `flask backup-db`), and review Developer panel access.
 
 ---
 
-## 📄 License
+## License
 
-TradeFlow ERP is released under the **MIT License** — see [LICENSE](LICENSE) for the full text.
+TradeFlow is released under the **MIT License**; see [LICENSE](LICENSE).
 
 ---
 
-## 📞 Contact & Links
+## Contact and links
 
-- 🌐 **Website**: https://tradeflow-website.sabir1212temp.workers.dev
-- 💻 **Live Demo**: https://TradeFlow-Demo.onrender.com (`demo@demo.com` / `demo1234`)
-- 🎥 **YouTube**: https://youtube.com/@TradeFlowBusinesSolutions
-- 📱 **WhatsApp**: https://wa.me/+923453231545
-- 📧 **Email**: tradeflowsoftwares@gmail.com
-- 📘 **Facebook**: https://www.facebook.com/share/18AxHjtQct/
-- 💼 **LinkedIn**: https://www.linkedin.com/in/sabir-shah-19470b351
-- 💻 **GitHub**: https://github.com/sabir1080/SalPurFlask1080
-- 🐛 **Issues**: [GitHub Issues](https://github.com/sabir1080/SalPurFlask1080/issues)
+- Website: https://tradeflow-website.sabir1212temp.workers.dev
+- YouTube: https://youtube.com/@TradeFlowBusinesSolutions
+- WhatsApp: https://wa.me/+923453231545
+- Email: tradeflowsoftwares@gmail.com
+- Facebook: https://www.facebook.com/share/18AxHjtQct/
+- LinkedIn: https://www.linkedin.com/in/sabir-shah-19470b351
+- GitHub: https://github.com/sabir1080/SalPurFlask1080
+- Issues: [GitHub Issues](https://github.com/sabir1080/SalPurFlask1080/issues)
 
 ---
 
 <div align="center">
 
-**TradeFlow ERP — One Software. Complete Business Management.**
+**TradeFlow ERP**
 
-[⬆ back to top](#tradeflow-erp)
+[Back to top](#tradeflow-erp)
 
 </div>
